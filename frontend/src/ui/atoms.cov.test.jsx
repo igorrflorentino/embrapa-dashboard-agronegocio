@@ -111,6 +111,24 @@ describe('Sparkline + KpiCardSpark', () => {
     const { container } = render(h(window.KpiCardSpark, { label: 'L', value: 'V' }));
     expect(container.querySelector('.kpi-delta')).toBeNull();
   });
+
+  it('a variação AUSENTE é neutra e SEM seta — não verde para cima nem vermelha', () => {
+    // `fmtSigned(null)` devolve '—', uma STRING: o bloco da variação renderiza. E como
+    // `null >= 0` é true em JS, os call sites entregavam `true` aqui e a tela mostrava
+    // seta verde para cima ao lado do travessão que declara a ausência. Os call sites
+    // "guardados" entregavam `null`, que o átomo lia como 'down' — vermelho, também uma
+    // afirmação. Um terceiro estado é a única saída honesta.
+    const { container } = render(
+      h(window.KpiCardSpark, { label: 'L', value: 'V', delta: '—', deltaPositive: null })
+    );
+    const chip = container.querySelector('.kpi-delta');
+    expect(chip, 'o travessão da variação sumiu do card').toBeTruthy();
+    expect(chip.className).toContain('none');
+    expect(chip.className).not.toContain('up');
+    expect(chip.className).not.toContain('down');
+    // A seta é uma AFIRMAÇÃO de direção; sobre uma ausência, não pode existir.
+    expect(container.querySelector('svg, .icon, [class*="arrow"]')).toBeNull();
+  });
 });
 
 // ── Status (MaturityTag/UsageDot/UsageTag/MaturityBanner/MaturityLegend) ───────

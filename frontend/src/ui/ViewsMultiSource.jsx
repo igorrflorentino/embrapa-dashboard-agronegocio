@@ -173,7 +173,7 @@ function ViewMarketShare() {
         {/* `(a || 0) - (b || 0)` fabricava a diferença contra um zero inventado quando
             uma das pontas não tinha dado — o mesmo defeito da v1.49.0 numa forma que a
             varredura não cobre (subtração, não razão). diffPresent recusa e vira '—'. */}
-        <window.KpiCardSpark label="Variação na janela" value={window.fmtSigned(window.diffPresent(last?.share, first?.share), 1, ' p.p.')} deltaPositive={window.diffPresent(last?.share, first?.share) == null ? null : window.diffPresent(last?.share, first?.share) >= 0} sub={`${first?.y ?? '—'}–${last?.y ?? '—'}`} />
+        <window.KpiCardSpark label="Variação na janela" value={window.fmtSigned(window.diffPresent(last?.share, first?.share), 1, ' p.p.')} deltaPositive={window.deltaUp(window.diffPresent(last?.share, first?.share))} sub={`${first?.y ?? '—'}–${last?.y ?? '—'}`} />
         <window.KpiCardSpark label="Exportação BR" value={'US$ ' + msNum(last?.br, 1) + ' bi'} sub={`mundo: US$ ${msNum(last?.world)} bi`} />
       </div>
 

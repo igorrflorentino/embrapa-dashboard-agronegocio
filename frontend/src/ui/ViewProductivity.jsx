@@ -11,6 +11,31 @@
 
 const { useState: useProdState } = React;
 
+// Nomeia as UFs que o piso de área tirou da comparação. A regra do projeto proíbe
+// filtragem invisível: se um número deixou de ser mostrado, a tela diz quais e por quê.
+// Enumera TODAS (não um "e mais N"), porque a lista curta é justamente a informação.
+//
+// O texto enuncia a REGRA, não uma história causal: "arredondamento da fonte" é
+// verdade para 205 ha e MENTIRA para 50 mil, e a nota cobre uma lista que pode ter as
+// duas. O que vale para toda a lista é que a UF não pesa na lavoura E tem base pequena
+// demais para a média se sustentar sozinha — as duas provas que ela reprovou.
+function AreaFloorNote({ dropped, floorHa, fmtArea }) {
+  if (!dropped || !dropped.length) return null;
+  const lista = dropped.slice()
+    .sort((a, b) => (b.areaHa || 0) - (a.areaHa || 0))
+    .map(u => `${u.uf} (${fmtArea(u.areaHa || 0)})`)
+    .join(', ');
+  return (
+    <p className="caption" style={{ marginTop: 10 }}>
+      Fora da comparação por área: <strong>{lista}</strong>. Cada uma colhe menos de{' '}
+      {window.numBR(window.AREA_FLOOR.minShare * 100, 1)}% da área do recorte
+      {floorHa != null ? ` (${fmtArea(floorHa)})` : ''} <em>e</em> menos de{' '}
+      {fmtArea(window.AREA_FLOOR.minAbs)} no total — base pequena demais para o
+      rendimento médio representar a UF. Seguem no mapa em cinza, sem cor de intensidade.
+    </p>
+  );
+}
+
 function ViewProductivity({ summary, conventions, database }) {
   const [crop, setCrop] = useProdState(null);
   const data = window.productivityData(database, crop, summary);
@@ -46,11 +71,26 @@ function ViewProductivity({ summary, conventions, database }) {
   const yDelta = window.deltaPct(prev.yieldKgHa, last.yieldKgHa);
   const aDelta = window.deltaPct(prev.areaHa, last.areaHa);
 
-  const mapData = data.byUF.map(u => ({ ...u, yieldKgHa: Math.round(u.yieldKgHa) }));
-  const byUFTop = data.byUF.slice()
+  // Piso de materialidade sobre a área colhida (window.materialityFloor). Sem ele, a UF
+  // com MENOS lavoura ganhava o ranking de produtividade: medido na PAM 2024, a cana
+  // tinha o DF no topo com 205 ha (0,002% da área nacional) e "85.000 kg/ha" redondo —
+  // o arredondamento da fonte sobre uma base minúscula, não produtividade.
+  const floor = window.materialityFloor(data.byUF, 'areaHa', window.AREA_FLOOR);
+  const comparavel = new Set(floor.kept.map(u => u.uf));
+  // As UFs de fora CONTINUAM no mapa — saem do gradiente, não do mapa. `null` cai no
+  // índice -1 do quantil e a célula pinta neutra com '—'; zerar afirmaria rendimento
+  // zero, que é uma medida que ninguém fez.
+  const mapData = data.byUF.map(u => ({
+    ...u,
+    yieldKgHa: comparavel.has(u.uf) ? Math.round(u.yieldKgHa) : null,
+  }));
+  const byUFTop = floor.kept.slice()
     .sort((a, b) => b.yieldKgHa - a.yieldKgHa)
     .slice(0, 12)
-    .map(u => ({ uf: u.uf, name: u.name, yieldKgHa: Math.round(u.yieldKgHa) }));
+    .map(u => ({ uf: u.uf, name: u.name, yieldKgHa: Math.round(u.yieldKgHa), areaHa: u.areaHa }));
+  // O piso relativo convertido em hectares DESTA lavoura, para o leitor comparar com
+  // as áreas listadas. Vira null quando a metade absoluta é a que está mordendo.
+  const floorHa = Number.isFinite(floor.total) ? floor.total * window.AREA_FLOOR.minShare : null;
 
   return (
     <>
@@ -81,7 +121,7 @@ function ViewProductivity({ summary, conventions, database }) {
           label={<>Rendimento {scopeWord} · <window.UnitFamilyTag family="rendimento" conv={conventions}/></>}
           value={fmtY(last.yieldKgHa)}
           delta={window.fmtSigned(yDelta)}
-          deltaPositive={yDelta >= 0}
+          deltaPositive={window.deltaUp(yDelta)}
           sub={`${last.y} vs. ${prev.y}`}
           spark={series.slice(-12).map(d => ({ y: d.y, v: d.yieldKgHa }))}
           sparkKey="v"
@@ -91,16 +131,20 @@ function ViewProductivity({ summary, conventions, database }) {
           label="Área colhida"
           value={fmtArea(last.areaHa)}
           delta={window.fmtSigned(aDelta)}
-          deltaPositive={aDelta >= 0}
+          deltaPositive={window.deltaUp(aDelta)}
           sub={`safra ${last.y}`}
           spark={series.slice(-12).map(d => ({ y: d.y, v: d.areaHa }))}
           sparkKey="v"
           sparkColor="var(--viz-10)"
         />
+        {/* O sub-rótulo dizia "rendimento × área", uma conta que este card NÃO faz: o
+            valor é a produção somada da fonte, e é dela que o rendimento é DERIVADO
+            (rendimento = produção ÷ área), não o contrário. O rótulo descrevia a origem
+            do número invertida; "safra" espelha o card de área colhida. */}
         <window.KpiCardSpark
           label="Produção"
           value={fmtProd(last.prodT)}
-          sub={`rendimento × área · ${last.y}`}
+          sub={`safra ${last.y}`}
           spark={series.slice(-12).map(d => ({ y: d.y, v: d.prodT }))}
           sparkKey="v"
           sparkColor="var(--viz-2)"
@@ -146,6 +190,7 @@ function ViewProductivity({ summary, conventions, database }) {
             action={<span className="caption">{yUnit}</span>}
           />
           <window.BrazilTileMap data={mapData} valueKey="yieldKgHa" label={yUnit} height={420} compact={false} />
+          <AreaFloorNote dropped={floor.dropped} floorHa={floorHa} fmtArea={fmtArea} />
         </div>
         <div className="card">
           <window.SectionHeader
@@ -156,7 +201,11 @@ function ViewProductivity({ summary, conventions, database }) {
           {/* compact=false: yield is a UNIT metric (kg/ha) — show the exact figure
               ("3.500"), not the misleading magnitude word ("3,5 mil"); matches the
               per-UF tile map above, which is also compact=false (audit CORR-1). */}
-          <window.BarChart data={byUFTop} valueKey="yieldKgHa" color="var(--viz-6)" height={360} compact={false} />
+          {/* hoverKey: a área ao lado do rendimento, para o leitor julgar a base de cada
+              barra sozinho em vez de confiar no piso no escuro. */}
+          <window.BarChart data={byUFTop} valueKey="yieldKgHa" color="var(--viz-6)" height={360} compact={false}
+                           hoverKey="areaHa" hoverLabel="área colhida (ha)" />
+          <AreaFloorNote dropped={floor.dropped} floorHa={floorHa} fmtArea={fmtArea} />
         </div>
       </div>
     </>

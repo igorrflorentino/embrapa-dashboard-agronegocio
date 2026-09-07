@@ -29,8 +29,15 @@ function KpiCardSpark({ label, value, sub, delta, deltaPositive, spark, sparkCol
       <div className="kpi-val tnum">{value}</div>
       <div className="kpi-sub">
         {delta != null && (
-          <span className={'kpi-delta ' + (deltaPositive ? 'up' : 'down')}>
-            <window.Icon name={deltaPositive ? 'arrow_upward' : 'arrow_downward'} size={12} />
+          // TRÊS estados, não dois. `fmtSigned(null)` devolve '—' — uma STRING, não
+          // null — então a seta renderiza; e `null >= 0` é true em JS, então a
+          // variação que não existe vinha pintada de verde com seta para cima, ao
+          // lado do próprio travessão que a declara ausente. Um `deltaPositive`
+          // nulo agora é neutro e sem seta: a ausência não afirma direção.
+          <span className={'kpi-delta ' + (deltaPositive == null ? 'none' : deltaPositive ? 'up' : 'down')}>
+            {deltaPositive != null && (
+              <window.Icon name={deltaPositive ? 'arrow_upward' : 'arrow_downward'} size={12} />
+            )}
             {delta}
           </span>
         )}

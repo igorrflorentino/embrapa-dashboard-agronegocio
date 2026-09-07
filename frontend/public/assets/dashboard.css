@@ -1963,6 +1963,9 @@ body.sb-resizing .sidebar-resizer { background: color-mix(in srgb, var(--embrapa
 }
 .kpi-delta.up { background: color-mix(in srgb, var(--embrapa-green) 10%, transparent); color: var(--embrapa-green-darker); }
 .kpi-delta.down { background: color-mix(in srgb, var(--err) 10%, transparent); color: var(--err-ink); }
+/* Variação AUSENTE (o travessão): nem verde nem vermelho, e sem seta. Sem este
+   estado o '—' herdava 'down' e a tela lia "caiu" onde não havia medida. */
+.kpi-delta.none { background: var(--bg-2); color: var(--fg-3); }
 
 /* ---------- Cards / grids ---------- */
 .card {

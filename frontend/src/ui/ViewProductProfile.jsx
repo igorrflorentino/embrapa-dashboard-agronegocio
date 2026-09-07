@@ -199,7 +199,7 @@ function ViewProductProfile({ families, summary, database, conventions }) {
             label={<>Efetivo · <window.UnitFamilyTag family={family} conv={conv}/></>}
             value={window.formatCountQty(last.q, conv)}
             delta={window.fmtSigned(deltaQ)}
-            deltaPositive={last.q >= prev.q}
+            deltaPositive={window.deltaUp(deltaQ)}
             sub={`${last.y} vs. ${prev.y}`}
             spark={win.slice(-12).map(d => ({ y: d.y, q: d.q }))}
             sparkKey="q"
@@ -210,7 +210,7 @@ function ViewProductProfile({ families, summary, database, conventions }) {
             label={`Valor · ${monLabel}`}
             value={window.formatValue(window.scalePresent(last.v, 1e6), conv)}
             delta={window.fmtSigned(deltaV)}
-            deltaPositive={Number.isFinite(deltaV) ? deltaV >= 0 : null}
+            deltaPositive={window.deltaUp(deltaV)}
             sub={`${last.y} vs. ${prev.y}`}
             spark={win.slice(-12).map(d => ({ y: d.y, v: d.v }))}
             sparkKey="v"
@@ -231,7 +231,7 @@ function ViewProductProfile({ families, summary, database, conventions }) {
             label={<>Quantidade · <window.UnitFamilyTag family={family} conv={conv}/></>}
             value={(last.q * qtyMul).toLocaleString('pt-BR', { maximumFractionDigits: 0 }) + ' ' + unitAx}
             delta={window.fmtSigned(deltaQ)}
-            deltaPositive={last.q >= prev.q}
+            deltaPositive={window.deltaUp(deltaQ)}
             sub={`${last.y} vs. ${prev.y}`}
             spark={win.slice(-12).map(d => ({ y: d.y, q: d.q }))}
             sparkKey="q"

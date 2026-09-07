@@ -46,6 +46,13 @@ function ViewOverview({ families, summary, database, conventions }) {
   // A acumulada é montada por window.deltaTitle direto de (first, last), que já
   // acrescenta o MOTIVO da recusa — por isso não há um deltaTotV aqui.
   const deltaV    = window.deltaPctIn(prev, last, eraBreaks);
+  // A variação de cada família de quantidade, nomeada uma vez: o número no card e a
+  // direção da seta têm de sair da MESMA conta. Comparar `last.q >= prev.q` colore a
+  // seta a partir de outra grandeza, e as duas só divergem onde importa — na ausência,
+  // onde `null >= null` é true e pintava de verde o próprio travessão.
+  const dMass     = window.deltaPct(prev.q_mass, last.q_mass);
+  const dVol      = window.deltaPct(prev.q_vol, last.q_vol);
+  const dCount    = window.deltaPct(prev.q_count, last.q_count);
   const spark12   = ts.slice(-12);
   // Year tag that marks the latest year "(parcial)" wherever it is shown.
   const yTag      = (y) => `${y ?? ''}${partialLatest && y === partialYr ? ' (parcial)' : ''}`;
@@ -136,7 +143,7 @@ function ViewOverview({ families, summary, database, conventions }) {
           label={`Valor total · ${monLabel}`}
           value={kpiVal(window.formatValue(last.v, conv))}
           delta={comboPending ? null : window.fmtSigned(deltaV)}
-          deltaPositive={deltaV >= 0}
+          deltaPositive={window.deltaUp(deltaV)}
           sub={comboPending ? 'cruzando produto × UF…' : `${yTag(last.y)} vs. ${prev.y || ''}`}
           spark={comboPending ? null : window.convertSeries(spark12, conv)}
           sparkKey="v"
@@ -146,8 +153,8 @@ function ViewOverview({ families, summary, database, conventions }) {
           <window.KpiCardSpark
             label={<>Quantidade · <window.UnitFamilyTag family="mass" conv={conv}/></>}
             value={kpiVal(window.formatMassQty(last.q_mass, conv))}
-            delta={comboPending ? null : window.fmtSigned(window.deltaPct(prev.q_mass, last.q_mass))}
-            deltaPositive={last.q_mass >= prev.q_mass}
+            delta={comboPending ? null : window.fmtSigned(dMass)}
+            deltaPositive={window.deltaUp(dMass)}
             sub={comboPending ? 'cruzando produto × UF…' : `${yTag(last.y)} vs. ${prev.y || ''}`}
             spark={comboPending ? null : spark12}
             sparkKey="q_mass"
@@ -158,8 +165,8 @@ function ViewOverview({ families, summary, database, conventions }) {
           <window.KpiCardSpark
             label={<>Quantidade · <window.UnitFamilyTag family="volume" conv={conv}/></>}
             value={kpiVal(window.formatVolumeQty(last.q_vol, conv))}
-            delta={comboPending ? null : window.fmtSigned(window.deltaPct(prev.q_vol, last.q_vol))}
-            deltaPositive={last.q_vol >= prev.q_vol}
+            delta={comboPending ? null : window.fmtSigned(dVol)}
+            deltaPositive={window.deltaUp(dVol)}
             sub={comboPending ? 'cruzando produto × UF…' : `${yTag(last.y)} vs. ${prev.y || ''}`}
             spark={comboPending ? null : spark12}
             sparkKey="q_vol"
@@ -170,8 +177,8 @@ function ViewOverview({ families, summary, database, conventions }) {
           <window.KpiCardSpark
             label={<>Quantidade · <window.UnitFamilyTag family="count" conv={conv}/></>}
             value={kpiVal(window.formatCountQty(last.q_count, conv))}
-            delta={comboPending ? null : window.fmtSigned(window.deltaPct(prev.q_count, last.q_count))}
-            deltaPositive={last.q_count >= prev.q_count}
+            delta={comboPending ? null : window.fmtSigned(dCount)}
+            deltaPositive={window.deltaUp(dCount)}
             sub={comboPending ? 'cruzando produto × UF…' : `${yTag(last.y)} vs. ${prev.y || ''}`}
             spark={comboPending ? null : spark12}
             sparkKey="q_count"

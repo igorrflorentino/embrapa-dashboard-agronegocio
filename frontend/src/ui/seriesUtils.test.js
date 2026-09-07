@@ -150,3 +150,143 @@ describe('linearFit — OLS trend line (the "linha de tendência" overlay)', () 
     expect(fit.line[0].q).toBeDefined();
   });
 });
+
+// ── materialityFloor — o piso de materialidade ─────────────────────────────
+//
+// ÂNCORA EXTERNA: os números abaixo são a PAM 2024 em produção (medidos em
+// 2026-09-07 sobre serving_pam_annual), não uma fixture inventada. A pergunta que o
+// teste faz é a que o defeito respondia errado na tela: com 205 ha de cana, 0,002%
+// da área nacional, o DF encabeçava o ranking de "UFs mais produtivas".
+describe('materialityFloor — quem não tem base não compete pelo topo', () => {
+  // As 8 UFs de MAIOR rendimento em cana-de-açúcar na safra 2024, na ordem em que a
+  // fonte as devolve. Repare que a ordem por rendimento é quase o INVERSO da ordem
+  // por área: é isso que faz o piso ser necessário e não decorativo.
+  const CANA_2024 = [
+    { uf: 'DF', areaHa: 205, yieldKgHa: 85000 },
+    { uf: 'TO', areaHa: 36105, yieldKgHa: 81663 },
+    { uf: 'MT', areaHa: 241946, yieldKgHa: 81479 },
+    { uf: 'GO', areaHa: 1015810, yieldKgHa: 79735 },
+    { uf: 'MS', areaHa: 672523, yieldKgHa: 78063 },
+    { uf: 'SP', areaHa: 5398676, yieldKgHa: 77532 },
+    { uf: 'MG', areaHa: 1118810, yieldKgHa: 74869 },
+    { uf: 'BA', areaHa: 74564, yieldKgHa: 74768 },
+  ];
+
+  it('tira do topo a UF de área desprezível e promove a primeira UF comparável', () => {
+    const { kept, dropped } = window.materialityFloor(CANA_2024, 'areaHa', window.AREA_FLOOR);
+    const lider = kept.slice().sort((a, b) => b.yieldKgHa - a.yieldKgHa)[0];
+    // TO é o líder que a consulta sobre as 27 UFs REAIS também devolve com o piso
+    // ligado — a fixture de 8 linhas reproduz a conclusão do conjunto inteiro.
+    expect(lider.uf).toBe('TO');
+    expect(dropped.map((u) => u.uf)).toEqual(['DF']);
+  });
+
+  it('a metade ABSOLUTA salva quem é coadjuvante nacional mas tem base sólida', () => {
+    // O TO tem 36.105 ha de cana: 0,42% do recorte, ABAIXO do piso relativo. Um piso
+    // só relativo o apagaria — e ele é o líder real da lavoura. Este teste é o que
+    // separa a regra entregue da que foi descartada por medição.
+    const { kept, shareOf } = window.materialityFloor(CANA_2024, 'areaHa', window.AREA_FLOOR);
+    const to = CANA_2024[1];
+    expect(shareOf(to)).toBeLessThan(window.AREA_FLOOR.minShare); // reprova no relativo
+    expect(to.areaHa).toBeGreaterThanOrEqual(window.AREA_FLOOR.minAbs); // passa no absoluto
+    expect(kept.map((u) => u.uf)).toContain('TO');
+    // E some assim que a metade absoluta é desligada — a prova de que é ELA que o salva.
+    const soRelativo = window.materialityFloor(CANA_2024, 'areaHa', { minShare: 0.005 });
+    expect(soRelativo.kept.map((u) => u.uf)).not.toContain('TO');
+  });
+
+  it('a metade RELATIVA salva quem pesa na lavoura mesmo com pouca área absoluta', () => {
+    // Numa lavoura pequena, 400 ha podem ser 10% do país. O piso absoluto sozinho
+    // (1.000 ha) apagaria a UF mais relevante que existe para aquele produto.
+    const LAVOURA_PEQUENA = [
+      { uf: 'CE', areaHa: 2600, yieldKgHa: 700 },
+      { uf: 'PI', areaHa: 900, yieldKgHa: 650 },
+      { uf: 'RN', areaHa: 400, yieldKgHa: 600 },
+    ];
+    const { kept, dropped } = window.materialityFloor(LAVOURA_PEQUENA, 'areaHa', window.AREA_FLOOR);
+    expect(kept.map((u) => u.uf).sort()).toEqual(['CE', 'PI', 'RN']); // 900 e 400 ha ficam
+    expect(dropped).toEqual([]);
+    const soAbsoluto = window.materialityFloor(LAVOURA_PEQUENA, 'areaHa', { minAbs: 1000 });
+    expect(soAbsoluto.dropped.map((u) => u.uf).sort()).toEqual(['PI', 'RN']);
+  });
+
+  it('devolve os descartados para que a tela possa NOMEÁ-LOS (nada some em silêncio)', () => {
+    const { kept, dropped } = window.materialityFloor(CANA_2024, 'areaHa', window.AREA_FLOOR);
+    // A regra do projeto: filtrar sem dizer é proibido. O contrato do helper é
+    // devolver as duas metades, e kept ∪ dropped tem de ser a entrada INTEIRA.
+    expect(kept.length + dropped.length).toBe(CANA_2024.length);
+    expect([...kept, ...dropped].map((u) => u.uf).sort())
+      .toEqual(CANA_2024.map((u) => u.uf).sort());
+  });
+
+  it('shareOf devolve a fração real de cada linha', () => {
+    const total = CANA_2024.reduce((a, u) => a + u.areaHa, 0);
+    const { shareOf } = window.materialityFloor(CANA_2024, 'areaHa', window.AREA_FLOOR);
+    expect(shareOf(CANA_2024[0])).toBeCloseTo(205 / total, 12);
+    expect(shareOf(CANA_2024[0])).toBeLessThan(0.0001); // o DF é 0,002% do recorte
+  });
+
+  it('não discrimina quando não há base: sem a coluna, ou com total zero, tudo passa', () => {
+    // Um banco que não informa área não pode ter o ranking silenciosamente esvaziado.
+    const semArea = [{ uf: 'MT', yieldKgHa: 8 }, { uf: 'GO', yieldKgHa: 7 }];
+    expect(window.materialityFloor(semArea, 'areaHa', window.AREA_FLOOR).kept).toHaveLength(2);
+    expect(window.materialityFloor(semArea, 'areaHa', window.AREA_FLOOR).total).toBeNull();
+    const zerada = [{ uf: 'MT', areaHa: 0 }, { uf: 'GO', areaHa: 0 }];
+    expect(window.materialityFloor(zerada, 'areaHa', window.AREA_FLOOR).kept).toHaveLength(2);
+  });
+
+  it('um piso que derrubaria TODO mundo não derruba ninguém — melhor sem piso que em branco', () => {
+    const { kept, dropped } = window.materialityFloor(CANA_2024, 'areaHa', { minShare: 0.99, minAbs: 1e12 });
+    expect(kept).toHaveLength(CANA_2024.length);
+    expect(dropped).toHaveLength(0);
+  });
+
+  it('a área AUSENTE é descartada, não tratada como zero comparável', () => {
+    const comBuraco = [...CANA_2024, { uf: 'ZZ', areaHa: null, yieldKgHa: 999999 }];
+    const { kept, dropped } = window.materialityFloor(comBuraco, 'areaHa', window.AREA_FLOOR);
+    expect(kept.map((u) => u.uf)).not.toContain('ZZ');
+    expect(dropped.map((u) => u.uf)).toContain('ZZ');
+  });
+
+  it('sem opções não filtra nada (os dois pisos default são 0)', () => {
+    expect(window.materialityFloor(CANA_2024, 'areaHa').dropped).toEqual([]);
+  });
+
+  it('entrada não-array não quebra', () => {
+    expect(window.materialityFloor(null, 'areaHa', window.AREA_FLOOR).kept).toEqual([]);
+    expect(window.materialityFloor(undefined, 'areaHa', window.AREA_FLOOR).dropped).toEqual([]);
+  });
+});
+
+// ── deltaUp — a direção da seta do KPI ────────────────────────────────────────
+describe('deltaUp — a ausência não aponta direção', () => {
+  it('true quando subiu, false quando caiu, null quando não há variação', () => {
+    expect(window.deltaUp(4.2)).toBe(true);
+    expect(window.deltaUp(0)).toBe(true);   // não caiu
+    expect(window.deltaUp(-3)).toBe(false);
+    expect(window.deltaUp(null)).toBeNull();
+    expect(window.deltaUp(undefined)).toBeNull();
+    expect(window.deltaUp(NaN)).toBeNull();
+  });
+
+  it('recusa null EM VEZ de deixar o JS respondê-lo — as três formas erradas', () => {
+    // Cada linha é uma das respostas que estavam espalhadas pelos call sites. Todas
+    // concordam com deltaUp no número presente e divergem exatamente na ausência,
+    // que é o único lugar onde a resposta importava.
+    const d = null;
+    expect(d >= 0).toBe(true);                                  // virava VERDE ↑
+    expect(d != null && d >= 0).toBe(false);                    // virava VERMELHO ↓
+    expect(window.deltaUp(d)).toBeNull();                       // não aponta nada
+    // E o caso mais traiçoeiro: colorir pela MEDIDA CRUA em vez da variação.
+    const [prev, last] = [{ q: null }, { q: null }];
+    expect(last.q >= prev.q).toBe(true);                        // dois ausentes "subiram"
+    expect(window.deltaUp(window.deltaPct(prev.q, last.q))).toBeNull();
+  });
+
+  it('encadeia com deltaPct sem que a ausência vire direção', () => {
+    expect(window.deltaUp(window.deltaPct(100, 120))).toBe(true);
+    expect(window.deltaUp(window.deltaPct(120, 100))).toBe(false);
+    expect(window.deltaUp(window.deltaPct(0, 100))).toBeNull();    // base não-positiva
+    expect(window.deltaUp(window.deltaPct(null, 100))).toBeNull(); // base ausente
+  });
+});

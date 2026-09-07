@@ -5,7 +5,7 @@
 
 import { Plot, baseLayout, ptBrLinearAxis, ptBrMagnitude, resolveColor, seriesMax } from './_base';
 
-function BarChart({ data = [], height = 200, color = 'var(--viz-2)', label = '', valueKey = 'value', compact = true }) {
+function BarChart({ data = [], height = 200, color = 'var(--viz-2)', label = '', valueKey = 'value', compact = true, hoverKey = null, hoverLabel = '' }) {
   const c = resolveColor(color);
   // Category label per row (uf preferred, name fallback) and its value.
   const cats = data.map((d) => d.uf || d.name);
@@ -28,7 +28,13 @@ function BarChart({ data = [], height = 200, color = 'var(--viz-2)', label = '',
       text: vals.map((v) => (v == null ? '' : compact ? ptBrMagnitude(v) : v.toLocaleString('pt-BR'))),
       textposition: 'outside',
       cliponaxis: false,
-      hovertemplate: '<b>%{y}</b>  %{x:,.2f}<extra></extra>',
+      // Segunda grandeza opcional no hover (a BASE por trás da razão que a barra
+      // desenha — p.ex. a área colhida sob o rendimento). Sem `hoverKey` o template é
+      // o de antes, byte a byte, para os demais chamadores.
+      customdata: hoverKey ? data.map((d) => d[hoverKey]) : undefined,
+      hovertemplate: hoverKey
+        ? `<b>%{y}</b>  %{x:,.2f}<br>${hoverLabel}: %{customdata:,.0f}<extra></extra>`
+        : '<b>%{y}</b>  %{x:,.2f}<extra></extra>',
       name: label,
     },
   ];
