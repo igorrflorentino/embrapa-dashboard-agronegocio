@@ -22,7 +22,10 @@ function ViewSeasonality({ summary, conventions, database }) {
 
   const peakIdx = Math.max(0, avg.indexOf(Math.max(...avg)));
   const lowIdx  = Math.max(0, avg.indexOf(Math.min(...avg)));
-  const amplitude = avg[peakIdx] / (avg[lowIdx] || 1);
+  // `avg[lowIdx] || 1` não protegia nada: com vale ZERO a razão virava "pico ÷ 1",
+  // um múltiplo inventado do tamanho do próprio pico. Sem vale positivo não há
+  // amplitude — ratioPresent devolve null e o card mostra '—'.
+  const amplitude = window.ratioPresent(avg[peakIdx], avg[lowIdx]);
   const fmt = (v) => {
     const n = Number(v) || 0;
     const { factor, suffix } = window.autoScaleNum(n);
@@ -61,7 +64,7 @@ function ViewSeasonality({ summary, conventions, database }) {
       <div className="kpi-row">
         <window.KpiCardSpark label="Mês de pico" value={window.MONTH_LABELS[peakIdx]} sub={fmt(avg[peakIdx]) + ' (média)'} />
         <window.KpiCardSpark label="Mês de vale" value={window.MONTH_LABELS[lowIdx]} sub={fmt(avg[lowIdx]) + ' (média)'} />
-        <window.KpiCardSpark label="Amplitude sazonal" value={'×' + amplitude.toFixed(2).replace('.', ',')} sub="pico ÷ vale" />
+        <window.KpiCardSpark label="Amplitude sazonal" value={amplitude == null ? '—' : '×' + window.numBR(amplitude, 2)} sub="pico ÷ vale" />
         <window.KpiCardSpark label="Cobertura" value={years.length + ' anos'} sub={yearSpan} />
       </div>
 

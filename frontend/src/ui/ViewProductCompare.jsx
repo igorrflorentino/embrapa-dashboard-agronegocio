@@ -45,15 +45,16 @@ function ViewProductCompare({ summary, conventions, database }) {
     const win = filtered.allProductTS[code].filter(d => d.y >= yearStart && d.y <= yearEnd);
     const isStock = prod.measure_kind === 'stock' || !win.some(d => d.v > 0);
     const mkey = isStock ? 'q' : 'v';
-    const m0 = win[0]?.[mkey] || 0, mT = win[win.length - 1]?.[mkey] || 0;
+    // Sem `|| 0`: a AUSÊNCIA de medida tem de sobreviver até fmtSigned/formatValue, que
+    // já a renderizam como '—'. Zerar aqui era o que fazia a tabela afirmar "R$ 0" e
+    // "+0%" para um ano que a convenção escolhida não cobre.
+    const pT = win[win.length - 1];
     return {
       code, prod, win, isStock, mkey,
       color: COLORS[i % COLORS.length],
-      m0, mT,
-      vT: win[win.length - 1]?.v || 0,
-      qT: win[win.length - 1]?.q || 0,
-      cagr: window.cagrPct(m0, mT, window.spanYears(win)),
-      accum: window.accumPct(m0, mT),
+      pT, mT: pT ? pT[mkey] : null,
+      vT: pT ? pT.v : null,
+      qT: pT ? pT.q : null,
     };
   });
 
@@ -65,13 +66,30 @@ function ViewProductCompare({ summary, conventions, database }) {
   const rotulos = window.labelProductRows(items.map((it) => it.prod), database);
   items.forEach((it, i) => { it.label = rotulos[i].name; });
 
-  // Normalized series (base 100 at yearStart) — on each product's own measure, so a
-  // value-less herd traces real growth instead of a flat-zero line.
-  const normSeries = items.map(it => ({
+  // Normalized series (base 100) — on each product's own measure, so a value-less herd
+  // traces real growth instead of a flat-zero line. O ano-base é o primeiro ano em que
+  // TODAS as séries têm medida (window.commonBaseYear), não `yearStart` às cegas: quando
+  // a convenção escolhida não alcança o início da janela (IPCA só cobre a PAM desde
+  // 1980), indexar por yearStart achatava TODAS as séries em zero.
+  const normPontos = items.map(it => it.win.map(d => ({ y: d.y, v: d[it.mkey] })));
+  const baseYear = window.commonBaseYear(normPontos);
+  const normSeries = items.map((it, i) => ({
     name: it.label,
     color: it.color,
-    data: it.win.map(d => ({ y: d.y, v: it.m0 ? ((d[it.mkey] || 0) / it.m0) * 100 : 0 })),
+    data: window.indexTo100(normPontos[i], baseYear),
   }));
+
+  // A tabela mede a partir do MESMO ano-base do gráfico. Medir de `win[0]` enquanto o
+  // gráfico indexa em `baseYear` produzia a contradição de um gráfico mostrando abacaxi
+  // a 995 (base 1980 = 100) com um "—" na coluna "Variação acumulada" logo abaixo: a
+  // recusa era verdadeira para 1974 e irrelevante para o que estava desenhado.
+  items.forEach((it, i) => {
+    const p0 = normPontos[i].find(d => d.y === baseYear) || null;
+    it.p0 = p0;
+    it.m0 = p0 ? p0.v : null;
+    it.accum = window.accumPct(it.m0, it.mT);
+    it.cagr = window.cagrPct(it.m0, it.mT, (it.pT && p0) ? (it.pT.y - p0.y) || 1 : 1);
+  });
 
   // Pairwise Pearson correlation on YoY growth, aligned BY YEAR (not array index): a
   // product with an internal year gap would otherwise correlate mismatched years.
@@ -117,11 +135,13 @@ function ViewProductCompare({ summary, conventions, database }) {
       {/* Normalized series */}
       <div className="card">
         <window.SectionHeader
-          overline={`Séries normalizadas · base 100 em ${yearStart}`}
+          overline={baseYear
+            ? `Séries normalizadas · base 100 em ${baseYear}`
+            : 'Séries normalizadas · sem ano-base comum'}
           title={`Evolução relativa ${indexBasis}`}
           action={<span className="caption">{items.length} produtos</span>}
         />
-        <window.MultiLineChart series={normSeries} label={`índice (${yearStart}=100)`} valueKey="v" height={300} showLegend={false} />
+        <window.MultiLineChart series={normSeries} label={`índice (${baseYear ?? '—'}=100)`} valueKey="v" height={300} showLegend={false} />
         <div className="pc-legend">
           {items.map(it => (
             <span key={it.code} className="pc-legend-item">
@@ -150,7 +170,7 @@ function ViewProductCompare({ summary, conventions, database }) {
               <tr>
                 <th>Produto</th>
                 <th className="num">Magnitude ({yearEnd})</th>
-                <th className="num">Variação acumulada</th>
+                <th className="num">Variação acumulada{baseYear ? ` (desde ${baseYear})` : ''}</th>
                 <th className="num">CAGR (a.a.)</th>
                 <th className="num">Família</th>
               </tr>
@@ -162,11 +182,13 @@ function ViewProductCompare({ summary, conventions, database }) {
                     <span className="pc-row-dot" style={{ background: it.color }}></span>
                     {it.label}
                   </td>
-                  <td className="num tnum">{it.isStock ? window.formatCountQty(it.qT, conv) : window.formatValue(it.vT * 1e6, conv)}</td>
-                  <td className="num tnum" style={{ color: it.accum >= 0 ? 'var(--ok)' : 'var(--err)' }}>
+                  <td className="num tnum">{it.isStock ? window.formatCountQty(it.qT, conv) : window.formatValue(window.scalePresent(it.vT, 1e6), conv)}</td>
+                  {/* `null >= 0` é true em JS: sem o teste de ausência, um '—' saía
+                      pintado de verde, como se fosse crescimento. */}
+                  <td className="num tnum" style={{ color: window.deltaColor(it.accum) }}>
                     {window.fmtSigned(it.accum, 0)}
                   </td>
-                  <td className="num tnum" style={{ color: it.cagr >= 0 ? 'var(--ok)' : 'var(--err)' }}>
+                  <td className="num tnum" style={{ color: window.deltaColor(it.cagr) }}>
                     {window.fmtSigned(it.cagr, 1)}
                   </td>
                   <td className="num">{window.UNIT_FAMILIES[it.prod.family].label}</td>

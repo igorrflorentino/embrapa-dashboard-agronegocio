@@ -29,9 +29,11 @@ describe('data.js — registries', () => {
     expect(window.REGIONS.map((r) => r.id)).toEqual(['N', 'NE', 'CO', 'SE', 'S']);
     expect(window.UF_DATA).toHaveLength(27); // 27 UFs
     expect(window.UF_DATA.every((u) => u.uf && u.region && Number.isInteger(u.col))).toBe(true);
-    // the 11-value taxonomy (5 base + 4 outlier/problemático + 2 reserved inferred tiers)
-    expect(window.QUALITY_FLAGS).toHaveLength(12); // 11 shared + AREA_INCONSISTENT (PAM-only)
+    // the 12-value taxonomy (5 base + 4 outlier/problemático + 2 reserved inferred tiers
+    // + UNSCORED, que separa "examinada e aprovada" de "nunca examinada")
+    expect(window.QUALITY_FLAGS).toHaveLength(13); // 12 shared + AREA_INCONSISTENT (PAM-only)
     expect(window.QUALITY_FLAGS.find((f) => f.id === 'OK').label).toBe('Normais');
+    expect(window.QUALITY_FLAGS.find((f) => f.id === 'UNSCORED').label).toBe('Não avaliada');
     // every flag now carries a plain-pt-BR legend description
     expect(window.QUALITY_FLAGS.every((f) => typeof f.desc === 'string' && f.desc.length > 0)).toBe(true);
     // the two reserved inferred tiers are flagged as such

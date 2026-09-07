@@ -53,10 +53,15 @@ describe('vizColor + VIZ_SCALE — wrap-around categorical ramp', () => {
 });
 
 describe('accumPct + seriesGrowth — basic helpers', () => {
-  it('accumPct is the total percent change, 0 for a non-positive base', () => {
+  it('accumPct is the total percent change, NULL when the base cannot answer', () => {
     expect(window.accumPct(100, 150)).toBeCloseTo(50, 6);
-    expect(window.accumPct(0, 150)).toBe(0);
-    expect(window.accumPct(-5, 150)).toBe(0);
+    // Base ausente ou não-positiva: a razão é INDEFINIDA. Devolver 0 aqui (o que este
+    // teste afirmava até a v1.49.0) fazia a tela dizer "não variou" para uma série que
+    // saiu de R$ 0,47 bi para R$ 4,72 bi — o defeito estava fixado pelo próprio teste.
+    expect(window.accumPct(0, 150)).toBeNull();
+    expect(window.accumPct(-5, 150)).toBeNull();
+    expect(window.accumPct(null, 150)).toBeNull();
+    expect(window.accumPct(100, null)).toBeNull();
   });
 
   it('seriesGrowth returns YoY ratios and 0 on a zero base', () => {

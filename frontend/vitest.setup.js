@@ -10,6 +10,17 @@ if (typeof globalThis.process === 'undefined') globalThis.process = { env: {} };
 window.React = React;
 window.ReactDOM = ReactDOMClient;
 
+// Os primitivos de AUSÊNCIA (addPresent/scalePresent/ratioPresent/deltaPct) que as
+// views leem como globais. Carregamos o MÓDULO REAL, não stubs: a distinção entre
+// "ausente" e "zero" é justamente o que estes testes precisam verificar, e um stub
+// que devolvesse 0 esconderia de novo o defeito que eles existem para pegar.
+// Um teste que queira forçar um comportamento ainda pode sobrescrever window.X
+// depois — a atribuição dele vem depois desta.
+import './src/ui/data.js';        // formatadores pt-BR reais: fmtSigned/numBR/pctBR já
+                                 // devolvem '—' para null, e é exatamente esse
+                                 // comportamento que a correção de ausência depende.
+import './src/ui/seriesUtils.js';
+
 // ── localStorage: repair the one Node ≥26 breaks ─────────────────────────────
 //
 // Node 26 ships its own `localStorage` global, gated behind `--localstorage-file`.

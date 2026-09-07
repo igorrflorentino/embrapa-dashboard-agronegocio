@@ -235,7 +235,8 @@ select
     -- per-unit-normalised quantity).
     {{ data_quality_flag('coalesce(qty_native, net_weight_kg)', 'primary_value_usd',
          quality_qty_level('primary_value_usd', 'net_weight_kg'),
-         quality_val_level('primary_value_usd', 'net_weight_kg')) }} as data_quality_flag,
+         quality_val_level('primary_value_usd', 'net_weight_kg'),
+         quality_scored('primary_value_usd', 'net_weight_kg')) }} as data_quality_flag,
     source_rows,
     last_refresh
 

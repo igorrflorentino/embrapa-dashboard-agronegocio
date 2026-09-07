@@ -85,3 +85,32 @@ case
 end
 {%- endif -%}
 {%- endmacro -%}
+
+{#-
+    "O detector CONSEGUIU escorar esta linha?" — o que separa `OK` (examinada e
+    aprovada) de uma linha que ele nunca olhou.
+
+    Antes disto, `_q_guard` devolvia null tanto para a linha limpa quanto para a que não
+    pôde ser escorada, e o `else 'OK'` do data_quality_flag juntava as duas. Medido em
+    produção 2026-09-06 na PAM: das 2.511.800 linhas "OK", apenas 844.250 (33,6%) tinham
+    passado pelo detector. As outras eram célula vazia do cubo (valor e quantidade zero),
+    valor abaixo do piso de materialidade, ou o próprio valor deflacionado AUSENTE
+    (1974–1979, que o IPCA não alcança) — todas apresentadas como verificadas.
+
+    `quality_unscored_scope` escolhe o QUANTO disso vira uma marca própria:
+      • 'absent' (padrão) — só a linha cujo valor escorado NÃO EXISTE. É a lacuna de
+        infraestrutura: nem o detector nem o pesquisador têm o número. 355.644 linhas
+        em PAM+PPM.
+      • 'all' — toda linha que a guarda bloqueou, incluindo o piso de materialidade e
+        as células zeradas. Mais honesto e MUITO mais visível: move ~66% da PAM.
+      • false — desliga (taxonomia anterior, `OK` como estava).
+-#}
+{%- macro quality_scored(value_expr, qty_expr) -%}
+{%- set scope = var('quality_unscored_scope', 'absent') -%}
+{%- if not var('enable_quality_outliers', false) or not scope -%}true
+{%- elif scope == 'absent' -%}
+({{ value_expr }} is not null)
+{%- else -%}
+(not ({{ _q_guard(value_expr, qty_expr) }}))
+{%- endif -%}
+{%- endmacro -%}

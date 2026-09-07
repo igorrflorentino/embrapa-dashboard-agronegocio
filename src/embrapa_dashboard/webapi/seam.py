@@ -16,6 +16,8 @@ overviewTS, ufData, quality) for the three live bancos. Trade-only adapters
 
 from __future__ import annotations
 
+import logging
+
 import pandas as pd
 from google.api_core.exceptions import NotFound
 
@@ -31,6 +33,8 @@ from .seam_base import (  # noqa: F401  (commodity toolkit re-exported via seam)
     _xyear,
     produto_catalog,
 )
+
+logger = logging.getLogger(__name__)
 
 # The registered banco ids — used to tell an UNKNOWN banco id (which banco_by_id
 # silently maps to PEVS) from a real one, so source_meta never leaks PEVS cobertura
@@ -453,7 +457,47 @@ def snapshot(banco_id: str, conv: dict, summary: dict | None = None) -> dict:
         "quality_by_product": gateway.fetch_quality_by_product(banco_id),
         "value_column": value_col,
         "value_label": value_label,
+        "value_era_breaks": value_era_breaks(value_col),
     }
+
+
+# The ONLY value column whose two ends can be in DIFFERENT currencies: nominal BRL.
+# A deflated column is already normalized to one year's money, and the foreign-currency
+# columns are the year-FX conversion — no Brazilian reform applies to their unit.
+_NOMINAL_BRL_COLUMN = "val_yearfx_brl"
+
+
+def value_era_breaks(value_column: str | None) -> list[int]:
+    """Years where the BRL changed identity, for the resolved value column.
+
+    Empty for every column except nominal BRL — and that emptiness is the point: the
+    frontend never has to re-derive which conventions are affected, because the seam
+    already resolved the column. It just asks "does a break fall inside my window?".
+
+    The breaks come from the ``historical_currency_factors`` seed (Cruzeiro → Cruzado →
+    Cruzado Novo → Cruzeiro → Cruzeiro Real → Real), never from a hardcoded 1994: the
+    seed is what Silver actually divides by, so a comparison judged against it can never
+    disagree with the numbers on screen. Returns [] on any read failure — a missing
+    check degrades to the old (permissive) behaviour rather than blanking the KPI.
+    """
+    if value_column != _NOMINAL_BRL_COLUMN:
+        return []
+    try:
+        eras = gateway.fetch_currency_eras()
+    except Exception:  # a comparability HINT must never break the snapshot
+        # But it must never vanish QUIETLY either: without these breaks the UI goes
+        # back to reporting +5.237.412.820.780.295% as a fact, and nothing on screen
+        # would say the check had stopped running.
+        logger.warning(
+            "currency eras unavailable — nominal-BRL comparability check disabled",
+            exc_info=True,
+        )
+        return []
+    if eras is None or getattr(eras, "empty", True):
+        return []
+    anos = sorted({int(y) for y in eras["year_from"].tolist()})
+    # The first era's start is not a BREAK — nothing precedes it.
+    return anos[1:]
 
 
 def _with_overview_quantities(overview_ts: pd.DataFrame, product_ts: pd.DataFrame) -> pd.DataFrame:

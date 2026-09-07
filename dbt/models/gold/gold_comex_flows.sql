@@ -277,6 +277,9 @@ select
         when ({{ quality_qty_level('val_fob_usd', 'net_weight_kg') }}) = 'problematic' then 'PROBLEMATIC_QUANTITY'
         when ({{ quality_val_level('val_fob_usd', 'net_weight_kg') }}) = 'outlier'     then 'OUTLIER_VALUE'
         when ({{ quality_qty_level('val_fob_usd', 'net_weight_kg') }}) = 'outlier'     then 'OUTLIER_QUANTITY'
+        -- Mesma distinção do data_quality_flag: 'OK' passa a significar EXAMINADA e
+        -- aprovada; a linha que o detector não pôde escorar recebe marca própria.
+        when not ({{ quality_scored('val_fob_usd', 'net_weight_kg') }})                then 'UNSCORED'
         {%- endif %}
         else 'OK'
     end                                                     as data_quality_flag,

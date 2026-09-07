@@ -263,6 +263,24 @@ describe('exportActiveTableCSV — overview/value aggregate series', () => {
     expect(lines[2]).toBe('2021;2500000000;1000;0;0');
   });
 
+  it('o ano sem valor na convenção escolhida sai com a célula VAZIA, nunca com 0', () => {
+    // O CSV é pior que a tela: um zero ali é citável, entra em planilha e vira média
+    // sem que ninguém veja a lacuna. Anos e valores da PAM em produção — 1974 sem IPCA
+    // (o índice começa em 1980), 1980 em R$ 0,4745 bi.
+    stubRegistry({
+      products: PRODUCTS,
+      ts: [
+        { y: 1974, v: null, q_mass: 329.2, q_vol: 0, q_count: 0 },
+        { y: 1980, v: 0.4745, q_mass: 377.2, q_vol: 0, q_count: 0 },
+      ],
+    });
+    window.exportActiveTableCSV({ view: 'overview', summary: {}, database: 'ibge_pevs' });
+    const lines = lastCsv.replace('\ufeff', '').split('\n');
+    expect(lines[1]).toBe('1974;;329200;0;0');       // valor vazio, quantidade presente
+    expect(lines[2]).toBe('1980;474500000;377200;0;0');
+    expect(lines[1]).not.toContain(';0;329200');      // o zero fabricado de antes
+  });
+
   it("'value' view yields the same aggregate subject (shared case)", () => {
     stubRegistry(FILTERED);
     window.exportActiveTableCSV({ view: 'value', summary: {}, database: 'ibge_pevs' });

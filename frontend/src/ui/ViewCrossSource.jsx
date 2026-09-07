@@ -95,17 +95,24 @@ function ViewCrossSource({ value, onChange }) {
         const num = new Map(items[1].points.map(d => [d.y, d.v]));
         return items[0].points
           .filter(d => num.has(d.y))
-          .map(d => ({ y: d.y, v: (num.get(d.y) || 0) / (d.v || 1) * 100 }));
+          // `(num || 0) / (d.v || 1)` era pior que achatar: com denominador ausente
+          // dividia por UM e fabricava um PICO do tamanho do numerador ×100 — um sinal
+          // inventado, com cara de descoberta. ratioPresent recusa e vira lacuna.
+          .map(d => ({ y: d.y, v: window.scalePresent(window.ratioPresent(num.get(d.y), d.v), 100) }));
       })()
     : null;
-  const ratioMean = ratioSeries && ratioSeries.length
-    ? ratioSeries.reduce((s, d) => s + d.v, 0) / ratioSeries.length : 0;
+  // A média da razão ignora os anos sem razão definida (null): somá-los como 0 puxaria
+  // a média para baixo com anos que ninguém mediu.
+  const ratioMean = ratioSeries ? window.meanPresent(ratioSeries.map(d => d.v)) : null;
 
   // ── Chart series in the shape each chart expects ──────────────────────
+  // Ano-base COMUM às séries exibidas (ver seriesUtils.commonBaseYear): indexar cada
+  // uma pelo seu próprio primeiro ponto achatava tudo em zero quando esse ponto faltava.
+  const csBaseYear = window.commonBaseYear(items.map(it => it.points));
   const base100 = items.map(it => ({
     name: `${it.label} · ${it.bancoShort}`,
     color: it.color,
-    data: it.points.map(d => ({ y: d.y, v: it.v0 ? (d.v / it.v0) * 100 : 0 })),
+    data: window.indexTo100(it.points, csBaseYear),
   }));
   const axisSeries = items.map(it => ({
     label: it.label, color: it.color, unit: it.unit, bancoShort: it.bancoShort, data: it.points,
@@ -133,7 +140,7 @@ function ViewCrossSource({ value, onChange }) {
         <window.KpiCardSpark label="Famílias de unidade" value={families.length}
           sub={families.map(f => window.METRIC_FAMILIES[f]?.label || f).join(' · ')} />
         <window.KpiCardSpark label={ratioEligible ? 'Razão média (par)' : 'Correlação (par principal)'}
-          value={ratioEligible ? ratioMean.toFixed(1).replace('.', ',') + '%' : (items.length >= 2 ? corr[0][1].toFixed(2).replace('.', ',') : '—')}
+          value={ratioEligible ? window.pctBR(ratioMean, 1) : (items.length >= 2 ? corr[0][1].toFixed(2).replace('.', ',') : '—')}
           sub={ratioEligible ? `${items[1].label} ÷ ${items[0].label}` : 'variação interanual'} />
       </div>
 
@@ -228,7 +235,9 @@ function ViewCrossSource({ value, onChange }) {
         />
 
         <div className="xs-mode-note">
-          {mode === 'base100' && <>Cada série reindexada a <strong>100 em {effY0}</strong> — compara trajetórias independentemente da unidade ({units.join(' · ')}).</>}
+          {mode === 'base100' && (csBaseYear
+            ? <>Cada série reindexada a <strong>100 em {csBaseYear}</strong> — compara trajetórias independentemente da unidade ({units.join(' · ')}).</>
+            : <>Não há ano em que <strong>todas</strong> as séries tenham medida, então não existe base 100 comparável entre elas.</>)}
           {mode === 'dual' && !dualTooManyUnits && <>Cada unidade no seu próprio eixo: <strong>{units[0]}</strong> à esquerda{units[1] ? <> · <strong>{units[1]}</strong> à direita</> : ''}. Escalas independentes — compare formato, não nível.</>}
           {mode === 'dual' && dualTooManyUnits && <>Eixo duplo comporta 2 unidades; a seleção tem {units.length} ({units.join(' · ')}). Use <strong>Base 100</strong> ou <strong>Painéis</strong> para ver todas com fidelidade.</>}
           {mode === 'panels' && <>Um painel por série, alinhados no eixo de tempo — leitura fiel das unidades nativas, sem forçar escala comum.</>}
@@ -241,7 +250,7 @@ function ViewCrossSource({ value, onChange }) {
           </div>
         )}
 
-        {mode === 'base100' && <window.MultiLineChart series={base100} label={`índice (${effY0}=100)`} valueKey="v" height={320} trend showLegend={false} />}
+        {mode === 'base100' && <window.MultiLineChart series={base100} label={`índice (${csBaseYear ?? '—'}=100)`} valueKey="v" height={320} trend showLegend={false} />}
         {mode === 'dual' && <window.DualAxisLineChart series={axisSeries} height={320} showLegend={false} />}
         {mode === 'panels' && <window.StackedPanels series={axisSeries} />}
 

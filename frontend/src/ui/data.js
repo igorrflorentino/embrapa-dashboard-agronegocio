@@ -218,7 +218,11 @@ window.UF_DATA = [
 // `desc` is the plain-pt-BR legend shown in the Qualidade window ("O que significa cada flag?").
 // Keep labels + desc in sync with serializers._FLAG_LABEL_PT.
 window.QUALITY_FLAGS = [
-  { id: 'OK',                   label: 'Normais',                                 color: 'var(--ok)',     desc: 'Todas as dimensões do registro (quantidade e valor) estão preenchidas e dentro do esperado.' },
+  { id: 'OK',                   label: 'Normais',                                 color: 'var(--ok)',     desc: 'Todas as dimensões do registro (quantidade e valor) estão preenchidas, e o detector de preço implícito EXAMINOU a linha e não encontrou nada fora do esperado.' },
+  // A distinção que faltava: "examinada e aprovada" ≠ "nunca examinada". Até a v1.49.0
+  // as duas eram 'OK' — na PAM, só 33,6% das linhas 'OK' tinham de fato passado pelo
+  // detector (medido em produção 2026-09-06).
+  { id: 'UNSCORED',             label: 'Não avaliada',                            color: 'var(--fg-4)',   desc: 'O detector de preço implícito não pôde examinar esta linha — o valor usado para escorá-la (valor deflacionado) não existe para o ano, por exemplo antes de 1980 na PAM/PPM, que o IPCA não alcança. Não é um defeito do registro: é a ausência de base para avaliá-lo. Distinta de "Normais", que significa examinada e aprovada.' },
   { id: 'MISSING_VALUE',        label: 'Valor financeiro ausente',                color: 'var(--warn)',   desc: 'O valor financeiro do registro (FOB, vendas, faturamento, etc.) veio em branco na fonte; a quantidade existe.' },
   { id: 'MISSING_QUANTITY',     label: 'Quantidade ausente',                      color: 'var(--info)',   desc: 'A quantidade do registro (m³, kg, saca, cabeças, etc.) veio em branco na fonte; o valor existe.' },
   { id: 'MISSING_WEIGHT',       label: 'Peso ausente',                            color: 'var(--viz-4)',  desc: 'Registro de comércio exterior sem peso líquido — impede o cálculo de preço médio por quilo (US$/kg).' },

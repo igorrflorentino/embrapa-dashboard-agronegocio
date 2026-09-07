@@ -105,9 +105,14 @@ def test_serialize_municipio_yearly_empty():
     assert serializers.serialize_municipio_yearly(None) == {"municipioYearly": []}
 
 
-def test_serialize_municipio_yearly_coerces_nan_to_zero():
-    """A município producing only a value-less stock (NULL total_value), or a family with
-    no rows, arrives as NaN/None — _num must map it to 0.0 (JSON-safe), never NaN (TEST-4)."""
+def test_serialize_municipio_yearly_keeps_absence_absent_and_zero_zero():
+    """NaN/None must never reach JSON (TEST-4) — but a VALUE and a QUANTITY differ.
+
+    A município producing only a value-less stock has NULL total_value: its monetary
+    value is not zero, it is NOT APPLICABLE, so the value serializes to ``None`` (JSON
+    ``null``) via ``_measure``. The per-family quantities keep ``_num``'s 0.0: "no rows
+    of this family" really is zero of that family. Until v1.49.0 both were 0.0, which
+    is what let a year the deflator does not reach be drawn as a zero on the map."""
     import numpy as np
 
     from embrapa_dashboard.webapi import serializers
@@ -126,7 +131,7 @@ def test_serialize_municipio_yearly_coerces_nan_to_zero():
         ]
     )
     row = serializers.serialize_municipio_yearly(df)["municipioYearly"][0]
-    assert row["value"] == 0.0
+    assert row["value"] is None  # ausente, não zero
     assert row["q_mass"] == 0.0
     assert row["q_vol"] == 0.0
     assert row["q_count"] == 3.0  # the one present family still scales (÷1e6)

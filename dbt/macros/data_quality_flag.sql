@@ -11,10 +11,15 @@
     enable_quality_outliers is OFF (default) this emits the LEGACY 4-value CASE byte-for-byte
     (the level args are ignored), so a build with the flag off is identical to before. When
     ON, the 4 new tiers slot in by precedence: missing > problemático(valor) >
-    problemático(quantidade) > outlier(valor) > outlier(quantidade) > OK. A row can't be an
-    outlier on an absent measure, so the MISSING/INCOMPLETE checks always win.
+    problemático(quantidade) > outlier(valor) > outlier(quantidade) > UNSCORED > OK. A row
+    can't be an outlier on an absent measure, so the MISSING/INCOMPLETE checks always win.
+
+    `scored` (macros/quality_outlier_ctes.sql · quality_scored) says whether the detector
+    could RUN on this row. Without it, a row it never examined was labelled 'OK' — the
+    same word as a row it examined and cleared. Defaults to "true", so a caller that does
+    not pass it compiles exactly as before.
 -#}
-{% macro data_quality_flag(qty, val_brl, qty_level="cast(null as string)", val_level="cast(null as string)") -%}
+{% macro data_quality_flag(qty, val_brl, qty_level="cast(null as string)", val_level="cast(null as string)", scored="true") -%}
 {%- if not var('enable_quality_outliers', false) -%}
     CASE
         WHEN {{ qty }} IS NOT NULL AND {{ val_brl }} IS NOT NULL THEN 'OK'
@@ -31,6 +36,10 @@
         WHEN ({{ qty_level }}) = 'problematic'           THEN 'PROBLEMATIC_QUANTITY'
         WHEN ({{ val_level }}) = 'outlier'               THEN 'OUTLIER_VALUE'
         WHEN ({{ qty_level }}) = 'outlier'               THEN 'OUTLIER_QUANTITY'
+        -- O detector não conseguiu examinar esta linha. Chega DEPOIS de todas as
+        -- marcas positivas (uma linha escorada e marcada continua marcada) e ANTES
+        -- do OK, que a partir daqui significa "examinada e aprovada" — e só isso.
+        WHEN NOT ({{ scored }})                          THEN 'UNSCORED'
         ELSE 'OK'
     END
 {%- endif -%}

@@ -80,10 +80,13 @@ describe('cagrPct + spanYears — annualize over the calendar-YEAR span, not arr
     expect(buggy).toBeGreaterThan(correct + 5); // the old index path materially overstates
   });
 
-  it('returns the analytic CAGR for a clean N-year span and 0 for a non-positive base', () => {
+  it('returns the analytic CAGR for a clean N-year span and NULL for a base that cannot answer', () => {
     // 100 → 200 over 10 years = 2^(1/10)-1 ≈ 7.18% a.a.
     expect(window.cagrPct(100, 200, 10)).toBeCloseTo((Math.pow(2, 0.1) - 1) * 100, 6);
-    expect(window.cagrPct(0, 200, 10)).toBe(0);   // v0 <= 0 → 0
+    // v0 <= 0 ou extremo ausente → indefinido → null ('—'), NUNCA 0 ("cresceu 0% a.a.").
+    expect(window.cagrPct(0, 200, 10)).toBeNull();
+    expect(window.cagrPct(null, 200, 10)).toBeNull();
+    expect(window.cagrPct(100, null, 10)).toBeNull();
     expect(window.cagrPct(100, 200, 0)).toBeCloseTo(100, 6); // periods<=0 → 1 (single point)
   });
 });

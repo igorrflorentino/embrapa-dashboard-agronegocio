@@ -86,9 +86,13 @@ function ViewConcentration({ summary, conventions, database }) {
     s.forEach((v, i) => { cum += (i + 1) * v; });
     return (2 * cum) / (n * total) - (n + 1) / n;
   };
+  // HHI devolve NULL sem unidades — não 0. Um 0 aqui era lido pela faixa como "baixa
+  // concentração", em VERDE, para um conjunto vazio: um sinal de tudo-certo sobre nada.
+  // O Gini ao lado já recusava com "n/d" (giniInfo, abaixo) e o comentário dele explica
+  // por quê; a mesma regra faltava no gêmeo, no mesmo arquivo, 27 linhas depois.
   const hhi = (vals) => {
-    const total = vals.reduce((a, b) => a + b, 0);
-    if (!total) return 0;
+    const total = window.sumPresent(vals);
+    if (!total || !vals.length) return null;
     return vals.reduce((s, v) => s + Math.pow((v / total) * 100, 2), 0);
   };
   const topNShare = (sorted, n) => {
@@ -104,9 +108,12 @@ function ViewConcentration({ summary, conventions, database }) {
   const top3Prod = topNShare(prodValues, 3);
 
   const hhiBand = (h) =>
-    h > 2500 ? { label: 'alta concentração', color: 'var(--err)' }
+    !Number.isFinite(h) ? { label: 'sem dados', color: 'var(--fg-4)' }
+    : h > 2500 ? { label: 'alta concentração', color: 'var(--err)' }
     : h > 1500 ? { label: 'concentração moderada', color: 'var(--warn)' }
     : { label: 'baixa concentração', color: 'var(--ok)' };
+  // O número do HHI na tela: 'n/d' quando não há conjunto para medir.
+  const hhiValue = (h) => (Number.isFinite(h) ? Math.round(h).toLocaleString('pt-BR') : 'n/d');
   const giniBand = (g) =>
     g > 0.6 ? { label: 'muito desigual', color: 'var(--err)' }
     : g > 0.4 ? { label: 'desigual', color: 'var(--warn)' }
@@ -157,7 +164,7 @@ function ViewConcentration({ summary, conventions, database }) {
         />
         <window.KpiCardSpark
           label="HHI · geográfico (UF)"
-          value={Math.round(ufHHI).toLocaleString('pt-BR')}
+          value={hhiValue(ufHHI)}
           sub={hhiBand(ufHHI).label}
         />
         <window.KpiCardSpark
@@ -180,7 +187,7 @@ function ViewConcentration({ summary, conventions, database }) {
         />
         <window.KpiCardSpark
           label="HHI · por produto"
-          value={Math.round(prodHHI).toLocaleString('pt-BR')}
+          value={hhiValue(prodHHI)}
           sub={hhiBand(prodHHI).label}
         />
         <window.KpiCardSpark
@@ -259,21 +266,21 @@ function ViewConcentration({ summary, conventions, database }) {
             <div className="conc-hhi-row">
               <span className="conc-hhi-label">Geográfico (UF)</span>
               <div className="conc-hhi-track">
-                <div className="conc-hhi-fill" style={{ width: Math.min(100, (ufHHI / 10000) * 100) + '%', background: hhiBand(ufHHI).color }}></div>
+                <div className="conc-hhi-fill" style={{ width: Math.min(100, ((ufHHI || 0) / 10000) * 100) + '%', background: hhiBand(ufHHI).color }}></div>
                 <span className="conc-hhi-mark" style={{ left: '15%' }} title="1500"></span>
                 <span className="conc-hhi-mark" style={{ left: '25%' }} title="2500"></span>
               </div>
-              <span className="conc-hhi-val tnum">{Math.round(ufHHI).toLocaleString('pt-BR')}</span>
+              <span className="conc-hhi-val tnum">{hhiValue(ufHHI)}</span>
             </div>
             )}
             <div className="conc-hhi-row">
               <span className="conc-hhi-label">Por produto</span>
               <div className="conc-hhi-track">
-                <div className="conc-hhi-fill" style={{ width: Math.min(100, (prodHHI / 10000) * 100) + '%', background: hhiBand(prodHHI).color }}></div>
+                <div className="conc-hhi-fill" style={{ width: Math.min(100, ((prodHHI || 0) / 10000) * 100) + '%', background: hhiBand(prodHHI).color }}></div>
                 <span className="conc-hhi-mark" style={{ left: '15%' }}></span>
                 <span className="conc-hhi-mark" style={{ left: '25%' }}></span>
               </div>
-              <span className="conc-hhi-val tnum">{Math.round(prodHHI).toLocaleString('pt-BR')}</span>
+              <span className="conc-hhi-val tnum">{hhiValue(prodHHI)}</span>
             </div>
             <dl className="conc-scale">
               <dt><span className="conc-dot" style={{ background: 'var(--ok)' }}></span>&lt; 1500</dt><dd>baixa concentração</dd>

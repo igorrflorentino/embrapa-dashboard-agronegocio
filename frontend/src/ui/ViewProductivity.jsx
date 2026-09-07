@@ -41,8 +41,10 @@ function ViewProductivity({ summary, conventions, database }) {
   const last = series[series.length - 1] || { y: 0, yieldKgHa: 0, areaHa: 0, prodT: 0 };
   const prev = series[series.length - 2] || last;
   const first = series[0] || last; // guard the empty loading frame (series resolves async)
-  const yDelta = prev.yieldKgHa ? ((last.yieldKgHa - prev.yieldKgHa) / prev.yieldKgHa) * 100 : 0;
-  const aDelta = prev.areaHa ? ((last.areaHa - prev.areaHa) / prev.areaHa) * 100 : 0;
+  // Mesma regra de toda variação no projeto (seriesUtils.deltaPct): base ausente ou
+  // não-positiva ⇒ null ⇒ '—', nunca um "+0%" que se lê como "não mudou".
+  const yDelta = window.deltaPct(prev.yieldKgHa, last.yieldKgHa);
+  const aDelta = window.deltaPct(prev.areaHa, last.areaHa);
 
   const mapData = data.byUF.map(u => ({ ...u, yieldKgHa: Math.round(u.yieldKgHa) }));
   const byUFTop = data.byUF.slice()

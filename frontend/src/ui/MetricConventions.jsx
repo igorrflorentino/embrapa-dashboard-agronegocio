@@ -312,7 +312,12 @@ window.valueAxisLabel = (conv, refMagnitude) => {
 // Convert a series {y, v: value in banco base currency} to displayed currency.
 window.convertSeries = (series, conv, key = 'v') => {
   const factor = window.convFactor(conv);
-  return series.map(d => ({ ...d, [key]: d[key] * factor }));
+  // scalePresent, não `*`: em JS `null * factor === 0`, e estas duas funções são o
+  // último lugar por onde TODA série de valor passa antes do gráfico. Multiplicar
+  // direto aqui re-fabricava, no caminho para o Plotly, exatamente o zero que o
+  // serializer tinha acabado de eliminar — o KPI dizia '—' e a linha continuava
+  // colada no eixo, afirmando produção zero em anos que a convenção não cobre.
+  return series.map(d => ({ ...d, [key]: window.scalePresent(d[key], factor) }));
 };
 
 // Mass / volume: native data is in t (mass) and m³ (volume) at internal scale.
@@ -375,7 +380,7 @@ window.scaleSeries = (series, refMag, conv, valueKey, unitSuffix) => {
   }
   const { factor, suffix } = window.autoScaleNum(refMag);
   if (!suffix) return { data: series, label: unitSuffix };
-  const data = series.map(d => ({ ...d, [valueKey]: d[valueKey] / factor }));
+  const data = series.map(d => ({ ...d, [valueKey]: window.scalePresent(d[valueKey], 1 / factor) }));
   return { data, label: window.scaleLabel(unitSuffix, suffix) };
 };
 

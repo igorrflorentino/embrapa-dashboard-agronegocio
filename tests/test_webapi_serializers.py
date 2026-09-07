@@ -460,12 +460,15 @@ def test_quality_ts_pivots_to_per_year_shares():
         "inferred_quantity",
         "inferred_value",
         "area_inconsistent",  # PAM-only (planted < harvested area)
+        # "não avaliada": o detector não pôde rodar na linha — distinta de "ok", que
+        # passa a significar examinada E aprovada.
+        "unscored",
     }
     assert out[1]["ok"] == 0.5 and out[1]["incomplete"] == 0.3 and out[1]["missing_weight"] == 0.2
 
 
 def test_quality_flag_taxonomy_complete_and_ptbr():
-    """The 11-value taxonomy (9 emitted + 2 reserved inferred tiers) is fully wired: the
+    """The 12-value taxonomy (10 emitted + 2 reserved inferred tiers) is fully wired: the
     qualityTs-key map and the pt-BR label map cover the SAME ids, and every label is
     Portuguese — never the raw English id (the pt-BR rule; the documented past failure was
     a flag with no server label falling back to the English token)."""
@@ -489,6 +492,10 @@ def test_quality_flag_taxonomy_complete_and_ptbr():
     assert s._FLAG_KEY["INFERRED_VALUE"] == "inferred_value"
     assert s._FLAG_LABEL_PT["INFERRED_QUANTITY"] == "Quantidade inferida"
     assert s._FLAG_LABEL_PT["INFERRED_VALUE"] == "Valor financeiro inferido"
+    # UNSCORED: a linha que o detector não pôde examinar tem marca PRÓPRIA — sem ela,
+    # "examinada e aprovada" e "nunca examinada" saíam com a mesma palavra.
+    assert s._FLAG_KEY["UNSCORED"] == "unscored"
+    assert s._FLAG_LABEL_PT["UNSCORED"] == "Não avaliada"
 
 
 def test_quality_ts_unmapped_flag_lowers_known_shares_not_dropped():
@@ -1358,3 +1365,140 @@ def test_serialize_table_page_bq_nullable_na_serializes_to_json_null():
     # the non-null row round-trips intact (no collateral damage)
     assert reparsed["rows"][0][0] == 2024 and reparsed["rows"][0][1] is True
     assert reparsed["rows"][0][2] == "a"
+
+
+# ── Ausência de medida ≠ zero (v1.49.0) ──────────────────────────────────────
+#
+# Medido em produção 2026-09-06: as colunas deflacionadas/convertidas não cobrem toda
+# a janela do banco, e o serializer mapeava NULL → 0.0 nos dois casos.
+#
+#   banco      janela    IPCA   IGP-DI   IGP-M   USD    EUR
+#   PAM/PPM    1974–     1980   1980     1989    1994   1999
+#   PEVS       1986–     1986   1986     1989    1994   1999
+
+
+def test_measure_preserva_ausencia_enquanto_num_zera():
+    """_measure e _num divergem DE PROPÓSITO: contagem zera, medida não."""
+    import numpy as np
+
+    from embrapa_dashboard.webapi import serializers as ser
+
+    assert ser._num(None) == 0.0 and ser._num(np.nan) == 0.0  # contagem: 0 linhas é 0
+    assert ser._measure(None) is None  # medida: ausente é ausente
+    assert ser._measure(np.nan) is None
+    assert ser._measure(0) == 0.0  # um zero MEDIDO continua zero
+    assert ser._measure_scaled(None, 1e6) is None
+    assert ser._measure_scaled(2e6, 1e6) == 2.0
+
+
+def test_series_de_valor_emitem_null_no_ano_sem_deflator():
+    """productTS/overviewTS devolvem `null`, não 0, no ano que o índice não alcança.
+
+    Os anos e os valores são os da PAM em produção (abacaxi, val_real_ipca_brl):
+    1974–1979 sem IPCA, 1980 em R$ 0,4745 bi.
+    """
+    import numpy as np
+    import pandas as pd
+
+    from embrapa_dashboard.webapi import serializers as ser
+
+    df = pd.DataFrame(
+        [
+            {
+                "code": "72",
+                "reference_year": 1974,
+                "total_value": np.nan,
+                "q_mass": 3.29e5,
+                "q_vol": np.nan,
+                "q_count": np.nan,
+                "family": "massa",
+            },
+            {
+                "code": "72",
+                "reference_year": 1980,
+                "total_value": 4.745e8,
+                "q_mass": 3.77e5,
+                "q_vol": np.nan,
+                "q_count": np.nan,
+                "family": "massa",
+            },
+        ]
+    )
+    serie = ser._product_ts(df)["72"]
+    assert serie[0]["v"] is None, "1974 não tem valor em IPCA — não pode virar zero"
+    assert serie[1]["v"] == 474.5  # R$ mi
+    # A quantidade do MESMO ano existe e continua existindo: a lacuna é só do valor.
+    assert serie[0]["q"] == 329.0
+
+    ov = ser._overview_ts(
+        pd.DataFrame(
+            [
+                {
+                    "reference_year": 1974,
+                    "total_value": np.nan,
+                    "q_mass": 3.29e5,
+                    "q_vol": 0,
+                    "q_count": 0,
+                },
+                {
+                    "reference_year": 1980,
+                    "total_value": 4.745e8,
+                    "q_mass": 3.77e5,
+                    "q_vol": 0,
+                    "q_count": 0,
+                },
+            ]
+        )
+    )
+    assert ov[0]["v"] is None and ov[1]["v"] == pytest.approx(0.4745)
+
+
+def test_value_era_breaks_so_existe_para_o_nominal_em_reais(monkeypatch):
+    """Só o BRL nominal tem duas pontas em moedas diferentes — o resto vem vazio.
+
+    Os anos conferem com o seed historical_currency_factors lido de produção
+    (silver.historical_currency_factors): Cruzeiro Novo 1967, Cruzeiro 1970,
+    Cruzado 1986, Cruzado Novo 1989, Cruzeiro 1990, Cruzeiro Real 1993, Real 1994.
+    """
+    import pandas as pd
+
+    from embrapa_dashboard.serving import gateway
+    from embrapa_dashboard.webapi import seam
+
+    eras = pd.DataFrame(
+        {
+            "unit_of_measure": [
+                "Mil Cruzeiros",
+                "Mil Cruzeiros Novos",
+                "Mil Cruzeiros",
+                "Mil Cruzados",
+                "Mil Cruzados Novos",
+                "Mil Cruzeiros",
+                "Mil Cruzeiros Reais",
+                "Mil Reais",
+            ],
+            "year_from": [1942, 1967, 1970, 1986, 1989, 1990, 1993, 1994],
+            "year_to": [1966, 1969, 1985, 1988, 1989, 1992, 1993, 2099],
+        }
+    )
+    monkeypatch.setattr(gateway, "fetch_currency_eras", lambda: eras)
+
+    assert seam.value_era_breaks("val_yearfx_brl") == [1967, 1970, 1986, 1989, 1990, 1993, 1994]
+    # 1942 NÃO é um corte: nada o precede.
+    assert 1942 not in seam.value_era_breaks("val_yearfx_brl")
+    for coluna in ("val_real_ipca_brl", "val_real_igpm_brl", "val_yearfx_usd", "val_yearfx_eur"):
+        assert seam.value_era_breaks(coluna) == [], coluna
+
+
+def test_value_era_breaks_degrada_sem_derrubar_o_snapshot(monkeypatch, caplog):
+    """Leitura quebrada desliga a checagem — mas REGISTRA, nunca em silêncio."""
+    from embrapa_dashboard.serving import gateway
+    from embrapa_dashboard.webapi import seam
+
+    def explode():
+        raise RuntimeError("BigQuery indisponível")
+
+    monkeypatch.setattr(gateway, "fetch_currency_eras", explode)
+    with caplog.at_level("WARNING"):
+        assert seam.value_era_breaks("val_yearfx_brl") == []
+    assert any("comparability" in r.message for r in caplog.records)

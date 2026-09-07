@@ -546,7 +546,7 @@ function ViewGeography({ families, conventions, summary, database }) {
     return {
       rows: heatRows.map(r => ({
         ...r,
-        values: r.values.map(v => ({ ...v, v: v.v / factor })),
+        values: r.values.map(v => ({ ...v, v: window.scalePresent(v.v, 1 / factor) })),
       })),
       label,
     };
