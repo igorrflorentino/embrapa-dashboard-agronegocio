@@ -144,6 +144,40 @@ make dbt-test
 
 ---
 
+## 🏷️ Release Policy — a tag is cut only when PRODUCTION changes
+
+**Every merge bumps the version in `pyproject.toml` + `CHANGELOG.md`. Only some of them
+become a git tag and a GitHub Release.** The rule:
+
+> A version becomes a Release **only when it changes something a user of the deployed
+> product would experience.** Anything else ships silently.
+
+| changed | Release? | why |
+|---|---|---|
+| `frontend/src/**`, `src/embrapa_dashboard/**` | **yes** | rebuilt into the served image |
+| `dbt/**` (models, macros, seeds, vars) | **yes** | changes the numbers in Gold, which the dashboard reads |
+| `deploy/**` | **yes** | changes how the thing runs |
+| `tests/**` | no | nothing served changes |
+| `docs/`, `PLANS/`, `README`, comments in a workflow | no | idem |
+| a workflow's own *logic* | judgement — does it alter what gets deployed or built? |
+
+**Cutting one** (the tag creates the Release; the body is the curated `CHANGELOG.md`
+section for that version, so there is no second text to maintain):
+
+```bash
+git tag v1.54.0 && git push origin v1.54.0
+```
+
+**Why this is written down.** The practice stopped after `v1.24.30` (2026-08-20) and nobody
+noticed for **118 versions** — the code reached `v1.53.1` with no tag and no Release behind
+it. Not because anyone decided to stop, but because the convention lived only in people's
+heads. The gap itself is history and was not retro-tagged; the rule applies forward.
+
+**A version with no Release is not an oversight** — `v1.55.0` (a parity test and a corrected
+workflow comment) is deliberately untagged, and that is the rule working, not failing.
+
+---
+
 ## 🛠️ Local Development
 
 ### Most-used commands
