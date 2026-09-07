@@ -112,3 +112,52 @@ describe('varredura: ausência não pode voltar a virar zero', () => {
     }
   });
 });
+
+// ── A terceira forma: a ausência com SETA e COR ───────────────────────────────
+//
+// O mesmo defeito, uma camada acima do número. `fmtSigned(null)` devolve '—' — uma
+// STRING, não null — então o KpiCardSpark renderiza o bloco da variação; e `null >= 0`
+// é `true` em JS. Resultado: a variação que NÃO EXISTE aparecia com seta para cima e
+// fundo verde, ao lado do próprio travessão que a declara ausente.
+//
+// Havia três respostas diferentes espalhadas por 11 call sites, e as três erravam:
+//   `d >= 0`                        → null vira VERDE
+//   `d != null && d >= 0`           → null vira false, e false é VERMELHO no átomo
+//   `last.q >= prev.q`              → colore a seta a partir de OUTRA grandeza
+// A última é a mais traiçoeira: o número no card vem de uma conta e a seta de outra,
+// e as duas só divergem exatamente onde importa.
+//
+// `window.deltaUp` é a única resposta, e o átomo trata `null` como neutro sem seta.
+describe('varredura: a variação ausente não pode apontar direção', () => {
+  const arquivos = [...fontes(join(SRC, 'ui')), ...fontes(join(SRC, 'charts')), ...fontes(join(SRC, 'data'))];
+
+  it('a varredura encontra os call sites de deltaPositive (senão passa vazia)', () => {
+    const total = arquivos
+      .map((c) => (readFileSync(c, 'utf-8').match(/deltaPositive=/g) || []).length)
+      .reduce((a, b) => a + b, 0);
+    // Âncora externa: 12 call sites, enumerados nas 6 views que mostram variação em
+    // KPI — Produtividade 2, Visão geral 4, Rebanho 1, Perfil do produto 3, multi-fonte
+    // 1, Perfil do território 1. Se este número cair, alguém apagou um card; se subir
+    // sem esta linha mudar, um card novo entrou sem passar pela varredura abaixo.
+    expect(total).toBe(12);
+  });
+
+  it('todo deltaPositive passa por window.deltaUp', () => {
+    const achados = [];
+    for (const caminho of arquivos) {
+      readFileSync(caminho, 'utf-8').split('\n').forEach((linha, i) => {
+        if (!linha.includes('deltaPositive=')) return;
+        if (linha.includes('window.deltaUp(')) return;
+        achados.push(`${relative(SRC, caminho)}:${i + 1}\n      ${linha.trim()}`);
+      });
+    }
+    expect(achados, [
+      'Um call site decidiu a direção da seta por conta própria.',
+      'Use window.deltaUp(<a MESMA variação que o card mostra>): devolve true, false ou',
+      'null — e null é "não há variação a apontar", que o átomo pinta neutro e sem seta.',
+      'Comparar as medidas cruas (last.q >= prev.q) colore a seta a partir de outra',
+      'grandeza, e `d >= 0` pinta de verde o travessão da ausência.',
+      '', ...achados,
+    ].join('\n')).toEqual([]);
+  });
+});

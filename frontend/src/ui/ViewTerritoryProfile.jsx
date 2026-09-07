@@ -318,7 +318,7 @@ function ViewTerritoryProfile({ summary, database, conventions }) {
           label={<>Valor · {placeLabel}</>}
           value={last ? window.formatValue(last.v, conv) : '—'}
           delta={deltaV != null ? window.fmtSigned(deltaV) : null}
-          deltaPositive={deltaV != null && deltaV >= 0}
+          deltaPositive={window.deltaUp(deltaV)}
           sub={last && prev ? `${last.y} vs. ${prev.y}` : (last ? String(last.y) : 'sem dados')}
           spark={series}
         />

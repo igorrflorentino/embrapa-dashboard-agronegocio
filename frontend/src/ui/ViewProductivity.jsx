@@ -121,7 +121,7 @@ function ViewProductivity({ summary, conventions, database }) {
           label={<>Rendimento {scopeWord} · <window.UnitFamilyTag family="rendimento" conv={conventions}/></>}
           value={fmtY(last.yieldKgHa)}
           delta={window.fmtSigned(yDelta)}
-          deltaPositive={yDelta >= 0}
+          deltaPositive={window.deltaUp(yDelta)}
           sub={`${last.y} vs. ${prev.y}`}
           spark={series.slice(-12).map(d => ({ y: d.y, v: d.yieldKgHa }))}
           sparkKey="v"
@@ -131,16 +131,20 @@ function ViewProductivity({ summary, conventions, database }) {
           label="Área colhida"
           value={fmtArea(last.areaHa)}
           delta={window.fmtSigned(aDelta)}
-          deltaPositive={aDelta >= 0}
+          deltaPositive={window.deltaUp(aDelta)}
           sub={`safra ${last.y}`}
           spark={series.slice(-12).map(d => ({ y: d.y, v: d.areaHa }))}
           sparkKey="v"
           sparkColor="var(--viz-10)"
         />
+        {/* O sub-rótulo dizia "rendimento × área", uma conta que este card NÃO faz: o
+            valor é a produção somada da fonte, e é dela que o rendimento é DERIVADO
+            (rendimento = produção ÷ área), não o contrário. O rótulo descrevia a origem
+            do número invertida; "safra" espelha o card de área colhida. */}
         <window.KpiCardSpark
           label="Produção"
           value={fmtProd(last.prodT)}
-          sub={`rendimento × área · ${last.y}`}
+          sub={`safra ${last.y}`}
           spark={series.slice(-12).map(d => ({ y: d.y, v: d.prodT }))}
           sparkKey="v"
           sparkColor="var(--viz-2)"

@@ -257,3 +257,36 @@ describe('materialityFloor — quem não tem base não compete pelo topo', () =>
     expect(window.materialityFloor(undefined, 'areaHa', window.AREA_FLOOR).dropped).toEqual([]);
   });
 });
+
+// ── deltaUp — a direção da seta do KPI ────────────────────────────────────────
+describe('deltaUp — a ausência não aponta direção', () => {
+  it('true quando subiu, false quando caiu, null quando não há variação', () => {
+    expect(window.deltaUp(4.2)).toBe(true);
+    expect(window.deltaUp(0)).toBe(true);   // não caiu
+    expect(window.deltaUp(-3)).toBe(false);
+    expect(window.deltaUp(null)).toBeNull();
+    expect(window.deltaUp(undefined)).toBeNull();
+    expect(window.deltaUp(NaN)).toBeNull();
+  });
+
+  it('recusa null EM VEZ de deixar o JS respondê-lo — as três formas erradas', () => {
+    // Cada linha é uma das respostas que estavam espalhadas pelos call sites. Todas
+    // concordam com deltaUp no número presente e divergem exatamente na ausência,
+    // que é o único lugar onde a resposta importava.
+    const d = null;
+    expect(d >= 0).toBe(true);                                  // virava VERDE ↑
+    expect(d != null && d >= 0).toBe(false);                    // virava VERMELHO ↓
+    expect(window.deltaUp(d)).toBeNull();                       // não aponta nada
+    // E o caso mais traiçoeiro: colorir pela MEDIDA CRUA em vez da variação.
+    const [prev, last] = [{ q: null }, { q: null }];
+    expect(last.q >= prev.q).toBe(true);                        // dois ausentes "subiram"
+    expect(window.deltaUp(window.deltaPct(prev.q, last.q))).toBeNull();
+  });
+
+  it('encadeia com deltaPct sem que a ausência vire direção', () => {
+    expect(window.deltaUp(window.deltaPct(100, 120))).toBe(true);
+    expect(window.deltaUp(window.deltaPct(120, 100))).toBe(false);
+    expect(window.deltaUp(window.deltaPct(0, 100))).toBeNull();    // base não-positiva
+    expect(window.deltaUp(window.deltaPct(null, 100))).toBeNull(); // base ausente
+  });
+});

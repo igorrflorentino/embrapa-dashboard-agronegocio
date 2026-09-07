@@ -45,8 +45,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
   sua área e enuncia a regra que ela reprovou, em vez de uma causa que valeria só para
   parte da lista.
 
+- **A variação AUSENTE aparecia com seta verde para cima.** `fmtSigned(null)` devolve
+  `'—'` — uma **string**, não `null` — então o bloco da variação renderizava; e `null >= 0`
+  é `true` em JavaScript. O resultado era uma seta verde de crescimento ao lado do próprio
+  travessão que declara a ausência. Havia três respostas espalhadas por **12 call sites em
+  6 perspectivas**, e as três erravam:
+
+  | forma | o que fazia com a ausência |
+  |---|---|
+  | `d >= 0` | virava **verde ↑** |
+  | `d != null && d >= 0` | virava `false`, que o átomo pinta de **vermelho ↓** |
+  | `last.q >= prev.q` | colore a seta a partir de **outra grandeza** que o número mostrado |
+
+  A terceira é a mais traiçoeira: o número do card sai de uma conta e a seta de outra, e as
+  duas só divergem exatamente na ausência (`null >= null` é `true`). Agora há um único
+  `window.deltaUp(d)` — `true`/`false`/`null` — e o `KpiCardSpark` ganhou um **terceiro
+  estado**: `null` é neutro e **sem seta**, porque a seta é uma afirmação de direção e não
+  se afirma direção sobre o que não foi medido. Varredura em `absenceGuard.test.js` prende
+  os 12 call sites.
+
+- **O card "Produção" descrevia uma conta que não faz.** O sub-rótulo dizia *"rendimento ×
+  área"*, mas o valor é a produção somada da fonte — e é dela que o rendimento é **derivado**
+  (rendimento = produção ÷ área). O rótulo enunciava a relação ao contrário; agora lê
+  *"safra 2024"*, espelhando o card de área colhida.
+
 ### Adicionado
 
+- `window.deltaUp(d)` e o estado `.kpi-delta.none` (neutro, sem seta) — a direção de uma
+  variação passa a ter três respostas possíveis, e a terceira é "não há o que apontar".
 - `window.materialityFloor(rows, key, { minShare, minAbs })` em `seriesUtils.js`, ao lado
   das demais primitivas de medida, com a calibração `window.AREA_FLOOR`. Devolve
   `{ kept, dropped, total, shareOf }`: o chamador é **obrigado** a receber os descartados,

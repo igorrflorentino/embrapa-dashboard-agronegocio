@@ -166,7 +166,7 @@ function ViewRebanho({ summary, conventions, database }) {
           label={<>Efetivo · {focusProd.name}</>}
           value={window.formatCountQty(fLast.q, conv)}
           delta={window.fmtSigned(fDelta)}
-          deltaPositive={fLast.q >= fPrev.q}
+          deltaPositive={window.deltaUp(fDelta)}
           sub={`${fLast.y} vs. ${fPrev.y}`}
           spark={focusWin.slice(-12).map(d => ({ y: d.y, q: d.q }))}
           sparkKey="q"

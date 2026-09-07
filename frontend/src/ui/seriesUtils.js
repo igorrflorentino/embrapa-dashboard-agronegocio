@@ -186,6 +186,17 @@ window.meanPresent = (values) => {
   return presentes.length ? presentes.reduce((s, v) => s + v, 0) / presentes.length : null;
 };
 
+// A DIREÇÃO de uma variação para o KPI: true (subiu), false (caiu) ou `null` — que
+// não é "caiu", é "não há variação a apontar". Irmão de deltaColor: mesma pergunta,
+// saída para a seta em vez de para a cor.
+//
+// Existe porque cada call site respondia isso à mão, de três formas diferentes e
+// todas erradas na ausência: `d >= 0` (null vira VERDE), `d != null && d >= 0` (null
+// vira FALSE, e o átomo lê false como vermelho) e — pior — comparando as MEDIDAS
+// CRUAS em vez da variação (`last.q >= prev.q`), que colore a seta a partir de uma
+// grandeza diferente da que o número mostra. As três só divergem onde importa.
+window.deltaUp = (d) => (Number.isFinite(d) ? d >= 0 : null);
+
 // A cor de uma variação: verde/vermelho quando ela EXISTE, neutra quando não. Existe
 // porque `null >= 0` é true em JS — a comparação ingênua pintava o travessão de uma
 // métrica indisponível com a cor de crescimento positivo.
