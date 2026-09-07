@@ -1533,3 +1533,43 @@ def test_value_era_breaks_degrada_sem_derrubar_o_snapshot(monkeypatch, caplog):
     with caplog.at_level("WARNING"):
         assert seam.value_era_breaks("val_yearfx_brl") == []
     assert any("comparability" in r.message for r in caplog.records)
+
+
+def test_currency_eras_builder_le_o_seed_sem_parametros():
+    """O builder SQL das eras: sem params (a tabela inteira) e ordenado por year_from.
+
+    A ordem importa — `value_era_breaks` descarta o PRIMEIRO elemento (a era inicial não
+    é uma quebra: nada a precede), o que só está certo se a lista chegar ordenada.
+    """
+    from embrapa_dashboard.serving import sql as sqlbuild
+
+    consulta, params = sqlbuild.currency_eras("proj.silver.historical_currency_factors")
+
+    assert params == []
+    assert "proj.silver.historical_currency_factors" in consulta
+    assert "order by year_from" in consulta
+    for coluna in ("unit_of_measure", "year_from", "year_to"):
+        assert coluna in consulta
+
+
+@pytest.mark.real_currency_eras
+def test_fetch_currency_eras_consulta_o_seed_no_dataset_silver(monkeypatch):
+    """O leitor aponta para o dataset SILVER (onde dbt materializa os seeds), não Gold."""
+    pytest.importorskip("flask_caching")
+    from embrapa_dashboard.serving import gateway
+
+    capturado = {}
+
+    def fake_run_query(consulta, params):
+        capturado["sql"] = consulta
+        capturado["params"] = params
+        return pd.DataFrame([{"unit_of_measure": "Mil Reais", "year_from": 1994, "year_to": 2099}])
+
+    monkeypatch.setattr(gateway, "run_query", fake_run_query)
+    # `fetch_currency_eras` é memoizada; chamamos a função por baixo do cache para que o
+    # teste exercite o CORPO, não uma entrada guardada de outro teste.
+    gateway.fetch_currency_eras.uncached()
+
+    assert "historical_currency_factors" in capturado["sql"]
+    assert ".silver." in capturado["sql"] or "silver" in capturado["sql"]
+    assert capturado["params"] == []

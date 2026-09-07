@@ -12,6 +12,8 @@ trick.
 
 from __future__ import annotations
 
+import pathlib
+
 import pytest
 
 
@@ -46,3 +48,48 @@ def _no_real_heartbeat_writes(monkeypatch):
     from embrapa_dashboard import ingestion_heartbeat
 
     monkeypatch.setattr(ingestion_heartbeat, "_bq_client", lambda *a, **k: MagicMock())
+
+
+@pytest.fixture(autouse=True)
+def _no_live_currency_eras(monkeypatch, request):
+    """`seam.snapshot` must not reach BigQuery for the currency-reform boundaries.
+
+    The read-side twin of `_no_real_heartbeat_writes`, and it appeared the same way:
+    `value_era_breaks` (v1.49.0) is called from every `seam.snapshot()`, and the seam
+    tests monkeypatch the fetchers they KNOW about — a new one falls through to a live
+    query the moment a developer has ADC. `make test` advertises itself as credential-free
+    and it stopped being so silently, because `value_era_breaks` swallows the failure by
+    design (a comparability HINT must never break the snapshot). CI, having no credentials,
+    took the swallowed path and reported the lines as uncovered; the laptop, having ADC,
+    reported them green. Same code, opposite verdicts.
+
+    The fixture serves the REAL seed — `dbt/seeds/historical_currency_factors.csv`, the very
+    file dbt loads — so the stub cannot drift from what Silver divides by. A test that wants
+    a different roster still overrides it.
+    """
+    # Escape para o teste que precisa exercitar o LEITOR de verdade (ele injeta o seu
+    # próprio run_query, então continua sem tocar o BigQuery).
+    if request.node.get_closest_marker("real_currency_eras"):
+        return
+
+    import csv
+
+    import pandas as pd
+
+    seed = pathlib.Path(__file__).resolve().parents[1] / "dbt/seeds/historical_currency_factors.csv"
+    with seed.open(encoding="utf-8") as fh:
+        linhas = [
+            {
+                "unit_of_measure": r["unit_of_measure"],
+                "year_from": int(r["year_from"]),
+                "year_to": int(r["year_to"]),
+            }
+            for r in csv.DictReader(fh)
+        ]
+    eras = pd.DataFrame(linhas)
+
+    try:
+        from embrapa_dashboard.serving import gateway
+    except Exception:  # optional extra not installed — nothing to guard
+        return
+    monkeypatch.setattr(gateway, "fetch_currency_eras", lambda: eras)

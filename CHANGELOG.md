@@ -123,6 +123,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
   fazer aritmética direta sobre ele) e o typedef `BancoSnapshot` em `contracts.js`
   (`valueEraBreaks`, e o aviso no `qualityByUf` de que `not_ok` hoje varreria as `UNSCORED`).
 
+### Testes
+
+- **`make test` tinha deixado de ser "credential-free" sem ninguém notar.** `value_era_breaks`
+  é chamado por todo `seam.snapshot()`, e os testes do seam mockam os leitores que
+  **conhecem** — um leitor novo cai direto numa consulta real assim que o desenvolvedor tem
+  ADC. O sintoma foi o CI e a máquina local darem veredictos **opostos sobre o mesmo
+  código**: local 100% de cobertura de patch, CI 85%, porque lá sem credencial a chamada
+  falhava e o `except` de `value_era_breaks` a engolia por desenho. Guarda autouse em
+  `tests/conftest.py` (gêmea do `_no_real_heartbeat_writes`, que nasceu do mesmo jeito),
+  servindo o **seed real** `dbt/seeds/historical_currency_factors.csv` — o mesmo arquivo que
+  o dbt carrega, então o stub não pode divergir do que o Silver divide. Marcador
+  `real_currency_eras` abre exceção para o teste que exercita o leitor de verdade.
+
 ### Corrigido (testes que fixavam o defeito)
 
 - `seriesUtils.cov.test.js` afirmava `accumPct(0, 150) === 0` e `seriesUtils.test.js`
