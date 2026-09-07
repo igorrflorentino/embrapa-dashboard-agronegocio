@@ -850,6 +850,87 @@ def test_export_coefficient_sem_ncm_recusa_com_motivo(monkeypatch):
     assert out["incompatibleReason"] == "sem-ncm"
 
 
+# ── price spread: o lado da PORTEIRA também precisa de códigos ─────────────────
+
+
+def test_price_spread_sem_codigos_de_producao_recusa_em_vez_de_ler_o_banco_inteiro(
+    monkeypatch,
+):
+    """O defeito que a v1.58.0 tornou alcançável, e que a v1.60.0 fecha.
+
+    O lado FOB era guardado contra "códigos vazios = sem filtro"; o lado da porteira,
+    não. Quando o gate de família passou a ler as duas pesquisas de produção, soja e
+    milho — que não têm lado PEVS — chegaram a esta view e passaram a exibir o preço
+    implícito da PEVS INTEIRA como se fosse o seu.
+
+    ÂNCORA EXTERNA, medida em produção 2026-09-07: soja e milho mostravam o MESMO
+    "preço de porteira" (US$ 0,019/kg em 2020, 0,021 em 2021, 0,024 em 2022) — dois
+    produtos diferentes com o mesmo número é a assinatura da leitura sem filtro — e daí
+    saía um markup de 18,85× para a soja, inteiramente fabricado.
+    """
+    seam = _seam()
+    monkeypatch.setattr(_cross(), "_is_mass_basis", lambda cid: True)
+    monkeypatch.setattr(
+        _base(),
+        "produto_catalog",
+        lambda: {
+            "sem_producao": {
+                "name": "Sem produção",
+                "pevs": [],
+                "pam": [],
+                "comex": ["12010010"],
+                "comtrade": [],
+            }
+        },
+    )
+    monkeypatch.setattr(
+        _cross(),
+        "_gate_price_by_year",
+        lambda *a, **k: pytest.fail("leu um banco de produção sem códigos"),
+    )
+    out = seam.price_spread("sem_producao")
+    assert out == {"unit": "US$/kg", "series": []}
+
+
+def test_price_spread_le_a_PAM_quando_o_agrupamento_e_de_lavoura(monkeypatch):
+    """Soja tem lado PAM e não tem PEVS: o preço de porteira dela existe, e vem da PAM."""
+    seam = _seam()
+    monkeypatch.setattr(_cross(), "_is_mass_basis", lambda cid: True)
+    monkeypatch.setattr(
+        _base(),
+        "produto_catalog",
+        lambda: {
+            "soja": {
+                "name": "Soja",
+                "pevs": [],
+                "pam": ["40124"],
+                "comex": ["12010010"],
+                "comtrade": [],
+            }
+        },
+    )
+    vistos = {}
+
+    def fake_gate(pevs_codes, pam_codes, uf_codes=()):
+        vistos["pevs"] = tuple(pevs_codes)
+        vistos["pam"] = tuple(pam_codes)
+        return {2020: 0.35}
+
+    monkeypatch.setattr(_cross(), "_gate_price_by_year", fake_gate)
+    monkeypatch.setattr(_cross(), "_fob_price_by_year", lambda ncms, uf=(): {2020: 0.42})
+    out = seam.price_spread("soja")
+    assert vistos == {"pevs": (), "pam": ("40124",)}
+    assert out["series"] == [
+        {
+            "y": 2020,
+            "fob": 0.42,
+            "gate": 0.35,
+            "spread": pytest.approx(0.07),
+            "markup": pytest.approx(1.2),
+        }
+    ]
+
+
 # ── export coefficient: o denominador soma as DUAS pesquisas de produção ───────
 
 

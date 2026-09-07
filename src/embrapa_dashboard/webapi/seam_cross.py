@@ -555,33 +555,71 @@ def _fob_price_by_year(ncms: tuple, uf_codes: tuple = ()) -> dict:
     return {y: (val[y] / wt[y]) for y in (set(val) & set(wt)) if wt[y]}
 
 
-def _gate_price_by_year(pevs_codes: tuple, uf_codes: tuple = ()) -> dict:
-    """Farm-gate implied price (US$/kg) = PEVS value ÷ (quantity × 1000), per year."""
+def _gate_value_qty_by_year(banco: str, codes: tuple, uf_codes: tuple = ()) -> dict:
+    """``{ano: (valor US$, quantidade t)}`` para UM banco de produção.
+
+    ``codes`` vazio devolve ``{}`` SEM consultar: uma lista vazia significa "sem filtro"
+    lá embaixo, e consultar assim somaria o banco INTEIRO — foi exatamente esse o defeito
+    que a v1.60.0 corrige (ver :func:`price_spread`).
+    """
+    if not codes:
+        return {}
     pts = gateway.fetch_product_timeseries(
-        "ibge_pevs", codes=pevs_codes, value_column="val_yearfx_usd", uf_codes=uf_codes
+        banco, codes=codes, value_column="val_yearfx_usd", uf_codes=uf_codes
     )
     if pts is None or pts.empty:
         return {}
     g = pts.groupby("reference_year").agg(v=("total_value", "sum"), q=("total_qty_native", "sum"))
-    return {int(y): measures.ratio_present(row.v, (row.q or 0) * 1000) for y, row in g.iterrows()}
+    return {int(y): (row.v, row.q) for y, row in g.iterrows()}
+
+
+def _gate_price_by_year(pevs_codes: tuple, pam_codes: tuple, uf_codes: tuple = ()) -> dict:
+    """Preço de porteira implícito (US$/kg) = valor ÷ (quantidade × 1000), por ano.
+
+    Soma as DUAS pesquisas de produção do IBGE — extração nativa (PEVS) e lavoura
+    plantada (PAM) — pelo mesmo motivo do coeficiente de exportação: o outro lado da
+    comparação é o preço FOB da alfândega, que não distingue origem produtiva.
+    """
+    extractive = _gate_value_qty_by_year("ibge_pevs", pevs_codes, uf_codes)
+    crop = _gate_value_qty_by_year("ibge_pam", pam_codes, uf_codes)
+    saida = {}
+    for y in set(extractive) | set(crop):
+        ve, qe = extractive.get(y, (0.0, 0.0))
+        vc, qc = crop.get(y, (0.0, 0.0))
+        saida[y] = measures.ratio_present((ve or 0) + (vc or 0), ((qe or 0) + (qc or 0)) * 1000)
+    return saida
 
 
 def price_spread(agrupamento_id: str | None, uf_codes: tuple = ()) -> dict:
-    """Farm-gate implied price (PEVS, US$/kg) vs FOB export price (COMEX, US$/kg).
+    """Farm-gate implied price (IBGE, US$/kg) vs FOB export price (COMEX, US$/kg).
+
+    O lado da porteira soma as DUAS pesquisas de produção (PEVS extração + PAM lavoura),
+    porque o lado FOB não distingue origem produtiva — o mesmo motivo do coeficiente de
+    exportação.
 
     ``uf_codes`` optionally narrows BOTH sides to the same origin UF(s) — the
     porteira-vs-FOB spread for a single state (cross-source per-UF scoping)."""
     if not _is_mass_basis(agrupamento_id):
-        # Gate price = PEVS value ÷ PEVS quantity; for a volume commodity that is
-        # US$/m³, not the US$/kg the FOB price uses — markup/spread would be invalid.
+        # Gate price = produção em valor ÷ produção em massa; para um agrupamento de
+        # volume isso é US$/m³, não o US$/kg do preço FOB — o spread seria inválido.
         return {"unit": "US$/kg", "incompatible": True, "series": []}
     ncms = seam_base._codes(agrupamento_id, "comex")
+    pevs_codes = seam_base._codes(agrupamento_id, "pevs")
+    pam_codes = seam_base._codes(agrupamento_id, "pam")
     if agrupamento_id and not ncms:
         # No NCM codes for this commodity: empty payload, never the unscoped
         # ALL-commodities FOB price (empty codes mean "no filter" to the reader).
         return {"unit": "US$/kg", "series": []}
+    if agrupamento_id and not (pevs_codes or pam_codes):
+        # O MESMO cuidado do lado da produção, que faltava. O lado FOB era guardado e o
+        # da porteira não: um agrupamento sem códigos de produção lia o BANCO INTEIRO e
+        # publicava o preço implícito de toda a PEVS como se fosse o daquele produto.
+        # Medido em produção 2026-09-07: soja e milho exibiam o MESMO "preço de porteira"
+        # (US$ 0,019/kg em 2020), porque nenhum dos dois tinha lado PEVS — e daí saía um
+        # markup de 18,85× para a soja, um número inteiramente fabricado.
+        return {"unit": "US$/kg", "series": []}
     fob = _fob_price_by_year(ncms, uf_codes)
-    gate = _gate_price_by_year(seam_base._codes(agrupamento_id, "pevs"), uf_codes)
+    gate = _gate_price_by_year(pevs_codes, pam_codes, uf_codes)
     series = [
         {
             "y": y,

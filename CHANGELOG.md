@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.60.0] - 2026-09-07
+
+### Corrigido
+
+- **Soja e milho exibiam o MESMO "preço de porteira", que não era de nenhum dos dois.**
+  Em *Spread de preço*, o lado FOB era guardado contra "lista de códigos vazia = sem
+  filtro"; o lado da porteira **não era**. Um agrupamento sem códigos de produção lia o
+  **banco inteiro** e publicava o preço implícito de toda a PEVS como se fosse o daquele
+  produto — dois produtos diferentes com o mesmo número é a assinatura da leitura sem
+  filtro.
+
+  | | porteira 2020 | porteira 2021 | porteira 2022 | markup 2022 |
+  |---|---|---|---|---|
+  | soja (antes) | US$ 0,019 | US$ 0,021 | US$ 0,024 | **25,24×** |
+  | milho (antes) | US$ 0,019 | US$ 0,021 | US$ 0,024 | 11,90× |
+  | soja (depois) | — | — | **US$ 0,554** | **1,08×** |
+  | milho (depois) | — | — | **US$ 0,243** | 1,16× |
+
+  Os números agora fecham com a economia: grão a granel sai quase cru, então o FOB fica
+  logo acima da porteira (soja 1,08×, milho 1,16×, arroz 1,36×), enquanto o que é
+  beneficiado antes de exportar carrega margem de verdade (castanha-de-caju 8,13×, açaí
+  5,67×, carvão vegetal 4,57×). O markup de 25× da soja era inteiramente fabricado.
+
+  **O defeito é anterior, mas foi a v1.58.0 que o tornou alcançável**: enquanto o gate de
+  família lia só a PEVS, um agrupamento sem lado PEVS não tinha família e sumia do
+  seletor. Ao passar a ler as duas pesquisas de produção — o que destravou nove
+  agrupamentos —, soja, milho e arroz chegaram a esta view e caíram no buraco.
+
+  A correção tem duas metades: o lado da porteira **recusa** quando não há códigos de
+  produção (a mesma guarda que o lado FOB já tinha), e passa a **somar as duas pesquisas**
+  (PEVS extração + PAM lavoura), pelo mesmo motivo do coeficiente de exportação — o preço
+  FOB da alfândega não distingue origem produtiva. O que se soma são **valor e
+  quantidade**, com a divisão depois: somar os dois preços responderia outra pergunta.
+
+---
+
 ## [1.59.0] - 2026-09-07
 
 ### Corrigido
