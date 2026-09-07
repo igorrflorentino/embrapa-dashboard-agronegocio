@@ -549,7 +549,10 @@ VIEW_GROUPS: list[ViewGroup] = [
                 "Produtividade",
                 "live",
                 requires=("yield",),
-                exportable=True,
+                # NÃO exportável: o SPA (views.js) declara `exportable: false`, e é ele
+                # quem decide — `canExportView` lê o registro do frontend. Este lado dizia
+                # True e ninguém percebeu porque nada o consultava (corrigido na v1.55.0,
+                # junto com o teste de paridade que agora impede a divergência).
                 self_data=True,
                 desc="Rendimento (kg/ha) e área colhida por lavoura. Disponível para bancos "
                 "de produção agrícola (IBGE PAM).",
@@ -592,6 +595,16 @@ VIEW_GROUPS: list[ViewGroup] = [
                 exportable=True,
                 desc="Distribuição territorial por valor, massa e volume, em região, UF ou "
                 "município. Mapas, mapas de calor e rankings.",
+            ),
+            View(
+                "territory_profile",
+                "Perfil do território",
+                "live",
+                requires=("geo",),
+                desc="Raio-x de um território: o que uma UF ou um município produz, a "
+                "trajetória do lugar, sua composição por produto, seu peso no país e a "
+                "qualidade do dado ali. A perspectiva Geografia responde 'como se "
+                "espalha ENTRE lugares'; esta responde 'o que acontece NESTE'.",
             ),
             View(
                 "concentration",

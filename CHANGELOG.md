@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.55.0] - 2026-09-07
+
+### Corrigido
+
+- **O registro de perspectivas do backend tinha apodrecido — e ninguém podia notar.** A
+  lista existe em dois lugares: `frontend/src/ui/views.js` (o que está no ar) e
+  `webapi/registries.py` (que **nenhuma rota serve e nenhum código de produção lê**). Uma
+  cópia sem leitor não quebra nada ao divergir; ela mente em silêncio para a próxima
+  pessoa que a ler. E já mentia em dois pontos:
+
+  | divergência | Python dizia | SPA (quem vale) |
+  |---|---|---|
+  | `territory_profile` | **não existia** | perspectiva `live` |
+  | `productivity` | `exportable=True` | `exportable: false` |
+
+  Ou seja, o backend omitia uma perspectiva inteira e anunciava um botão de exportar que o
+  produto não oferece.
+
+- **O comentário do cron afirmava um horário que não acontece.** Dizia *"11:30 UTC = 08:30
+  BRT"*, mas o cron do GitHub é *best-effort* e o atraso medido neste repositório cresceu de
+  ~20 min (enquanto era diário, até 2026-08-26) para **3h35–9h58** depois da mudança para
+  2×/semana — 2026-09-03 disparou 15:05 UTC, 2026-09-07 às 16:35. O raciocínio original
+  continua válido (o build precisa rodar *depois* da ingestão, e mais tarde ainda é depois),
+  então nada a jusante quebra; o que estava errado era prometer uma hora de término.
+  Reescrito para dizer o que o cron garante — a **ordem**, não o relógio — e para avisar que
+  ninguém deve agendar nada contra "o Gold fica pronto às 09:00 BRT". Também corrigido o
+  *"Daily prod build"*, que contradizia a própria linha oito abaixo desde agosto.
+
+### Adicionado
+
+- **`tests/test_view_registry_parity.py` — o registro Python deixa de ser peso morto.** Em
+  vez de apagar as ~200 linhas sem chamador, demos a elas o emprego que `BANCOS` e
+  `FILTER_SCHEMAS` já têm: ser a **segunda testemunha**. O teste exige que as duas listas
+  concordem sobre quais perspectivas existem, em que grupo, se são `live`, o que exigem do
+  banco e se exportam.
+
+  **Não** pina a prosa (`desc`) nem os campos exclusivos de cada lado (`planned` no JS,
+  `sources`/`align` no Python): obrigar duas prosas idênticas transformaria o teste num
+  empecilho, e um teste que atrapalha é um teste que alguém desliga.
+
+  Verificado por injeção nos dois sentidos — removendo uma view do Python e alterando um
+  campo no JS. E o extrator conta CHAVES em vez de usar regex frouxa: a primeira versão
+  acusou **10 falsos positivos** porque um `.{0,N}?` parava cedo numa view com `planned:`
+  multilinha. O teste tem guarda do próprio extrator, para um parser quebrado não passar
+  vazio.
+
+---
+
 ## [1.54.0] - 2026-09-07
 
 ### Corrigido
