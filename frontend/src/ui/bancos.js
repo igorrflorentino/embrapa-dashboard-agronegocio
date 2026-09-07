@@ -92,7 +92,7 @@ window.BANCOS = [
     id:     'ibge_pevs',
     short:  'IBGE PEVS',
     label:  'IBGE · Produção da Extração Vegetal e da Silvicultura',
-    sub:    'Produção e exploração de produtos agrícolas no território brasileiro',
+    sub:    'Extração vegetal de floresta nativa e silvicultura de floresta plantada',
     // Onboarding description (ViewAbout): plain-language, non-technical — what the banco
     // IS and what it's FOR, for a researcher meeting it for the first time.
     about:  'Reúne, ano a ano, a quantidade e o valor da produção florestal brasileira nas DUAS metades da pesquisa do IBGE: a extração vegetal, de floresta nativa (castanha-do-pará, açaí, madeira em tora, lenha, carvão), e a silvicultura, de floresta plantada — de onde vem a maior parte da madeira do país. O filtro Origem da produção separa as duas; sem ele, os números somam ambas, que é o total da pesquisa. É por isso que estados de floresta plantada, como São Paulo, aparecem aqui: eles quase não têm extrativismo.',

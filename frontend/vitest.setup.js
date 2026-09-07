@@ -16,6 +16,9 @@ window.ReactDOM = ReactDOMClient;
 // que devolvesse 0 esconderia de novo o defeito que eles existem para pegar.
 // Um teste que queira forçar um comportamento ainda pode sobrescrever window.X
 // depois — a atribuição dele vem depois desta.
+import './src/ui/produto.js';   // window.PRODUTO — o nome do produto (fonte única).
+                                 // Módulo REAL, não stub: se um renome deixar uma tela
+                                 // para trás, é aqui que o teste dela quebra.
 import './src/ui/data.js';        // formatadores pt-BR reais: fmtSigned/numBR/pctBR já
                                  // devolvem '—' para null, e é exatamente esse
                                  // comportamento que a correção de ausência depende.

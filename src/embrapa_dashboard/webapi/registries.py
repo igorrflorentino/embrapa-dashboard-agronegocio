@@ -261,7 +261,7 @@ BANCOS: list[Banco] = [
         id="ibge_pevs",
         short="IBGE PEVS",
         label="IBGE · Produção da Extração Vegetal e da Silvicultura",
-        sub="Produção e exploração de produtos agrícolas no território brasileiro",
+        sub="Extração vegetal de floresta nativa e silvicultura de floresta plantada",
         about=(
             "Reúne, ano a ano, a quantidade e o valor da produção florestal brasileira nas "
             "DUAS metades da pesquisa do IBGE: a extração vegetal, de floresta nativa "

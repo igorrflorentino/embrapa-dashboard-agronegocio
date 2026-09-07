@@ -40,7 +40,7 @@ Números reais que **decidem o valor** de cada eixo (não o custo de nuvem, que 
 | Fluxos **ingeridos hoje** | 4 de 10 — `X,M,RX,RM` (config `COMTRADE_FLOWS`) |
 | Fluxos no Gold | export 1,0M · import 1,2M · re-export 35,7k · re-import 5,2k linhas |
 | **Regime aduaneiro** — % das linhas com detalhe (não-C00) | **13,9% global**; C00 = 86,1% |
-| Regime p/ produtos agrícolas-alvo | madeira(44) 15,2% · castanha(08) 13,7% · cereais(10) 11,4% · oleaginosas(12) 11,0% · hortícolas(07) 10,3% · óleos(15) 8,7% |
+| Regime p/ produtos-alvo | madeira(44) 15,2% · castanha(08) 13,7% · cereais(10) 11,4% · oleaginosas(12) 11,0% · hortícolas(07) 10,3% · óleos(15) 8,7% |
 | Regimes distintos observados | ~12 (`C00` total + `C01/C03/C20` dominam os breakdowns) |
 | **Scoping do dashboard** | **fixado em Brasil como reporter** (`reporter_code='76'`) — por isso `re-export` fica VAZIO (o Brasil não reporta reexportação; global tem $29 bi, Brasil-reporter = NULL) |
 

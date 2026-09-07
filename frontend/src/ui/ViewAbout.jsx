@@ -103,13 +103,17 @@ function ViewAbout() {
       <div className="card ab-purpose">
         <window.SectionHeader
           overline="Propósito"
-          title="Análise histórica dos produtos agrícolas brasileiros"
+          title={window.PRODUTO.nome}
         />
         <p className="ab-lead">
-          O <strong>Dashboard de Análise Histórica de Produtos Agrícolas</strong> reúne, num só lugar,
-          as principais bases públicas sobre os produtos agrícolas brasileiros — produção extrativa e
-          agrícola, comércio interno e comércio exterior — para que pesquisadores explorem como
-          esses mercados evoluíram ao longo de décadas. Cada fonte oficial entra com o mesmo
+          {/* `tituloCitacao` e não `nome`: ele começa por "Dashboard", que é masculino e
+              concorda com o "O". Com `nome` a frase saía "O Análise histórica…" — o tipo de
+              erro que nenhum teste pega e que só aparece lendo a página. */}
+          O <strong>{window.PRODUTO.tituloCitacao}</strong> reúne, num só lugar, as principais bases
+          públicas sobre os {window.PRODUTO.escopo} brasileiros — lavouras, pecuária e produtos de
+          origem animal, extração vegetal de floresta nativa, silvicultura de floresta plantada,
+          comércio interno e comércio exterior — para que pesquisadores explorem como esses
+          mercados evoluíram ao longo de décadas. Cada fonte oficial entra com o mesmo
           peso: você escolhe o banco de dados e a perspectiva, aplica filtros e compara séries.
           O foco é exclusivamente analítico e científico — todos os números vêm de dados oficiais
           processados pelo pipeline, sem projeções, recomendações ou opiniões automatizadas.

@@ -49,9 +49,9 @@ Notes:
   a retried/double-clicked save reusing the same key is a no-op, not a duplicate
   audit row.
 
-## Managing catalog editors (the "Cadastro de produtos agrícolas" admin view)
+## Managing catalog editors (the "Cadastro de produtos" admin view)
 
-The **live Curadoria catalog** edits (the "Cadastro de produtos agrícolas" admin view → the catalog
+The **live Curadoria catalog** edits (the "Cadastro de produtos" admin view → the catalog
 write routes) are gated by a **per-catalog** allowlist, separate from the curation attribute editors
 above: the Console-managed table `<dataset>.catalog_editors` (`<dataset>` =
 `BQ_RESEARCH_INPUTS_DATASET`, default `research_inputs`; table = `BQ_CATALOG_EDITORS_TABLE`,

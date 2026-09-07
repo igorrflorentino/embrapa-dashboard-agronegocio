@@ -1,4 +1,4 @@
-# Pull-request gate for the Embrapa produtos agrícolas dashboard pipeline.
+# Pull-request gate for the Embrapa agricultural, livestock & forestry dashboard pipeline.
 #
 # Runs on every PR to main and on direct pushes to main (so the badge on
 # main stays meaningful). The `ci` (ruff + pytest + dbt parse) and `frontend`

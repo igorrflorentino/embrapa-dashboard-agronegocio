@@ -18,7 +18,7 @@
 > **Manual operator follow-ups** (the agent deliberately did NOT do these — they touch prod
 > destructively or are deploy-time): (1) drop the now-unreferenced `silver.commodity_crosswalk`
 > table (the retired seed — kept inert; `DROP TABLE` is an operator call); (2) deploy the webapi
-> so the new "Cadastro de produtos agrícolas" / "Referências" views go live; (3) populate
+> so the new "Cadastro de produtos" / "Referências" views go live; (3) populate
 > `research_inputs.catalog_editors` (resource `produto_catalog`) with the authorized researcher
 > emails (empty = open to any IAP user); (4) set the `DBT_BUILD` repo vars so the workflow's new
 > `mark-orphans` step runs. The deferred BQ-table renames (#5) were evaluated and **declined** —
@@ -53,7 +53,7 @@
 
 | Concern | English id | pt-BR (UI) | What it is |
 |---|---|---|---|
-| **A. Curadoria (catalog)** | `curation` | Curadoria | *what enters/exits* — bancos + produtos agrícolas membership, lifecycle (Beta→…→Descontinuado), orphan flow. **Net-new.** |
+| **A. Curadoria (catalog)** | `curation` | Curadoria | *what enters/exits* — bancos + produtos membership, lifecycle (Beta→…→Descontinuado), orphan flow. **Net-new.** |
 | **B. Engenharia de Atributos** | `attribute_engineering` | Engenharia de atributos | *new derived columns from researcher input* — per-code industrialization (`code_industrialization_log`) + (customs×flow)→market-nature (`flow_market_log`). **= today's frozen "Curadoria" code.** |
 | **C. Shared infra** | `research_inputs` | (none — infra) | append-only writer + IAP author capture + per-resource allowlist + `ensure_*_table` + `change_id` idempotency + cache invalidation. Common to A and B. |
 
