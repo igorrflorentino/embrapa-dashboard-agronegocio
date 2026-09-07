@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.51.0] - 2026-09-07
+
+### Adicionado
+
+- **Uma varredura que impede a instância nº 16** (`frontend/src/ui/absenceGuard.test.js`).
+  A v1.49.0 achou o mesmo defeito — `x ? a/x : 0`, responder ZERO a uma pergunta
+  INDEFINIDA — em 15 pontos. Corrigi os 15 e centralizei as primitivas, mas **nada impedia
+  o 16º**, e o padrão desta base é exatamente esse: em todos os casos a regra certa já
+  existia em algum lugar e não tinha se propagado. Agora um call site novo com essa forma
+  quebra o build, nomeando arquivo e linha.
+
+  A lista de exceções (`PERMITIDOS`) exige uma **razão escrita** por entrada, e o próprio
+  teste rejeita razões vazias ("não deu problema até agora") e permissões obsoletas que já
+  não correspondem a código. Há também uma guarda do varredor: se o glob quebrar, ele falha
+  em vez de passar vazio. Verificado por injeção — reintroduzi o defeito no `ViewSeasonality`
+  e a varredura o apontou.
+
+  As 6 exceções atuais são zeros MEDIDOS (contagem de produtos, tamanho de array, variância
+  zero de uma série plana) ou não envolvem divisão por medida ausente.
+
+### Removido
+
+Código morto encontrado por varredura de globais sem leitor em produção (214 definidos,
+15 candidatos, 13 falsos positivos — as views são resolvidas por nome em `window[name]`):
+
+- `window.convertUnit`, `window.fmtBRL`, `window.fmtNum` (`data.js`), `window.vizColor` e
+  `window.seriesGrowth` (`seriesUtils.js`) — os cinco **declaravam no próprio comentário**
+  que só eram lidos por teste. `seriesGrowth` ainda carregava o defeito antigo (`: 0`).
+- `window.fmtCompactValue` (`chipFmt.js`) e o import que só ele usava; o export global
+  `window._csvTamanho` (a função segue viva em uso local).
+- **O mapa "% por UF" da perspectiva Qualidade** e todo o encanamento de `qualityByUf`:
+  sem produtor, sem endpoint, atrás de um `.length > 0` que era sempre falso. Era uma
+  armadilha ativa — seu `not_ok` é "tudo que não é OK" e desde a v1.49.0 varreria as
+  linhas **não avaliadas** para dentro, pintando de vermelho a esparsidade do cubo.
+  Melhor remover que deixar comentado para quem ligasse o endpoint.
+
+Os testes dos helpers removidos saíram junto. Em dois casos o `seriesGrowth` servia de
+**implementação de referência** para contrastar com `pearsonByYear` — esse contraste é o
+ponto daqueles testes, então a fórmula legada virou andaime local no arquivo de teste, que
+é onde ela pertencia.
+
+---
+
 ## [1.50.0] - 2026-09-07
 
 ### Modificado

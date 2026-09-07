@@ -67,7 +67,6 @@ function makeSnapshot() {
       { y: 2021, ok: 1 },
     ],
     qualityByProduct: [{ code: 'P1', flag: 'OK' }],
-    qualityByUf: [{ uf: 'PA', flag: 'OK' }],
     regions: REGIONS,
   };
 }

@@ -34,25 +34,14 @@ describe('corrColor — correlation-cell tint (token-driven color-mix)', () => {
   });
 });
 
-describe('vizColor + VIZ_SCALE — wrap-around categorical ramp', () => {
-  it('VIZ_SCALE is the 10-stop --viz token ramp', () => {
+describe('VIZ_SCALE — a rampa categórica compartilhada', () => {
+  it('tem os 10 tons e usa só tokens, nunca hex cru', () => {
     expect(window.VIZ_SCALE).toHaveLength(10);
-    expect(window.VIZ_SCALE[0]).toBe('var(--viz-1)');
-    expect(window.VIZ_SCALE[9]).toBe('var(--viz-10)');
-  });
-
-  it('wraps around the scale for indices past the end', () => {
-    expect(window.vizColor(0)).toBe('var(--viz-1)');
-    expect(window.vizColor(10)).toBe('var(--viz-1)'); // 10 % 10 = 0
-    expect(window.vizColor(11)).toBe('var(--viz-2)');
-  });
-
-  it('handles a negative index via the double-modulo guard', () => {
-    expect(window.vizColor(-1)).toBe('var(--viz-10)'); // (-1 % 10 + 10) % 10 = 9
+    expect(window.VIZ_SCALE.every((c) => c.startsWith('var(--viz-'))).toBe(true);
   });
 });
 
-describe('accumPct + seriesGrowth — basic helpers', () => {
+describe('accumPct — variação acumulada', () => {
   it('accumPct is the total percent change, NULL when the base cannot answer', () => {
     expect(window.accumPct(100, 150)).toBeCloseTo(50, 6);
     // Base ausente ou não-positiva: a razão é INDEFINIDA. Devolver 0 aqui (o que este
@@ -64,12 +53,6 @@ describe('accumPct + seriesGrowth — basic helpers', () => {
     expect(window.accumPct(100, null)).toBeNull();
   });
 
-  it('seriesGrowth returns YoY ratios and 0 on a zero base', () => {
-    const g = window.seriesGrowth([{ v: 100 }, { v: 110 }, { v: 0 }, { v: 5 }]);
-    expect(g[0]).toBeCloseTo(0.1, 6);
-    expect(g[2]).toBe(0); // previous v was 0 → guard returns 0
-    expect(window.seriesGrowth(undefined)).toEqual([]);
-  });
 
   it('pearson returns 0 for n<2 and zero-variance inputs', () => {
     expect(window.pearson([1], [1])).toBe(0); // n<2

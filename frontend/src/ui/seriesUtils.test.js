@@ -18,10 +18,17 @@ describe('pearsonByYear — aligns two series BY YEAR, not by array index (M2)',
     expect(window.pearsonByYear(a, b)).toBeCloseTo(1, 6);
   });
 
+  // O pareamento por ÍNDICE que `pearsonByYear` substituiu. Vivia em produção como
+  // `window.seriesGrowth`, lido só por testes; virou andaime local na v1.51.0. O contraste
+  // com ele É o ponto destes dois testes — sem uma referência, "alinha por ano" não se
+  // distingue de "alinha por índice" em séries que por acaso coincidem.
+  const crescimentoPorIndice = (pts, key = 'v') =>
+    (pts || []).slice(1).map((d, i) => (pts[i][key] ? (d[key] - pts[i][key]) / pts[i][key] : 0));
+
   it('equals the legacy index correlation when years are identical & gap-free', () => {
     const a = [{ y: 2010, v: 5 }, { y: 2011, v: 6 }, { y: 2012, v: 4 }, { y: 2013, v: 9 }];
     const b = [{ y: 2010, v: 50 }, { y: 2011, v: 40 }, { y: 2012, v: 55 }, { y: 2013, v: 30 }];
-    const legacy = window.pearson(window.seriesGrowth(a), window.seriesGrowth(b));
+    const legacy = window.pearson(crescimentoPorIndice(a), crescimentoPorIndice(b));
     expect(window.pearsonByYear(a, b)).toBeCloseTo(legacy, 6);
   });
 
@@ -33,7 +40,7 @@ describe('pearsonByYear — aligns two series BY YEAR, not by array index (M2)',
     const a = [{ y: 2000, v: 10 }, { y: 2001, v: 20 }, { y: 2002, v: 30 }, { y: 2010, v: 5 }];
     const b = [{ y: 2000, v: 10 }, { y: 2001, v: 20 }, { y: 2002, v: 30 }, { y: 2003, v: 99 }];
     expect(window.pearsonByYear(a, b)).toBeCloseTo(1, 6);
-    const legacy = window.pearson(window.seriesGrowth(a), window.seriesGrowth(b));
+    const legacy = window.pearson(crescimentoPorIndice(a), crescimentoPorIndice(b));
     expect(Math.abs(legacy - 1)).toBeGreaterThan(0.01); // the buggy index path diverges
   });
 

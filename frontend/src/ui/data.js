@@ -114,16 +114,6 @@ window.unitToBase = (familyId, unitId) => {
   const u = fam && (fam.units || []).find(x => x.id === unitId);
   return u ? u.toBase : 1;
 };
-// Convert a quantity from one unit to another WITHIN the same family.
-// NOTE: contract/test-only surface — read solely by data_contracts.cov.test.js. The live
-// unit-conversion path goes through window.unitToBase (via massQtyMul/volumeQtyMul/
-// countQtyMul in MetricConventions.jsx); no production view calls window.convertUnit.
-window.convertUnit = (value, familyId, fromUnit, toUnit) => {
-  if (value == null) return null;
-  const inBase = value * window.unitToBase(familyId, fromUnit);
-  return inBase / window.unitToBase(familyId, toUnit);
-};
-
 window.familiesInBasket = (productCodes, bancoId) => {
   // Banco-aware: resolve the ACTIVE banco's product list (snapshot first, then
   // the PEVS fallback list above for pre-load). This keeps a mass-only banco
@@ -245,22 +235,6 @@ window.QUALITY_FLAGS = [
 // (|n|) and re-applies the sign — aligned with magnitude.js's abs-based kernel (DEDUP-7), so
 // a large negative (e.g. a net balance) abbreviates to "-2,50 bi" instead of falling through
 // to the unabbreviated locale string.
-// NOTE: window.fmtBRL and window.fmtNum below are a contract/test-only surface — read solely
-// by data_contracts.cov.test.js. Live value formatting goes through window.formatValue /
-// window.applyConv (MetricConventions.jsx); no production view reads these two.
-window.fmtBRL = (n) => {
-  if (n == null) return '—';
-  const a = Math.abs(n);
-  const sign = n < 0 ? '-' : '';
-  if (a >= 1e9) return 'R$ ' + sign + (a / 1e9).toFixed(2).replace('.', ',') + ' bi';
-  if (a >= 1e6) return 'R$ ' + sign + (a / 1e6).toFixed(1).replace('.', ',') + ' mi';
-  if (a >= 1e3) return 'R$ ' + sign + (a / 1e3).toFixed(0).replace('.', ',') + ' mil';
-  return 'R$ ' + n.toLocaleString('pt-BR');
-};
-window.fmtNum = (n, unit) => {
-  if (n == null) return '—';
-  return n.toLocaleString('pt-BR') + (unit ? ' ' + unit : '');
-};
 // ── Percentages: THREE formatters, TWO opposite input conventions ────────────
 //
 //     fmtPct(0.6)   → '60,0%'   takes a FRACTION   (multiplies by 100)

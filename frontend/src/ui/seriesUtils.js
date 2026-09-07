@@ -14,11 +14,6 @@ window.VIZ_SCALE = [
   'var(--viz-1)', 'var(--viz-2)', 'var(--viz-3)', 'var(--viz-4)', 'var(--viz-5)',
   'var(--viz-6)', 'var(--viz-7)', 'var(--viz-8)', 'var(--viz-9)', 'var(--viz-10)',
 ];
-// i-th categorical color, wrapping around the scale.
-// NOTE: test-pinned helper — read only by seriesUtils.cov.test.js. Production consumers
-// paint categorical series from window.VIZ_SCALE directly; no live view calls window.vizColor.
-window.vizColor = (i) => window.VIZ_SCALE[((i % window.VIZ_SCALE.length) + window.VIZ_SCALE.length) % window.VIZ_SCALE.length];
-
 // ── Ausência vs. zero ──────────────────────────────────────────────────
 // Uma medida AUSENTE (o deflator ou a moeda escolhida não alcança aquele ano — IPCA
 // começa em 1980 e a PAM em 1974; o euro só existe desde 1999) chega como `null` do
@@ -169,15 +164,6 @@ window.indexTo100 = (pts, baseYear, key = 'v') => {
 };
 
 // ── Series statistics ──────────────────────────────────────────────────
-// Year-over-year growth array from a list of points (default value key 'v').
-// NOTE: test-pinned LEGACY helper — read only by seriesUtils.test.js / seriesUtils.cov.test.js.
-// The plain index-pairing it feeds (pearson(seriesGrowth(a), seriesGrowth(b))) silently
-// misaligns on year gaps; the live correlation path is window.pearsonByYear (below), not this.
-// Também NÃO trata ausência: o `: 0` no fim responde "cresceu 0%" a um ano sem medida.
-// Se algum dia voltar a um caminho vivo, troque por window.deltaPct antes.
-window.seriesGrowth = (pts, key = 'v') =>
-  (pts || []).slice(1).map((d, i) => (pts[i][key] ? (d[key] - pts[i][key]) / pts[i][key] : 0));
-
 // Pearson correlation between two equal-intent arrays (truncated to the
 // shorter length). Returns 0 when undefined (n < 2 or zero variance).
 window.pearson = (a, b) => {
@@ -192,9 +178,10 @@ window.pearson = (a, b) => {
 
 // Year-aware Pearson on YoY growth: aligns the two point series by their YEAR
 // (point.y), NOT by array index, then correlates growth over the common,
-// calendar-adjacent year pairs. The plain index pairing (pearson(seriesGrowth(a),
-// seriesGrowth(b))) silently misaligns the moment one series has an internal year
-// gap. For gap-free, same-year series this returns exactly the old result.
+// calendar-adjacent year pairs. (O pareamento por ÍNDICE que existia antes desalinhava
+// assim que uma série tinha lacuna interna de ano; foi removido na v1.51.0 junto com o
+// helper morto que o alimentava.) Para séries sem lacuna e nos mesmos anos, o resultado
+// é idêntico ao daquele caminho.
 window.pearsonByYear = (ptsA, ptsB, key = 'v') => {
   const ma = new Map((ptsA || []).map(d => [d.y, d[key]]));
   const mb = new Map((ptsB || []).map(d => [d.y, d[key]]));

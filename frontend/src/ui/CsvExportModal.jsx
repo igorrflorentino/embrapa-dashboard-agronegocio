@@ -165,4 +165,3 @@ function _csvTamanho(bytes) {
 }
 
 window.CsvExportModal = CsvExportModal;
-window._csvTamanho = _csvTamanho;

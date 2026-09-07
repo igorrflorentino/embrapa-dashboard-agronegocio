@@ -58,12 +58,6 @@ function ViewQuality({ summary, database }) {
       return row;
     });
 
-  // Restrict geographic quality map to selected UFs. null = no filter (all);
-  // explicit empty = none (consistent with the data layer).
-  const stateSet = (summary && summary.states != null)
-    ? new Set(summary.states) : null;
-  const qaByUf = filtered.qualityByUf.filter(u => !stateSet || stateSet.has(u.uf));
-
   // Stock/flow facet: when the banco carries measure_kind (livestock), split the
   // per-product breakdown into Estoque (herd — value-less, so its quality story is the
   // HEADCOUNT: OK vs MISSING_QUANTITY) vs Fluxo (animal products — value + quantity, so
@@ -202,33 +196,6 @@ function ViewQuality({ summary, database }) {
         </div>
       </div>
 
-      {/* Quality by UF (geo bancos only) */}
-      {filtered.qualityByUf.length > 0 && (
-      <div className="card">
-        <window.SectionHeader
-          overline="Qualidade geográfica · acervo"
-          title="% de linhas com ressalva por UF"
-          action={<span className="caption">{qaByUf.length} de {filtered.qualityByUf.length} UFs</span>}
-        />
-        {/* Clicking a UF filters the dashboard to it (click again to clear) — safe
-            here because qaByUf is itself narrowed by the state filter, so the map
-            reacts to its own click. */}
-        <window.BrazilTileMap
-          data={qaByUf.map(u => ({ ...u, v: Math.round(u.not_ok * 1000) / 10 }))}
-          valueKey="v"
-          label="% ≠ OK"
-          onSelect={window.tileSelectHandler && window.tileSelectHandler(summary)}
-          selectedUf={window.selectedSingleUf && window.selectedSingleUf(summary)}
-        />
-        <p className="caption" style={{ padding: '8px 4px 0' }}>
-          Participação de linhas com alguma ressalva no acervo do banco, por UF (todos os anos e
-          produtos); recortada apenas pelo filtro de UF. ATENÇÃO ao ligar o endpoint que
-          alimenta este mapa: `not_ok` é tudo que não é OK, o que desde a v1.49.0 inclui as
-          linhas <strong>não avaliadas</strong> — mapear isso como defeito pintaria de vermelho
-          a esparsidade do cubo, não a qualidade. Exclua UNSCORED do numerador.
-        </p>
-      </div>
-      )}
 
       {/* Stacked area of flag share over time */}
       {flags.length > 0 && (
