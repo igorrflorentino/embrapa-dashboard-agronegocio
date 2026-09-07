@@ -58,6 +58,14 @@ function ViewOverview({ families, summary, database, conventions }) {
   const okFlag    = filtered.qualityFlags.find(f => f.id === 'OK');
   const okShare   = okFlag ? okFlag.share : 0;
   const okCount   = okFlag ? okFlag.count : 0;
+  // Desde a v1.49.0 'OK' significa EXAMINADA pelo detector de preço implícito e sem
+  // ressalva — as linhas que ele não pôde escorar saíram para 'UNSCORED'. Isso derrubou
+  // o número de 99,8% para 33,5% na PAM, e o rótulo antigo ("Linhas íntegras") passaria
+  // a soar como se dois terços do acervo estivessem quebrados. Não estão: a maior parte
+  // é célula vazia do cubo (município que não produz aquilo) e valor abaixo do piso de
+  // materialidade. O card nomeia o que MEDE, e a linha de baixo diz o que é o resto.
+  const naoAvaliada = filtered.qualityFlags.find(f => f.id === 'UNSCORED');
+  const naoAvaliadaShare = naoAvaliada ? naoAvaliada.share : 0;
 
   // "UFs cobertas" must count REAL Brazilian states only. For a trade banco
   // (COMEX) ufData includes non-state pseudo-origins (ND/EX/ZN/CB/RE/MC…) that
@@ -164,10 +172,13 @@ function ViewOverview({ families, summary, database, conventions }) {
             mark the scope here rather than present an acervo % as if it were
             scoped to the active selection ("no invisible filtering"). */}
         <window.KpiCardSpark
-          label="Linhas íntegras (Normais)"
+          label="Linhas examinadas sem ressalva"
           value={window.fmtPct(okShare)}
           sub={okCount
-            ? (okCount / 1e6).toFixed(1).replace('.', ',') + ' mi linhas · acervo do banco'
+            ? `${(okCount / 1e6).toFixed(1).replace('.', ',')} mi linhas · acervo do banco`
+              + (naoAvaliadaShare > 0
+                ? ` · ${window.fmtPct(naoAvaliadaShare)} sem base para avaliar`
+                : '')
             : 'OK não selecionada · acervo do banco'}
           spark={filtered.qualityTs.slice(-12)}
           sparkKey="ok"

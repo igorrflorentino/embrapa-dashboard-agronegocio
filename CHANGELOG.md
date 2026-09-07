@@ -62,8 +62,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
   devolve `null` tanto para a linha limpa quanto para a que não pôde ser escorada, e o
   `ELSE 'OK'` juntava as duas. Na PAM, das 2.511.800 linhas "OK", só **844.250 (33,6%)**
   tinham passado pelo detector. Nova marca **`UNSCORED`** ("Não avaliada"), com escopo em
-  `quality_unscored_scope` — `'absent'` (padrão) marca as 355.644 linhas de PAM+PPM cujo
-  valor escorado não existe; `'all'` marca toda linha bloqueada pela guarda.
+  `quality_unscored_scope`, fixado em **`'all'`** (produção reconstruída em 2026-09-07):
+  toda linha bloqueada pela guarda — valor ausente, valor/quantidade não-positivos (as
+  células vazias do cubo) e o piso de materialidade.
+
+  | banco | examinadas e sem ressalva | não avaliadas |
+  |---|---|---|
+  | PEVS | 18,2% | 81,6% |
+  | PAM | 33,5% | 66,3% |
+  | COMTRADE | 33,7% | 64,6% |
+  | COMEX | 33,8% | 65,6% |
+  | PPM | 69,7% | 30,0% |
+
+  A PPM é mais alta porque suas ~2,02 mi de linhas de rebanho são **estoque**:
+  `measure_kind = 'stock'` pula o detector de propósito, já que uma contagem de cabeças
+  não tem preço a escorar.
+
+- **O rótulo do KPI teria mentido na direção oposta.** Com `OK` passando a significar
+  "examinada e aprovada", "Linhas íntegras (Normais) · 33,5%" se leria como dois terços do
+  acervo quebrados — e não estão: a maior parte é célula vazia do cubo e valor abaixo do
+  piso. O card virou **"Linhas examinadas sem ressalva"**, com **"66,3% sem base para
+  avaliar"** ao lado; os títulos equivalentes na perspectiva Qualidade acompanham. (O mapa
+  "% por UF" continua desligado — `qualityByUf` não tem endpoint —, mas ficou com aviso: seu
+  `not_ok` é "tudo que não é OK" e hoje varreria as `UNSCORED` para dentro, pintando de
+  vermelho a esparsidade do cubo em vez da qualidade.)
 
 ### Modificado
 

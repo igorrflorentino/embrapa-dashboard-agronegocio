@@ -79,7 +79,7 @@ models:
           - not_null
           - accepted_values:
               arguments:
-                values: ["OK", "MISSING_VALUE", "MISSING_QUANTITY", "INCOMPLETE", "OUTLIER_QUANTITY", "PROBLEMATIC_QUANTITY", "OUTLIER_VALUE", "PROBLEMATIC_VALUE", "INFERRED_QUANTITY", "INFERRED_VALUE"]
+                values: ["OK", "MISSING_VALUE", "MISSING_QUANTITY", "INCOMPLETE", "OUTLIER_QUANTITY", "PROBLEMATIC_QUANTITY", "OUTLIER_VALUE", "PROBLEMATIC_VALUE", "INFERRED_QUANTITY", "INFERRED_VALUE", "UNSCORED"]
       - name: product_description
         description: "Product label as published by the source. Display only — join on product_code."
       - name: val_yearfx_brl
@@ -188,7 +188,7 @@ models:
           # so it never appears there.
           - accepted_values:
               arguments:
-                values: ["OK", "MISSING_VALUE", "MISSING_QUANTITY", "INCOMPLETE", "OUTLIER_QUANTITY", "PROBLEMATIC_QUANTITY", "OUTLIER_VALUE", "PROBLEMATIC_VALUE", "INFERRED_QUANTITY", "INFERRED_VALUE", "AREA_INCONSISTENT"]
+                values: ["OK", "MISSING_VALUE", "MISSING_QUANTITY", "INCOMPLETE", "OUTLIER_QUANTITY", "PROBLEMATIC_QUANTITY", "OUTLIER_VALUE", "PROBLEMATIC_VALUE", "INFERRED_QUANTITY", "INFERRED_VALUE", "AREA_INCONSISTENT", "UNSCORED"]
       - name: city_name
         description: "Municipality display label, lifted via any_value. Join on city_code, which is the natural key."
       - name: product_description
@@ -293,7 +293,7 @@ models:
           - not_null
           - accepted_values:
               arguments:
-                values: ["OK", "MISSING_VALUE", "MISSING_QUANTITY", "INCOMPLETE", "OUTLIER_QUANTITY", "PROBLEMATIC_QUANTITY", "OUTLIER_VALUE", "PROBLEMATIC_VALUE", "INFERRED_QUANTITY", "INFERRED_VALUE"]
+                values: ["OK", "MISSING_VALUE", "MISSING_QUANTITY", "INCOMPLETE", "OUTLIER_QUANTITY", "PROBLEMATIC_QUANTITY", "OUTLIER_VALUE", "PROBLEMATIC_VALUE", "INFERRED_QUANTITY", "INFERRED_VALUE", "UNSCORED"]
       - name: city_name
         description: "Municipality display label, lifted via any_value. Join on city_code, which is the natural key."
       - name: product_description
@@ -431,7 +431,7 @@ models:
           - not_null
           - accepted_values:
               arguments:
-                values: ["OK", "MISSING_VALUE", "MISSING_WEIGHT", "INCOMPLETE", "OUTLIER_QUANTITY", "PROBLEMATIC_QUANTITY", "OUTLIER_VALUE", "PROBLEMATIC_VALUE", "INFERRED_QUANTITY", "INFERRED_VALUE"]
+                values: ["OK", "MISSING_VALUE", "MISSING_WEIGHT", "INCOMPLETE", "OUTLIER_QUANTITY", "PROBLEMATIC_QUANTITY", "OUTLIER_VALUE", "PROBLEMATIC_VALUE", "INFERRED_QUANTITY", "INFERRED_VALUE", "UNSCORED"]
       - name: last_refresh
         description: "Max ingestion_timestamp across the source rows aggregated into this record."
         tests: [not_null]
@@ -568,7 +568,7 @@ models:
           - not_null
           - accepted_values:
               arguments:
-                values: ["OK", "MISSING_VALUE", "MISSING_QUANTITY", "INCOMPLETE", "OUTLIER_QUANTITY", "PROBLEMATIC_QUANTITY", "OUTLIER_VALUE", "PROBLEMATIC_VALUE", "INFERRED_QUANTITY", "INFERRED_VALUE"]
+                values: ["OK", "MISSING_VALUE", "MISSING_QUANTITY", "INCOMPLETE", "OUTLIER_QUANTITY", "PROBLEMATIC_QUANTITY", "OUTLIER_VALUE", "PROBLEMATIC_VALUE", "INFERRED_QUANTITY", "INFERRED_VALUE", "UNSCORED"]
       - name: last_refresh
         description: "Max ingestion_timestamp across the source rows aggregated into this record."
         tests: [not_null]

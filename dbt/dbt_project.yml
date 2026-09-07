@@ -129,6 +129,14 @@ vars:
   quality_outlier_k: 4.0      # magnitude log-fence for the OUTLIER (valid-but-large) tier
   quality_min_obs: 100        # per-product sample floor — fewer rows ⇒ never flag (untrustworthy)
   quality_value_floor: 100000 # skip rows below this (deflated BRL / USD) — low-stakes rounding noise
+  # Which rows the detector could NOT score get their own flag instead of falling into 'OK'
+  # (macros/quality_outlier_ctes.sql · quality_scored). 'all' marks EVERY guard-blocked row:
+  # value absent (the deflator gap), value/qty non-positive (the empty cube cells), and the
+  # materiality floor above. Measured on prod 2026-09-06, PAM's 2.511.800 'OK' rows were only
+  # 844.250 (33,6%) actually scored — the rest were presented as verified. 'absent' narrows
+  # this to the deflator gap alone (355.644 rows in PAM+PPM); false restores the old 'OK'.
+  # Changing this requires a Gold rebuild — the flag is materialized.
+  quality_unscored_scope: all
 
   # COMTRADE totals-only floor. silver_comtrade_flows drops any Bronze row with
   # reference_year below this, so a re-anchored ingest window (config.comtrade_start_year
