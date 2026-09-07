@@ -53,7 +53,6 @@ const FIXTURE = {
   ],
   qualityTs: [{ y: 2020, ok: 0.8, incomplete: 0.15, missing_weight: 0.05 }],
   qualityByProduct: [{ code: 'P1', name: 'Açaí', OK: 0.8, INCOMPLETE: 0.2 }],
-  qualityByUf: [],
   selectedProducts: ['P1'],
   products: [{ code: 'P1', name: 'Açaí' }],
   yearStart: 2010,
@@ -124,7 +123,6 @@ const PPM_FIXTURE = {
     { code: '2670', name: 'Bovino', OK: 0.95, MISSING_QUANTITY: 0.05 },   // stock (herd)
     { code: '2682', name: 'Leite', OK: 0.8, MISSING_VALUE: 0.2 },          // flow (animal product)
   ],
-  qualityByUf: [],
   selectedProducts: ['2670', '2682'],
   products: [
     { code: '2670', name: 'Bovino', family: 'count', measure_kind: 'stock' },

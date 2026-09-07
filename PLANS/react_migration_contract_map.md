@@ -177,8 +177,10 @@ overview_ts, uf_data, quality` + `value_label`. Reshape (per-family q-scale wher
   shares 0-1, keyed by the flag IDS; absent flags read 0).
 - Trade bancos: `snapshot` already renames `total_value_usd→total_value`; `uf_data` only for COMEX
   (and now carries q_mass/q_vol per family from qty_base).
-- `qualityTs`/`qualityByProduct` ARE served (in the snapshot payload). `qualityByUf`/`topMunis` still
-  not served (optional keys) → omit or `[]`.
+- `qualityTs`/`qualityByProduct` ARE served (in the snapshot payload). `topMunis` still not served
+  (optional key) → omit or `[]`. `qualityByUf` was in this list too and never got a producer or an
+  endpoint; the view that consumed it was dead code behind a `.length > 0` that was always false, and
+  both were removed in v1.51.0.
 - **Trade mirror partners line**: a new gateway cross metric `un_comtrade:partner_exp`
   (`partner_iso_a3 = Brazil`, flow=import — every other country's declaration of imports FROM Brazil)
   is plumbed in `serving/sql.py` + `serving/gateway.py`. `seam.trade_mirror` must call

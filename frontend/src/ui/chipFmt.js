@@ -7,21 +7,6 @@
 // FilterMenu would. Centralised here as pure functions over primitives so all
 // three call ONE implementation. Loaded with the other data-layer scripts.
 
-import { magnitudeParts } from '../charts/magnitude.js';
-
-// Compact monetary label (sym-aware): "R$ 1,2 bi" / "US$ 340 mil".
-// Replaces the per-file copies (FilterMenu.formatBRLcompact + Dashboard.compactBRL).
-// Negative-safe so an inverted range still reads correctly. The bi/mi/mil ladder is the
-// shared kernel (magnitude.js, DEDUP-7); the per-tier decimals + sym/sign stay local.
-window.fmtCompactValue = (v, sym = 'R$') => {
-  if (v == null) return '—';
-  const a = Math.abs(v), sign = v < 0 ? '-' : '';
-  const { factor, suffix } = magnitudeParts(a);
-  if (!suffix) return `${sign}${sym} ` + a.toLocaleString('pt-BR');
-  const dp = factor >= 1e6 ? 1 : 0;  // bi/mi → 1 decimal, mil → 0
-  return `${sign}${sym} ` + (a / factor).toFixed(dp).replace('.', ',') + ` ${suffix}`;
-};
-
 window.chipFmt = {
   // Product basket → chip. count = selected, total = catalogue size,
   // firstName = name to show when exactly one is selected.

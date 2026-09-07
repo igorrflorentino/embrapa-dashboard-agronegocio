@@ -102,8 +102,10 @@ higher because its ~2,02M herd rows are stock — `measure_kind = 'stock'` takes
 **A `UNSCORED` row is NOT a defect.** The UI has to say so, or the honest fix reads as an alarm: "Linhas
 íntegras · 33,5%" would mean two thirds of the acervo is broken, when most of it is empty cube cells and
 sub-floor values. The KPI is **"Linhas examinadas sem ressalva"** with **"X% sem base para avaliar"** beside
-it. Any metric derived from this flag inherits that obligation — in particular `not_ok = 1 - OK` (the
-still-unserved `qualityByUf`) would now map cube sparsity as damage.
+it. Any metric derived from this flag inherits that obligation — in particular a `not_ok = 1 - OK`
+numerator would now map cube sparsity as damage. (The per-UF quality map that would have used
+one was dead code — no producer, no endpoint — and was removed in v1.51.0 rather than left as a
+trap for whoever wired the endpoint.)
 
 **Precedence (donut stays a partition):** MISSING_*/INCOMPLETE > PROBLEMATIC_VALUE > PROBLEMATIC_QUANTITY
 > OUTLIER_VALUE > OUTLIER_QUANTITY > UNSCORED > OK. UNSCORED sits LAST before OK on purpose: a row the

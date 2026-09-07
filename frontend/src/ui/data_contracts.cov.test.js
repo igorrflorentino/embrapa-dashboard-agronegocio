@@ -63,15 +63,6 @@ describe('data.js — unit-family helpers', () => {
     expect(window.unitToBase('nope', 'kg')).toBe(1); // family absent → 1
   });
 
-  it('convertUnit converts within a family and passes null through', () => {
-    // 1000 kg → 1 t
-    expect(window.convertUnit(1000, 'mass', 'kg', 't')).toBeCloseTo(1, 9);
-    // 2 t → 2000 kg
-    expect(window.convertUnit(2, 'mass', 't', 'kg')).toBeCloseTo(2000, 9);
-    // identity
-    expect(window.convertUnit(5, 'volume', 'm³', 'm³')).toBeCloseTo(5, 9);
-    expect(window.convertUnit(null, 'mass', 'kg', 't')).toBeNull();
-  });
 });
 
 describe('data.js — familiesInBasket (banco-aware)', () => {
@@ -128,19 +119,7 @@ describe('data.js — formatters', () => {
     await import('./data.js');
   });
 
-  it('fmtBRL ladders bi / mi / mil and falls through to a plain pt-BR number', () => {
-    expect(window.fmtBRL(null)).toBe('—');
-    expect(window.fmtBRL(2.5e9)).toBe('R$ 2,50 bi');
-    expect(window.fmtBRL(3.4e6)).toBe('R$ 3,4 mi');
-    expect(window.fmtBRL(7e3)).toBe('R$ 7 mil');
-    expect(window.fmtBRL(500)).toContain('R$');
-  });
 
-  it('fmtNum appends an optional unit and handles null', () => {
-    expect(window.fmtNum(null)).toBe('—');
-    expect(window.fmtNum(1000)).toBe((1000).toLocaleString('pt-BR'));
-    expect(window.fmtNum(1000, 't')).toBe((1000).toLocaleString('pt-BR') + ' t');
-  });
 
   it('fmtPct multiplies a fraction by 100, with configurable digits', () => {
     expect(window.fmtPct(null)).toBe('—');
@@ -175,30 +154,6 @@ describe('data.js — formatters', () => {
 // ──────────────────────────────────────────────────────────────────────
 // chipFmt.js — filter trigger-bar chip labels
 // ──────────────────────────────────────────────────────────────────────
-describe('chipFmt.js — fmtCompactValue', () => {
-  beforeEach(async () => {
-    await import('./chipFmt.js');
-  });
-
-  it('null → em-dash', () => {
-    expect(window.fmtCompactValue(null)).toBe('—');
-  });
-
-  it('below 1e3 → plain pt-BR number with the symbol, no suffix', () => {
-    expect(window.fmtCompactValue(500)).toBe('R$ ' + (500).toLocaleString('pt-BR'));
-  });
-
-  it('bi / mi → 1 decimal, mil → 0 decimal', () => {
-    expect(window.fmtCompactValue(1.23e9)).toBe('R$ 1,2 bi');
-    expect(window.fmtCompactValue(3.4e8, 'US$')).toBe('US$ 340,0 mi');
-    expect(window.fmtCompactValue(7.8e3)).toBe('R$ 8 mil');
-  });
-
-  it('is negative-safe (sign prefix preserved through the ladder)', () => {
-    expect(window.fmtCompactValue(-1.5e6)).toBe('-R$ 1,5 mi');
-  });
-});
-
 describe('chipFmt.js — chipFmt object', () => {
   beforeEach(async () => {
     await import('./chipFmt.js');

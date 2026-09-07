@@ -122,7 +122,7 @@ import './seriesUtils.js';
     const snap = fromStore || fromSynth || {
       products: [], productTS: {}, overviewTS: [], ufData: [], ufYearly: [],
       quality: [], qualityTs: [], topMunis: [], regions: window.REGIONS || [],
-      qualityByProduct: [], qualityByUf: [],
+      qualityByProduct: [],
     };
     const PRODUCTS_T   = snap.products   || [];
     const PRODUCT_TS_T = snap.productTS  || {};
@@ -548,7 +548,6 @@ import './seriesUtils.js';
       // ufYearly is absent. [] when the banco has no geography.
       ufDataFull:      ufUniverse,
       qualityByProduct: snap.qualityByProduct || [],
-      qualityByUf:     snap.qualityByUf || [],
       // Honest flag for the geo views: true when a product basket is active but
       // the per-UF/region/heatmap totals are NOT narrowed by it (no per-product ×
       // UF grain in the snapshot). The views render a pt-BR note instead of
