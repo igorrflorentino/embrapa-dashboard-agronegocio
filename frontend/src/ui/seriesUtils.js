@@ -115,6 +115,13 @@ window.AREA_FLOOR = { minShare: 0.005, minAbs: 1000 };
 // descreve. O piso separa o artefato do fenômeno, e não os dois do resto.
 window.PRODUCAO_FLOOR = { minShare: 0.0001 };
 
+// A calibração do piso do PREÇO MÉDIO por parceiro, em mil t (a unidade que o serializer
+// entrega). Espelha `_PARTNER_PRICE_FLOOR` no serializers.py, que é quem APLICA o corte
+// — o SQL não tem LIMIT e o `head` do serializer é o top-N, então um piso a jusante
+// receberia uma página já feita só de artefatos. Aqui os números existem para a nota
+// poder enunciar a regra que o servidor aplicou, e o teste de paridade prende os dois.
+window.PARTNER_PRICE_FLOOR = { minShare: 0.00001, minAbs: 0.1 };
+
 // Diferença entre duas medidas, preservando a ausência. Para grandezas que já são
 // percentuais (uma participação de mercado, por exemplo), onde a variação se declara em
 // PONTOS PERCENTUAIS e não em variação relativa — deltaPct responderia outra pergunta.

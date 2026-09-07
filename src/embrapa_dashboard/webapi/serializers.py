@@ -25,6 +25,7 @@ from embrapa_dashboard import __version__ as _APP_VERSION
 from embrapa_dashboard import release
 
 from . import format as fmt
+from . import measures
 
 # Sentinel so a genuine "no release date" (None) is cached instead of re-read forever.
 _UNRESOLVED = object()
@@ -807,7 +808,24 @@ def serialize_flow(d: dict | None, max_links: int = 40) -> dict:
     }
 
 
-def serialize_partner(df: pd.DataFrame | None, max_rows: int = 30) -> dict:
+# Piso de materialidade do ranking de PREÇO médio (US$/kg = valor ÷ peso). Aplica-se
+# só a ele: valor e volume são aditivos, e um parceiro minúsculo afunda sozinho — já uma
+# RAZÃO sobe ao topo com a base minúscula. Medido em produção 2026-09-07 sobre o COMEX:
+# o topo era o Lesoto com **1 kg** (US$ 11,00 de comércio em toda a história), depois
+# Mônaco (1.522 kg) e Nauru (600 kg).
+#
+# 100 t (1e5 kg) é a fronteira que o dado indica: abaixo dela os 16 parceiros excluídos
+# somam de US$ 11 a US$ 68 mil de comércio ACUMULADO; logo acima está a Estônia, com
+# 3.604 t a US$ 2,20/kg — um mercado pequeno de alto valor, que é exatamente a resposta
+# que este ranking existe para achar. Um piso relativo mais apertado (0,001% do peso) a
+# cortaria junto, e jogaria fora o achado com o artefato.
+#
+# A metade relativa existe para o recorte ESTREITO (um NCM, um ano, uma UF), onde 100 t
+# pode ser o comércio inteiro e o absoluto sozinho esvaziaria o ranking.
+_PARTNER_PRICE_FLOOR = {"min_abs": 1e5, "min_share": 1e-5}
+
+
+def serialize_partner(df: pd.DataFrame | None, max_rows: int = 30, rank_by: str = "value") -> dict:
     """seam.partner_data() → PartnerData. Partner ranking with exp/imp split.
 
     Each partner carries three comparable measures so the view can rank/display by
@@ -816,23 +834,49 @@ def serialize_partner(df: pd.DataFrame | None, max_rows: int = 30) -> dict:
     ``price`` in US$/kg (value ÷ net weight; ``None`` when the partner has no weight,
     so the view shows "—" instead of a divide-by-zero artefact). The row ORDER is
     the server-side ranking dimension (seam ``rank_by``), so ``df.head`` is the
-    correct top-N for whichever metric was requested."""
+    correct top-N for whichever metric was requested.
+
+    ``rank_by='price'`` also applies the materiality floor BEFORE the top-N cut — it
+    has to happen here, because the SQL has no LIMIT and this ``head`` IS the cut: a
+    floor applied downstream would receive a page already made only of artefacts.
+    ``belowFloor`` carries who was set aside, so the view can name them (a filtragem
+    invisível é proibida) — it is empty for the additive rankings, which need no floor.
+    """
     if _empty(df):
-        return {"preview": False, "flowLabel": "Parceiro", "unit": "US$", "partners": []}
-    partners = []
-    for r in df.head(max_rows).itertuples():
+        return {
+            "preview": False,
+            "flowLabel": "Parceiro",
+            "unit": "US$",
+            "partners": [],
+            "belowFloor": [],
+        }
+
+    def _row(r) -> dict:
         price = getattr(r, "price_usd_per_kg", None)
-        partners.append(
-            {
-                "name": r.partner_name,
-                "exp": _num(r.exp_value_usd) / 1e6,
-                "imp": _num(r.imp_value_usd) / 1e6,
-                "value": _num(r.value_usd) / 1e6,
-                "weight": _num(getattr(r, "total_weight_kg", 0)) / 1e6,  # kg → mil t
-                "price": None if price is None or pd.isna(price) else _num(price),  # US$/kg
-            }
-        )
-    return {"preview": False, "flowLabel": "Parceiro", "unit": "US$", "partners": partners}
+        return {
+            "name": r.partner_name,
+            "exp": _num(r.exp_value_usd) / 1e6,
+            "imp": _num(r.imp_value_usd) / 1e6,
+            "value": _num(r.value_usd) / 1e6,
+            "weightKg": _num(getattr(r, "total_weight_kg", 0)),  # o piso mede em kg
+            "weight": _num(getattr(r, "total_weight_kg", 0)) / 1e6,  # kg → mil t
+            "price": None if price is None or pd.isna(price) else _num(price),  # US$/kg
+        }
+
+    rows = [_row(r) for r in df.itertuples()]
+    below: list[dict] = []
+    if rank_by == "price":
+        rows, below = measures.materiality_floor(rows, "weightKg", **_PARTNER_PRICE_FLOOR)
+    for r in rows + below:
+        r.pop("weightKg", None)
+    return {
+        "preview": False,
+        "flowLabel": "Parceiro",
+        "unit": "US$",
+        "partners": rows[:max_rows],
+        # Ordenado do maior para o menor, como a nota os enumera na tela.
+        "belowFloor": sorted(below, key=lambda d: -(d["weight"] or 0)),
+    }
 
 
 def serialize_products_by_uf(df: pd.DataFrame | None, max_rows: int = 100) -> dict:

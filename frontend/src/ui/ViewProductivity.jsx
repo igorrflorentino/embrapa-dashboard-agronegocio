@@ -168,7 +168,7 @@ function ViewProductivity({ summary, conventions, database }) {
           <window.MaterialityFloorNote
             dropped={floor.dropped} valueKey="areaHa" fmt={fmtArea}
             floor={window.AREA_FLOOR} floorRel={floorHa}
-            titulo="Fora da comparação por área"
+            titulo="Fora da comparação por área" substantivo="UFs"
             base="da área colhida do recorte"
             porque="base pequena demais para o rendimento médio representar a UF"
             segue="Seguem no mapa em cinza, sem cor de intensidade." />
@@ -189,7 +189,7 @@ function ViewProductivity({ summary, conventions, database }) {
           <window.MaterialityFloorNote
             dropped={floor.dropped} valueKey="areaHa" fmt={fmtArea}
             floor={window.AREA_FLOOR} floorRel={floorHa}
-            titulo="Fora da comparação por área"
+            titulo="Fora da comparação por área" substantivo="UFs"
             base="da área colhida do recorte"
             porque="base pequena demais para o rendimento médio representar a UF"
             segue="Seguem no mapa em cinza, sem cor de intensidade." />

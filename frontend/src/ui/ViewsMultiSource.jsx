@@ -160,6 +160,7 @@ function ViewExportCoef() {
         floor={window.PRODUCAO_FLOOR}
         floorRel={Number.isFinite(floor.total) ? floor.total * window.PRODUCAO_FLOOR.minShare : null}
         titulo="Fora do ranking por produção"
+        substantivo="UFs"
         base="da produção do recorte"
         porque="produção pequena demais para a fração exportada representar o estado"
         segue="Seguem no mapa em cinza, sem cor de intensidade." />

@@ -1138,6 +1138,84 @@ def test_serialize_partner_populated_path_scales_and_truncates():
     }
 
 
+def _parceiro(nome, valor_usd, peso_kg):
+    """Uma linha do ranking, no formato que ``trade_by_partner`` devolve."""
+    return {
+        "partner_name": nome,
+        "exp_value_usd": valor_usd,
+        "imp_value_usd": 0,
+        "value_usd": valor_usd,
+        "total_weight_kg": peso_kg,
+        "price_usd_per_kg": (valor_usd / peso_kg) if peso_kg else None,
+    }
+
+
+# ÂNCORA EXTERNA: o topo real de "Preço médio" no COMEX, medido em 2026-09-07, na ordem
+# em que o servidor o devolvia. Um quilo não é um preço — o Lesoto movimentou US$ 11,00
+# em toda a história da série e encabeçava o ranking.
+_TOPO_REAL_DO_PRECO = [
+    _parceiro("Lesoto", 11, 1),
+    _parceiro("Mônaco", 12_512, 1_522),
+    _parceiro("Nauru", 1_852, 600),
+    _parceiro("Estônia", 7_929_535, 3_604_334),
+    _parceiro("Índia", 13_704_387_060, 17_569_727_000),
+]
+
+
+def test_serialize_partner_preco_tira_do_topo_quem_nao_tem_comercio():
+    out = s.serialize_partner(pd.DataFrame(_TOPO_REAL_DO_PRECO), rank_by="price")
+    nomes = [p["name"] for p in out["partners"]]
+    # A Estônia é o topo REAL: 3.604 t a US$ 2,20/kg, um mercado pequeno de alto valor —
+    # exatamente a resposta que este ranking existe para achar. Ela SOBREVIVE ao piso;
+    # um corte relativo mais apertado a levaria junto com os artefatos.
+    assert nomes[0] == "Estônia"
+    assert "Lesoto" not in nomes and "Mônaco" not in nomes and "Nauru" not in nomes
+    # E nada some em silêncio: quem saiu volta em belowFloor, do maior para o menor,
+    # para a nota da tela poder nomeá-los.
+    assert [p["name"] for p in out["belowFloor"]] == ["Mônaco", "Nauru", "Lesoto"]
+
+
+def test_serialize_partner_o_piso_vale_SO_para_o_ranking_de_preco():
+    """Valor e volume são ADITIVOS: um parceiro minúsculo afunda sozinho, e cortá-lo
+    apagaria da lista alguém que a lista não estava afirmando nada sobre. É a razão que
+    sobe ao topo com a base minúscula, não a soma."""
+    for metrica in ("value", "weight"):
+        out = s.serialize_partner(pd.DataFrame(_TOPO_REAL_DO_PRECO), rank_by=metrica)
+        assert [p["name"] for p in out["partners"]] == [
+            "Lesoto",
+            "Mônaco",
+            "Nauru",
+            "Estônia",
+            "Índia",
+        ], f"o piso mordeu o ranking de {metrica}"
+        assert out["belowFloor"] == []
+
+
+def test_serialize_partner_o_piso_corta_ANTES_do_top_n():
+    """O SQL não tem LIMIT e este ``head`` É o corte, então a ordem importa: filtrar
+    depois de truncar receberia uma página já feita só de artefatos e devolveria vazio.
+    """
+    out = s.serialize_partner(pd.DataFrame(_TOPO_REAL_DO_PRECO), max_rows=2, rank_by="price")
+    assert [p["name"] for p in out["partners"]] == ["Estônia", "Índia"]
+
+
+def test_serialize_partner_piso_que_derrubaria_todos_nao_derruba_ninguem():
+    """Um recorte estreito onde ninguém alcança 100 t: melhor sem piso que em branco.
+    (A metade relativa existe justamente para esses casos, mas com UM parceiro só ela
+    também não discrimina — ele é 100% do recorte.)"""
+    out = s.serialize_partner(pd.DataFrame([_parceiro("Nauru", 1_852, 600)]), rank_by="price")
+    assert [p["name"] for p in out["partners"]] == ["Nauru"]
+    assert out["belowFloor"] == []
+
+
+def test_serialize_partner_o_peso_em_kg_nao_vaza_para_o_contrato():
+    """`weightKg` é andaime do piso: a unidade do contrato é mil t, e deixar as duas no
+    payload convidaria a tela a somar a mesma grandeza duas vezes."""
+    out = s.serialize_partner(pd.DataFrame(_TOPO_REAL_DO_PRECO), rank_by="price")
+    for p in out["partners"] + out["belowFloor"]:
+        assert "weightKg" not in p, p
+
+
 def test_serialize_partner_null_weight_yields_none_price():
     """A partner with no net weight (e.g. a COMTRADE row with missing quantity) →
     weight 0 and price None, so the view renders '—' instead of a div-by-zero."""
