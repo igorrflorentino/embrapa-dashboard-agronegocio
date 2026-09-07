@@ -1412,7 +1412,12 @@ def quality_by_source(
     *,
     source: str | None = None,
 ) -> tuple[str, list]:
-    """data_quality_flag breakdown from ``serving_quality_by_source`` (backs quality)."""
+    """data_quality_flag breakdown from ``serving_quality_by_source`` (backs quality).
+
+    ``value_share`` weights the same breakdown by MONEY. It exists because the row
+    count alone misleads: measured on prod 2026-09-07, PEVS is 81,6% UNSCORED by rows
+    and 0,7% by value.
+    """
     conditions: list[str] = []
     params: list = []
     if source is not None:
@@ -1423,7 +1428,8 @@ def quality_by_source(
             source,
             data_quality_flag,
             n_rows,
-            share
+            share,
+            value_share
         from `{table}`
         {_where(conditions)}
         order by n_rows desc

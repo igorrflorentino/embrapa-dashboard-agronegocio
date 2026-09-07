@@ -66,6 +66,18 @@ function ViewOverview({ families, summary, database, conventions }) {
   // materialidade. O card nomeia o que MEDE, e a linha de baixo diz o que é o resto.
   const naoAvaliada = filtered.qualityFlags.find(f => f.id === 'UNSCORED');
   const naoAvaliadaShare = naoAvaliada ? naoAvaliada.share : 0;
+  // A MESMA fração pesada por dinheiro (v1.56.0). Sem ela o card conta só metade da
+  // história: no PEVS, 81,6% das LINHAS não foram avaliadas e 0,7% do VALOR — porque o
+  // que o detector pula são células vazias do cubo do IBGE e remessas abaixo do piso de
+  // materialidade, numerosas e economicamente irrelevantes. "33,5%" sozinho diz ao
+  // pesquisador que dois terços do acervo não foram examinados: verdade sobre as LINHAS,
+  // falso sobre o ASSUNTO.
+  // O COMPLEMENTO do não avaliado, não o valueShare do OK. "Examinado" inclui o que o
+  // detector olhou E MARCOU (outlier, problemático): essas linhas passaram pelo exame.
+  // Usar o valueShare do OK subestimaria — no PEVS daria 79% em vez de 99,3% — e poria
+  // um número sob um rótulo que nomeia outra coisa, que é o defeito desta sessão inteira.
+  const naoAvaliadaValueShare = naoAvaliada ? naoAvaliada.valueShare : null;
+  const valorExaminado = naoAvaliadaValueShare == null ? null : 1 - naoAvaliadaValueShare;
 
   // "UFs cobertas" must count REAL Brazilian states only. For a trade banco
   // (COMEX) ufData includes non-state pseudo-origins (ND/EX/ZN/CB/RE/MC…) that
@@ -176,8 +188,14 @@ function ViewOverview({ families, summary, database, conventions }) {
           value={window.fmtPct(okShare)}
           sub={okCount
             ? `${(okCount / 1e6).toFixed(1).replace('.', ',')} mi linhas · acervo do banco`
+              // A cobertura em VALOR vem primeiro quando existe: é ela que diz se o
+              // número acima é motivo de preocupação. `!= null` e não truthy — 0% é uma
+              // fração medida e precisa aparecer.
+              + (valorExaminado != null
+                ? ` · ${window.fmtPct(valorExaminado)} do valor examinado`
+                : '')
               + (naoAvaliadaShare > 0
-                ? ` · ${window.fmtPct(naoAvaliadaShare)} sem base para avaliar`
+                ? ` · ${window.fmtPct(naoAvaliadaShare)} das linhas sem base para avaliar`
                 : '')
             : 'OK não selecionada · acervo do banco'}
           spark={filtered.qualityTs.slice(-12)}

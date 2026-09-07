@@ -122,7 +122,16 @@ def test_serialize_snapshot_shapes_and_scales():
     # _quality emits a pt-BR label so the donut stays Portuguese even for flags the
     # frontend taxonomy lacks (INCOMPLETE/MISSING_WEIGHT). The healthy row is labeled
     # "Normais" per the Contrato de Dados spreadsheet (not the English "OK" token).
-    assert out["quality"][0] == {"id": "OK", "label": "Normais", "count": 42, "share": 0.8}
+    # valueShare None porque a fixture não traz a coluna: a mart antiga não tinha, e o
+    # serializer degrada para ausência em vez de inventar 0% — que afirmaria que nenhum
+    # dinheiro passou pelo detector.
+    assert out["quality"][0] == {
+        "id": "OK",
+        "label": "Normais",
+        "count": 42,
+        "share": 0.8,
+        "valueShare": None,
+    }
     assert out["preview"] is False and out["_synthetic"] is False
 
 
@@ -1638,3 +1647,32 @@ def test_coeficiente_de_exportacao_de_uf_sem_producao_e_ausente_nao_zero():
         [{"uf": "ND", "production": 0.0, "exportV": 116.5, "coefPct": None}]
     )
     assert vazio["coefPct"] is None
+
+
+def test_quality_carrega_a_cobertura_em_VALOR_ao_lado_da_de_linhas():
+    """O número que impede o card de assustar sem motivo.
+
+    Medido em produção 2026-09-07: o PEVS tem 81,6% das LINHAS não avaliadas e 0,7% do
+    VALOR. As linhas que o detector pula são numerosas e economicamente irrelevantes —
+    células vazias do cubo do IBGE (o SIDRA publica uma linha `-` para cada município ×
+    produto × ano sem produção) e remessas abaixo do piso de US$ 100 mil no comércio.
+    Mostrar só a fração de linhas diz ao pesquisador que dois terços do dado não foram
+    examinados: verdade sobre as LINHAS, falso sobre o ASSUNTO.
+    """
+    df = pd.DataFrame(
+        [
+            {"data_quality_flag": "OK", "n_rows": 246412, "share": 0.182, "value_share": 0.993},
+            {
+                "data_quality_flag": "UNSCORED",
+                "n_rows": 1103462,
+                "share": 0.816,
+                "value_share": 0.007,
+            },
+        ]
+    )
+    out = s._quality(df)
+    assert [r["id"] for r in out] == ["OK", "UNSCORED"]
+    assert out[0]["share"] == pytest.approx(0.182) and out[0]["valueShare"] == pytest.approx(0.993)
+    assert out[1]["share"] == pytest.approx(0.816) and out[1]["valueShare"] == pytest.approx(0.007)
+    # As duas frações medem coisas diferentes e não podem ser confundidas.
+    assert out[1]["share"] > out[1]["valueShare"] * 100

@@ -212,8 +212,11 @@ models:
 
   - name: serving_quality_by_source
     description: |
-      data_quality_flag breakdown per source (id, count, share) for the quality
-      donut. Tiny pre-counted table; share sums to 1 within each source.
+      data_quality_flag breakdown per source (id, count, share, value_share) for the
+      quality donut. Tiny pre-counted table; both shares sum to 1 within each source.
+      `value_share` weights the same breakdown by MONEY — measured on prod 2026-09-07,
+      PEVS is 81,6% UNSCORED by rows and 0,7% by value, so the row count alone reads as
+      an alarm the subject does not justify.
     tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
@@ -231,3 +234,9 @@ models:
         tests: [not_null]
       - name: share
         description: "count ÷ source total; sums to 1 within a source."
+      - name: value_share
+        description: >
+          Monetary weight of the flag: the flag's value ÷ the source total, summing to 1
+          within a source. The value column differs per banco (BRL for IBGE, USD for
+          trade) and that is fine — this is a ratio WITHIN a source, never compared
+          across them. NULL when a source's total value is zero (no base for a fraction).
