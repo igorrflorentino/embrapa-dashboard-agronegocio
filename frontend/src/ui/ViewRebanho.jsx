@@ -113,7 +113,7 @@ function ViewRebanho({ summary, conventions, database }) {
   const focusWin  = filtered.allProductTS[activeFocus].filter(d => d.y >= yearStart && d.y <= yearEnd);
   const fLast = focusWin[focusWin.length - 1] || { y: yearEnd, q: 0 };
   const fPrev = focusWin[focusWin.length - 2] || fLast;
-  const fDelta = fPrev.q ? ((fLast.q - fPrev.q) / fPrev.q) * 100 : 0;
+  const fDelta = window.deltaPct(fPrev.q, fLast.q);
   const fPeak = focusWin.reduce((m, d) => (d.q > m.q ? d : m), focusWin[0] || fLast);
 
   // Per-UF map of the focused species — decorate product-uf rows with tile col/row

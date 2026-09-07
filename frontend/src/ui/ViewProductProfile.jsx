@@ -118,7 +118,9 @@ function ViewProductProfile({ families, summary, database, conventions }) {
     const inQtyDenom = p && p.family === family
       && (!isStock || p.measure_kind === 'stock');
     series.forEach(d => {
-      totalByYear[d.y] = (totalByYear[d.y] || 0) + d.v;
+      // O denominador da participação soma só o que EXISTE: um ano sem valor para a
+      // convenção escolhida fica ausente, e a participação daquele ano é recusada.
+      totalByYear[d.y] = window.addPresent(totalByYear[d.y] ?? null, d.v);
       if (inQtyDenom && d.q != null) totalQByYear[d.y] = (totalQByYear[d.y] || 0) + d.q;
     });
   });
@@ -126,27 +128,28 @@ function ViewProductProfile({ families, summary, database, conventions }) {
   // Implicit price = value ÷ quantity, both in their displayed unit. The quantity
   // series uses the family-aware qtyMul, so the price divides by the SAME d.q * qtyMul
   // (avoids the 1000× m³ inflation the old hardcoded ×1e3 caused for volume products).
-  const valueSeries = win.map(d => ({ y: d.y, v: d.v * 1e6 * cvf }));      // absolute currency
-  const qtySeries   = win.map(d => ({ y: d.y, q: d.q * qtyMul }));                   // display unit (×mul)
-  const priceSeries = win.map(d => ({ y: d.y, v: (d.q * qtyMul) ? (d.v * 1e6 * cvf) / (d.q * qtyMul) : 0 })); // moeda/unidade
+  // Toda conversão de escala passa por scalePresent e toda razão por ratioPresent: o
+  // ano que a convenção não cobre segue AUSENTE até a tela ('—' / lacuna) em vez de
+  // reaparecer como zero — `null * 1e6 === 0` em JS.
+  const valueSeries = win.map(d => ({ y: d.y, v: window.scalePresent(d.v, 1e6 * cvf) }));  // absolute currency
+  const qtySeries   = win.map(d => ({ y: d.y, q: window.scalePresent(d.q, qtyMul) }));     // display unit (×mul)
+  const preco = (d) => window.ratioPresent(window.scalePresent(d.v, 1e6 * cvf),
+                                           window.scalePresent(d.q, qtyMul));
+  const priceSeries = win.map(d => ({ y: d.y, v: preco(d) }));                             // moeda/unidade
   // Share: by VALUE for a flow; by same-family QUANTITY for a value-less stock.
-  const shareSeries = win.map(d => ({
-    y: d.y,
-    v: isStock
-      ? (totalQByYear[d.y] ? (d.q / totalQByYear[d.y]) * 100 : 0)
-      : (totalByYear[d.y] ? (d.v / totalByYear[d.y]) * 100 : 0),
-  }));
+  const parte = (d) => window.scalePresent(
+    isStock ? window.ratioPresent(d.q, totalQByYear[d.y]) : window.ratioPresent(d.v, totalByYear[d.y]),
+    100);
+  const shareSeries = win.map(d => ({ y: d.y, v: parte(d) }));
 
-  const last = win[win.length - 1] || { v: 0, q: 0 };
+  const last = win[win.length - 1] || { v: null, q: null };
   const prev = win[win.length - 2] || last;
-  const lastValAbs = last.v * 1e6 * cvf;
-  const prevValAbs = prev.v * 1e6 * cvf;
-  const deltaV = prevValAbs ? ((lastValAbs - prevValAbs) / prevValAbs) * 100 : 0;
-  const deltaQ = prev.q ? ((last.q - prev.q) / prev.q) * 100 : 0;
-  const lastPrice = (last.q * qtyMul) ? (last.v * 1e6 * cvf) / (last.q * qtyMul) : 0;
-  const lastShare = isStock
-    ? (totalQByYear[last.y] ? (last.q / totalQByYear[last.y]) * 100 : 0)
-    : (totalByYear[last.y] ? (last.v / totalByYear[last.y]) * 100 : 0);
+  const lastValAbs = window.scalePresent(last.v, 1e6 * cvf);
+  const prevValAbs = window.scalePresent(prev.v, 1e6 * cvf);
+  const deltaV = window.deltaPct(prevValAbs, lastValAbs);
+  const deltaQ = window.deltaPct(prev.q, last.q);
+  const lastPrice = preco(last);
+  const lastShare = parte(last);
   // Historical peak headcount (drives the stock KPI that replaces "Valor")
   const peak = win.reduce((m, d) => (d.q > m.q ? d : m), win[0] || { y: last.y, q: 0 });
 
@@ -205,9 +208,9 @@ function ViewProductProfile({ families, summary, database, conventions }) {
         ) : (
           <window.KpiCardSpark
             label={`Valor · ${monLabel}`}
-            value={window.formatValue(last.v * 1e6, conv)}
+            value={window.formatValue(window.scalePresent(last.v, 1e6), conv)}
             delta={window.fmtSigned(deltaV)}
-            deltaPositive={deltaV >= 0}
+            deltaPositive={Number.isFinite(deltaV) ? deltaV >= 0 : null}
             sub={`${last.y} vs. ${prev.y}`}
             spark={win.slice(-12).map(d => ({ y: d.y, v: d.v }))}
             sparkKey="v"
@@ -238,7 +241,9 @@ function ViewProductProfile({ families, summary, database, conventions }) {
         {!isStock && (
           <window.KpiCardSpark
             label="Preço médio implícito"
-            value={fx.symbol + ' ' + lastPrice.toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + ' /' + prod.unit}
+            value={lastPrice == null
+              ? '—'
+              : fx.symbol + ' ' + lastPrice.toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + ' /' + prod.unit}
             sub="valor ÷ quantidade"
             spark={priceSeries.slice(-12)}
             sparkKey="v"
@@ -247,7 +252,7 @@ function ViewProductProfile({ families, summary, database, conventions }) {
         )}
         <window.KpiCardSpark
           label={isStock ? 'Participação no efetivo' : 'Participação na cesta'}
-          value={window.fmtPct(lastShare / 100)}
+          value={window.fmtPct(window.scalePresent(lastShare, 0.01))}
           sub={`${filtered.selectedProducts.length} ${filtered.selectedProducts.length === 1 ? 'produto' : 'produtos'} na cesta`}
           spark={shareSeries.slice(-12)}
           sparkKey="v"
@@ -358,8 +363,8 @@ function ViewProductProfile({ families, summary, database, conventions }) {
             <dt>Cobertura temporal</dt><dd className="tnum">{yearStart}–{yearEnd}</dd>
             {isStock
               ? <><dt>Efetivo ({last.y})</dt><dd>{window.formatCountQty(last.q, conv)}</dd></>
-              : <><dt>Valor ({last.y})</dt><dd>{window.formatValue(last.v * 1e6, conv)}</dd></>}
-            <dt>{isStock ? 'Participação no efetivo' : 'Participação na cesta'}</dt><dd>{window.fmtPct(lastShare / 100)}</dd>
+              : <><dt>Valor ({last.y})</dt><dd>{window.formatValue(window.scalePresent(last.v, 1e6), conv)}</dd></>}
+            <dt>{isStock ? 'Participação no efetivo' : 'Participação na cesta'}</dt><dd>{window.fmtPct(window.scalePresent(lastShare, 0.01))}</dd>
             {qaRow && <><dt>Linhas íntegras (Normais)</dt><dd>{window.fmtPct(qaRow.OK)}</dd></>}
             {qaRow && !isStock && <><dt>Valor ausente</dt><dd>{window.fmtPct(qaRow.MISSING_VALUE)}</dd></>}
             {qaRow && isStock && qaRow.MISSING_QUANTITY != null && <><dt>Quantidade ausente</dt><dd>{window.fmtPct(qaRow.MISSING_QUANTITY)}</dd></>}

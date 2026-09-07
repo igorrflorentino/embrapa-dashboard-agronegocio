@@ -72,15 +72,42 @@ conservation test `assert_serving_conserved_gold.sql` gates BOTH the serving AND
 
 ## FEATURE B — Q1 outlier/problemático (detection ENABLED in prod via the magnitude floor)
 
-**9-value emitted enum:** `OK, MISSING_VALUE, MISSING_QUANTITY, MISSING_WEIGHT, INCOMPLETE, OUTLIER_QUANTITY,
-PROBLEMATIC_QUANTITY, OUTLIER_VALUE, PROBLEMATIC_VALUE`. COMEX/COMTRADE weight reuses the QUANTITY ids.
+**10-value emitted enum:** `OK, MISSING_VALUE, MISSING_QUANTITY, MISSING_WEIGHT, INCOMPLETE, OUTLIER_QUANTITY,
+PROBLEMATIC_QUANTITY, OUTLIER_VALUE, PROBLEMATIC_VALUE, UNSCORED`. COMEX/COMTRADE weight reuses the QUANTITY ids.
 (**v1.10.2:** the accepted-value domain grew to **11** — two RESERVED tiers `INFERRED_QUANTITY`/`INFERRED_VALUE`
 were added to every `_gold.yml` accepted_values list + the frontend/backend taxonomy, for a future auto-fill
 pipeline. No Gold CASE emits them, so they're accepted-but-absent, 0 today; they do NOT participate in the
-precedence below.)
+precedence below. **v1.49.0:** `UNSCORED` brought the domain to **12** — and unlike the reserved tiers it IS
+emitted, in bulk.)
+
+### UNSCORED — "the detector could not run" is not "the detector found nothing" (v1.49.0)
+
+`_q_guard` returns null both for a CLEAN row and for one it could not score, and the `ELSE 'OK'` merged the
+two. Measured on prod 2026-09-06: of PAM's 2.511.800 `OK` rows, only **844.250 (33,6%)** had actually been
+through the detector. The rest were presented as verified.
+
+`quality_scored(value_expr, qty_expr)` (macros/quality_outlier_ctes.sql) is the missing predicate; the var
+`quality_unscored_scope` picks how much of the guard it covers:
+
+| scope | covers | effect |
+|---|---|---|
+| `'all'` (**prod**, rebuilt 2026-09-07) | every guard clause: value absent, value/qty non-positive (the empty cube cells), sample floor, materiality floor | PAM 33,5% OK / 66,3% UNSCORED |
+| `'absent'` | only rows whose scored value does not exist (the deflator gap: PAM/PPM 1974–1979) | 355.644 rows in PAM+PPM |
+| `false` | nothing | the old `OK` |
+
+Post-rebuild, measured: **PEVS 18,2% OK · PAM 33,5% · COMTRADE 33,7% · COMEX 33,8% · PPM 69,7%.** PPM is
+higher because its ~2,02M herd rows are stock — `measure_kind = 'stock'` takes its own branch in
+`gold_ppm_production` and never reaches the detector, correctly: a headcount has no price to score.
+
+**A `UNSCORED` row is NOT a defect.** The UI has to say so, or the honest fix reads as an alarm: "Linhas
+íntegras · 33,5%" would mean two thirds of the acervo is broken, when most of it is empty cube cells and
+sub-floor values. The KPI is **"Linhas examinadas sem ressalva"** with **"X% sem base para avaliar"** beside
+it. Any metric derived from this flag inherits that obligation — in particular `not_ok = 1 - OK` (the
+still-unserved `qualityByUf`) would now map cube sparsity as damage.
 
 **Precedence (donut stays a partition):** MISSING_*/INCOMPLETE > PROBLEMATIC_VALUE > PROBLEMATIC_QUANTITY
-> OUTLIER_VALUE > OUTLIER_QUANTITY > OK.
+> OUTLIER_VALUE > OUTLIER_QUANTITY > UNSCORED > OK. UNSCORED sits LAST before OK on purpose: a row the
+detector did manage to flag stays flagged.
 
 **Detector (REVISED — VALIDATED on live BigQuery, 2026-06-26).** The magnitude-only fence the first
 workflow proposed CANNOT split outlier from problemático (both are "high") — proven false-positives on

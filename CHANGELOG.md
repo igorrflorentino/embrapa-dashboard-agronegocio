@@ -7,6 +7,144 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.49.0] - 2026-09-07
+
+### Corrigido
+
+- **"Variação acumulada: +0%" para uma série que cresceu 896%.** Na PAM com IPCA, a base da
+  conta era 1974 — e o valor deflacionado **não existe** antes de 1980, porque as séries de
+  inflação do BCB começam depois da PAM. O serializer mapeava esse `NULL` para `0.0`, o
+  gráfico desenhava seis anos de reta no zero, e a conta dividia por esse zero e caía numa
+  guarda `: 0` que imprimia **"+0%"** — que se lê como "não variou". O número honesto,
+  1980→2024, é **+896%**.
+
+  A lacuna não era só do IPCA. Medida nas marts de produção (2026-09-06), a janela do
+  **banco** nunca foi a janela da **medida**:
+
+  | banco | banco diz | BRL nom | USD | EUR | IPCA | IGP-M | IGP-DI |
+  |---|---|---|---|---|---|---|---|
+  | PAM/PPM | 1974 | 1974 | 1994 | **1999** | 1980 | 1989 | 1980 |
+  | PEVS | 1986 | 1986 | 1994 | **1999** | 1986 | 1989 | 1986 |
+  | COMEX | 1997 | 1997 | 1997 | 1999 | 1997 | 1997 | 1997 |
+
+  Em EUR, **25 dos 51 anos** da PAM eram zeros fabricados — metade da série. O
+  `gold_source_metadata.year_start`, que alimenta o cabeçalho "1974–2024", é a cobertura do
+  banco, não a da coluna escolhida.
+
+- **"Variação acumulada: +5237412820780295%" nos valores nominais.** Aqui os dois extremos
+  existem: 1974 vale R$ 0,00008363 e 2024 vale R$ 4.380.115.000. A razão está exata e a
+  leitura é lixo — ela mede seis reformas monetárias, não produção de abacaxi. O seam agora
+  emite `valueEraBreaks` a partir do seed `historical_currency_factors` (nunca de um 1994
+  chumbado), **vazio em toda convenção que não seja R$ nominal**, e a tela recusa com o
+  motivo: *"moeda mudou 5× (1986–1994) — valores nominais não são comparáveis"*. Dentro da
+  mesma era o nominal responde normalmente (1995→2024 = +1061%).
+
+- **A mesma falha em mais 14 pontos, varridos de uma vez.** Todos compartilhavam a forma
+  `x ? a/x : 0` — responder "zero" a uma pergunta indefinida:
+  - **Base 100** (`ViewProductCompare`, `ViewCrossSource`) era o pior: sem base, a série
+    **inteira** virava uma reta no zero, sem número suspeito na tela. O ano-base agora é o
+    primeiro ano em que **todas** as séries têm medida (`commonBaseYear`), e o gráfico diz
+    qual é.
+  - **Painel de razão** (`ViewCrossSource`) dividia por `(d.v || 1)`: denominador ausente
+    não achatava, **fabricava um pico** do tamanho do numerador ×100.
+  - **Correlação** injetava crescimento 0% nos anos sem base, diluindo o coeficiente com
+    pares que ninguém mediu.
+  - **Linha de tendência** incluía os anos ausentes como zero: `Number(null)` é `0` e
+    `Number.isFinite(0)` é `true`, então a peneira do `linearFit` os deixava passar.
+  - **Amplitude sazonal** dividia por `(vale || 1)` — com vale zero, um múltiplo inventado.
+  - **HHI** devolvia `0` para conjunto vazio, que a faixa lia como **"baixa concentração"**,
+    em verde. O Gini ao lado já recusava com "n/d", e o comentário dele explica por quê: a
+    regra certa estava escrita no mesmo arquivo, 27 linhas antes.
+  - **CSV** exportava `0` no ano descoberto — pior que na tela, porque é citável. Agora sai
+    célula vazia.
+
+- **`data_quality_flag = 'OK'` incluía linhas que o detector nunca examinou.** `_q_guard`
+  devolve `null` tanto para a linha limpa quanto para a que não pôde ser escorada, e o
+  `ELSE 'OK'` juntava as duas. Na PAM, das 2.511.800 linhas "OK", só **844.250 (33,6%)**
+  tinham passado pelo detector. Nova marca **`UNSCORED`** ("Não avaliada"), com escopo em
+  `quality_unscored_scope`, fixado em **`'all'`** (produção reconstruída em 2026-09-07):
+  toda linha bloqueada pela guarda — valor ausente, valor/quantidade não-positivos (as
+  células vazias do cubo) e o piso de materialidade.
+
+  | banco | examinadas e sem ressalva | não avaliadas |
+  |---|---|---|
+  | PEVS | 18,2% | 81,6% |
+  | PAM | 33,5% | 66,3% |
+  | COMTRADE | 33,7% | 64,6% |
+  | COMEX | 33,8% | 65,6% |
+  | PPM | 69,7% | 30,0% |
+
+  A PPM é mais alta porque suas ~2,02 mi de linhas de rebanho são **estoque**:
+  `measure_kind = 'stock'` pula o detector de propósito, já que uma contagem de cabeças
+  não tem preço a escorar.
+
+- **O rótulo do KPI teria mentido na direção oposta.** Com `OK` passando a significar
+  "examinada e aprovada", "Linhas íntegras (Normais) · 33,5%" se leria como dois terços do
+  acervo quebrados — e não estão: a maior parte é célula vazia do cubo e valor abaixo do
+  piso. O card virou **"Linhas examinadas sem ressalva"**, com **"66,3% sem base para
+  avaliar"** ao lado; os títulos equivalentes na perspectiva Qualidade acompanham. (O mapa
+  "% por UF" continua desligado — `qualityByUf` não tem endpoint —, mas ficou com aviso: seu
+  `not_ok` é "tudo que não é OK" e hoje varreria as `UNSCORED` para dentro, pintando de
+  vermelho a esparsidade do cubo em vez da qualidade.)
+
+### Modificado
+
+- `serializers._measure` / `_measure_scaled` passam a preservar a ausência (`None` → JSON
+  `null`) nas colunas de VALOR — série, mart por UF e cubo municipal. As **quantidades**
+  continuam em `_num` (zero de verdade): medido em produção, `qty_base` é `NULL` em 0 de
+  42.529 linhas das marts, contra 13.430 em `val_real_ipca_brl`.
+- `seriesUtils` ganha os primitivos onde essa distinção mora — `addPresent`, `sumPresent`,
+  `scalePresent`, `ratioPresent`, `meanPresent`, `deltaPct`, `deltaPctIn`, `spanComparable`,
+  `deltaWhyNot`, `deltaTitle`, `commonBaseYear`, `indexTo100`, `deltaColor`. Nenhum call
+  site reimplementa a guarda.
+- `convertSeries` / `scaleSeries` (`MetricConventions.jsx`) usam `scalePresent`: em JS
+  `null * fator === 0`, e essas duas são o último ponto por onde toda série de valor passa
+  antes do Plotly — multiplicar direto ali re-fabricava, no caminho para o gráfico, o zero
+  que o serializer tinha acabado de eliminar.
+- `dataFilters.js` importa `seriesUtils.js` explicitamente: a ordem em `main.jsx` já
+  garantia isso em produção, mas os testes importam o módulo sozinho.
+- `vitest.setup.js` carrega os módulos REAIS `data.js` + `seriesUtils.js`. A distinção entre
+  ausência e zero é o que estes testes existem para pegar; um stub devolvendo 0 a esconderia.
+
+### Documentação
+
+- **`docs/looker_studio_setup.md` recomendava o filtro que agora joga fora o dado.** O guia
+  mandava filtrar `data_quality_flag = OK` "para excluir linhas sem valor monetário". Com
+  `OK` passando a significar *examinada e aprovada*, esse filtro descarta **66,3% da PAM** —
+  todo ano anterior a 1980, toda célula vazia do cubo, tudo abaixo do piso. O Looker é o
+  **segundo caminho de consumo** e lê o Gold direto, então um relatório existente montado
+  sobre essa recomendação **mudou de número no instante do rebuild, sem o relatório mudar**.
+  Trocado por uma exclusão das flags de defeito, com aviso em destaque.
+- `PLANS/quality_outliers_and_visibility_gate.md` — seção nova sobre `UNSCORED`: o predicado
+  `quality_scored`, a tabela de escopos, os percentuais medidos por banco e a obrigação de
+  rótulo (uma linha não avaliada não é defeito).
+- `docs/gold_data_model.md` (as duas listas do enum), `docs/frontend_data_contract.md`
+  (linha da flag + aviso de que um campo de VALOR pode ser `null`, com a regra de nunca
+  fazer aritmética direta sobre ele) e o typedef `BancoSnapshot` em `contracts.js`
+  (`valueEraBreaks`, e o aviso no `qualityByUf` de que `not_ok` hoje varreria as `UNSCORED`).
+
+### Testes
+
+- **`make test` tinha deixado de ser "credential-free" sem ninguém notar.** `value_era_breaks`
+  é chamado por todo `seam.snapshot()`, e os testes do seam mockam os leitores que
+  **conhecem** — um leitor novo cai direto numa consulta real assim que o desenvolvedor tem
+  ADC. O sintoma foi o CI e a máquina local darem veredictos **opostos sobre o mesmo
+  código**: local 100% de cobertura de patch, CI 85%, porque lá sem credencial a chamada
+  falhava e o `except` de `value_era_breaks` a engolia por desenho. Guarda autouse em
+  `tests/conftest.py` (gêmea do `_no_real_heartbeat_writes`, que nasceu do mesmo jeito),
+  servindo o **seed real** `dbt/seeds/historical_currency_factors.csv` — o mesmo arquivo que
+  o dbt carrega, então o stub não pode divergir do que o Silver divide. Marcador
+  `real_currency_eras` abre exceção para o teste que exercita o leitor de verdade.
+
+### Corrigido (testes que fixavam o defeito)
+
+- `seriesUtils.cov.test.js` afirmava `accumPct(0, 150) === 0` e `seriesUtils.test.js`
+  afirmava `cagrPct(0, 200, 10) === 0`. Eram o comportamento errado escrito como contrato.
+  Agora afirmam `null`. `test_geo_subregions.py` afirmava `value == 0.0` para o rebanho sem
+  valor monetário — o caso em que `null` é mais correto que zero.
+
+---
+
 ## [1.48.0] - 2026-08-31
 
 ### Corrigido

@@ -135,10 +135,10 @@ function ViewQuality({ summary, database }) {
       <div className="card">
         <window.SectionHeader
           overline="Evolução temporal · qualidade dos dados"
-          title={`% de linhas íntegras (Normais) · ${filtered.yearStart}–${filtered.yearEnd}`}
+          title={`% de linhas examinadas sem ressalva · ${filtered.yearStart}–${filtered.yearEnd}`}
           action={
             <span className="caption">
-              {okCount ? okCount.toLocaleString('pt-BR') : '—'} de {total.toLocaleString('pt-BR')} linhas íntegras no acervo
+              {okCount ? okCount.toLocaleString('pt-BR') : '—'} de {total.toLocaleString('pt-BR')} linhas examinadas sem ressalva
             </span>
           }
         />
@@ -207,7 +207,7 @@ function ViewQuality({ summary, database }) {
       <div className="card">
         <window.SectionHeader
           overline="Qualidade geográfica · acervo"
-          title="% de linhas não-íntegras por UF"
+          title="% de linhas com ressalva por UF"
           action={<span className="caption">{qaByUf.length} de {filtered.qualityByUf.length} UFs</span>}
         />
         {/* Clicking a UF filters the dashboard to it (click again to clear) — safe
@@ -221,8 +221,11 @@ function ViewQuality({ summary, database }) {
           selectedUf={window.selectedSingleUf && window.selectedSingleUf(summary)}
         />
         <p className="caption" style={{ padding: '8px 4px 0' }}>
-          Participação de linhas não-íntegras no acervo do banco, por UF (todos os anos e produtos);
-          recortada apenas pelo filtro de UF.
+          Participação de linhas com alguma ressalva no acervo do banco, por UF (todos os anos e
+          produtos); recortada apenas pelo filtro de UF. ATENÇÃO ao ligar o endpoint que
+          alimenta este mapa: `not_ok` é tudo que não é OK, o que desde a v1.49.0 inclui as
+          linhas <strong>não avaliadas</strong> — mapear isso como defeito pintaria de vermelho
+          a esparsidade do cubo, não a qualidade. Exclua UNSCORED do numerador.
         </p>
       </div>
       )}

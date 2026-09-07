@@ -1,6 +1,6 @@
 [project]
 name = "embrapa-dashboard"
-version = "1.48.0"
+version = "1.49.0"
 description = "Medallion pipeline (IBGE PEVS + PAM + PPM + BCB + COMEX + UN Comtrade) → BigQuery → Looker Studio + React/Flask dashboard"
 readme = "README.md"
 requires-python = "==3.12.*"
@@ -102,6 +102,12 @@ max-complexity = 10
 pythonpath = ["src"]
 testpaths = ["tests"]
 addopts = "-ra --strict-markers"
+markers = [
+    # Opt out of the conftest autouse stub that keeps `fetch_currency_eras` off BigQuery,
+    # for the one test that must exercise the reader itself (it injects its own run_query,
+    # so it still never reaches the warehouse).
+    "real_currency_eras: exercise gateway.fetch_currency_eras' own body",
+]
 
 # Coverage (pytest-cov reads these). The CI gates with `--cov-fail-under` (see the
 # Makefile `test` target) — kept off `addopts` so a single-file `pytest tests/x.py`

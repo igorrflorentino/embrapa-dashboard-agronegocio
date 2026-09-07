@@ -1566,6 +1566,25 @@ def product_timeseries(
     return sql, params
 
 
+def currency_eras(table: str) -> tuple[str, list]:
+    """The Brazilian currency eras from the ``historical_currency_factors`` seed.
+
+    One row per era (Mil Cruzeiros, Mil Cruzados, …, Mil Reais). The seed is the ONLY
+    place that knows where a currency reform falls, so a NOMINAL BRL comparison across
+    eras — 1974's cruzeiro against 2024's real — has to be decided against it and never
+    against a hardcoded 1994. Tiny (single-digit rows) and memoized by the caller.
+    """
+    sql = f"""
+        select
+            unit_of_measure,
+            cast(year_from as int64) as year_from,
+            cast(year_to   as int64) as year_to
+        from `{table}`
+        order by year_from
+    """
+    return sql, []
+
+
 def source_metadata(table: str, *, source: str | None = None) -> tuple[str, list]:
     """Per-source provenance from ``gold_source_metadata`` (backs dataStore.meta)."""
     conditions: list[str] = []

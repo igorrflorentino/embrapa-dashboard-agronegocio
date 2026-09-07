@@ -147,7 +147,8 @@ select
             then case when qty_native is not null then 'OK' else 'MISSING_QUANTITY' end
         else {{ data_quality_flag('qty_native', 'val_raw',
                  quality_qty_level('val_real_ipca_brl', 'qty_native'),
-                 quality_val_level('val_real_ipca_brl', 'qty_native')) }}
+                 quality_val_level('val_real_ipca_brl', 'qty_native'),
+                 quality_scored('val_real_ipca_brl', 'qty_native')) }}
     end                                                      as data_quality_flag,
     last_refresh
 

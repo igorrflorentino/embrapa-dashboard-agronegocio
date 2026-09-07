@@ -79,6 +79,13 @@
 
     // value/qty display transforms (same as the views use)
     const dispV = (vBi) => window.applyConv(vBi, conv);
+    // A célula de VALOR de um ano que a convenção escolhida não cobre sai VAZIA, não
+    // zero. Num CSV o zero é pior que na tela: ele é citável, entra em planilha e vira
+    // média sem que ninguém veja a lacuna. `Math.round(null * 1e9)` dava exatamente 0.
+    const celulaValor = (v, escala) => {
+      const abs = window.scalePresent(v, escala);
+      return abs == null ? '' : Math.round(dispV(abs));
+    };
 
     switch (view) {
       case 'value':
@@ -87,7 +94,7 @@
         const headers = ['ano', `valor_${conv.currency}`, 'qtd_massa_t', 'qtd_volume_m3', 'qtd_contagem_un'];
         const rows = f.ts.map(d => [
           d.y,
-          Math.round(dispV(d.v * 1e9)),
+          celulaValor(d.v, 1e9),
           Math.round(d.q_mass * 1e3),
           Math.round(d.q_vol * 1e6),
           Math.round((d.q_count || 0) * 1e6),  // mi un → un (livestock head / eggs)
@@ -111,7 +118,7 @@
           const { mul: qMul, unit: qUnit } = FAM_Q[fam] || FAM_Q.mass;
           series.forEach(d => rows.push([
             d.y, code, nameOf(code),
-            Math.round(dispV(d.v * 1e6)),
+            celulaValor(d.v, 1e6),
             Math.round((d.q || 0) * qMul),
             qUnit,
             fam,
@@ -139,7 +146,7 @@
           const headers = ['ano', 'regiao', `valor_${conv.currency}`, 'qtd_massa_t', 'qtd_volume_m3', 'qtd_contagem_un', 'escopo_produto', 'recorte_geografico'].concat(origem ? ['tabela_sidra'] : []).concat(nivel ? ['nivel_industrializacao'] : []);
           const rows = (f.regionData || []).map(r => [
             ano, r.label || r.id,
-            Math.round(dispV(r.value * 1e6)),
+            celulaValor(r.value, 1e6),
             Math.round((r.q_mass || 0) * 1e3),
             Math.round((r.q_vol || 0) * 1e6),
             Math.round((r.q_count || 0) * 1e6),
@@ -152,7 +159,7 @@
           const headers = ['ano', 'municipio', 'uf', `valor_${conv.currency}`, 'qtd_massa_t', 'qtd_volume_m3', 'qtd_contagem_un', 'escopo_produto', 'recorte_geografico'].concat(origem ? ['tabela_sidra'] : []).concat(nivel ? ['nivel_industrializacao'] : []);
           const rows = munis.map(m => [
             ano, m.city, m.uf,
-            Math.round(dispV((m.value || 0) * 1e6)),
+            celulaValor(m.value, 1e6),
             Math.round((m.q_mass || 0) * 1e3),
             Math.round((m.q_vol || 0) * 1e6),
             Math.round((m.q_count || 0) * 1e6),
@@ -163,7 +170,7 @@
         const headers = ['ano', 'uf', 'nome', 'regiao', `valor_${conv.currency}`, 'qtd_massa_t', 'qtd_volume_m3', 'qtd_contagem_un', 'escopo_produto', 'recorte_geografico'].concat(origem ? ['tabela_sidra'] : []).concat(nivel ? ['nivel_industrializacao'] : []);
         const rows = f.ufData.map(u => [
           ano, u.uf, u.name, u.region,
-          Math.round(dispV(u.value * 1e6)),
+          celulaValor(u.value, 1e6),
           Math.round(u.q_mass * 1e3),
           Math.round(u.q_vol * 1e6),
           Math.round((u.q_count || 0) * 1e6),  // mi un → un (livestock head / eggs)
@@ -176,7 +183,7 @@
         const escopo = f.notFilteredByBasket ? 'todos os produtos' : 'cesta selecionada';
         const headers = ['ano', 'uf', 'nome', 'regiao', `valor_${conv.currency}`, 'qtd_contagem_un', 'escopo_produto', 'recorte_geografico'].concat(origem ? ['tabela_sidra'] : []).concat(nivel ? ['nivel_industrializacao'] : []);
         const rows = f.ufData.slice().sort((a, b) => b.value - a.value)
-          .map(u => [ano, u.uf, u.name, u.region, Math.round(dispV(u.value * 1e6)), Math.round((u.q_count || 0) * 1e6), escopo, recorte, ...(origem ? [origem] : []), ...(nivel ? [nivel] : [])]);
+          .map(u => [ano, u.uf, u.name, u.region, celulaValor(u.value, 1e6), Math.round((u.q_count || 0) * 1e6), escopo, recorte, ...(origem ? [origem] : []), ...(nivel ? [nivel] : [])]);
         return { headers, rows, subject: 'concentracao' };
       }
       case 'quality': {

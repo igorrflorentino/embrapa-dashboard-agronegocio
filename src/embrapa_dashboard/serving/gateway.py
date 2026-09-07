@@ -1271,6 +1271,15 @@ def fetch_product_timeseries(
 
 
 @cache.memoize()
+def fetch_currency_eras():
+    """Brazilian currency eras (backs the nominal-BRL comparability check)."""
+    settings = get_settings()
+    table = sqlbuild.table_ref(settings, "bq_silver_dataset", "historical_currency_factors")
+    sql, params = sqlbuild.currency_eras(table)
+    return run_query(sql, params)
+
+
+@cache.memoize()
 def fetch_source_metadata(source: str | None = None):
     """Per-source provenance from gold_source_metadata (backs dataStore.meta)."""
     settings = get_settings()

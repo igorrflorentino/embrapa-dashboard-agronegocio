@@ -224,7 +224,8 @@ select
     -- (val_real_ipca_brl) for a stable implied price; the missing-check keeps val_raw.
     {{ data_quality_flag('qty_native', 'val_raw',
          quality_qty_level('val_real_ipca_brl', 'qty_native'),
-         quality_val_level('val_real_ipca_brl', 'qty_native')) }} as data_quality_flag,
+         quality_val_level('val_real_ipca_brl', 'qty_native'),
+         quality_scored('val_real_ipca_brl', 'qty_native')) }} as data_quality_flag,
     last_refresh
 
 from {% if var('enable_quality_outliers', false) -%}

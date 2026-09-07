@@ -13,9 +13,12 @@ function ViewOverview({ families, summary, database, conventions }) {
   const ufFactor  = window.convFactorFor(baseCcy, conv);
 
   const filtered = window.applyFilters(summary || {}, database);
+  // Anos de reforma monetária que se aplicam à convenção ATIVA (vazio fora de R$
+  // nominal — quem decide é o seam, que já resolveu a coluna). Ver seriesUtils.
+  const eraBreaks = window.valueEraBreaksFor(database);
 
   // ts.v is in R$ bi; scale to absolute.
-  const ts        = filtered.ts.map(d => ({ ...d, v: d.v * 1e9 }));
+  const ts        = filtered.ts.map(d => ({ ...d, v: window.scalePresent(d.v, 1e9) }));
 
   // Partial-latest-year detection. A monthly banco (COMEX) publishes the current
   // year month-by-month, so its latest year covers only a few months; a raw YoY of
@@ -27,7 +30,7 @@ function ViewOverview({ families, summary, database, conventions }) {
   const meta        = (window.dataStore && window.dataStore.meta)
     ? window.dataStore.meta(database) : null;
   const latestMeta  = (meta && meta.latest) || null;
-  const lastPoint   = ts[ts.length - 1] || { v: 0, q_mass: 0, q_vol: 0, q_count: 0, y: null };
+  const lastPoint   = ts[ts.length - 1] || { v: null, q_mass: 0, q_vol: 0, q_count: 0, y: null };
   const partialLatest =
     !!latestMeta &&
     latestMeta.yearComplete === false &&
@@ -36,11 +39,13 @@ function ViewOverview({ families, summary, database, conventions }) {
     ts.length >= 2;
   const partialYr = partialLatest ? lastPoint.y : null;
   // Compute over EXACTLY the selected window — latest year included, never dropped.
-  const last      = ts[ts.length - 1] || { v: 0, q_mass: 0, q_vol: 0, q_count: 0, y: null };
+  const last      = ts[ts.length - 1] || { v: null, q_mass: 0, q_vol: 0, q_count: 0, y: null };
   const prev      = ts[ts.length - 2] || last;
   const first     = ts[0] || last;
-  const deltaV    = prev.v ? ((last.v - prev.v) / prev.v) * 100 : 0;
-  const deltaTotV = first.v ? ((last.v - first.v) / first.v) * 100 : 0;
+  // null (= '—' na tela) quando os extremos não são comparáveis; ver seriesUtils.
+  // A acumulada é montada por window.deltaTitle direto de (first, last), que já
+  // acrescenta o MOTIVO da recusa — por isso não há um deltaTotV aqui.
+  const deltaV    = window.deltaPctIn(prev, last, eraBreaks);
   const spark12   = ts.slice(-12);
   // Year tag that marks the latest year "(parcial)" wherever it is shown.
   const yTag      = (y) => `${y ?? ''}${partialLatest && y === partialYr ? ' (parcial)' : ''}`;
@@ -53,6 +58,14 @@ function ViewOverview({ families, summary, database, conventions }) {
   const okFlag    = filtered.qualityFlags.find(f => f.id === 'OK');
   const okShare   = okFlag ? okFlag.share : 0;
   const okCount   = okFlag ? okFlag.count : 0;
+  // Desde a v1.49.0 'OK' significa EXAMINADA pelo detector de preço implícito e sem
+  // ressalva — as linhas que ele não pôde escorar saíram para 'UNSCORED'. Isso derrubou
+  // o número de 99,8% para 33,5% na PAM, e o rótulo antigo ("Linhas íntegras") passaria
+  // a soar como se dois terços do acervo estivessem quebrados. Não estão: a maior parte
+  // é célula vazia do cubo (município que não produz aquilo) e valor abaixo do piso de
+  // materialidade. O card nomeia o que MEDE, e a linha de baixo diz o que é o resto.
+  const naoAvaliada = filtered.qualityFlags.find(f => f.id === 'UNSCORED');
+  const naoAvaliadaShare = naoAvaliada ? naoAvaliada.share : 0;
 
   // "UFs cobertas" must count REAL Brazilian states only. For a trade banco
   // (COMEX) ufData includes non-state pseudo-origins (ND/EX/ZN/CB/RE/MC…) that
@@ -121,7 +134,7 @@ function ViewOverview({ families, summary, database, conventions }) {
           <window.KpiCardSpark
             label={<>Quantidade · <window.UnitFamilyTag family="mass" conv={conv}/></>}
             value={kpiVal(window.formatMassQty(last.q_mass, conv))}
-            delta={comboPending ? null : window.fmtSigned(prev.q_mass ? ((last.q_mass - prev.q_mass) / prev.q_mass) * 100 : 0)}
+            delta={comboPending ? null : window.fmtSigned(window.deltaPct(prev.q_mass, last.q_mass))}
             deltaPositive={last.q_mass >= prev.q_mass}
             sub={comboPending ? 'cruzando produto × UF…' : `${yTag(last.y)} vs. ${prev.y || ''}`}
             spark={comboPending ? null : spark12}
@@ -133,7 +146,7 @@ function ViewOverview({ families, summary, database, conventions }) {
           <window.KpiCardSpark
             label={<>Quantidade · <window.UnitFamilyTag family="volume" conv={conv}/></>}
             value={kpiVal(window.formatVolumeQty(last.q_vol, conv))}
-            delta={comboPending ? null : window.fmtSigned(prev.q_vol ? ((last.q_vol - prev.q_vol) / prev.q_vol) * 100 : 0)}
+            delta={comboPending ? null : window.fmtSigned(window.deltaPct(prev.q_vol, last.q_vol))}
             deltaPositive={last.q_vol >= prev.q_vol}
             sub={comboPending ? 'cruzando produto × UF…' : `${yTag(last.y)} vs. ${prev.y || ''}`}
             spark={comboPending ? null : spark12}
@@ -145,7 +158,7 @@ function ViewOverview({ families, summary, database, conventions }) {
           <window.KpiCardSpark
             label={<>Quantidade · <window.UnitFamilyTag family="count" conv={conv}/></>}
             value={kpiVal(window.formatCountQty(last.q_count, conv))}
-            delta={comboPending ? null : window.fmtSigned(prev.q_count ? ((last.q_count - prev.q_count) / prev.q_count) * 100 : 0)}
+            delta={comboPending ? null : window.fmtSigned(window.deltaPct(prev.q_count, last.q_count))}
             deltaPositive={last.q_count >= prev.q_count}
             sub={comboPending ? 'cruzando produto × UF…' : `${yTag(last.y)} vs. ${prev.y || ''}`}
             spark={comboPending ? null : spark12}
@@ -159,10 +172,13 @@ function ViewOverview({ families, summary, database, conventions }) {
             mark the scope here rather than present an acervo % as if it were
             scoped to the active selection ("no invisible filtering"). */}
         <window.KpiCardSpark
-          label="Linhas íntegras (Normais)"
+          label="Linhas examinadas sem ressalva"
           value={window.fmtPct(okShare)}
           sub={okCount
-            ? (okCount / 1e6).toFixed(1).replace('.', ',') + ' mi linhas · acervo do banco'
+            ? `${(okCount / 1e6).toFixed(1).replace('.', ',')} mi linhas · acervo do banco`
+              + (naoAvaliadaShare > 0
+                ? ` · ${window.fmtPct(naoAvaliadaShare)} sem base para avaliar`
+                : '')
             : 'OK não selecionada · acervo do banco'}
           spark={filtered.qualityTs.slice(-12)}
           sparkKey="ok"
@@ -189,7 +205,7 @@ function ViewOverview({ families, summary, database, conventions }) {
               <>
                 <window.SectionHeader
                   overline={`Série histórica · ${filtered.yearStart}–${yTag(filtered.yearEnd)} · ${monLabel}`}
-                  title={comboPending ? 'Variação acumulada: …' : 'Variação acumulada: ' + window.fmtSigned(deltaTotV, 0)}
+                  title={comboPending ? 'Variação acumulada: …' : window.deltaTitle('Variação acumulada', first, last, { breaks: eraBreaks })}
                 />
                 {comboPending ? (
                   <p className="caption" style={{ padding: '24px 4px', textAlign: 'center' }}>

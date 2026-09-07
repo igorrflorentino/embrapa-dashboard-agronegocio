@@ -18,7 +18,7 @@ function ViewValueVolume({ families, conventions, summary, database }) {
   //   d.q_mass   : mil t  → t   (× massQtyMul handles t→kg too)
   //   d.q_vol    : mi m³  → m³  (× volumeQtyMul handles m³→L too)
   const filtered = window.applyFilters(summary || {}, database);
-  const ts = filtered.ts.map(d => ({ ...d, v: d.v * 1e9 }));
+  const ts = filtered.ts.map(d => ({ ...d, v: window.scalePresent(d.v, 1e9) }));
   const valueSeries = window.convertSeries(ts, conv);
   // massMul / volMul map (mil t, mi m³) → (t/kg, m³/L). The COUNT family (herd cabeças /
   // eggs) is deliberately NOT aggregated here: heads are not additive across species, so a
@@ -51,7 +51,7 @@ function ViewValueVolume({ families, conventions, summary, database }) {
     .map(([code, data], i) => ({
       code,
       name: PRODS.find(p => p.code === code)?.name || code,
-      data: data.map(d => ({ ...d, v: d.v * 1e6 * cvf })),
+      data: data.map(d => ({ ...d, v: window.scalePresent(d.v, 1e6 * cvf) })),
       color: COLORS[i % COLORS.length],
     }));
 
@@ -87,9 +87,10 @@ function ViewValueVolume({ families, conventions, summary, database }) {
   const massStackScaled  = _scaleStack(productSeries('mass'),   'q', massAx);
   const volStackScaled   = _scaleStack(productSeries('volume'), 'q', volAx);
 
-  const last       = valueSeries[valueSeries.length - 1] || { v: 0 };
-  const first      = valueSeries[0] || { v: 0 };
-  const totalDelta = first.v ? ((last.v - first.v) / first.v) * 100 : 0;
+  // Série vazia → extremos AUSENTES (v: null), não um zero inventado: deltaTitle
+  // recusa com motivo em vez de afirmar "+0%".
+  const last       = valueSeries[valueSeries.length - 1] || { v: null };
+  const first      = valueSeries[0] || { v: null };
   const yearStart  = filtered.yearStart;
   const yearEnd    = filtered.yearEnd;
 
@@ -144,7 +145,7 @@ function ViewValueVolume({ families, conventions, summary, database }) {
           overline={`Série histórica · ${ccyLabel}`}
           title={`Valor total · ${valueScaled.label} · ${yearStart}–${yearEnd}`}
           action={
-            <span className="caption">Variação acumulada: <strong>{window.fmtSigned(totalDelta, 0)}</strong></span>
+            <span className="caption">{window.deltaTitle('Variação acumulada', first, last, { breaks: window.valueEraBreaksFor(database) })}</span>
           }
         />
         <window.LineChart data={valueScaled.data} label={valueScaled.label} valueKey="v" color={ccyColor} height={260} />

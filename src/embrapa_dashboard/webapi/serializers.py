@@ -64,6 +64,11 @@ _FLAG_KEY = {
     "INFERRED_VALUE": "inferred_value",
     # PAM-only: planted < harvested area (a SIDRA source error). Emitted by gold_pam_production.
     "AREA_INCONSISTENT": "area_inconsistent",
+    # The detector could not RUN on the row (macros/quality_outlier_ctes.sql ·
+    # quality_scored). Kept apart from "ok" because "examined and cleared" and "never
+    # examined" are different claims — and on PAM only 33,6% of the OK rows had actually
+    # been examined (measured on prod 2026-09-06).
+    "UNSCORED": "unscored",
 }
 
 # data_quality_flag id → pt-BR display label (the end user reads the donut/legend).
@@ -89,6 +94,8 @@ _FLAG_LABEL_PT = {
     "INFERRED_VALUE": "Valor financeiro inferido",
     # PAM-only: área plantada < área colhida (erro de fonte do SIDRA, agronomicamente impossível).
     "AREA_INCONSISTENT": "Área inconsistente (plantada < colhida)",
+    # Sem base para avaliar — não é defeito do registro (ver data.js · QUALITY_FLAGS).
+    "UNSCORED": "Não avaliada",
 }
 
 
@@ -103,6 +110,40 @@ def _num(value: Any) -> float:
     except (TypeError, ValueError):
         return 0.0
     return 0.0 if math.isnan(f) else f
+
+
+def _measure(value: Any) -> float | None:
+    """Coerce a MEASURE to a JSON-safe float, preserving ABSENCE as ``None``.
+
+    The sibling of :func:`_num`, and the distinction is load-bearing. ``_num`` maps
+    NULL/NaN → 0.0, which is right for a COUNT (no rows really is zero rows) and WRONG
+    for a measure: a deflated value the index does not reach (IPCA starts 1980, PAM
+    starts 1974; EUR starts 1999) is ABSENT, not zero. Coercing it to 0.0 made the
+    chart draw a flat zero for six to twenty-five years and the "variação acumulada"
+    KPI divide by that zero and print "+0%" — an affirmative claim the data never made.
+
+    ``None`` survives to JSON as ``null``, which is exactly what the consumers already
+    expect for absence: Plotly leaves a GAP (connectgaps defaults to false) and the
+    pt-BR formatters (``fmtSigned``/``numBR``/``pctBR``) already render it as '—'.
+
+    Only VALUE columns need this. Quantities are read straight from the source and
+    carry no index dependency — measured on prod 2026-09-06, ``qty_base`` is NULL in
+    0 of 42.529 mart rows across PEVS/PAM/PPM, while ``val_real_ipca_brl`` is NULL in
+    13.430 — so the quantity paths deliberately keep :func:`_num`.
+    """
+    if value is None:
+        return None
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return None
+    return None if math.isnan(f) else f
+
+
+def _measure_scaled(value: Any, divisor: float) -> float | None:
+    """:func:`_measure` divided by a display scale, with absence surviving the scaling."""
+    m = _measure(value)
+    return None if m is None else m / divisor
 
 
 def _empty(df: pd.DataFrame | None) -> bool:
@@ -124,6 +165,11 @@ def serialize_snapshot(snap: dict) -> dict:
         "qualityTs": _quality_ts(snap.get("quality_ts")),
         "qualityByProduct": _quality_by_product(snap.get("quality_by_product")),
         "valueLabel": snap.get("value_label", ""),
+        # Anos em que o BRL mudou de identidade, para a coluna de valor ATIVA (vazio
+        # em toda convenção que não seja nominal em R$). É o que permite à tela recusar
+        # "variação acumulada" entre 1974 e 2024 em valores nominais — a razão existe,
+        # mas compara mil cruzeiros com reais e dá +5.237.412.820.780.295%.
+        "valueEraBreaks": [int(y) for y in (snap.get("value_era_breaks") or [])],
         "preview": False,
         "_synthetic": False,
     }
@@ -337,7 +383,9 @@ def _product_ts(df: pd.DataFrame | None) -> dict:
         out.setdefault(str(r.code), []).append(
             {
                 "y": int(r.reference_year),
-                "v": _num(r.total_value) / 1e6,
+                # ABSENT stays absent (see _measure): a year the chosen deflator /
+                # currency does not reach is a gap in the line, never a zero.
+                "v": _measure_scaled(r.total_value, 1e6),
                 "q": q,
                 "family": _fam(fam_raw),
             }
@@ -356,7 +404,7 @@ def _overview_ts(df: pd.DataFrame | None) -> list[dict]:
         out.append(
             {
                 "y": int(r.reference_year),
-                "v": _num(r.total_value) / 1e9,
+                "v": _measure_scaled(r.total_value, 1e9),
                 "q": q_mass,
                 "q_mass": q_mass,
                 "q_vol": q_vol,
@@ -378,7 +426,7 @@ def _uf_data(df: pd.DataFrame | None) -> list[dict]:
             "uf": r.state_acronym,
             "name": r.state_name,
             "region": r.region_abbrev,
-            "value": _num(r.total_value) / 1e6,
+            "value": _measure_scaled(r.total_value, 1e6),
             "q_mass": _num(getattr(r, "q_mass", 0)) / 1e3,
             "q_vol": _num(getattr(r, "q_vol", 0)) / 1e6,
             "q_count": _num(getattr(r, "q_count", 0)) / 1e6,  # un → mi un (head / eggs)
@@ -414,7 +462,7 @@ def _uf_yearly(df: pd.DataFrame | None) -> list[dict]:
             "uf": r.state_acronym,
             "name": r.state_name,
             "region": r.region_abbrev,
-            "value": _num(r.total_value) / 1e6,
+            "value": _measure_scaled(r.total_value, 1e6),
             "q_mass": _num(getattr(r, "q_mass", 0)) / 1e3,
             "q_vol": _num(getattr(r, "q_vol", 0)) / 1e6,
             "q_count": _num(getattr(r, "q_count", 0)) / 1e6,  # un → mi un (head / eggs)
@@ -438,7 +486,7 @@ def _municipio_yearly(df: pd.DataFrame | None) -> list[dict]:
             "year": int(r.reference_year),
             "cityCode": str(r.city_code),
             "uf": r.state_acronym,
-            "value": _num(r.total_value) / 1e6,
+            "value": _measure_scaled(r.total_value, 1e6),
             "q_mass": _num(getattr(r, "q_mass", 0)) / 1e3,
             "q_vol": _num(getattr(r, "q_vol", 0)) / 1e6,
             "q_count": _num(getattr(r, "q_count", 0)) / 1e6,

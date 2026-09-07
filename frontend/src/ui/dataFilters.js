@@ -1,6 +1,12 @@
 // dataFilters.js — applies the active filter selection to every dataset
 // used by the views, so charts/KPIs ONLY show rows that match.
 //
+// Import explícito (e não só a ordem em main.jsx): este módulo depende dos
+// primitivos de ausência de seriesUtils (addPresent). A ordem em main.jsx já
+// garantia isso em produção, mas os testes importam dataFilters sozinho — a
+// dependência precisa ser real, não convencional.
+import './seriesUtils.js';
+//
 // Input shape (from FilterMenu.onApply):
 //   { basket:    string[]  // product codes;  null = all · [] = none
 //   , flags:     string[]  // quality flags;   null = all · [] = none
@@ -84,8 +90,11 @@
       if (!a || !muniPassesFacets(a, gf)) continue;
       const key = `${r.uf}|${r.year}`;
       let row = byUfYear.get(key);
-      if (!row) { row = { uf: r.uf, year: r.year, value: 0, q_mass: 0, q_vol: 0, q_count: 0 }; byUfYear.set(key, row); }
-      row.value += r.value || 0;
+      // `value` nasce null (ausente) e só vira número quando algum município do
+      // recorte tiver valor — mesma regra de sumStates/addPresent. As quantidades
+      // nascem em 0 porque ali o zero é um zero de verdade.
+      if (!row) { row = { uf: r.uf, year: r.year, value: null, q_mass: 0, q_vol: 0, q_count: 0 }; byUfYear.set(key, row); }
+      row.value = window.addPresent(row.value, r.value == null ? NaN : r.value);
       row.q_mass += r.q_mass || 0;
       row.q_vol += r.q_vol || 0;
       row.q_count += r.q_count || 0;
@@ -218,11 +227,17 @@
     // WHOLE grid (incl. COMEX non-state pseudo-origins) so the national total matches
     // PRODUCT_TS_T exactly (those pseudo-origins are not selectable UFs).
     const sumStates = (rows, y) => {
-      let v = 0, qMass = 0, qVol = 0, qCount = 0;
+      // `v` começa em null e sobe por addPresent: um ano em que NENHUMA UF tem valor
+      // (o deflator/moeda escolhido não alcança aquele ano) termina AUSENTE, não zero.
+      // As quantidades continuam somando de 0 — elas vêm direto da fonte, sem
+      // dependência de índice, e um zero ali é um zero de verdade.
+      let v = null;
+      let qMass = 0, qVol = 0, qCount = 0;
       for (const r of rows) {
         if (r.year !== y) continue;
         if (stateNarrowing && !stateSet.has(r.uf)) continue;
-        v += (r.value || 0) / 1000;     // ufYearly value is mi → ts.v is bi
+        // ufYearly value is mi → ts.v is bi
+        v = window.addPresent(v, r.value == null ? NaN : r.value / 1000);
         qMass += (r.q_mass || 0);        // already mil t
         qVol  += (r.q_vol  || 0);        // already mi m³
         qCount += (r.q_count || 0);      // already mi un (livestock head / eggs)
@@ -248,13 +263,16 @@
         return { y, v: g.v, q: g.q_mass, q_mass: g.q_mass, q_vol: g.q_vol, q_count: g.q_count };
       }
       // National path (no state narrowing): per-product series, basket + year aware.
-      let v = 0, qMass = 0, qVol = 0, qCount = 0;
+      // Mesma regra do sumStates: o valor só existe se ALGUM produto da cesta tiver
+      // valor naquele ano; senão fica null e vira lacuna no gráfico.
+      let v = null;
+      let qMass = 0, qVol = 0, qCount = 0;
       selectedProducts.forEach(code => {
         const series = PRODUCT_TS_T[code];
         if (!series) return;
         const pt = series.find(p => p.y === y);
         if (!pt) return;
-        v += pt.v / 1000;                    // productTS.v is mi → ts.v is bi
+        v = window.addPresent(v, pt.v == null ? NaN : pt.v / 1000);  // productTS.v is mi → ts.v is bi
         if (pt.family === 'mass')   qMass += pt.q;
         if (pt.family === 'volume') qVol  += pt.q;
         if (pt.family === 'count')  qCount += pt.q;  // head/eggs — never blended with mass/vol
@@ -456,8 +474,13 @@
         return { name: prod.name, tabela: prod.tabela, value: lastInWindow.v };
       })
       .filter(Boolean)
+      // Uma FATIA é uma parte de um total. Um produto sem valor medido naquele ano (a
+      // convenção escolhida não alcança o ano) não é uma fatia de tamanho zero — ele
+      // não é fatia nenhuma. Deixá-lo entrar como 0 fazia o Donut listar produtos com
+      // "0%" como se tivessem sido medidos e não tivessem produzido nada.
+      .filter(p => Number.isFinite(p.value))
       .sort((a, b) => b.value - a.value);
-    const compTotal = compositionRaw.reduce((s, p) => s + p.value, 0) || 1;
+    const compTotal = window.sumPresent(compositionRaw.map(p => p.value)) || 1;
     const COLORS = [...window.VIZ_SCALE, 'var(--pres-gray-300)', 'var(--pres-gray-400)'];
     let topProducts;
     if (compositionRaw.length <= 7) {
