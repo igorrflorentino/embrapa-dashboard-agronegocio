@@ -34,7 +34,7 @@ erDiagram
         string   family                 "massa / volume / … — never SUM qty_base across families"
         float    qty_base               "qty_native to the family base_unit (t / m3 / …)"
         float    val_real_ipca_brl      "deflated R$; plus the full val_ matrix"
-        string   data_quality_flag      "OK / MISSING_VALUE / MISSING_QUANTITY / MISSING_WEIGHT / INCOMPLETE / OUTLIER_VALUE / OUTLIER_QUANTITY / PROBLEMATIC_VALUE / PROBLEMATIC_QUANTITY (last 4 gated by enable_quality_outliers)"
+        string   data_quality_flag      "OK / MISSING_VALUE / MISSING_QUANTITY / MISSING_WEIGHT / INCOMPLETE / OUTLIER_VALUE / OUTLIER_QUANTITY / PROBLEMATIC_VALUE / PROBLEMATIC_QUANTITY / UNSCORED (last 5 gated by enable_quality_outliers; OK means EXAMINED and cleared, UNSCORED means the detector had no basis to run)"
         timestamp last_refresh
     }
     gold_pam_production {
@@ -49,7 +49,7 @@ erDiagram
         float    area_harvested_ha      "PAM-only: harvested area (ha)"
         float    yield_kg_ha            "PAM-only: yield (kg/ha)"
         float    val_real_ipca_brl      "deflated R$; plus the full val_ matrix"
-        string   data_quality_flag      "OK / MISSING_VALUE / MISSING_QUANTITY / MISSING_WEIGHT / INCOMPLETE / OUTLIER_VALUE / OUTLIER_QUANTITY / PROBLEMATIC_VALUE / PROBLEMATIC_QUANTITY (last 4 gated by enable_quality_outliers)"
+        string   data_quality_flag      "OK / MISSING_VALUE / MISSING_QUANTITY / MISSING_WEIGHT / INCOMPLETE / OUTLIER_VALUE / OUTLIER_QUANTITY / PROBLEMATIC_VALUE / PROBLEMATIC_QUANTITY / UNSCORED (last 5 gated by enable_quality_outliers; OK means EXAMINED and cleared, UNSCORED means the detector had no basis to run)"
         timestamp last_refresh
     }
     gold_comex_flows {

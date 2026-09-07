@@ -58,6 +58,17 @@ magnitude. Get this wrong and axes/KPIs break.
 | `qty_base` (family=massa) | t | `q_mass` (PEVS) | **mil t** | ÷ 1e3 |
 | `qty_base` (family=volume) | m³ | `q_vol` (PEVS) | **mi m³** | ÷ 1e6 |
 | cross `exp_value`/`imp_value`/`world_exp` | US$ | `points[].v` | **US$ bi** | ÷ 1e9 |
+
+> **A VALUE field may be `null`, and that is not zero (v1.49.0).** A banco's year range is
+> not its MEASURE's year range: PAM/PPM start in 1974 but IPCA/IGP-DI only reach back to
+> 1980, IGP-M to 1989, USD to 1994 and EUR to **1999** — in EUR, 25 of PAM's 51 years have
+> no value at all. The BFF serializes those as JSON `null` (`serializers._measure`), NOT
+> 0.0, so the chart draws a GAP and the KPI formatters render '—'. Consumers must never do
+> plain arithmetic on these fields: in JS `null * 1e9 === 0`, which silently re-fabricates
+> the very zero the BFF just removed. Use the `seriesUtils` primitives
+> (`scalePresent`/`ratioPresent`/`addPresent`/`deltaPct`). QUANTITY fields keep the old
+> `_num` coercion — there a zero is measured (verified on prod: `qty_base` is NULL in 0 of
+> 42.529 mart rows, against 13.430 for `val_real_ipca_brl`).
 | cross `exp_weight` | kg | `points[].v` | **mil t** | ÷ 1e6 |
 
 **Axis/ratio rule (brief §4):** two cross series share a Y-axis (or form a ratio)
@@ -298,14 +309,15 @@ The flags the macro emits (the frontend color map must cover **these**). The las
 
 | id | meaning | tables |
 |---|---|---|
-| `OK` | has quantity + value, plausible implied price | all |
+| `OK` | has quantity + value, and the detector EXAMINED the row and found the implied price plausible | all |
 | `MISSING_VALUE` | quantity but no monetary value | all |
 | `MISSING_QUANTITY` | value but no quantity (common in COMTRADE ch.44) | PEVS, COMTRADE |
 | `MISSING_WEIGHT` | value but no net weight | COMEX |
 | `INCOMPLETE` | neither | all |
 | `OUTLIER_VALUE` / `OUTLIER_QUANTITY` | high-magnitude but price-consistent — a valid large value | all (gated) |
 | `PROBLEMATIC_VALUE` / `PROBLEMATIC_QUANTITY` | implied price >100× or <1/100× the product median ⇒ likely typo | all (gated) |
-| `INFERRED_QUANTITY` / `INFERRED_VALUE` | **reserved** auto-fill tiers (accepted-but-absent) — plumbed through `contracts.js` / `_gold.yml` but always 0 today; no Gold CASE emits them yet | all (reserved) |
+| `INFERRED_QUANTITY` / `INFERRED_VALUE` | **reserved** auto-fill tiers (accepted-but-absent) — plumbed through `contracts.js` / `_gold.yml` but always 0 today; no Gold CASE emits them yet | all (gated) |
+| `UNSCORED` | the detector had **no basis to examine** the row: value absent (the deflator gap), value/qty non-positive (an empty cube cell), or below the materiality floor. **Not a defect** — until v1.49.0 these fell into `OK` and were indistinguishable from rows actually cleared (PAM: only 33,6% of `OK` had been scored). Display it as "Não avaliada", never as damage | all (gated) |
 
 ### 7.3 `region` — Gold is full names
 Gold `region` ∈ {Norte, Nordeste, Centro-Oeste, Sudeste, Sul}. The brief's `ufData`

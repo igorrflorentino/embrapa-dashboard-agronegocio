@@ -106,6 +106,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 - `vitest.setup.js` carrega os módulos REAIS `data.js` + `seriesUtils.js`. A distinção entre
   ausência e zero é o que estes testes existem para pegar; um stub devolvendo 0 a esconderia.
 
+### Documentação
+
+- **`docs/looker_studio_setup.md` recomendava o filtro que agora joga fora o dado.** O guia
+  mandava filtrar `data_quality_flag = OK` "para excluir linhas sem valor monetário". Com
+  `OK` passando a significar *examinada e aprovada*, esse filtro descarta **66,3% da PAM** —
+  todo ano anterior a 1980, toda célula vazia do cubo, tudo abaixo do piso. O Looker é o
+  **segundo caminho de consumo** e lê o Gold direto, então um relatório existente montado
+  sobre essa recomendação **mudou de número no instante do rebuild, sem o relatório mudar**.
+  Trocado por uma exclusão das flags de defeito, com aviso em destaque.
+- `PLANS/quality_outliers_and_visibility_gate.md` — seção nova sobre `UNSCORED`: o predicado
+  `quality_scored`, a tabela de escopos, os percentuais medidos por banco e a obrigação de
+  rótulo (uma linha não avaliada não é defeito).
+- `docs/gold_data_model.md` (as duas listas do enum), `docs/frontend_data_contract.md`
+  (linha da flag + aviso de que um campo de VALOR pode ser `null`, com a regra de nunca
+  fazer aritmética direta sobre ele) e o typedef `BancoSnapshot` em `contracts.js`
+  (`valueEraBreaks`, e o aviso no `qualityByUf` de que `not_ok` hoje varreria as `UNSCORED`).
+
 ### Corrigido (testes que fixavam o defeito)
 
 - `seriesUtils.cov.test.js` afirmava `accumPct(0, 150) === 0` e `seriesUtils.test.js`

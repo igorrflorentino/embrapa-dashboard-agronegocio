@@ -82,6 +82,17 @@ describe('a recusa chega à tela com MOTIVO, não como "+0%"', () => {
     expect(window.deltaWhyNot({ y: 1974, v: 0 }, last)).toContain('valor nulo em 1974');
     expect(window.deltaWhyNot({ y: 1980, v: 0.4745 }, last)).toBeNull();
   });
+
+  it('deltaWhyNot nomeia o ano FINAL quando é ele que falta, e recusa a série sem extremos', () => {
+    // O caso simétrico: a base existe e é o ÚLTIMO ponto que a convenção não alcança
+    // (uma janela que termina num ano ainda sem deflator publicado).
+    const base = { y: 1980, v: 0.4745 };
+    expect(window.deltaWhyNot(base, { y: 2025, v: null })).toContain('sem valor em 2025');
+    expect(window.deltaWhyNot(null, last)).toBe('série sem extremos');
+    expect(window.deltaWhyNot(base, null)).toBe('série sem extremos');
+    // Base negativa: existe, é finita, e ainda assim não serve de denominador.
+    expect(window.deltaWhyNot({ y: 1980, v: -3 }, last)).toContain('valor nulo em 1980');
+  });
 });
 
 describe('estatísticas derivadas não podem consumir o zero fabricado', () => {

@@ -102,9 +102,27 @@ On the data source configuration screen, adjust:
 Add a **report filter** for exploratory analyses:
 
 - Field: `data_quality_flag`
-- Condition: **Equal to** `OK`
+- Condition: **Exclude** — `MISSING_VALUE`, `MISSING_QUANTITY`, `MISSING_WEIGHT`, `INCOMPLETE`,
+  `PROBLEMATIC_VALUE`, `PROBLEMATIC_QUANTITY`
 
-This excludes rows where IBGE did not publish a monetary value (e.g.: Pinheiro brasileiro).
+This drops the rows with an actual defect: the ones where IBGE published no monetary value
+(e.g. Pinheiro brasileiro) and the ones whose implied price says a digit was mistyped.
+
+> ⚠️ **Do NOT use `Equal to OK` — it was the recommendation here until v1.49.0 and it now
+> throws away most of your data.** `OK` used to mean "nothing wrong was found"; since the
+> `UNSCORED` tier (v1.49.0) it means "the outlier detector EXAMINED this row and cleared it",
+> and everything it had no basis to examine moved out of `OK`. On PAM that is **66,3% of the
+> table** — every row before 1980 (which the IPCA does not reach), every empty cube cell
+> (município × produto that simply has no production), and everything under the materiality
+> floor. None of those are defects. Filtering `= OK` would silently cut a 1974–2024 series
+> down to 1980–2024 and drop most municípios, with nothing on the report to say so.
+>
+> If you have an EXISTING report built from the old recommendation, fix the filter — the
+> numbers in it changed the moment prod Gold was rebuilt (2026-09-07), without the report
+> changing.
+
+To keep only rows the detector actively verified, filter `Equal to OK` **on purpose** and say
+so on the page — it is a legitimate, much narrower scope, not a general-purpose default.
 
 ---
 

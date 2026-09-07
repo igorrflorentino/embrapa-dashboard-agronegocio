@@ -1391,6 +1391,20 @@ def test_measure_preserva_ausencia_enquanto_num_zera():
     assert ser._measure_scaled(2e6, 1e6) == 2.0
 
 
+def test_measure_recusa_lixo_sem_estourar():
+    """Valor não-numérico vira ausência, não exceção — o mesmo contrato de _num.
+
+    A mart nunca deveria servir texto numa coluna de valor, mas o serializer roda sobre
+    o que o BigQuery devolve; um tipo inesperado tem de degradar para '—' e não derrubar
+    o snapshot inteiro.
+    """
+    from embrapa_dashboard.webapi import serializers as ser
+
+    assert ser._measure("nao é número") is None
+    assert ser._measure(object()) is None
+    assert ser._measure_scaled("nao é número", 1e6) is None
+
+
 def test_series_de_valor_emitem_null_no_ano_sem_deflator():
     """productTS/overviewTS devolvem `null`, não 0, no ano que o índice não alcança.
 
@@ -1488,6 +1502,23 @@ def test_value_era_breaks_so_existe_para_o_nominal_em_reais(monkeypatch):
     assert 1942 not in seam.value_era_breaks("val_yearfx_brl")
     for coluna in ("val_real_ipca_brl", "val_real_igpm_brl", "val_yearfx_usd", "val_yearfx_eur"):
         assert seam.value_era_breaks(coluna) == [], coluna
+
+
+def test_value_era_breaks_vazio_quando_o_seed_nao_tem_linhas(monkeypatch):
+    """Seed vazio (ou None) desliga a checagem em silêncio — aqui é degradação legítima.
+
+    Distinto da leitura QUEBRADA logo abaixo, que registra warning: um seed sem linhas é
+    um estado possível de um projeto novo, não um sintoma.
+    """
+    import pandas as pd
+
+    from embrapa_dashboard.serving import gateway
+    from embrapa_dashboard.webapi import seam
+
+    monkeypatch.setattr(gateway, "fetch_currency_eras", lambda: pd.DataFrame())
+    assert seam.value_era_breaks("val_yearfx_brl") == []
+    monkeypatch.setattr(gateway, "fetch_currency_eras", lambda: None)
+    assert seam.value_era_breaks("val_yearfx_brl") == []
 
 
 def test_value_era_breaks_degrada_sem_derrubar_o_snapshot(monkeypatch, caplog):
