@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.54.0] - 2026-09-07
+
+### Corrigido
+
+- **A regra da v1.49.0 nunca tinha chegado ao backend.** A guarda criada na v1.51.0 varria
+  só JavaScript, e a mesma forma — *responder ZERO a uma pergunta INDEFINIDA* — vivia em
+  Python como `x if den else 0`, alimentando **oito** métricas que o pesquisador lê:
+
+  | métrica | o que afirmava |
+  |---|---|
+  | **coeficiente de exportação** (por UF, nacional e a SÉRIE do gráfico) | `0%` para uma UF/ano sem produção |
+  | **participação no mercado mundial** (série e último ano) | `0%` num ano sem exportação mundial — "o Brasil não tem mercado" |
+  | **divergência entre fontes** | `0%` num ano em que NENHUMA das duas tem dado — "as fontes concordam perfeitamente" |
+  | **preço na porteira**, **preço por nível**, **markup** | `0` em vez de "sem preço" |
+  | **prêmio de processamento** | `0` quando há menos de dois níveis com preço — "processar não agrega nada" |
+
+  O do coeficiente era **semanticamente invertido**: quem cai no caso é justamente quem
+  exporta *sem* produzir, e saía com o mesmo `0%` de quem não exporta nada. Medido em
+  produção: `ND` (origem não declarada) exportou US$ 116,5 mi com produção zero.
+
+  Primitivas novas em `webapi/measures.py` (`ratio_present`, `pct_present`,
+  `mean_present`) — a metade Python de `seriesUtils.js`. O frontend já sabia lidar: os
+  formatadores `numBR`/`pctBR` renderizam null como '—' e os gráficos desenham lacuna; o
+  KPI nacional do coeficiente **já testava `== null`**, sinal de que o contrato sempre
+  previu isso e só o backend não cumpria.
+
+- **`(a || 0) - (b || 0)` na "Variação na janela"** da participação mundial fabricava a
+  diferença contra um zero inventado. É o mesmo defeito numa forma que a varredura **não**
+  cobre — subtração, não razão. Novo `window.diffPresent`, para grandezas já percentuais
+  onde a variação se declara em pontos percentuais.
+
+- **Preço/markup ausentes saíam como `"US$ —/kg"` e `"×—"`**: prefixo e sufixo afirmando
+  uma unidade sobre um valor que não existe. Novo helper local `msUnit`, que devolve o
+  travessão puro.
+
+### Adicionado
+
+- **`tests/test_absence_guard.py`** — a metade Python da varredura. Falha quando um call
+  site novo responde zero a uma razão indefinida, exige razão escrita por exceção, rejeita
+  razões vazias e permissões obsoletas, e tem guarda do próprio varredor. Verificada por
+  injeção.
+
+  **Ela pegou três sítios que minha varredura manual não viu** (a série do coeficiente, a
+  participação mundial e o preço por nível de industrialização) — as formas com subscrito
+  não casavam com o grep que usei para investigar. É exatamente o motivo de existir.
+
+  E pegou uma regressão minha na hora: ao trocar a média da divergência por `meanPresent`,
+  uma permissão da guarda de JS ficou órfã, e o teste anti-apodrecimento acusou.
+
+---
+
 ## [1.53.1] - 2026-09-07
 
 ### Removido

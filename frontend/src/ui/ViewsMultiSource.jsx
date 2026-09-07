@@ -49,6 +49,10 @@ function CrossProductPicker({ value, onChange, families }) {
 }
 
 const msNum = window.numBR, msPct = window.pctBR;
+// Número COM unidade, mas só quando o número existe: um valor ausente vira o travessão
+// puro, sem prefixo nem sufixo. Sem isto, `'US$ ' + msNum(null)` daria "US$ —/kg".
+const msUnit = (v, pre = '', suf = '', d = 1) =>
+  (Number.isFinite(v) ? pre + msNum(v, d) + suf : '—');
 
 // ── (1) Export coefficient ──────────────────────────────────────────────────
 function ViewExportCoef() {
@@ -166,7 +170,10 @@ function ViewMarketShare() {
       <div className="kpi-row">
         <window.KpiCardSpark label="Participação atual" value={msPct(last?.share)} sub={`${last?.y ?? '—'} · do mercado mundial`} />
         <window.KpiCardSpark label="Pico histórico" value={msPct(peak?.share)} sub={`em ${peak?.y ?? '—'}`} />
-        <window.KpiCardSpark label="Variação na janela" value={window.fmtSigned((last?.share || 0) - (first?.share || 0), 1, ' p.p.')} deltaPositive={(last?.share || 0) >= (first?.share || 0)} sub={`${first?.y ?? '—'}–${last?.y ?? '—'}`} />
+        {/* `(a || 0) - (b || 0)` fabricava a diferença contra um zero inventado quando
+            uma das pontas não tinha dado — o mesmo defeito da v1.49.0 numa forma que a
+            varredura não cobre (subtração, não razão). diffPresent recusa e vira '—'. */}
+        <window.KpiCardSpark label="Variação na janela" value={window.fmtSigned(window.diffPresent(last?.share, first?.share), 1, ' p.p.')} deltaPositive={window.diffPresent(last?.share, first?.share) == null ? null : window.diffPresent(last?.share, first?.share) >= 0} sub={`${first?.y ?? '—'}–${last?.y ?? '—'}`} />
         <window.KpiCardSpark label="Exportação BR" value={'US$ ' + msNum(last?.br, 1) + ' bi'} sub={`mundo: US$ ${msNum(last?.world)} bi`} />
       </div>
 
@@ -230,10 +237,13 @@ function ViewPriceSpread() {
       <window.LoadErrorNote error={data.loadError} />
 
       <div className="kpi-row">
-        <window.KpiCardSpark label="Preço FOB atual" value={'US$ ' + msNum(last?.fob, 2) + '/kg'} sub={`${last?.y ?? '—'} · no porto`} />
-        <window.KpiCardSpark label="Preço na porteira" value={'US$ ' + msNum(last?.gate, 2) + '/kg'} sub="na produção" />
-        <window.KpiCardSpark label="Markup" value={'×' + msNum(last?.markup, 1)} sub="FOB ÷ porteira" />
-        <window.KpiCardSpark label="Spread" value={'US$ ' + msNum(last?.spread, 2) + '/kg'} sub="valor agregado entre porteira e porto" />
+        {/* Os quatro podem chegar null desde que o backend parou de responder 0 a uma
+            razão indefinida (measures.py). Sem a guarda sairia "US$ —/kg" e "×—" — um
+            prefixo e um sufixo afirmando uma unidade sobre um valor que não existe. */}
+        <window.KpiCardSpark label="Preço FOB atual" value={msUnit(last?.fob, 'US$ ', '/kg', 2)} sub={`${last?.y ?? '—'} · no porto`} />
+        <window.KpiCardSpark label="Preço na porteira" value={msUnit(last?.gate, 'US$ ', '/kg', 2)} sub="na produção" />
+        <window.KpiCardSpark label="Markup" value={msUnit(last?.markup, '×', '', 1)} sub="FOB ÷ porteira" />
+        <window.KpiCardSpark label="Spread" value={msUnit(last?.spread, 'US$ ', '/kg', 2)} sub="valor agregado entre porteira e porto" />
       </div>
 
       <div className="card">
@@ -261,7 +271,9 @@ function ViewMirror() {
   const [product, setProduct] = useMSState(null);
   const data = window.tradeMirror(product);
   const last = data.series[data.series.length - 1];
-  const avgDisc = data.discrepancy.reduce((s, d) => s + d.v, 0) / (data.discrepancy.length || 1);
+  // meanPresent: um ano sem dado nas DUAS fontes chega com v null e não pode entrar na
+  // média como zero — puxaria a divergência média para baixo com anos que ninguém mediu.
+  const avgDisc = window.meanPresent((data.discrepancy || []).map(d => d.v));
   // Real series window (#25) — never the hardcoded "1997–2024". Derived from the
   // same series the KPIs above read, so it tracks the actual data span.
   const mirrorYears = (data?.series || []).map(d => d.y);

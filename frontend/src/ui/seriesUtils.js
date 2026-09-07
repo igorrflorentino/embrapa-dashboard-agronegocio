@@ -48,6 +48,14 @@ window.ratioPresent = (num, den) => {
   return num / den;
 };
 
+// Diferença entre duas medidas, preservando a ausência. Para grandezas que já são
+// percentuais (uma participação de mercado, por exemplo), onde a variação se declara em
+// PONTOS PERCENTUAIS e não em variação relativa — deltaPct responderia outra pergunta.
+window.diffPresent = (a, b) => {
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+  return a - b;
+};
+
 // Variação entre dois extremos, em PERCENTUAL — ou `null` quando a pergunta não tem
 // resposta. Não tem resposta quando falta um dos extremos, ou quando a base não é
 // positiva: nesses casos a razão é indefinida, e o `: 0` que estava aqui antes a
