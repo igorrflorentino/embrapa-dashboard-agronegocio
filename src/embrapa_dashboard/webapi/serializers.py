@@ -740,6 +740,10 @@ def serialize_export_coef(d: dict) -> dict:
     }
     if d.get("incompatible"):
         out["incompatible"] = True
+        # O MOTIVO viaja junto: a view compõe o texto em pt-BR a partir dele, para o
+        # pesquisador saber se falta a correspondência aduaneira ou se a razão é
+        # dimensionalmente impossível — duas recusas diferentes, não um "—" só.
+        out["incompatibleReason"] = d.get("incompatibleReason", "familia")
     return out
 
 

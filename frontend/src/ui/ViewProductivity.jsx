@@ -11,31 +11,6 @@
 
 const { useState: useProdState } = React;
 
-// Nomeia as UFs que o piso de área tirou da comparação. A regra do projeto proíbe
-// filtragem invisível: se um número deixou de ser mostrado, a tela diz quais e por quê.
-// Enumera TODAS (não um "e mais N"), porque a lista curta é justamente a informação.
-//
-// O texto enuncia a REGRA, não uma história causal: "arredondamento da fonte" é
-// verdade para 205 ha e MENTIRA para 50 mil, e a nota cobre uma lista que pode ter as
-// duas. O que vale para toda a lista é que a UF não pesa na lavoura E tem base pequena
-// demais para a média se sustentar sozinha — as duas provas que ela reprovou.
-function AreaFloorNote({ dropped, floorHa, fmtArea }) {
-  if (!dropped || !dropped.length) return null;
-  const lista = dropped.slice()
-    .sort((a, b) => (b.areaHa || 0) - (a.areaHa || 0))
-    .map(u => `${u.uf} (${fmtArea(u.areaHa || 0)})`)
-    .join(', ');
-  return (
-    <p className="caption" style={{ marginTop: 10 }}>
-      Fora da comparação por área: <strong>{lista}</strong>. Cada uma colhe menos de{' '}
-      {window.numBR(window.AREA_FLOOR.minShare * 100, 1)}% da área do recorte
-      {floorHa != null ? ` (${fmtArea(floorHa)})` : ''} <em>e</em> menos de{' '}
-      {fmtArea(window.AREA_FLOOR.minAbs)} no total — base pequena demais para o
-      rendimento médio representar a UF. Seguem no mapa em cinza, sem cor de intensidade.
-    </p>
-  );
-}
-
 function ViewProductivity({ summary, conventions, database }) {
   const [crop, setCrop] = useProdState(null);
   const data = window.productivityData(database, crop, summary);
@@ -190,7 +165,13 @@ function ViewProductivity({ summary, conventions, database }) {
             action={<span className="caption">{yUnit}</span>}
           />
           <window.BrazilTileMap data={mapData} valueKey="yieldKgHa" label={yUnit} height={420} compact={false} />
-          <AreaFloorNote dropped={floor.dropped} floorHa={floorHa} fmtArea={fmtArea} />
+          <window.MaterialityFloorNote
+            dropped={floor.dropped} valueKey="areaHa" fmt={fmtArea}
+            floor={window.AREA_FLOOR} floorRel={floorHa}
+            titulo="Fora da comparação por área"
+            base="da área colhida do recorte"
+            porque="base pequena demais para o rendimento médio representar a UF"
+            segue="Seguem no mapa em cinza, sem cor de intensidade." />
         </div>
         <div className="card">
           <window.SectionHeader
@@ -205,7 +186,13 @@ function ViewProductivity({ summary, conventions, database }) {
               barra sozinho em vez de confiar no piso no escuro. */}
           <window.BarChart data={byUFTop} valueKey="yieldKgHa" color="var(--viz-6)" height={360} compact={false}
                            hoverKey="areaHa" hoverLabel="área colhida (ha)" />
-          <AreaFloorNote dropped={floor.dropped} floorHa={floorHa} fmtArea={fmtArea} />
+          <window.MaterialityFloorNote
+            dropped={floor.dropped} valueKey="areaHa" fmt={fmtArea}
+            floor={window.AREA_FLOOR} floorRel={floorHa}
+            titulo="Fora da comparação por área"
+            base="da área colhida do recorte"
+            porque="base pequena demais para o rendimento médio representar a UF"
+            segue="Seguem no mapa em cinza, sem cor de intensidade." />
         </div>
       </div>
     </>

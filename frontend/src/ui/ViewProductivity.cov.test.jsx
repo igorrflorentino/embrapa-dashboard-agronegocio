@@ -15,6 +15,10 @@ import { cleanup, render } from '@testing-library/react';
 // chamada na view é incondicional: o helper ausente tem de estourar, não voltar a pôr
 // uma UF de 205 ha no topo do ranking em silêncio.
 import './seriesUtils.js';
+// A nota REAL, não um stub: ela é a metade "nada some em silêncio" do piso, e um stub
+// deixaria a varredura verde com a tela calada. É o mesmo motivo pelo qual
+// ViewOverview.test.jsx importa o RecorteNote de verdade.
+import './MaterialityFloorNote.jsx';
 
 function stubGlobals(prodData) {
   window.productivityData = () => prodData;
@@ -225,8 +229,8 @@ describe('ViewProductivity — piso de área no ranking e no mapa', () => {
     // A nota enuncia a REGRA (as duas provas reprovadas), não uma causa que só valeria
     // para parte da lista: "arredondamento da fonte" é verdade para 205 ha e mentira
     // para 50 mil, e a mesma nota pode cobrir as duas.
-    expect(container.textContent).toContain('menos de 0,5% da área do recorte');
-    expect(container.textContent).toContain('menos de 1 mil ha no total');
+    expect(container.textContent).toContain('0,5% da área colhida do recorte');
+    expect(container.textContent).toContain('1 mil ha no total');
     expect(container.textContent).not.toContain('arredondamento da fonte');
   });
 

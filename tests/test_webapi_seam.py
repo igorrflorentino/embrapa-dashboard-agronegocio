@@ -798,23 +798,190 @@ def test_price_spread_empty_for_commodity_without_comex_codes(monkeypatch):
     assert out == {"unit": "US$/kg", "series": []}
 
 
-def test_export_coefficient_empty_for_commodity_without_comex_codes(monkeypatch):
+def test_export_coefficient_sem_codigos_recusa_sem_consultar_os_totais(monkeypatch):
+    """Sem códigos, a recusa é honesta E barata.
+
+    A GUARDA que importa continua a mesma: uma lista de códigos vazia significa "sem
+    filtro" nos leitores, então consultar assim somaria os bancos INTEIROS. O que mudou
+    na v1.58.0 é a forma da recusa — carga vazia deixava "—" em todos os KPIs, sem dizer
+    se faltava dado ou se algo quebrou; agora sai com o motivo.
+    """
     seam = _seam()
     _no_codes_catalog(_base(), monkeypatch)
     monkeypatch.setattr(_cross(), "_is_mass_basis", lambda cid: True)
     monkeypatch.setattr(
         _cross(),
-        "_pevs_mass_by_year",
-        lambda codes, uf_codes=(): pytest.fail("must not query the unscoped totals"),
+        "_mass_by_year",
+        lambda banco, codes, uf_codes=(): pytest.fail("must not query the unscoped totals"),
     )
     out = seam.export_coefficient("manicoba")
     assert out == {
         "unit": "mil t",
+        "incompatible": True,
+        "incompatibleReason": "sem-ncm",
         "by_uf": [],
         "national": {},
         "timeseries": [],
         "states": [],
     }
+
+
+def test_export_coefficient_sem_ncm_recusa_com_motivo(monkeypatch):
+    """Agrupamento só-PAM sem correspondência aduaneira: recusa COM MOTIVO.
+
+    O gate de família passou a ler as duas pesquisas de produção, então abacaxi, café e
+    cana-de-açúcar — que existem só na PAM — chegam a esta view. Nenhum deles tem NCM no
+    cruzamento: sem numerador não há coeficiente, e devolver a carga vazia deixava a tela
+    com "—" em tudo, indistinguível de uma falha.
+    """
+    seam = _seam()
+    monkeypatch.setattr(_cross(), "_is_mass_basis", lambda cid: True)
+    monkeypatch.setattr(
+        _base(),
+        "produto_catalog",
+        lambda: {
+            "cafe": {"name": "Café", "pevs": [], "pam": ["40139"], "comex": [], "comtrade": []}
+        },
+    )
+    out = seam.export_coefficient("cafe")
+    assert out["incompatible"] is True
+    # O MOTIVO, não só a recusa: 'familia' diria que a razão é dimensionalmente
+    # impossível, o que seria falso — massa ÷ massa está certo, o que falta é o dado.
+    assert out["incompatibleReason"] == "sem-ncm"
+
+
+# ── export coefficient: o denominador soma as DUAS pesquisas de produção ───────
+
+
+def test_export_coefficient_soma_pevs_e_pam_no_denominador(monkeypatch):
+    """O defeito: todas as exportações divididas por uma FRAÇÃO da produção.
+
+    ÂNCORA EXTERNA, medida em produção 2026-09-07: a castanha-de-caju tem 204.065 t na
+    PEVS (extração de mata nativa) e 5.291.686 t na PAM (lavoura) — 96% da produção
+    ficava de fora. O numerador não pode ser dividido junto: os NCMs do caju são
+    08013100 "com casca" e 08013200 "sem casca", uma distinção de BENEFICIAMENTO, e
+    `serving_comex_annual` não tem nenhuma coluna de origem produtiva. Resultado na
+    tela: 736,2% nacionais e 1.408.727,8% no Ceará, que planta 409 mil t e extrai ~0.
+    """
+    seam = _seam()
+    monkeypatch.setattr(_cross(), "_is_mass_basis", lambda cid: True)
+    monkeypatch.setattr(
+        _base(),
+        "produto_catalog",
+        lambda: {
+            "caju": {
+                "name": "Caju",
+                "pevs": ["3404"],
+                "pam": ["40143"],
+                "comex": ["08013100"],
+                "comtrade": [],
+            }
+        },
+    )
+    vistos = {}
+
+    def fake_mass(banco, codes, uf_codes=()):
+        vistos[banco] = tuple(codes)
+        return {2000: 0.204 if banco == "ibge_pevs" else 5.292}
+
+    monkeypatch.setattr(_cross(), "_mass_by_year", fake_mass)
+    # 2,0e6 kg = 2,0 mil t exportadas (o leitor converte kg -> mil t dividindo por 1e6).
+    monkeypatch.setattr(_base(), "_xyear", lambda m, c, uf_codes=(): {2000: 2.0e6})
+    monkeypatch.setattr(_cross(), "_export_coef_by_uf", lambda *a, **k: [])
+
+    out = seam.export_coefficient("caju")
+
+    # As DUAS pesquisas foram consultadas, cada uma com os códigos do SEU banco.
+    assert vistos == {"ibge_pevs": ("3404",), "ibge_pam": ("40143",)}
+    # E o coeficiente saiu sobre a SOMA (0,204 + 5,292 = 5,496 mil t) → 36,4%.
+    # Sobre a PEVS sozinha daria 980,4%: a mesma ordem de grandeza do defeito real.
+    assert out["timeseries"] == [{"y": 2000, "v": pytest.approx(100 * 2.0 / 5.496, rel=1e-9)}]
+    assert out["timeseries"][0]["v"] < 100.0, "coeficiente ainda calculado só sobre a PEVS"
+
+
+def test_export_coefficient_agrupamento_sem_lado_pam_nao_consulta_a_pam(monkeypatch):
+    """Carvão vegetal e castanha-do-pará só existem na PEVS (`pam: []` no catálogo).
+
+    Uma lista de códigos VAZIA significa "sem filtro" nos leitores, então consultar a
+    PAM assim somaria as 11 lavouras inteiras ao denominador de um produto extrativo —
+    trocar um denominador incompleto por um inflado não é conserto.
+    """
+    seam = _seam()
+    monkeypatch.setattr(_cross(), "_is_mass_basis", lambda cid: True)
+    monkeypatch.setattr(
+        _base(),
+        "produto_catalog",
+        lambda: {
+            "carvao": {
+                "name": "Carvão",
+                "pevs": ["3433"],
+                "pam": [],
+                "comex": ["44021000"],
+                "comtrade": [],
+            }
+        },
+    )
+    vistos = {}
+
+    def fake_mass(banco, codes, uf_codes=()):
+        vistos[banco] = tuple(codes)
+        return {2000: 10.0} if banco == "ibge_pevs" else {}
+
+    monkeypatch.setattr(_cross(), "_mass_by_year", fake_mass)
+    monkeypatch.setattr(_base(), "_xyear", lambda m, c, uf_codes=(): {2000: 1e6})
+    monkeypatch.setattr(_cross(), "_export_coef_by_uf", lambda *a, **k: [])
+
+    out = seam.export_coefficient("carvao")
+    assert vistos["ibge_pam"] == (), "a PAM foi chamada com códigos — quais?"
+    # 1e6 kg = 1,0 mil t sobre 10,0 mil t → 10%, idêntico ao comportamento anterior.
+    assert out["timeseries"] == [{"y": 2000, "v": pytest.approx(10.0)}]
+
+
+def test_export_coef_by_uf_devolve_as_duas_metades_que_somam_o_total(monkeypatch):
+    """A composição é separável e vai para a tela; a RAZÃO não é e fica uma só.
+
+    Dividir o denominador em duas razões daria "todas as exportações ÷ só a extração"
+    e "todas ÷ só a lavoura" — as duas são o próprio defeito, com outro rótulo.
+    """
+    seam = _seam()
+
+    def fake_prod(**kw):
+        linhas = {
+            "ibge_pevs": [
+                {
+                    "state_acronym": "CE",
+                    "state_name": "Ceará",
+                    "region_abbrev": "NE",
+                    "total_value": 43.0,
+                }
+            ],
+            "ibge_pam": [
+                {
+                    "state_acronym": "CE",
+                    "state_name": "Ceará",
+                    "region_abbrev": "NE",
+                    "total_value": 409_055.0,
+                }
+            ],
+        }[kw["source"]]
+        return pd.DataFrame(linhas)
+
+    monkeypatch.setattr(seam.gateway, "fetch_production_by_uf", fake_prod)
+    monkeypatch.setattr(
+        seam.gateway,
+        "fetch_comex_by_uf",
+        lambda **k: pd.DataFrame([{"state_acronym": "CE", "total_weight_kg": 2.0e8}]),
+    )
+
+    linhas = seam._export_coef_by_uf(("3404",), ("40143",), ("08013100",), 2000, 2024)
+    (ce,) = linhas
+    assert ce["productionExtractive"] == pytest.approx(0.043)  # 43 t -> mil t
+    assert ce["productionCrop"] == pytest.approx(409.055)
+    assert ce["production"] == pytest.approx(ce["productionExtractive"] + ce["productionCrop"])
+    # E o coeficiente sai da SOMA: 200 mil t / 409,098 mil t ≈ 48,9%, não os
+    # 1.408.727,8% que a PEVS sozinha produzia no Ceará.
+    assert ce["coefPct"] == pytest.approx(100 * 200.0 / 409.098, rel=1e-6)
+    assert ce["coefPct"] < 100.0
 
 
 # ── export coefficient: by-UF/national restricted to the common year window ────
@@ -840,8 +1007,8 @@ def test_export_coefficient_aligns_by_uf_window_to_common_years(monkeypatch):
     )
     monkeypatch.setattr(
         _cross(),
-        "_pevs_mass_by_year",
-        lambda codes, uf_codes=(): {1986: 5.0, 1997: 10.0, 2000: 20.0},
+        "_mass_by_year",
+        lambda banco, codes, uf_codes=(): {1986: 5.0, 1997: 10.0, 2000: 20.0},
     )
     monkeypatch.setattr(  # exp_weight (kg): years 1997/2000/2024
         _base(), "_xyear", lambda metric, codes, uf_codes=(): {1997: 2e9, 2000: 4e9, 2024: 1e9}
@@ -937,7 +1104,7 @@ def test_produto_catalog_is_ttl_cached_not_process_lifetime(monkeypatch):
     # flask-caching memoize marker (lru_cache has cache_clear, not uncached)
     assert hasattr(seam.produto_catalog, "uncached")
     assert hasattr(seam._crosswalk_df, "uncached")
-    assert hasattr(seam._pevs_family_by_agrupamento, "uncached")
+    assert hasattr(seam._production_family_by_agrupamento, "uncached")
     assert hasattr(seam._code_to_agrupamento, "uncached")
 
     calls = {"n": 0}
@@ -1798,10 +1965,10 @@ def test_cross_series_comex_exp_value_scales_to_bi(monkeypatch):
     assert out["unit"] == "US$ bi" and out["points"] == [{"y": 2022, "v": 3.0}]
 
 
-# ── _pevs_mass_by_year / _is_mass_basis ────────────────────────────────────────
+# ── _mass_by_year / _is_mass_basis ────────────────────────────────────────
 
 
-def test_pevs_mass_by_year_scales_t_to_mil_t(monkeypatch):
+def test_mass_by_year_scales_t_to_mil_t(monkeypatch):
     seam = _seam()
     monkeypatch.setattr(
         seam.gateway,
@@ -1813,20 +1980,35 @@ def test_pevs_mass_by_year_scales_t_to_mil_t(monkeypatch):
             ]
         ),
     )
-    assert seam._pevs_mass_by_year(("1",)) == {2020: 6.0}  # (5e3 + 1e3) / 1e3
+    assert seam._mass_by_year("ibge_pevs", ("1",)) == {2020: 6.0}  # (5e3 + 1e3) / 1e3
 
 
-def test_pevs_mass_by_year_empty(monkeypatch):
+def test_mass_by_year_empty(monkeypatch):
     seam = _seam()
     monkeypatch.setattr(seam.gateway, "fetch_product_timeseries", lambda *a, **k: pd.DataFrame())
-    assert seam._pevs_mass_by_year(()) == {}
+    assert seam._mass_by_year("ibge_pevs", ("1",)) == {}
+
+
+def test_mass_by_year_sem_codigos_nao_consulta(monkeypatch):
+    """Lista de códigos vazia = o agrupamento não tem lado neste banco (carvão vegetal
+    não tem PAM). Consultar assim somaria o BANCO INTEIRO ao denominador, porque
+    `codes` vazio significa "sem filtro" lá embaixo."""
+    seam = _seam()
+    chamou = []
+    monkeypatch.setattr(
+        seam.gateway,
+        "fetch_product_timeseries",
+        lambda *a, **k: chamou.append(a) or pd.DataFrame(),
+    )
+    assert seam._mass_by_year("ibge_pam", ()) == {}
+    assert chamou == [], "consultou o banco com filtro vazio — somaria tudo"
 
 
 def test_is_mass_basis_true_only_for_pure_massa(monkeypatch):
     seam = _seam()
     monkeypatch.setattr(
         _cross(),
-        "_pevs_family_by_agrupamento",
+        "_production_family_by_agrupamento",
         lambda: {"castanha": {"massa"}, "madeira": {"volume"}, "*": {"massa", "volume"}},
     )
     assert seam._is_mass_basis("castanha") is True
@@ -1930,7 +2112,7 @@ def test_export_coefficient_empty_timeseries_when_no_year_overlap(monkeypatch):
         "produto_catalog",
         lambda: {"c": {"name": "C", "pevs": ["1"], "comex": ["0801"], "comtrade": ["080121"]}},
     )
-    monkeypatch.setattr(_cross(), "_pevs_mass_by_year", lambda codes, uf_codes=(): {1986: 5.0})
+    monkeypatch.setattr(_cross(), "_mass_by_year", lambda banco, codes, uf_codes=(): {1986: 5.0})
     monkeypatch.setattr(_base(), "_xyear", lambda metric, codes, uf_codes=(): {2022: 1e6})
     out = seam.export_coefficient("c")
     assert out == {
@@ -2040,7 +2222,7 @@ def test_export_coefficient_narrows_BOTH_sides_of_the_ratio(monkeypatch):
     )
     seen = {}
 
-    def fake_mass(codes, uf_codes=()):
+    def fake_mass(banco, codes, uf_codes=()):
         seen["pevs_uf"] = tuple(uf_codes)
         return {2000: 10.0}
 
@@ -2048,7 +2230,7 @@ def test_export_coefficient_narrows_BOTH_sides_of_the_ratio(monkeypatch):
         seen["comex_uf"] = tuple(uf_codes)
         return {2000: 4e9}
 
-    monkeypatch.setattr(_cross(), "_pevs_mass_by_year", fake_mass)
+    monkeypatch.setattr(_cross(), "_mass_by_year", fake_mass)
     monkeypatch.setattr(_base(), "_xyear", fake_xyear)
 
     def fake_prod(**kw):
@@ -2297,7 +2479,7 @@ def test_code_to_agrupamento_reverse_indexes_every_source(monkeypatch):
     assert idx[("un_comtrade", "080121")] == "castanha"
 
 
-def test_pevs_family_by_agrupamento_indexes_run_query(monkeypatch):
+def test_production_family_by_agrupamento_indexes_run_query(monkeypatch):
     seam = _seam()
     monkeypatch.setattr(_cross(), "get_settings", lambda: Settings(gcp_project_id="p"))
     monkeypatch.setattr(
@@ -2315,7 +2497,7 @@ def test_pevs_family_by_agrupamento_indexes_run_query(monkeypatch):
     app, cache = _bind_simplecache()
     with app.app_context():
         cache.clear()
-        idx = seam._pevs_family_by_agrupamento()
+        idx = seam._production_family_by_agrupamento()
     assert idx["castanha"] == {"massa"}
     assert idx["madeira"] == {"volume"}
     assert idx["*"] == {"massa", "volume"}
@@ -2355,7 +2537,7 @@ def test_produto_catalog_with_family_tags_each_commodity(monkeypatch):
     )
     monkeypatch.setattr(
         _cross(),
-        "_pevs_family_by_agrupamento",
+        "_production_family_by_agrupamento",
         lambda: {"castanha": {"massa"}, "madeira": {"volume"}},
     )
     cat = seam.produto_catalog_with_family()

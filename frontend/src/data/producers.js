@@ -336,6 +336,12 @@ window.agrupamentoCatalog = function agrupamentoCatalog() {
       code: c.id,
       name: c.name,
       family: c.family ? CATALOG_FAMILY_JS[c.family] || c.family : null,
+      // Tem lado aduaneiro? As views cruzadas que dividem por peso exportado precisam
+      // saber: desde a v1.58.0 o gate de família lê as DUAS pesquisas de produção, e
+      // agrupamentos só-PAM (abacaxi, café, cana-de-açúcar) não têm NCM no cruzamento.
+      // Eles CONTINUAM na lista — esconder seria filtragem invisível, e o pesquisador
+      // que procura café tem de achá-lo e ler o motivo — mas não servem de padrão.
+      hasCustoms: (c.comex || []).length > 0,
     }))
     .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
 };

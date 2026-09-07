@@ -31,11 +31,12 @@ _DENOMINADOR_MASCARADO = re.compile(r"/\s*\(?[^()\n]*\bor\s+1\b")
 # MEDIDO (uma contagem de verdade) ou se não houver divisão por medida ausente.
 PERMITIDOS: list[tuple[str, str]] = [
     (
-        'p = pr["production"] if pr else 0.0',
-        "seam_cross._export_coef_by_uf: uma UF SEM linha na PEVS produziu zero daquele "
-        "produto — a PEVS cobre as 27 UFs, então a ausência de linha é um zero MEDIDO, não "
-        "um dado que falta. O comentário logo acima explica por que essas UFs entram na "
-        "lista (exportam sem produzir); o coeficiente delas, esse sim, é None.",
+        'return row["production"] if row else 0.0',
+        "seam_cross._uf_mass: uma UF SEM linha produziu zero daquele produto — as DUAS "
+        "pesquisas de produção do IBGE (PEVS extração + PAM lavoura) cobrem as 27 UFs, "
+        "então a ausência de linha é um zero MEDIDO, não um dado que falta. A recusa "
+        "continua onde deve: pct_present devolve None quando a soma dos dois lados não é "
+        "positiva, e é o COEFICIENTE que não existe para quem exporta sem produzir.",
     ),
     (
         "elapsed = (state.ended_at or now) - started if started else 0.0",

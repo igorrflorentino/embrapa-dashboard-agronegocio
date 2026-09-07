@@ -153,9 +153,15 @@ def _exp_price_cross_points(y0: int, y1: int, uf_codes: tuple = ()) -> list[dict
     ]
 
 
-def _pevs_mass_by_year(pevs_codes: tuple, uf_codes: tuple = ()) -> dict:
+def _mass_by_year(banco: str, codes: tuple, uf_codes: tuple = ()) -> dict:
+    """Produced mass (mil t) per year for ONE production banco. Empty ``codes`` means
+    the agrupamento has no side in this banco (carvão vegetal has no PAM half), and
+    the reader is skipped — an empty code list means "no filter" downstream, which
+    would silently sum the WHOLE banco into the denominator."""
+    if not codes:
+        return {}
     pts = gateway.fetch_product_timeseries(
-        "ibge_pevs", codes=pevs_codes, value_column="val_real_ipca_brl", uf_codes=uf_codes
+        banco, codes=codes, value_column="val_real_ipca_brl", uf_codes=uf_codes
     )
     if pts is None or pts.empty:
         return {}
@@ -163,38 +169,58 @@ def _pevs_mass_by_year(pevs_codes: tuple, uf_codes: tuple = ()) -> dict:
     return {int(y): float(v) / 1e3 for y, v in g.items()}  # t -> mil t
 
 
-@cache.memoize()
-def _pevs_family_by_agrupamento() -> dict:
-    """agrupamento_id -> set of PEVS physical-unit families (massa/volume/...).
+# The two IBGE surveys that measure PRODUCTION, and the crosswalk `source` value of
+# each. They are disjoint by construction — PEVS counts what is gathered from native
+# forest, PAM what is harvested from a planted crop — so a produto present in both is
+# not double-counted by summing them; it is two different phenomena that customs
+# cannot tell apart.
+_PRODUCTION_SOURCES = (
+    ("pevs", "ibge_pevs", "gold_pevs_production"),
+    ("pam", "ibge_pam", "gold_pam_production"),
+)
 
-    Sourced from ``gold_pevs_production.family``. The ``'*'`` key holds every
-    family present in PEVS — the basis of the "Cesta completa" / no-filter
-    selection, which sums across ALL products. A mass↔weight ratio is only
-    meaningful when the PEVS side is purely ``massa``; volume (m³) or mixed
+
+@cache.memoize()
+def _production_family_by_agrupamento() -> dict:
+    """agrupamento_id -> set of physical-unit families across BOTH production bancos.
+
+    Sourced from ``gold_pevs_production.family`` and ``gold_pam_production.family``.
+    The ``'*'`` key holds every family present, the basis of the "Cesta completa" /
+    no-filter selection, which sums across ALL products. A mass↔weight ratio is only
+    meaningful when the production side is purely ``massa``; volume (m³) or mixed
     selections are not — Gold itself warns "NEVER sum qty_base across families".
+
+    It used to read PEVS alone, and that is what let the export coefficient divide
+    COMEX's whole numerator by a fraction of the denominator (see
+    ``export_coefficient``): a produto could be pure-mass in PEVS and never be asked
+    whether its PAM half is mass too.
     """
     s = get_settings()
-    pevs = sqlbuild.table_ref(s, "bq_gold_dataset", "gold_pevs_production")
     xwalk = sqlbuild.table_ref(s, "bq_gold_dataset", "gold_produto_agrupamento")
-    q = f"""
-        select x.agrupamento_id as cid, p.family as family
-        from `{xwalk}` x
-        join `{pevs}` p on x.source = 'pevs' and p.product_code = x.code
-        group by cid, family
-        union all
-        select '*' as cid, family from (select distinct family from `{pevs}`)
-    """
+    parts = []
+    for src, _banco, tbl in _PRODUCTION_SOURCES:
+        t = sqlbuild.table_ref(s, "bq_gold_dataset", tbl)
+        parts.append(
+            f"""
+            select x.agrupamento_id as cid, p.family as family
+            from `{xwalk}` x
+            join `{t}` p on x.source = '{src}' and p.product_code = x.code
+            group by cid, family
+            union all
+            select '*' as cid, family from (select distinct family from `{t}`)
+            """
+        )
     idx: dict = {}
-    for r in gateway.run_query(q, []).itertuples():
+    for r in gateway.run_query(" union all ".join(parts), []).itertuples():
         idx.setdefault(r.cid, set()).add(r.family)
     return idx
 
 
 def _is_mass_basis(agrupamento_id: str | None) -> bool:
-    """True iff the PEVS side of this selection is purely mass (t) — the
-    precondition for comparing PEVS production against COMEX shipment weight (kg).
+    """True iff the production side of this selection is purely mass (t) — the
+    precondition for comparing IBGE production against COMEX shipment weight (kg).
     Volume commodities (madeira, m³) and the mixed "Cesta completa" return False."""
-    fams = _pevs_family_by_agrupamento().get(agrupamento_id or "*", set())
+    fams = _production_family_by_agrupamento().get(agrupamento_id or "*", set())
     return fams == {"massa"}
 
 
@@ -210,7 +236,7 @@ def produto_catalog_with_family() -> dict:
     Composes two cached reads (catalog + family index); kept un-memoized so a warm
     instance always reflects their own TTL refresh instead of pinning a stale merge.
     """
-    fams = _pevs_family_by_agrupamento()
+    fams = _production_family_by_agrupamento()
     out: dict = {}
     for cid, c in seam_base.produto_catalog().items():
         fset = fams.get(cid, set())
@@ -332,36 +358,53 @@ def export_coefficient(agrupamento_id: str | None, uf_codes: tuple = ()) -> dict
     if not _is_mass_basis(agrupamento_id):
         # Volume commodity (m³) or mixed basket: exported-kg ÷ produced-m³ is not a
         # share. Refuse rather than print a dimensionless-nonsense percentage.
-        return {
-            "unit": "mil t",
-            "incompatible": True,
-            "by_uf": [],
-            "national": {},
-            "timeseries": [],
-            "states": list(uf_codes),
-        }
+        return _incompatible_export_coef("familia", uf_codes)
     pevs_codes = seam_base._codes(agrupamento_id, "pevs")
+    pam_codes = seam_base._codes(agrupamento_id, "pam")
     ncms = seam_base._codes(agrupamento_id, "comex")
-    if agrupamento_id and not (pevs_codes and ncms):
-        # Commodity has no codes for a needed source: empty payload, never the
+    if agrupamento_id and not ncms:
+        # No customs side: since v1.58.0 the family gate reads BOTH production bancos,
+        # so PAM-only agrupamentos reach this view — and three of them (abacaxi, café,
+        # cana-de-açúcar) have no NCM in the crosswalk. Without a numerator there is no
+        # coefficient, and rendering "—" everywhere would leave the researcher guessing
+        # whether the data is missing or the pipeline broke. Refuse with a REASON, the
+        # same honest-note path the volume/mixed refusal already uses.
+        return _incompatible_export_coef("sem-ncm", uf_codes)
+    if agrupamento_id and not (pevs_codes or pam_codes):
+        # Codes for the customs side but none for production: empty payload, never the
         # unscoped ALL-commodities totals (empty codes mean "no filter").
         return _empty_export_coef(uf_codes)
-    pevs_mass = _pevs_mass_by_year(pevs_codes, uf_codes)
+    # O DENOMINADOR SOMA AS DUAS PESQUISAS DE PRODUÇÃO. Lia só a PEVS (extração
+    # nativa), enquanto o numerador — o peso que saiu pela alfândega — não sabe
+    # distinguir origem: o NCM da castanha de caju é "com casca"/"sem casca", uma
+    # distinção de BENEFICIAMENTO, não de origem produtiva. Dividir todas as
+    # exportações por uma fração da produção dava 736% nacionais para a castanha-
+    # de-caju (a PEVS tem 0,20 mi t contra 5,29 mi t da PAM) e 1.408.728% no Ceará,
+    # que planta 409 mil t e extrai ~0. As duas pesquisas são disjuntas por
+    # construção — coleta de mata nativa × lavoura plantada — então somá-las não
+    # duplica nada. Um agrupamento sem lado PAM (carvão vegetal, castanha-do-pará)
+    # tem codes vazio e o somatório fica idêntico ao de antes.
+    mass_extractive = _mass_by_year("ibge_pevs", pevs_codes, uf_codes)
+    mass_crop = _mass_by_year("ibge_pam", pam_codes, uf_codes)
+    prod_mass = {
+        y: mass_extractive.get(y, 0.0) + mass_crop.get(y, 0.0)
+        for y in set(mass_extractive) | set(mass_crop)
+    }
     exp_mass = {
         y: v / 1e6 for y, v in seam_base._xyear("mdic_comex:exp_weight", ncms, uf_codes).items()
     }
-    ts = sorted(set(pevs_mass) & set(exp_mass))
+    ts = sorted(set(prod_mass) & set(exp_mass))
     # A SÉRIE do coeficiente, pelo mesmo motivo do valor por UF: um ano sem produção
     # não exporta "0% do que produziu" — o coeficiente não existe naquele ano, e o
     # gráfico deve mostrar lacuna, não um ponto colado no eixo.
-    timeseries = [{"y": y, "v": measures.pct_present(exp_mass[y], pevs_mass[y])} for y in ts]
+    timeseries = [{"y": y, "v": measures.pct_present(exp_mass[y], prod_mass[y])} for y in ts]
     if not ts:
         return _empty_export_coef(uf_codes)
     # The by-UF/national ratios must compare the SAME window on both sides:
     # PEVS starts in 1986 but COMEX only in 1997, so unbounded cumulative sums
     # would systematically understate coefPct (and disagree with the timeseries,
     # which already intersects the two sources' years).
-    by_uf = _export_coef_by_uf(pevs_codes, ncms, ts[0], ts[-1], uf_codes)
+    by_uf = _export_coef_by_uf(pevs_codes, pam_codes, ncms, ts[0], ts[-1], uf_codes)
     return {
         "unit": "mil t",
         "by_uf": by_uf,
@@ -371,25 +414,81 @@ def export_coefficient(agrupamento_id: str | None, uf_codes: tuple = ()) -> dict
     }
 
 
+def _production_by_uf(banco: str, codes: tuple, y0: int, y1: int, uf_codes: tuple) -> dict:
+    """uf -> {name, region, production (mil t)} for ONE production banco over the
+    window. Empty ``codes`` (the agrupamento has no side in this banco) returns {}
+    WITHOUT querying: an empty code list means "no filter" downstream, so it would
+    sum the whole banco into the denominator instead of nothing."""
+    if not codes:
+        return {}
+    df = gateway.fetch_production_by_uf(
+        year_start=y0,
+        year_end=y1,
+        value_column="qty_base",
+        product_codes=codes,
+        uf_codes=uf_codes,
+        source=banco,
+        latest_year_only=False,
+    )
+    return {
+        r.state_acronym: {
+            "name": r.state_name,
+            "region": r.region_abbrev,
+            "production": float(r.total_value or 0) / 1e3,  # qty_base (t) -> mil t
+        }
+        for r in df.itertuples()
+    }
+
+
+def _uf_mass(rows: dict, uf: str) -> float:
+    """Massa produzida por uma UF em UM banco de produção, em mil t.
+
+    Uma UF sem linha produziu ZERO daquele produto: as duas pesquisas do IBGE cobrem
+    as 27 UFs, então a ausência de linha é um zero MEDIDO, não um dado que falta. A
+    recusa continua existindo onde deve — ``pct_present`` devolve None quando o
+    denominador somado não é positivo, e é o coeficiente, não a massa, que não existe
+    para quem exporta sem produzir.
+    """
+    row = rows.get(uf)
+    return row["production"] if row else 0.0
+
+
+def _incompatible_export_coef(reason: str, uf_codes: tuple = ()) -> dict:
+    """Honest refusal payload. ``reason`` is a CODE, not a sentence: the pt-BR text the
+    researcher reads is composed in the view (project rule — display strings live with
+    the UI). ``'familia'`` = volume/mixed selection (kg ÷ m³ is not a share);
+    ``'sem-ncm'`` = the agrupamento has no customs correspondence, so there is no
+    numerator at all."""
+    return {
+        "unit": "mil t",
+        "incompatible": True,
+        "incompatibleReason": reason,
+        "by_uf": [],
+        "national": {},
+        "timeseries": [],
+        "states": list(uf_codes),
+    }
+
+
 def _export_coef_by_uf(
-    pevs_codes: tuple, ncms: tuple, y0: int, y1: int, uf_codes: tuple = ()
+    pevs_codes: tuple, pam_codes: tuple, ncms: tuple, y0: int, y1: int, uf_codes: tuple = ()
 ) -> list[dict]:
     """Per-UF production (mil t) vs exported weight (mil t) and their coefficient.
 
-    Both readers are window-CUMULATIVE (``latest_year_only=False``): the coefficient
+    Production is the SUM of the two IBGE surveys — ``productionExtractive`` (PEVS,
+    coleta de mata nativa) + ``productionCrop`` (PAM, lavoura plantada) — because the
+    export side cannot tell the two apart (see ``export_coefficient``). Both halves
+    travel to the UI: the composition is separable and worth showing, the RATIO is not
+    (all exports ÷ half the production is the very defect this fixes).
+
+    Every reader is window-CUMULATIVE (``latest_year_only=False``): the coefficient
     is exported-over-window ÷ produced-over-window across the SAME ``[y0, y1]``
     common-year intersection, NOT a single latest-year ratio (that is the snapshot
     choropleth's job). A single-year ratio would also reintroduce the year-window
     mismatch the cumulative sums were built to avoid.
     """
-    prod = gateway.fetch_production_by_uf(
-        year_start=y0,
-        year_end=y1,
-        value_column="qty_base",
-        product_codes=pevs_codes,
-        uf_codes=uf_codes,
-        latest_year_only=False,
-    )
+    extractive = _production_by_uf("ibge_pevs", pevs_codes, y0, y1, uf_codes)
+    crop = _production_by_uf("ibge_pam", pam_codes, y0, y1, uf_codes)
     exp = gateway.fetch_comex_by_uf(
         year_start=y0,
         year_end=y1,
@@ -399,14 +498,7 @@ def _export_coef_by_uf(
         latest_year_only=False,
     )
     exp_by_uf = {r.state_acronym: float(r.total_weight_kg or 0) / 1e6 for r in exp.itertuples()}
-    prod_by_uf = {
-        r.state_acronym: {
-            "name": r.state_name,
-            "region": r.region_abbrev,
-            "production": float(r.total_value or 0) / 1e3,  # qty_base (t) -> mil t
-        }
-        for r in prod.itertuples()
-    }
+    prod_by_uf = {**crop, **extractive}  # só para nome/região; a massa vem somada abaixo
     # Union the UF universe (FINDING #3): a UF that EXPORTS but has no PEVS
     # production row (port/warehousing states shipping goods grown elsewhere) must
     # NOT be dropped — otherwise its exports vanish from the choropleth AND from the
@@ -417,7 +509,9 @@ def _export_coef_by_uf(
     by_uf = []
     for uf in sorted(set(prod_by_uf) | set(exp_by_uf)):
         pr = prod_by_uf.get(uf)
-        p = pr["production"] if pr else 0.0
+        pe = _uf_mass(extractive, uf)
+        pc = _uf_mass(crop, uf)
+        p = pe + pc
         e = exp_by_uf.get(uf, 0.0)
         by_uf.append(
             {
@@ -425,6 +519,8 @@ def _export_coef_by_uf(
                 "name": pr["name"] if pr else uf,
                 "region": pr["region"] if pr else None,
                 "production": p,
+                "productionExtractive": pe,
+                "productionCrop": pc,
                 "exportV": e,
                 # None, não 0: uma UF sem produção não exporta "0% do que produz" —
                 # o coeficiente NÃO EXISTE para ela. E quem cai aqui é justamente quem
@@ -441,7 +537,15 @@ def _export_coef_national(by_uf: list[dict]) -> dict:
     """Aggregate the per-UF rows into the national production/export/coefficient."""
     tp = sum(d["production"] for d in by_uf)
     te = sum(d["exportV"] for d in by_uf)
-    return {"production": tp, "exportV": te, "coefPct": measures.pct_present(te, tp)}
+    return {
+        "production": tp,
+        # As duas metades do denominador, para a tela poder mostrar a COMPOSIÇÃO da
+        # produção (que é separável) sem publicar duas razões (que não são).
+        "productionExtractive": sum(d["productionExtractive"] for d in by_uf),
+        "productionCrop": sum(d["productionCrop"] for d in by_uf),
+        "exportV": te,
+        "coefPct": measures.pct_present(te, tp),
+    }
 
 
 def _fob_price_by_year(ncms: tuple, uf_codes: tuple = ()) -> dict:
