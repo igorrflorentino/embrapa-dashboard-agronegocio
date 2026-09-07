@@ -912,7 +912,7 @@ function AppShell({
           <div className="caption">
             <a href="mailto:igor.lopes@embrapa.br">Contato técnico</a>
             &nbsp;·&nbsp;
-            <a href="https://github.com/igorrflorentino/embrapa-dashboard-produtos-agricolas" target="_blank" rel="noopener noreferrer">Código-fonte no GitHub</a>
+            <a href="https://github.com/igorrflorentino/embrapa-dashboard-agronegocio" target="_blank" rel="noopener noreferrer">Código-fonte no GitHub</a>
           </div>
         </div>
       </footer>

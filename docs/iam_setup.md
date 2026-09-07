@@ -430,7 +430,7 @@ gcloud iam service-accounts add-iam-policy-binding \
   sa-data-pipeline-prod@embrapa-dashboard-commodities.iam.gserviceaccount.com \
   --project="embrapa-dashboard-commodities" \
   --role="roles/iam.workloadIdentityUser" \
-  --member="principalSet://iam.googleapis.com/projects/NUMERIC_PROJECT_ID/locations/global/workloadIdentityPools/github-pool/attribute.repository/igorrflorentino/embrapa-dashboard-produtos-agricolas"
+  --member="principalSet://iam.googleapis.com/projects/NUMERIC_PROJECT_ID/locations/global/workloadIdentityPools/github-pool/attribute.repository/igorrflorentino/embrapa-dashboard-agronegocio"
 ```
 
 ## Step 8: Credential Rotation

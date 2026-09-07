@@ -67,7 +67,7 @@
 #   gcloud iam service-accounts add-iam-policy-binding \
 #     "sa-webapi-deploy-ci@${PROJECT_ID}.iam.gserviceaccount.com" --project="${PROJECT_ID}" \
 #     --role="roles/iam.workloadIdentityUser" \
-#     --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/github/attribute.repository/igorrflorentino/embrapa-dashboard-produtos-agricolas"
+#     --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/github/attribute.repository/igorrflorentino/embrapa-dashboard-agronegocio"
 #
 #   gh variable set GCP_WEBAPI_DEPLOY_SERVICE_ACCOUNT \
 #     --body "sa-webapi-deploy-ci@${PROJECT_ID}.iam.gserviceaccount.com"
