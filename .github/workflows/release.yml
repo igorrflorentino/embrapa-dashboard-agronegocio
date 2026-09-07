@@ -210,7 +210,17 @@ jobs:
             echo '```'
             echo ""
             echo "- Image: \`${{ steps.vars.outputs.image }}\`"
-            [ "${{ steps.vars.outputs.is_tag }}" = "true" ] && echo "- Also tagged: \`${{ steps.vars.outputs.image_latest }}\`"
+            # `if`, não `[ … ] && echo`: o passo roda sob `bash -e`, onde um teste FALSO
+            # devolve 1, o `&&` curto-circuita e a ÚLTIMA linha do bloco sai com 1 — o que
+            # derruba o passo inteiro. Só acontece no caminho workflow_dispatch (`is_tag`
+            # falso); numa tag real o teste é verdadeiro, o echo roda e o bloco sai 0. Por
+            # isso o defeito nunca apareceu numa release de verdade e derrubou a primeira
+            # build ad-hoc que alguém rodou (v1.53.0) — DEPOIS de a imagem já ter sido
+            # construída e publicada com sucesso, que é o pior lugar para falhar: o
+            # workflow reporta vermelho sobre um trabalho que deu certo.
+            if [ "${{ steps.vars.outputs.is_tag }}" = "true" ]; then
+              echo "- Also tagged: \`${{ steps.vars.outputs.image_latest }}\`"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
       # Only for real `v*` tag releases: cut the GitHub Release. CHANGELOG.md is the

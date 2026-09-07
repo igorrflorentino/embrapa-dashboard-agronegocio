@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.53.0] - 2026-09-07
+
+### Corrigido
+
+- **O workflow de release falhava em toda build ad-hoc — e falhava DEPOIS de publicar a
+  imagem.** O passo "Job summary" terminava com
+
+  ```bash
+  [ "${is_tag}" = "true" ] && echo "- Also tagged: ..."
+  ```
+
+  Sob `bash -e` (o shell padrão de um `run:`), um teste FALSO devolve 1, o `&&`
+  curto-circuita e a **última linha do bloco** sai com 1 — derrubando o passo inteiro. Numa
+  tag real `is_tag` é verdadeiro, o `echo` roda e o bloco sai 0; por isso o defeito nunca
+  apareceu em release nenhuma e esperou pela primeira build por `workflow_dispatch`.
+
+  O pior não é falhar: é **falhar no lugar errado**. Auth, docker login, build e push já
+  tinham dado certo, a imagem estava publicada no Artifact Registry — e o workflow reportava
+  vermelho sobre um trabalho concluído. Quem visse o vermelho concluiria que a release não
+  saiu.
+
+  Trocado por um `if … fi`. Encontrado ao disparar uma build de teste para exercitar a
+  service account `sa-release-ci` depois do renome do repositório (v1.52.0) — o defeito
+  estava no caminho que ninguém usava.
+
+  Varri os demais `[ … ] && …` do repo: os `deploy/ingestion/schedule_*.sh` usam
+  `$( [ … ] && printf || printf )`, que sempre sai 0, e o
+  `deploy/iam/grant_least_privilege.sh` tem `exit 0` explícito na linha seguinte e não usa
+  `set -e`. Nenhum outro em risco.
+
+### Notas de infraestrutura
+
+- **`sa-release-ci` provada com o nome novo do repositório**: a build de teste autenticou por
+  WIF, fez login no Artifact Registry e publicou
+  `…/embrapa-dashboard:wif-check-20260907`. O `:latest` **não** foi movido e **nenhuma**
+  Release nem tag do GitHub foi criada — o caminho `workflow_dispatch` se comportou como
+  documentado.
+- **`sa-dashboard-smoke-ci` é um binding órfão**: nenhum workflow a usa (aparece só num
+  comentário que lista as SAs do pool). Esperar que ela seja exercitada para estreitar a
+  condição do WIF seria esperar para sempre.
+
+---
+
 ## [1.52.0] - 2026-09-07
 
 ### Modificado
