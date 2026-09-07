@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.53.1] - 2026-09-07
+
+### Removido
+
+- **`sa-dashboard-smoke-ci` apagada — a metade GCP de uma aposentadoria aberta desde
+  2026-08-20.** A conta sobrou do smoke test removido junto com a UI Dash e nenhum workflow
+  a referenciava. Não era inofensiva: carregava **`bigquery.dataViewer` + `jobUser` +
+  `readSessionUser` no projeto inteiro**, assumível por qualquer workflow do repositório —
+  leitura permanente de todo dataset, à toa.
+
+  Ordem seguida: remover o binding `workloadIdentityUser` (fecha o acesso primeiro) → tirar
+  os três papéis do projeto → apagar a conta. Inverter isso deixaria lápides
+  `deleted:serviceAccount:` na política. Verificado depois: conta ausente da listagem,
+  **zero** lápides, as quatro SAs de CI restantes com exatamente um membro
+  `attribute.repository` cada, e um `dbt build prod` autenticando e fechando
+  `PASS=372 ERROR=0 SKIP=0`.
+
+### Corrigido
+
+- **A armadilha que essa remoção expôs, documentada onde o próximo renome vai olhar.** O
+  renome do repositório (v1.52.0) enumerou os bindings VIVOS e recriou fielmente todos os
+  cinco sob o nome novo — inclusive o desta conta, três semanas depois de o
+  `docs/iam_setup.md` a declarar aposentada. Enumerar o estado vivo responde *"o que
+  existe"*, nunca *"o que deveria existir"*, e aquele arquivo era o único lugar que sabia.
+
+  Por três horas a identidade teve o caminho de acesso renovado em vez de encerrado. O
+  aviso ficou nos dois lugares que um renome futuro consulta (`CLAUDE.md` e
+  `docs/iam_setup.md`): **conferir cada identidade contra a tabela antes de migrar** — uma
+  marcada para aposentadoria sai da migração, não atravessa junto.
+
+---
+
 ## [1.53.0] - 2026-09-07
 
 ### Corrigido
