@@ -650,7 +650,10 @@ VIEW_GROUPS: list[ViewGroup] = [
                 "live",
                 cross_banco=True,
                 align="UF × ano",
-                sources=("ibge_pevs", "mdic_comex"),
+                # As DUAS pesquisas de produção do IBGE desde a v1.58.0: a alfândega não
+                # distingue o que veio de mata nativa do que veio de lavoura, então o
+                # denominador soma PEVS + PAM e a procedência tem de dizer isso.
+                sources=("ibge_pevs", "ibge_pam", "mdic_comex"),
                 desc="Quanto do que cada UF produz (IBGE) segue para exportação (MDIC).",
             ),
             View(

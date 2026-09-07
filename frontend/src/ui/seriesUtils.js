@@ -97,6 +97,24 @@ window.materialityFloor = (rows, key, { minShare = 0, minAbs = 0 } = {}) => {
 // em 3 das 11 — sempre tirando de lá uma UF de área desprezível.
 window.AREA_FLOOR = { minShare: 0.005, minAbs: 1000 };
 
+// A calibração do piso para PRODUÇÃO — e ela tem SÓ a prova relativa, de propósito.
+//
+// A pergunta aqui é outra que a do rendimento. "Qual UF mais exporta o que produz" só
+// faz sentido para quem PRODUZ aquilo, e isso é inerentemente relativo à lavoura; já o
+// rendimento é uma medida física, cuja validade depende do tamanho ABSOLUTO da amostra
+// (daí o minAbs de 1.000 ha em AREA_FLOOR). Um piso absoluto aqui não teria valor
+// possível: os agrupamentos vão de 910 mil t (castanha-do-pará) a 2,17 bilhões de mil t
+// (soja) — quatro ordens de grandeza. Pernambuco tem 1.000 t de soja, o que passaria
+// folgado em qualquer absoluto razoável, e é 0,00005% da soja do país.
+//
+// 0,01% medido em produção 2026-09-07 sobre os 10 agrupamentos calculáveis: coeficientes
+// acima de 100% se concentram abaixo de 0,001% de participação (7 de 11 linhas, mediana
+// 747%), somem a partir de 0,01% (zero em 63 linhas entre 0,01% e 0,5%) e a única
+// exceção acima do piso é São Paulo na soja — 127,9% com 2,9% da produção nacional, que
+// é o porto de Santos reexportando, exatamente o caso legítimo que o aviso do card
+// descreve. O piso separa o artefato do fenômeno, e não os dois do resto.
+window.PRODUCAO_FLOOR = { minShare: 0.0001 };
+
 // Diferença entre duas medidas, preservando a ausência. Para grandezas que já são
 // percentuais (uma participação de mercado, por exemplo), onde a variação se declara em
 // PONTOS PERCENTUAIS e não em variação relativa — deltaPct responderia outra pergunta.

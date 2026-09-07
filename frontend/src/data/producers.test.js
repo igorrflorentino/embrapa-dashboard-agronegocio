@@ -65,9 +65,11 @@ describe('agrupamentoCatalog', () => {
 
     // code is the agrupamento_id SLUG the cross/* endpoints expect (not a PEVS code);
     // family is normalized pt-BR ('massa'/'volume') → the English keys the views gate on.
+    // hasCustoms diz se existe lado aduaneiro: sem ele não há numerador para o
+    // coeficiente de exportação, e a view precisa saber para não ABRIR numa recusa.
     expect(opts).toEqual([
-      { code: 'acai', name: 'Açaí', family: 'volume' },
-      { code: 'castanha_caju', name: 'Castanha de caju', family: 'mass' },
+      { code: 'acai', name: 'Açaí', family: 'volume', hasCustoms: true },
+      { code: 'castanha_caju', name: 'Castanha de caju', family: 'mass', hasCustoms: true },
     ]);
   });
 
@@ -80,7 +82,25 @@ describe('agrupamentoCatalog', () => {
     const agrupamentoCatalog = await loadProducers(f);
     agrupamentoCatalog();
     await tick();
-    expect(agrupamentoCatalog()).toEqual([{ code: 'soja', name: 'Soja', family: null }]);
+    expect(agrupamentoCatalog()).toEqual([
+      { code: 'soja', name: 'Soja', family: null, hasCustoms: true },
+    ]);
+  });
+
+  it('hasCustoms é false quando o agrupamento não tem NCM no cruzamento', async () => {
+    // Abacaxi, café e cana-de-açúcar existem só na PAM e não têm correspondência
+    // aduaneira. Desde a v1.58.0 eles chegam aos pickers de massa, e sem esta bandeira
+    // a view abria no primeiro da ordem alfabética — uma recusa como tela inicial.
+    const f = vi.fn(() => jsonRes({
+      cafe: { id: 'cafe', name: 'Café', family: 'massa', pevs: [], pam: ['40139'],
+              comex: [], comtrade: [] },
+    }));
+    const agrupamentoCatalog = await loadProducers(f);
+    agrupamentoCatalog();
+    await tick();
+    expect(agrupamentoCatalog()).toEqual([
+      { code: 'cafe', name: 'Café', family: 'mass', hasCustoms: false },
+    ]);
   });
 });
 

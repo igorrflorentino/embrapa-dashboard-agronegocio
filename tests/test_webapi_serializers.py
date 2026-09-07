@@ -1633,18 +1633,48 @@ def test_coeficiente_de_exportacao_de_uf_sem_producao_e_ausente_nao_zero():
 
     linhas = seam_cross._export_coef_national(
         [
-            {"uf": "PA", "production": 100.0, "exportV": 25.0, "coefPct": 25.0},
-            {"uf": "ND", "production": 0.0, "exportV": 116.5, "coefPct": None},
+            # O formato REAL da linha desde a v1.58.0: a produção vem em duas metades
+            # (extração nativa PEVS + lavoura PAM) e `production` é a soma delas.
+            {
+                "uf": "PA",
+                "production": 100.0,
+                "productionExtractive": 90.0,
+                "productionCrop": 10.0,
+                "exportV": 25.0,
+                "coefPct": 25.0,
+            },
+            {
+                "uf": "ND",
+                "production": 0.0,
+                "productionExtractive": 0.0,
+                "productionCrop": 0.0,
+                "exportV": 116.5,
+                "coefPct": None,
+            },
         ]
     )
     # O nacional soma as duas pontas e só então divide — aí o coeficiente existe.
     assert linhas["production"] == 100.0
     assert linhas["exportV"] == 141.5
     assert linhas["coefPct"] == pytest.approx(141.5)
+    # A INVARIANTE das duas metades: a composição tem de fechar com o total, senão a
+    # tela mostraria uma barra empilhada que não soma o número ao lado dela.
+    assert linhas["productionExtractive"] == 90.0
+    assert linhas["productionCrop"] == 10.0
+    assert linhas["productionExtractive"] + linhas["productionCrop"] == linhas["production"]
 
     # E sem produção alguma, o nacional também recusa.
     vazio = seam_cross._export_coef_national(
-        [{"uf": "ND", "production": 0.0, "exportV": 116.5, "coefPct": None}]
+        [
+            {
+                "uf": "ND",
+                "production": 0.0,
+                "productionExtractive": 0.0,
+                "productionCrop": 0.0,
+                "exportV": 116.5,
+                "coefPct": None,
+            }
+        ]
     )
     assert vazio["coefPct"] is None
 

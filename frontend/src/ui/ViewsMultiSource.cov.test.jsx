@@ -14,6 +14,11 @@
 import * as React from 'react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render } from '@testing-library/react';
+// O seriesUtils e a nota REAIS: `materialityFloor` + `PRODUCAO_FLOOR` decidem quem entra
+// no ranking, e a nota é a metade "nada some em silêncio" da regra. Stubá-los examinaria
+// o stub — e uma nota stubada deixaria a filtragem invisível passar verde.
+import './seriesUtils.js';
+import './MaterialityFloorNote.jsx';
 
 // pt-BR-ish stubs for the import-time-captured formatters.
 const numBR = (v, d = 0) => (v == null ? '—' : Number(v).toFixed(d));
@@ -40,6 +45,12 @@ function stubWidgets() {
   window.LineChart = () => <div className="line" />;
   window.MultiLineChart = () => <div className="mlc" />;
   window.BarChart = () => <div className="bar" />;
+  // Expõe as séries empilhadas: é o card novo da composição da produção.
+  window.StackedBars = (props) => (
+    <div className="stacked"
+         data-series={(props.series || []).map((f) => f.id).join(',')}
+         data-ufs={(props.rows || []).map((r) => r.uf).join(',')} />
+  );
   window.UfScopePicker = ({ value, onChange }) => (
     <select className="uf-picker" value={value} onChange={(e) => onChange(e.target.value)}>
       <option value="">Brasil</option>
@@ -115,10 +126,16 @@ describe('ViewExportCoef', () => {
   function goodData() {
     return {
       incompatible: false,
-      national: { coefPct: 12.5, production: 1234 },
+      // O formato REAL desde a v1.58.0: a produção vem partida em extração (PEVS) +
+      // lavoura (PAM), e `production` é a soma — é o que a barra empilhada desenha.
+      national: {
+        coefPct: 12.5, production: 1234, productionExtractive: 900, productionCrop: 334,
+      },
       byUf: [
-        { uf: 'PA', name: 'Pará', production: 800, exportV: 100, coefPct: 12.5 },
-        { uf: 'AM', name: 'Amazonas', production: 400, exportV: 20, coefPct: 5 },
+        { uf: 'PA', name: 'Pará', production: 800, productionExtractive: 700,
+          productionCrop: 100, exportV: 100, coefPct: 12.5 },
+        { uf: 'AM', name: 'Amazonas', production: 400, productionExtractive: 200,
+          productionCrop: 200, exportV: 20, coefPct: 5 },
       ],
       timeseries: [{ y: 2010, v: 8 }, { y: 2020, v: 12 }],
     };
@@ -141,13 +158,93 @@ describe('ViewExportCoef', () => {
     expect(chips).not.toContain('Madeira em tora');
   });
 
+  it('o KPI de produção mostra as DUAS metades do denominador', () => {
+    window.exportCoefficient = () => goodData();
+    const { container } = render(<ViewExportCoef />);
+    const card = [...container.querySelectorAll('.kpi')]
+      .find((e) => e.dataset.label === 'Produção considerada');
+    expect(card, 'card de produção não encontrado').toBeTruthy();
+    // O total continua sendo o valor; a COMPOSIÇÃO vai no sub. A razão fica UMA só —
+    // "todas as exportações ÷ só a extração" seria o próprio defeito com outro rótulo.
+    expect(card.querySelector('.kpi-value').textContent).toContain('1234');
+    expect(card.querySelector('.kpi-sub').textContent).toContain('extração');
+    expect(card.querySelector('.kpi-sub').textContent).toContain('lavoura');
+  });
+
+  it('a barra empilhada mostra extração e lavoura na mesma UF', () => {
+    window.exportCoefficient = () => goodData();
+    const { container } = render(<ViewExportCoef />);
+    const emp = container.querySelector('.stacked');
+    expect(emp, 'card de composição não renderizou').toBeTruthy();
+    expect(emp.getAttribute('data-series')).toBe('productionExtractive,productionCrop');
+    // Ordenada por produção total (PA 800 > AM 400), não pela ordem de chegada.
+    expect(emp.getAttribute('data-ufs')).toBe('PA,AM');
+  });
+
+  it('só extração: o sub do KPI não inventa uma metade de lavoura que não existe', () => {
+    // Carvão vegetal e castanha-do-pará têm `pam: []` no catálogo — a produção é
+    // inteiramente extrativa e o card deve dizer isso, não "lavoura 0,0".
+    window.exportCoefficient = () => ({
+      ...goodData(),
+      national: { coefPct: 5, production: 1000, productionExtractive: 1000, productionCrop: 0 },
+    });
+    const { container } = render(<ViewExportCoef />);
+    const sub = [...container.querySelectorAll('.kpi')]
+      .find((e) => e.dataset.label === 'Produção considerada')
+      .querySelector('.kpi-sub').textContent;
+    expect(sub).toContain('só extração nativa');
+    expect(sub).not.toContain('lavoura');
+  });
+
+  it('o piso tira do topo a UF que produz quase nada, e a tela diz quem saiu', () => {
+    // ÂNCORA EXTERNA, medida em produção 2026-09-07: Minas produz 5 t de castanha-do-pará
+    // e aparecia como "UF mais exportadora" com 786,0%; o Pará, com 208 mil t e 52,0%,
+    // ficava abaixo dela. Todo coeficiente acima de 100% vinha de UF com menos de 10 t.
+    window.exportCoefficient = () => ({
+      ...goodData(),
+      byUf: [
+        { uf: 'MG', name: 'Minas Gerais', production: 0.005, productionExtractive: 0.005,
+          productionCrop: 0, exportV: 0.039, coefPct: 786.0 },
+        { uf: 'PA', name: 'Pará', production: 208.233, productionExtractive: 208.233,
+          productionCrop: 0, exportV: 108.3, coefPct: 52.0 },
+        { uf: 'AC', name: 'Acre', production: 257.143, productionExtractive: 257.143,
+          productionCrop: 0, exportV: 127.5, coefPct: 49.6 },
+      ],
+    });
+    const { container } = render(<ViewExportCoef />);
+    const topo = [...container.querySelectorAll('.kpi')]
+      .find((e) => e.dataset.label === 'UF mais exportadora');
+    expect(topo.querySelector('.kpi-value').textContent).toBe('PA');
+    // E nada some em silêncio: a nota nomeia Minas com a produção dela.
+    expect(container.textContent).toContain('Fora do ranking por produção');
+    expect(container.textContent).toContain('MG');
+    // O ranking também: 2 linhas, não 3.
+    expect(container.querySelectorAll('.pc-table tbody tr').length).toBe(2);
+  });
+
   it('a single-producing-UF dataset shows the "concentrated" fallback KPI', () => {
     window.exportCoefficient = () => ({
       ...goodData(),
-      byUf: [{ uf: 'PA', name: 'Pará', production: 800, exportV: 100, coefPct: 12.5 }],
+      byUf: [{ uf: 'PA', name: 'Pará', production: 800, productionExtractive: 700,
+               productionCrop: 100, exportV: 100, coefPct: 12.5 }],
     });
     const { container } = render(<ViewExportCoef />);
     expect(container.textContent).toContain('produção concentrada em 1 UF');
+  });
+
+  it('sem NCM, a recusa diz que falta o NUMERADOR — não repete a nota de família', () => {
+    // Desde a v1.58.0 o gate de família lê as DUAS pesquisas de produção, então
+    // agrupamentos só-PAM chegam a esta view. Três deles (abacaxi, café, cana-de-açúcar)
+    // não têm NCM no cruzamento: sem lado aduaneiro não existe coeficiente, e "—" em
+    // todos os KPIs deixaria o pesquisador sem saber se falta dado ou se algo quebrou.
+    window.exportCoefficient = () => ({
+      incompatible: true, incompatibleReason: 'sem-ncm',
+      byUf: [], national: {}, timeseries: [],
+    });
+    const { container } = render(<ViewExportCoef />);
+    expect(container.textContent).toContain('correspondência na NCM');
+    expect(container.textContent).not.toContain('cesta mista');
+    expect(container.querySelector('.line')).toBeNull(); // sem gráficos em branco
   });
 
   it('an incompatible (volume/mixed) selection renders the honest note instead of charts', () => {

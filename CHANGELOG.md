@@ -7,6 +7,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.58.0] - 2026-09-07
+
+### Corrigido
+
+- **O coeficiente de exportação dividia TODAS as exportações por uma FRAÇÃO da produção.**
+  O denominador lia só a **PEVS** (extração de mata nativa) enquanto o numerador — o peso
+  que saiu pela alfândega — não distingue origem produtiva: os NCMs da castanha de caju
+  são `08013100` *"com casca"* e `08013200` *"sem casca"*, uma distinção de
+  **beneficiamento**, e `serving_comex_annual` não tem nenhuma coluna de origem.
+
+  | agrupamento | PEVS (extração) | PAM (lavoura) | o denominador ignorava |
+  |---|---|---|---|
+  | carvão vegetal | 214,2 mi t | — | nada |
+  | castanha-do-pará | 1,28 mi t | — | nada |
+  | açaí | 6,0 mi t | 14,2 mi t | **70%** |
+  | castanha-de-caju | 0,20 mi t | 5,29 mi t | **96%** |
+
+  Na tela: *"Coeficiente nacional: **736,2%** do produzido vai p/ exportação"* para a
+  castanha-de-caju, e *"UF mais exportadora: CE — **1.408.727,8%**"*, porque o Ceará
+  planta 409 mil t e extrai ~0. Agora o denominador soma as duas pesquisas — disjuntas
+  por construção, coleta nativa × lavoura plantada, então somam sem duplicar — e o caju
+  fica em **18,3%** nacionais e **29,3%** no Ceará.
+
+  O aviso do card tornava o defeito pior: ele explica que passar de 100% é legítimo
+  (formas processadas, reexportação, estoque), então o pesquisador arquivava os 736% como
+  fenômeno conhecido. Os três motivos são reais e nenhum era a causa.
+
+- **"UF mais exportadora" era a UF que quase não produz.** Depois de corrigir o
+  denominador, o topo virou **MG com 5 t** de castanha-do-pará (786,0%) e **RJ com 8 t**
+  de açaí (135,5%) — à frente do Pará com 208 mil t e 52,0%. O piso de materialidade da
+  v1.57.0 (`window.materialityFloor`) passa a valer aqui, com **só a prova relativa**:
+  a pergunta "é produtor de verdade desta lavoura" é inerentemente relativa, e nenhum
+  piso absoluto serviria a agrupamentos que vão de 910 mil t a 2,17 bi de mil t.
+  Calibrado em **0,01%** por medição: coeficientes acima de 100% se concentram abaixo de
+  0,001% de participação (7 de 11 linhas, mediana 747%) e somem a partir de 0,01% —
+  zero em 63 linhas entre 0,01% e 0,5%. A única exceção acima do piso é **São Paulo na
+  soja, 127,9% com 2,9% da produção**: o porto de Santos reexportando, exatamente o caso
+  legítimo que o aviso descreve. O piso separa o artefato do fenômeno.
+
+### Adicionado
+
+- **A composição da produção, que é o que dá para separar.** A razão não: dividir todas
+  as exportações por só uma das metades daria "coeficiente da extração" e "coeficiente da
+  lavoura", os dois sendo o próprio defeito com outro rótulo. Então o KPI *Produção
+  considerada* mostra **`extração 1.625,4 · lavoura 10.800,5 mil t`**, um card novo
+  desenha a composição empilhada por UF, e o coeficiente continua **um só**, sobre a soma.
+  Leitura nova que a tela não tinha: o açaí do Pará hoje é 10.113 mil t de lavoura contra
+  1.105 de extração.
+- **`window.StackedBars`** — barras horizontais empilhadas em valor ABSOLUTO. Irmã de
+  `FlagBars`, que empilha a 100%: lá a pergunta é só a composição, aqui a magnitude é
+  metade da resposta e normalizar igualaria o Pará (11.218 mil t) ao Rio (8 t).
+- **`window.MaterialityFloorNote`** — a nota "nada some em silêncio" extraída para um
+  átomo, agora usada pela Produtividade e pelo Coeficiente. A ESTRUTURA é o que precisa
+  ser comum: enumerar todas as linhas, mostrar a grandeza de cada uma e enunciar a regra.
+  Ela anuncia só as provas que o piso realmente aplica — sem isso saía *"abaixo de 0,0%
+  da produção e de — mil t no total"*, um limiar arredondado até virar zero ao lado de
+  outro que ninguém aplicou. **Os dois defeitos passaram na suíte e só a tela pegou**;
+  o teste que faltava agora existe.
+- **Nove agrupamentos a mais no coeficiente.** O gate de família lia só a PEVS, então
+  produtos que existem apenas na PAM nunca chegavam a esta perspectiva. Com as duas
+  pesquisas, o indicador passa a cobrir as grandes lavouras exportadoras — **soja 75,7%**,
+  **milho 25,6%**, arroz 5,7%, mandioca 0,1% — que antes eram incalculáveis.
+- **Recusa com MOTIVO** (`incompatibleReason`). Três dos novos (abacaxi, café,
+  cana-de-açúcar) não têm NCM no cruzamento: sem numerador não há coeficiente. Eles
+  **continuam na lista** — esconder seria filtragem invisível, e quem procura café tem de
+  achá-lo — mas a tela diz que falta a correspondência aduaneira, em vez de repetir a nota
+  de família (que afirmaria que a razão é dimensionalmente impossível, o que é falso), e
+  o padrão da perspectiva passa a ser o primeiro agrupamento **calculável**.
+
+---
+
 ## [1.57.0] - 2026-09-07
 
 ### Corrigido

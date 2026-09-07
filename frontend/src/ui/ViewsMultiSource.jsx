@@ -61,7 +61,11 @@ function ViewExportCoef() {
   // Offer just those and default to the first (the mixed "Todos os agrupamentos" is always
   // incompatible here) — the user lands on a working indicator, not a fallback note.
   const massProds = window.agrupamentoCatalog().filter(p => p.family === 'mass');
-  const effProduct = product || (massProds[0] && massProds[0].code) || null;
+  // O padrão é o primeiro agrupamento CALCULÁVEL, não o primeiro da ordem alfabética:
+  // abrir no Abacaxi, que não tem NCM, dava as boas-vindas com uma recusa. Os sem lado
+  // aduaneiro seguem na lista, escolhíveis, e explicam-se quando escolhidos.
+  const primeiro = massProds.find(p => p.hasCustoms) || massProds[0];
+  const effProduct = product || (primeiro && primeiro.code) || null;
   // Per-UF scoping ('' = Brasil), the same in-view control ViewPriceSpread uses.
   // NOT the global state filter: the cross-banco perspectives deliberately hide the
   // filter bar (they have no single-banco filter surface), so honouring it here would
@@ -70,28 +74,57 @@ function ViewExportCoef() {
   // only production would divide a state's output by the whole country's exports.
   const [uf, setUf] = useMSState('');
   const data = window.exportCoefficient(effProduct, uf ? [uf] : undefined);
-  const ranked = data.byUf.filter(u => u.production > 0).sort((a, b) => b.coefPct - a.coefPct);
+  const comProducao = data.byUf.filter(u => u.production > 0);
+  // Piso de materialidade sobre a produção (window.materialityFloor, mesma regra do
+  // ranking de produtividade — a calibração é que difere, e o porquê está em
+  // PRODUCAO_FLOOR). "UF mais exportadora" pergunta quanto do que o estado produz sai
+  // do país, e sobre 5 t de produção essa fração não é uma medida: Minas aparecia no
+  // topo da castanha-do-pará com 786,0% e 5 t, à frente do Pará com 52,0% e 208 mil t.
+  const floor = window.materialityFloor(comProducao, 'production', window.PRODUCAO_FLOOR);
+  const ranked = floor.kept.slice().sort((a, b) => b.coefPct - a.coefPct);
+  const comparavel = new Set(floor.kept.map(u => u.uf));
   const top = ranked[0], bottom = ranked[ranked.length - 1];
+  const nat = data.national || {};
+  const composicao = [
+    { id: 'productionExtractive', label: 'Extração nativa (PEVS)', color: 'var(--viz-2)' },
+    { id: 'productionCrop', label: 'Lavoura plantada (PAM)', color: 'var(--viz-6)' },
+  ];
+  // As 12 maiores produtoras, para a barra empilhada caber e ainda contar a história.
+  const composicaoRows = comProducao.slice()
+    .sort((a, b) => b.production - a.production)
+    .slice(0, 12);
+  const temLavoura = (nat.productionCrop || 0) > 0;
   // Real coverage window from the series itself — never the hardcoded "1997–2024".
   const coefYears = (data.timeseries || []).map(d => d.y);
   const coefWindow = coefYears.length ? `${coefYears[0]}–${coefYears[coefYears.length - 1]}` : '—';
 
-  // Volume/mixed baskets are not a mass-export share — the seam refuses with
-  // incompatible:true. Render an honest pt-BR note instead of "—%" KPIs + blank
-  // charts (the server's designed honesty was previously dropped on the floor).
+  // O seam recusa com incompatible:true por DOIS motivos distintos, e o pesquisador
+  // precisa saber qual: 'familia' (kg ÷ m³ não é fração) e 'sem-ncm' (o agrupamento não
+  // tem correspondência aduaneira, então não existe numerador). Nota honesta em pt-BR no
+  // lugar de "—%" com gráficos em branco, que não diz se falta dado ou se algo quebrou.
   if (data.incompatible) {
     return (
       <>
         <CrossProductPicker value={effProduct} onChange={setProduct} families={['mass']} />
         <div className="card subtle">
           <window.SectionHeader overline="Orientação exportadora" title="Indicador indisponível para esta seleção" />
-          <p className="caption" style={{ padding: '16px 4px' }}>
-            O coeficiente de exportação compara <strong>massa produzida</strong> (IBGE, em mil t)
-            com <strong>peso exportado</strong> (MDIC, em kg) — uma razão só faz sentido para
-            agrupamentos de família <strong>massa</strong>. A seleção atual inclui agrupamento de
-            volume (m³) ou cesta mista, para a qual a razão não é interpretável. Escolha um
-            agrupamento de massa para ver o indicador.
-          </p>
+          {data.incompatibleReason === 'sem-ncm' ? (
+            <p className="caption" style={{ padding: '16px 4px' }}>
+              Este agrupamento não tem <strong>correspondência na NCM</strong> no
+              cruzamento deste repositório, então não há peso exportado a comparar — o
+              coeficiente não tem numerador. A produção do IBGE existe e aparece nas
+              perspectivas de produção; o que falta é o lado aduaneiro. Escolha um
+              agrupamento com correspondência no MDIC para ver o indicador.
+            </p>
+          ) : (
+            <p className="caption" style={{ padding: '16px 4px' }}>
+              O coeficiente de exportação compara <strong>massa produzida</strong> (IBGE, em mil t)
+              com <strong>peso exportado</strong> (MDIC, em kg) — uma razão só faz sentido para
+              agrupamentos de família <strong>massa</strong>. A seleção atual inclui agrupamento de
+              volume (m³) ou cesta mista, para a qual a razão não é interpretável. Escolha um
+              agrupamento de massa para ver o indicador.
+            </p>
+          )}
         </div>
       </>
     );
@@ -109,18 +142,48 @@ function ViewExportCoef() {
         {ranked.length > 1
           ? <window.KpiCardSpark label="UF mais interna" value={bottom?.uf || '—'} sub={`${msPct(bottom?.coefPct || 0)} exportado`} />
           : <window.KpiCardSpark label="UF mais interna" value="—" sub="produção concentrada em 1 UF" />}
-        <window.KpiCardSpark label="Produção considerada" value={msNum(data.national.production) + ' mil t'} sub={`${ranked.length} ${ranked.length === 1 ? 'UF' : 'UFs'} com produção`} />
+        {/* As DUAS metades do denominador. A composição é separável e é o que o
+            pesquisador quer ver; a RAZÃO não é — dividir todas as exportações por só
+            uma das metades é exatamente o defeito que esta versão corrige. */}
+        <window.KpiCardSpark
+          label="Produção considerada"
+          value={msNum(nat.production) + ' mil t'}
+          sub={temLavoura
+            ? `extração ${msNum(nat.productionExtractive, 1)} · lavoura ${msNum(nat.productionCrop, 1)} mil t`
+            : `${comProducao.length} ${comProducao.length === 1 ? 'UF' : 'UFs'} · só extração nativa`} />
       </div>
+
+      <window.MaterialityFloorNote
+        dropped={floor.dropped}
+        valueKey="production"
+        fmt={(v) => msNum(v, v < 1 ? 3 : 1) + ' mil t'}
+        floor={window.PRODUCAO_FLOOR}
+        floorRel={Number.isFinite(floor.total) ? floor.total * window.PRODUCAO_FLOOR.minShare : null}
+        titulo="Fora do ranking por produção"
+        base="da produção do recorte"
+        porque="produção pequena demais para a fração exportada representar o estado"
+        segue="Seguem no mapa em cinza, sem cor de intensidade." />
 
       <div className="card">
         <window.SectionHeader overline="Orientação exportadora · por UF" title="Quanto da produção de cada estado vai para fora"
           action={<span className="caption">% exportado · IBGE × MDIC</span>} />
-        <window.BrazilTileMap data={data.byUf} valueKey="coefPct" label="% exportado" />
+        {/* As UFs abaixo do piso continuam no grid, sem cor de intensidade: `null` cai
+            no índice -1 do quantil e pinta neutro. Sem isso, os 786% de uma UF com 5 t
+            dominavam a escala e achatavam todas as outras numa faixa só. */}
+        <window.BrazilTileMap
+          data={data.byUf.map(u => ({
+            ...u,
+            coefPct: comparavel.has(u.uf) ? u.coefPct : null,
+          }))}
+          valueKey="coefPct" label="% exportado" />
         <p className="caption" style={{ padding: '10px 4px 2px' }}>
-          O coeficiente compara o <strong>peso exportado</strong> (MDIC) com a <strong>massa produzida</strong> (IBGE)
-          dos mesmos produtos. Pode passar de <strong>100%</strong> quando o estado exporta formas processadas,
-          reexporta ou usa estoque de anos anteriores — não é erro. No mapa, valores abaixo de 0,5% aparecem
-          arredondados como 0.
+          O coeficiente compara o <strong>peso exportado</strong> (MDIC) com a{' '}
+          <strong>massa produzida</strong> (IBGE) dos mesmos produtos — somando as{' '}
+          <strong>duas</strong> pesquisas de produção, extração nativa (PEVS) e lavoura
+          plantada (PAM), porque a alfândega não distingue as duas na saída. Pode passar
+          de <strong>100%</strong> quando o estado exporta formas processadas, reexporta
+          ou usa estoque de anos anteriores — não é erro. No mapa, valores abaixo de 0,5%
+          aparecem arredondados como 0.
         </p>
       </div>
 
@@ -128,6 +191,24 @@ function ViewExportCoef() {
         <window.SectionHeader overline={uf ? `Coeficiente de ${uf} no tempo` : 'Coeficiente nacional no tempo'} title="Evolução da orientação exportadora"
           action={<span className="caption">{coefWindow} · IBGE × MDIC</span>} />
         <window.LineChart data={data.timeseries} valueKey="v" label="%" color="var(--embrapa-green)" height={260} />
+      </div>
+
+      <div className="card">
+        <window.SectionHeader
+          overline="Composição da produção · por UF"
+          title="Quanto vem de mata nativa e quanto vem de lavoura"
+          action={<span className="caption">mil t · acumulado {coefWindow}</span>} />
+        <window.StackedBars rows={composicaoRows} series={composicao} labelKey="uf" label="mil t" />
+        <p className="caption" style={{ padding: '10px 4px 2px' }}>
+          O IBGE mede as duas em pesquisas separadas — <strong>PEVS</strong> conta o que
+          se colhe de floresta nativa, <strong>PAM</strong> o que se colhe de lavoura
+          plantada — e elas são disjuntas, então somam sem duplicar. A alfândega
+          <strong> não</strong> distingue as duas: o NCM da castanha de caju é
+          &ldquo;com casca&rdquo;/&ldquo;sem casca&rdquo;, uma distinção de
+          beneficiamento. Por isso o coeficiente acima é <strong>um só</strong>, sobre a
+          soma — dividir as exportações inteiras por uma das metades responderia outra
+          pergunta com o rótulo desta.
+        </p>
       </div>
 
       <div className="card">
@@ -197,7 +278,11 @@ function ViewPriceSpread() {
   // Same mass-basis requirement as the export coefficient — offer only pure-mass
   // commodities and default to the first, so the user opens on a real spread.
   const massProds = window.agrupamentoCatalog().filter(p => p.family === 'mass');
-  const effProduct = product || (massProds[0] && massProds[0].code) || null;
+  // O padrão é o primeiro agrupamento CALCULÁVEL, não o primeiro da ordem alfabética:
+  // abrir no Abacaxi, que não tem NCM, dava as boas-vindas com uma recusa. Os sem lado
+  // aduaneiro seguem na lista, escolhíveis, e explicam-se quando escolhidos.
+  const primeiro = massProds.find(p => p.hasCustoms) || massProds[0];
+  const effProduct = product || (primeiro && primeiro.code) || null;
   // Per-UF scoping ('' = Brasil). Both sides (PEVS farm-gate + COMEX FOB) honour it.
   const [uf, setUf] = useMSState('');
   const data = window.priceSpread(effProduct, uf ? [uf] : undefined);
