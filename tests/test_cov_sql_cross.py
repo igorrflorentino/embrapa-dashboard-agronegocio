@@ -157,10 +157,50 @@ def test_gate_price_by_year_empty_when_no_pts(monkeypatch):
     monkeypatch.setattr(
         seam_cross.gateway, "fetch_product_timeseries", lambda *a, **k: pd.DataFrame()
     )
-    assert seam_cross._gate_price_by_year(("9",)) == {}
+    assert seam_cross._gate_price_by_year(("9",), ()) == {}
 
 
 def test_gate_price_by_year_none_pts_returns_empty(monkeypatch):
     seam_cross = _cross()
     monkeypatch.setattr(seam_cross.gateway, "fetch_product_timeseries", lambda *a, **k: None)
-    assert seam_cross._gate_price_by_year(()) == {}
+    assert seam_cross._gate_price_by_year((), ()) == {}
+
+
+def test_gate_price_by_year_sem_codigos_nao_consulta_o_banco(monkeypatch):
+    """Uma lista de códigos vazia significa "sem filtro" no leitor, então consultar
+    assim publicaria o preço implícito do BANCO INTEIRO como se fosse o do produto."""
+    seam_cross = _cross()
+    chamou = []
+    monkeypatch.setattr(
+        seam_cross.gateway,
+        "fetch_product_timeseries",
+        lambda *a, **k: chamou.append(k.get("codes")) or pd.DataFrame(),
+    )
+    seam_cross._gate_price_by_year((), ())
+    assert chamou == [], "consultou um banco de produção com filtro vazio"
+
+
+def test_gate_price_by_year_soma_as_duas_pesquisas_de_producao(monkeypatch):
+    """O lado FOB não distingue origem produtiva, então o lado da porteira soma as duas.
+
+    O preço é uma RAZÃO: somar os dois preços seria errado; o que se soma são valor e
+    quantidade, e a divisão vem depois.
+    """
+    seam_cross = _cross()
+
+    def fake(banco, **k):
+        v, q = {"ibge_pevs": (100.0, 1.0), "ibge_pam": (900.0, 9.0)}[banco]
+        return pd.DataFrame([{"reference_year": 2020, "total_value": v, "total_qty_native": q}])
+
+    monkeypatch.setattr(seam_cross.gateway, "fetch_product_timeseries", fake)
+    # (100 + 900) US$ ÷ ((1 + 9) t × 1000) = US$ 0,10/kg — e NÃO a média dos dois preços
+    # (0,10 e 0,10 coincidem aqui de propósito só na soma; ver o caso assimétrico abaixo).
+    assert seam_cross._gate_price_by_year(("3404",), ("40143",)) == {2020: pytest.approx(0.1)}
+
+    def fake_assimetrico(banco, **k):
+        v, q = {"ibge_pevs": (100.0, 1.0), "ibge_pam": (100.0, 9.0)}[banco]
+        return pd.DataFrame([{"reference_year": 2020, "total_value": v, "total_qty_native": q}])
+
+    monkeypatch.setattr(seam_cross.gateway, "fetch_product_timeseries", fake_assimetrico)
+    # 200 ÷ 10.000 = 0,02 — a média dos preços (0,10 e 0,011) daria 0,0556, outro número.
+    assert seam_cross._gate_price_by_year(("3404",), ("40143",)) == {2020: pytest.approx(0.02)}
