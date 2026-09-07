@@ -1565,11 +1565,20 @@ def test_fetch_currency_eras_consulta_o_seed_no_dataset_silver(monkeypatch):
         capturado["params"] = params
         return pd.DataFrame([{"unit_of_measure": "Mil Reais", "year_from": 1994, "year_to": 2099}])
 
+    # Settings HERMÉTICO (_env_file=None): sem isto o teste lê o .env do desenvolvedor —
+    # que existe aqui e não no CI, e foi exatamente essa assimetria que fez a máquina
+    # local e o CI discordarem sobre o mesmo código na primeira tentativa.
+    from embrapa_dashboard.config import Settings
+
+    monkeypatch.setattr(
+        gateway,
+        "get_settings",
+        lambda: Settings(_env_file=None, gcp_project_id="p", bq_silver_dataset="silver"),
+    )
     monkeypatch.setattr(gateway, "run_query", fake_run_query)
     # `fetch_currency_eras` é memoizada; chamamos a função por baixo do cache para que o
     # teste exercite o CORPO, não uma entrada guardada de outro teste.
     gateway.fetch_currency_eras.uncached()
 
-    assert "historical_currency_factors" in capturado["sql"]
-    assert ".silver." in capturado["sql"] or "silver" in capturado["sql"]
+    assert "p.silver.historical_currency_factors" in capturado["sql"]
     assert capturado["params"] == []
