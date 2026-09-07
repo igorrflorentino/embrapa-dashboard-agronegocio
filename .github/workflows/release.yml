@@ -5,6 +5,12 @@
 #
 #   WEBAPI_SKIP_BUILD=1 WEBAPI_TAG=v1.2.3 bash deploy/webapi/deploy.sh
 #
+# WHEN to cut one (policy, CONTRIBUTING.md § Release Policy): a version becomes a tag +
+# Release ONLY when it changes something a user of the DEPLOYED product would experience —
+# frontend/, src/embrapa_dashboard/, dbt/ or deploy/. A version that only touches tests,
+# docs or comments ships silently, and that is the rule working, not an oversight. Written
+# down because the practice stopped after v1.24.30 and nobody noticed for 118 versions.
+#
 # Triggers:
 #   • push of a tag matching v*   (e.g. `git tag v1.2.3 && git push origin v1.2.3`,
 #     or publishing a GitHub Release, which creates the tag) → builds + pushes
@@ -158,6 +164,21 @@ jobs:
           if ! printf '%s' "$VERSION" | grep -qE '^[A-Za-z0-9._-]+$'; then
             echo "ERROR: invalid version '$VERSION' (allowed: letters, digits, . _ -)" >&2
             exit 1
+          fi
+          # Numa tag REAL, ela tem de ser a versão que o código declara. Sem esta
+          # checagem dá para marcar `v1.60.0` sobre um commit cujo pyproject diz
+          # `1.55.0`: a imagem sairia rotulada com uma versão que não existe no
+          # repositório, e o corpo da Release cairia no fallback (lista de PRs) porque
+          # o CHANGELOG não teria a seção — falhando de um jeito que parece cosmético.
+          # Um dispatch ad-hoc é isento de propósito: ali o rótulo é livre (ex.: uma
+          # build de verificação), e não cria Release nem move :latest.
+          if [ "$IS_TAG" = "true" ]; then
+            DECLARADA="v$(grep -m1 '^version = ' pyproject.toml | cut -d'"' -f2)"
+            if [ "$VERSION" != "$DECLARADA" ]; then
+              echo "ERROR: a tag '$VERSION' não bate com a versão do código ('$DECLARADA')." >&2
+              echo "       Corrija pyproject.toml/package.json ou refaça a tag." >&2
+              exit 1
+            fi
           fi
           HOST="${REGION}-docker.pkg.dev"
           BASE="${HOST}/${PROJECT_ID}/${AR_REPO}/${SERVICE_NAME}"

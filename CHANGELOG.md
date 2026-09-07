@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.55.1] - 2026-09-07
+
+### Adicionado
+
+- **A política de release, escrita.** Toda mescla sobe a versão em `pyproject.toml` e no
+  `CHANGELOG.md`; só algumas viram tag + GitHub Release. A regra:
+
+  > Uma versão vira Release **apenas quando muda algo que o usuário do produto implantado
+  > percebe**. O resto entra em silêncio.
+
+  Na prática: `frontend/`, `src/embrapa_dashboard/`, `dbt/` e `deploy/` viram Release;
+  testes, docs e comentários não.
+
+  Está registrada em três lugares que quem for cortar uma tag realmente lê:
+  `CONTRIBUTING.md` (§ Release Policy, com a tabela e o comando), o cabeçalho do
+  `release.yml` e a linha do CHANGELOG no `CLAUDE.md`.
+
+  **Por que escrever isso importou:** a prática parou depois da `v1.24.30` (2026-08-20) e
+  ninguém percebeu por **118 versões** — o código chegou à `v1.53.1` sem uma tag atrás. Não
+  porque alguém decidiu parar, mas porque a convenção só existia na cabeça das pessoas. A
+  lacuna é história e não foi retro-marcada; a regra vale daqui em diante. E uma versão sem
+  Release deixa de ser sinal de esquecimento: a `v1.55.0` (um teste de paridade e um
+  comentário corrigido) está deliberadamente sem tag, e isso é a regra funcionando.
+
+- **O `release.yml` passa a exigir que a tag SEJA a versão do código.** Sem isso dava para
+  marcar `v1.60.0` sobre um commit cujo `pyproject.toml` diz `1.55.0`: a imagem sairia
+  rotulada com uma versão inexistente no repositório e o corpo da Release cairia no
+  fallback (lista de PRs), porque o CHANGELOG não teria a seção — falhando de um jeito que
+  parece cosmético. A build ad-hoc (`workflow_dispatch`) segue isenta de propósito: ali o
+  rótulo é livre e não cria Release nem move `:latest`.
+
+---
+
 ## [1.55.0] - 2026-09-07
 
 ### Corrigido

@@ -29,7 +29,7 @@ Built for **Embrapa researchers** — the purpose is historical/scientific explo
 | `README.md` | Human entry point, quickstart, CLI reference |
 | `ARCHITECTURE.md` | Technical deep-dive: folder structure, data flow, stack decisions |
 | `CONTRIBUTING.md` | Commit conventions, branch flow, PR process |
-| `CHANGELOG.md` | Version history (Keep a Changelog format) |
+| `CHANGELOG.md` | Version history (Keep a Changelog format). **Every merge bumps the version here; only some become a git tag + GitHub Release** — the rule is in `CONTRIBUTING.md` § Release Policy: a tag is cut ONLY when the change reaches the deployed product (`frontend/`, `src/embrapa_dashboard/`, `dbt/`, `deploy/`). Tests, docs and comments ship silently. The convention lived only in people's heads until v1.55.0, and the practice had lapsed for 118 versions without anyone noticing. |
 | Roadmap (Google Drive) | Project vision & evolution tracking for business leadership — kept **outside the repo** (replaces the former `ROADMAP.md` + `TODO.md`): [Roadmap — Google Drive](https://docs.google.com/document/d/1UByZ_THIJcqtYizZWrOSDsMpM_XCptj0f29VcymcPXE/edit?usp=sharing). `PLANS/` (engineering specs) and `CHANGELOG.md` (per-version record) stay in-repo. |
 | `SECURITY.md` | Vulnerability reporting policy |
 | `PLANS/` | Detailed feature plans (one .md per feature) |
