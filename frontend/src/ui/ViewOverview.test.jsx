@@ -35,10 +35,13 @@ function stubGlobals(filtered) {
   window.isCanonicalUf = () => true;
   window.dataStore = { meta: () => null };
   // Widgets: KPI card renders its label + value so we can read them.
-  window.KpiCardSpark = ({ label, value }) => (
+  // `sub` incluído: desde a v1.56.0 ele carrega informação (a cobertura em VALOR),
+  // não só decoração — um stub que o descartasse tornaria o card não-testável.
+  window.KpiCardSpark = ({ label, value, sub }) => (
     <div className="kpi">
       <span className="kpi-label">{label}</span>
       <span className="kpi-value">{value}</span>
+      <span className="kpi-sub">{sub}</span>
     </div>
   );
   window.SectionHeader = ({ title, action }) => (
@@ -112,6 +115,37 @@ describe('ViewOverview — KPI strip + quality digest (H3 + P0 lock-in)', () => 
     // pipeline state).
     expect(container.textContent).toContain('de 13 flags');
     expect(container.textContent).not.toContain('de 6 flags'); // the old prototype count
+  });
+
+  it('o card de qualidade mostra a cobertura em VALOR ao lado da de linhas', () => {
+    // Sem isso o card conta metade da história. Números reais do PEVS em produção
+    // (2026-09-07): 18,2% das LINHAS examinadas e 99,3% do VALOR — o que o detector pula
+    // são células vazias do cubo do IBGE e remessas abaixo do piso, numerosas e
+    // economicamente irrelevantes. Só a fração de linhas diria que dois terços do acervo
+    // não foram examinados: verdade sobre as LINHAS, falso sobre o ASSUNTO.
+    stubGlobals({
+      ...FIXTURE,
+      qualityFlags: [
+        { id: 'OK', label: 'Normais', share: 0.182, count: 246412, valueShare: 0.993 },
+        { id: 'UNSCORED', label: 'Não avaliada', share: 0.816, count: 1103462, valueShare: 0.007 },
+      ],
+    });
+    const { container } = render(
+      <ViewOverview families={['mass']} summary={{}} database="ibge_pevs" conventions={{}} />
+    );
+    const card = [...container.querySelectorAll('.kpi')].find(
+      (e) => /examinadas sem ressalva/i.test(e.textContent));
+    expect(card, 'card de qualidade não encontrado').toBeTruthy();
+    // O NÚMERO, não só o texto: "examinado" é o COMPLEMENTO do não avaliado
+    // (1 − 0,007 = 99,3%), porque uma linha marcada como outlier/problemática também
+    // passou pelo exame. Usar o valueShare do OK daria 99,3% → 79,1% e poria um número
+    // sob um rótulo que nomeia outra coisa — o defeito que a v1.49.0 existiu para tirar.
+    // (o stub de fmtPct neste arquivo arredonda para inteiro — 99%, não 99,3%)
+    expect(card.textContent).toContain('99% do valor examinado');
+    expect(card.textContent).toContain('82% das linhas sem base para avaliar');
+    // A asserção que realmente prende o defeito: 79% é o valueShare do OK, e usá-lo
+    // subestimaria a cobertura porque exclui as linhas EXAMINADAS e marcadas.
+    expect(card.textContent).not.toContain('79%');
   });
 
   it('renders the count (efetivo) KPI off q_count for a livestock (count) basket', () => {

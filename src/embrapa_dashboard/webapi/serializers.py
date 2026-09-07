@@ -698,6 +698,10 @@ def _quality(df: pd.DataFrame | None) -> list[dict]:
             "label": _FLAG_LABEL_PT.get(r.data_quality_flag, r.data_quality_flag),
             "count": int(_num(r.n_rows)),
             "share": _num(r.share),
+            # A MESMA repartição, pesada por dinheiro. `_measure` e não `_num`: um banco
+            # sem valor algum não tem fração de valor, e "0%" ali afirmaria que nenhum
+            # dinheiro passou pelo detector quando o certo é "não há base para a fração".
+            "valueShare": _measure(getattr(r, "value_share", None)),
         }
         for r in df.itertuples()
     ]

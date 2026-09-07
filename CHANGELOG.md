@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.56.0] - 2026-09-07
+
+### Adicionado
+
+- **O card de qualidade passa a mostrar a cobertura em VALOR ao lado da de linhas.** Ele
+  dizia *"Linhas examinadas sem ressalva · 18,2%"* no PEVS, e o número, sozinho, sugere que
+  quatro quintos do acervo não foram olhados. Medido:
+
+  | banco | % das **linhas** não avaliadas | % do **valor** não avaliado |
+  |---|---|---|
+  | PEVS | 81,6% | **0,7%** |
+  | PAM | 66,3% | **0,1%** |
+  | COMEX | 65,2% | **0,48%** |
+  | COMTRADE | 64,6% | **3,17%** |
+  | PPM | 30,0% | **0,28%** |
+
+  O detector examina **97% a 99,9% do dinheiro** em todos os cinco bancos. O que ele pula é
+  numeroso e economicamente irrelevante, por duas razões distintas:
+
+  - **Nos bancos do IBGE, é a forma do cubo.** A PAM tem 2,52 mi de linhas contra um cubo
+    completo de 3,12 mi (5.563 municípios × 11 produtos × 51 anos), e só metade tem
+    produção. O SIDRA publica uma linha por combinação, com `-` quando não houve produção —
+    **20,4 milhões** delas só na PAM. Um município que não planta abacaxi tem uma linha
+    dizendo "zero abacaxi", e não há preço implícito (valor ÷ quantidade) a examinar.
+    Responde por 65–75% dos não avaliados.
+  - **No comércio, é o piso de materialidade.** 98,8% (COMEX) e 95,9% (COMTRADE) dos não
+    avaliados são remessas abaixo de US$ 100 mil. As linhas são por (ano × NCM × UF × fluxo
+    × país), então a maioria é pequena. O piso é decisão documentada: sem ele o
+    arredondamento gerava ~2% de falsos "problemáticos" na PAM, contra 0,03% com ele.
+
+  O card agora lê: *"18,2% · 0,2 mi linhas · acervo do banco · **99,3% do valor examinado**
+  · 81,6% das linhas sem base para avaliar"*.
+
+- `serving_quality_by_source.value_share` — a mesma repartição pesada por dinheiro. A
+  coluna de valor difere por banco (BRL no IBGE, USD no comércio) e isso não é problema:
+  é uma razão DENTRO de uma fonte, nunca comparada entre elas.
+
+### Corrigido
+
+- **O primeiro rótulo que escrevi estava sobre o número errado.** Usei o `valueShare` do
+  `OK`, que no PEVS dá **79,1%**, sob o texto "do valor examinado". Mas "examinado" inclui
+  o que o detector olhou **e marcou** (outlier, problemático) — essas linhas passaram pelo
+  exame. O número certo é o **complemento** do não avaliado: 99,3%. Pego ao conferir a
+  mart reconstruída contra o rótulo, antes de fechar; o teste do card agora prende os dois
+  valores e afirma explicitamente que 79% **não** aparece.
+
+---
+
 ## [1.55.1] - 2026-09-07
 
 ### Adicionado
