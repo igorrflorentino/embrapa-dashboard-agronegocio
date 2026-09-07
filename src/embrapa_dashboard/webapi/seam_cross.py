@@ -18,7 +18,7 @@ from embrapa_dashboard.serving import gateway
 from embrapa_dashboard.serving import sql as sqlbuild
 from embrapa_dashboard.serving.cache import cache
 
-from . import seam_base
+from . import measures, seam_base
 from .registries import Banco, banco_by_id
 from .seam_base import _LIVE_SOURCES
 
@@ -263,7 +263,9 @@ def _market_share_series(comex_codes: tuple, comtrade_codes: tuple) -> list[dict
             "y": y,
             "br": br[y] / 1e9,
             "world": world[y] / 1e9,
-            "share": (br[y] / world[y] * 100) if world[y] else 0,
+            # Sem exportação mundial no ano não há fatia a declarar. 0 diria "o Brasil
+            # tem 0% do mercado", que é uma AFIRMAÇÃO sobre um ano que ninguém mediu.
+            "share": measures.pct_present(br[y], world[y]),
         }
         for y in years
     ]
@@ -280,7 +282,7 @@ def _market_share_latest(comex_codes: tuple, comtrade_codes: tuple) -> float | N
     if not common:
         return None
     ly = common[-1]
-    return (b[ly] / w[ly] * 100) if w[ly] else 0
+    return measures.pct_present(b[ly], w[ly])
 
 
 def market_share(agrupamento_id: str | None) -> dict:
@@ -349,9 +351,10 @@ def export_coefficient(agrupamento_id: str | None, uf_codes: tuple = ()) -> dict
         y: v / 1e6 for y, v in seam_base._xyear("mdic_comex:exp_weight", ncms, uf_codes).items()
     }
     ts = sorted(set(pevs_mass) & set(exp_mass))
-    timeseries = [
-        {"y": y, "v": (exp_mass[y] / pevs_mass[y] * 100) if pevs_mass[y] else 0} for y in ts
-    ]
+    # A SÉRIE do coeficiente, pelo mesmo motivo do valor por UF: um ano sem produção
+    # não exporta "0% do que produziu" — o coeficiente não existe naquele ano, e o
+    # gráfico deve mostrar lacuna, não um ponto colado no eixo.
+    timeseries = [{"y": y, "v": measures.pct_present(exp_mass[y], pevs_mass[y])} for y in ts]
     if not ts:
         return _empty_export_coef(uf_codes)
     # The by-UF/national ratios must compare the SAME window on both sides:
@@ -423,7 +426,12 @@ def _export_coef_by_uf(
                 "region": pr["region"] if pr else None,
                 "production": p,
                 "exportV": e,
-                "coefPct": (e / p * 100) if p else 0,
+                # None, não 0: uma UF sem produção não exporta "0% do que produz" —
+                # o coeficiente NÃO EXISTE para ela. E quem cai aqui é justamente quem
+                # exporta sem produzir (origem não declarada, entreposto), então o 0
+                # dizia o oposto da verdade. O KPI nacional na SPA já tratava null; a
+                # tabela filtra production > 0; o mapa pinta não-positivo como "sem dado".
+                "coefPct": measures.pct_present(e, p),
             }
         )
     return by_uf
@@ -433,7 +441,7 @@ def _export_coef_national(by_uf: list[dict]) -> dict:
     """Aggregate the per-UF rows into the national production/export/coefficient."""
     tp = sum(d["production"] for d in by_uf)
     te = sum(d["exportV"] for d in by_uf)
-    return {"production": tp, "exportV": te, "coefPct": (te / tp * 100) if tp else 0}
+    return {"production": tp, "exportV": te, "coefPct": measures.pct_present(te, tp)}
 
 
 def _fob_price_by_year(ncms: tuple, uf_codes: tuple = ()) -> dict:
@@ -451,7 +459,7 @@ def _gate_price_by_year(pevs_codes: tuple, uf_codes: tuple = ()) -> dict:
     if pts is None or pts.empty:
         return {}
     g = pts.groupby("reference_year").agg(v=("total_value", "sum"), q=("total_qty_native", "sum"))
-    return {int(y): (row.v / (row.q * 1000)) if row.q else 0 for y, row in g.iterrows()}
+    return {int(y): measures.ratio_present(row.v, (row.q or 0) * 1000) for y, row in g.iterrows()}
 
 
 def price_spread(agrupamento_id: str | None, uf_codes: tuple = ()) -> dict:
@@ -475,8 +483,10 @@ def price_spread(agrupamento_id: str | None, uf_codes: tuple = ()) -> dict:
             "y": y,
             "fob": fob[y],
             "gate": gate[y],
-            "spread": fob[y] - gate[y],
-            "markup": (fob[y] / gate[y]) if gate[y] else 0,
+            # Ambos podem ser None desde que os preços passaram a preservar ausência:
+            # sem os dois lados não há diferença nem múltiplo a declarar.
+            "spread": (None if fob[y] is None or gate[y] is None else fob[y] - gate[y]),
+            "markup": measures.ratio_present(fob[y], gate[y]),
         }
         for y in sorted(set(fob) & set(gate))
     ]
@@ -508,7 +518,12 @@ def trade_mirror(agrupamento_id: str | None) -> dict:
     discrepancy = [
         {
             "y": d["y"],
-            "v": abs(d["mdic"] - d["comtrade"]) / (((d["mdic"] + d["comtrade"]) / 2) or 1) * 100,
+            # `or 1` mascarava o denominador: num ano em que NENHUMA das duas fontes
+            # tem dado, a divergência saía 0% — que se lê como "as fontes concordam
+            # perfeitamente" sobre um ano que ninguém mediu.
+            "v": measures.pct_present(
+                abs(d["mdic"] - d["comtrade"]), (d["mdic"] + d["comtrade"]) / 2
+            ),
         }
         for d in series
     ]

@@ -137,7 +137,7 @@ def test_value_added_returns_empty_when_value_query_empty(monkeypatch):
     assert out == {
         "series": [],
         "levels": [],
-        "premium": 0.0,
+        "premium": None,  # sem dois níveis com preço, o prêmio NÃO EXISTE (v1.54.0)
         "predominant": None,
         "n_codes": 0,
     }

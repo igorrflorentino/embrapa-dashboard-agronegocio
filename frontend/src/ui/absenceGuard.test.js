@@ -63,11 +63,6 @@ const PERMITIDOS = [
     razao: 'BrazilTileMap: é um MÁXIMO sobre uma lista já filtrada para positivos, sem ' +
            'divisão. Lista vazia → escala vazia, que o coroplético pinta como "sem dado".',
   },
-  {
-    trecho: '/ (data.discrepancy.length || 1)',
-    razao: 'ViewsMultiSource: o denominador é o TAMANHO do array, não uma medida. Array ' +
-           'vazio → 0/1 = 0, e o numerador também é 0.',
-  },
 ];
 
 // Ternário cujo ramo verdadeiro divide e cujo ramo falso é 0.

@@ -116,7 +116,7 @@
 // @property {boolean} preview
 // @property {string}  unit
 // @property {{uf:string,name:string,region:string,col:number,row:number,production:number,exportV:number,coefPct:number}[]} byUf
-// @property {{production:number,exportV:number,coefPct:number}} national
+// @property {{production:number,exportV:number,coefPct:(number|null)}} national  `coefPct` é null quando não há produção a dividir — uma UF que exporta sem produzir não exporta "0% do que produz", o coeficiente NÃO EXISTE para ela (v1.54.0). O mesmo vale para `share` (participação mundial), `markup`, `spread`, `price` e a série `discrepancy`: todos passaram a recusar em vez de responder 0. Os formatadores pt-BR já renderizam null como '—', e os gráficos desenham lacuna.
 // @property {{y:number,v:number}[]} timeseries
 //
 // @typedef {Object} MarketShare         window.marketShare(productCode)

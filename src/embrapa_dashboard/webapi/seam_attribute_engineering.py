@@ -28,7 +28,7 @@ from google.api_core.exceptions import NotFound
 from embrapa_dashboard.serving import gateway
 from embrapa_dashboard.serving.cache import cache
 
-from . import seam_base, seam_curation
+from . import measures, seam_base, seam_curation
 
 # The 8 industrialization levels, ORDERED least→most processed. Mirrors the frontend
 # window.ENRICH_LEVELS ids. The order is the ordinal the value-added analysis uses to draw
@@ -267,7 +267,7 @@ def value_added(agrupamento_id: str | None = None, uf_codes: tuple = ()) -> dict
     return {
         "series": series,
         "levels": present,
-        "premium": _value_added_premium(last) if last else 0.0,
+        "premium": _value_added_premium(last) if last else None,
         "predominant": _value_added_predominant(last) if last else None,
         "n_codes": n,
     }
@@ -331,7 +331,8 @@ def _value_added_series_point(y: int, slot: dict) -> dict:
         lvl: {
             "v": d["v"],
             "w": d["w"],
-            "price": (d["v"] / d["w"] * 1e3) if d["w"] else 0.0,
+            # Preço unitário sem peso não é "preço zero" — é preço desconhecido.
+            "price": measures.ratio_present(d["v"] * 1e3, d["w"]),
         }
         for lvl, d in slot.items()
     }
@@ -343,19 +344,24 @@ def _value_added_series_point(y: int, slot: dict) -> dict:
     }
 
 
-def _value_added_premium(point: dict) -> float:
+def _value_added_premium(point: dict) -> float | None:
     """The processing premium at one year: unit price of the MOST-processed present
     level ÷ the LEAST-processed present level (both with a positive price), ordered
-    by CUR_LEVELS. 0 when fewer than two priced levels are present."""
+    by CUR_LEVELS.
+
+    ``None`` — not 0 — when fewer than two priced levels are present: with a single
+    level there is no premium to compute, and 0 would read as "processing adds
+    nothing", which is a finding this data cannot support. The SPA already renders a
+    falsy premium as '—', so this only makes the payload honest."""
     priced = [
         point["levels"][lvl]["price"]
         for lvl in CUR_LEVELS
-        if lvl in point["levels"] and point["levels"][lvl]["price"] > 0
+        if lvl in point["levels"] and (point["levels"][lvl]["price"] or 0) > 0
     ]
     if len(priced) < 2:
-        return 0.0
+        return None
     least, most = priced[0], priced[-1]
-    return (most / least) if least else 0.0
+    return measures.ratio_present(most, least)
 
 
 def _value_added_predominant(point: dict) -> dict | None:

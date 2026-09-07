@@ -1582,3 +1582,59 @@ def test_fetch_currency_eras_consulta_o_seed_no_dataset_silver(monkeypatch):
 
     assert "p.silver.historical_currency_factors" in capturado["sql"]
     assert capturado["params"] == []
+
+
+# ── measures: ausência vs. zero no backend (v1.54.0) ─────────────────────────
+
+
+def test_measures_recusam_a_razao_indefinida_em_vez_de_responder_zero():
+    """O primitivo que substituiu `x if den else 0` nos seis sítios do seam_cross."""
+    from embrapa_dashboard.webapi import measures as m
+
+    assert m.ratio_present(10, 4) == 2.5
+    assert m.pct_present(1, 4) == 25.0
+    # Denominador zero/ausente/negativo: a razão NÃO EXISTE.
+    for den in (0, None, -3, float("nan")):
+        assert m.ratio_present(10, den) is None, den
+        assert m.pct_present(10, den) is None, den
+    # Numerador ausente também.
+    assert m.ratio_present(None, 4) is None
+    # Um numerador ZERO com denominador válido é uma razão MEDIDA de zero.
+    assert m.ratio_present(0, 4) == 0.0
+    assert m.pct_present(0, 4) == 0.0
+
+
+def test_mean_present_ignora_os_ausentes_em_vez_de_conta_los_como_zero():
+    from embrapa_dashboard.webapi import measures as m
+
+    assert m.mean_present([2, None, 4]) == 3.0  # o None não entra no denominador
+    assert m.mean_present([]) is None
+    assert m.mean_present([None, None]) is None
+    assert m.mean_present([0, 0]) == 0.0  # zeros MEDIDOS continuam média zero
+
+
+def test_coeficiente_de_exportacao_de_uf_sem_producao_e_ausente_nao_zero():
+    """O caso que motivou a mudança, e que era semanticamente INVERTIDO.
+
+    Uma UF que exporta sem produzir (origem não declarada, entreposto) entrava na lista
+    com `production=0` e saía com `coefPct=0` — o MESMO valor de quem não exporta nada.
+    Medido em produção 2026-09-07: `ND` exportou US$ 116,5 mi com produção zero.
+    """
+    from embrapa_dashboard.webapi import seam_cross
+
+    linhas = seam_cross._export_coef_national(
+        [
+            {"uf": "PA", "production": 100.0, "exportV": 25.0, "coefPct": 25.0},
+            {"uf": "ND", "production": 0.0, "exportV": 116.5, "coefPct": None},
+        ]
+    )
+    # O nacional soma as duas pontas e só então divide — aí o coeficiente existe.
+    assert linhas["production"] == 100.0
+    assert linhas["exportV"] == 141.5
+    assert linhas["coefPct"] == pytest.approx(141.5)
+
+    # E sem produção alguma, o nacional também recusa.
+    vazio = seam_cross._export_coef_national(
+        [{"uf": "ND", "production": 0.0, "exportV": 116.5, "coefPct": None}]
+    )
+    assert vazio["coefPct"] is None
