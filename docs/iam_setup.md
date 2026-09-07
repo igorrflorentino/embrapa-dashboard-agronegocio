@@ -34,34 +34,33 @@ dedicated identity **per purpose**. There is one SA per workflow rather than a s
 | `sa-ingest-deploy-ci` | `ingestion-job-deploy.yml` | push + update the ingestion **Job** |
 | `sa-webapi-deploy-ci` | `webapi-deploy.yml` | push + update the webapi **Service** image |
 
-> ⚠️ **`sa-dashboard-smoke-ci` — retired 2026-08-20; the GCP half is still PENDING.**
+> ✅ **`sa-dashboard-smoke-ci` — retired 2026-08-20, GCP half completed 2026-09-07.**
 > It belonged to the smoke test removed along with the Dash UI, and no workflow had
 > referenced it since. It was not harmless: it held **`bigquery.dataViewer` + `jobUser` +
 > `readSessionUser` on the whole project**, assumable by any workflow in this repo via its
 > `workloadIdentityUser` binding — standing read access to every dataset, for nothing.
 >
-> **Done:** the `GCP_SMOKE_SERVICE_ACCOUNT` repo variable is deleted. Its value was
-> `sa-dashboard-smoke-ci@embrapa-dashboard-commodities.iam.gserviceaccount.com`, recorded
-> here in case the smoke check is ever revived.
+> **Done (2026-08-20):** the `GCP_SMOKE_SERVICE_ACCOUNT` repo variable deleted. Its value
+> was `sa-dashboard-smoke-ci@embrapa-dashboard-commodities.iam.gserviceaccount.com`,
+> recorded here in case the smoke check is ever revived.
 >
-> **Still to do (operator, from a shell):** first strip its three project bindings —
+> **Done (2026-09-07):** the `workloadIdentityUser` binding removed, then the three project
+> roles stripped, then the account deleted — in that order. Verified after: the account is
+> absent from `service-accounts list`, the project policy carries **no**
+> `deleted:serviceAccount:` tombstone, the four remaining CI service accounts still hold
+> exactly one `attribute.repository` member each, and a `dbt build prod` run authenticated
+> and finished `PASS=372 ERROR=0 SKIP=0`.
 >
-> ```bash
-> PROJECT_ID=embrapa-dashboard-commodities
-> SA="sa-dashboard-smoke-ci@${PROJECT_ID}.iam.gserviceaccount.com"
-> for R in roles/bigquery.dataViewer roles/bigquery.jobUser roles/bigquery.readSessionUser; do
->   gcloud projects remove-iam-policy-binding "$PROJECT_ID" \
->     --member="serviceAccount:${SA}" --role="$R" --quiet
-> done
-> ```
+> ⚠️ **The trap this fell into, for whoever retires the next identity.** The v1.52.0 repo
+> rename enumerated the LIVE `attribute.repository` bindings and re-created every one of
+> them under the new repo name — including this account's, three weeks after this very note
+> declared it retired. Enumerating the live state answers "what exists", never "what should
+> exist"; this file was the only place that knew, and it was not read. **When a rename
+> touches a set of identities, check each one against this table first** — an identity
+> already marked for retirement must be dropped from the migration, not carried across it.
 >
-> — then remove the account itself with the `gcloud iam service-accounts` **delete**
-> subcommand for that same `$SA`. Strip the project bindings **first**, or the policy is
-> left carrying `deleted:serviceAccount:…` tombstones. A removed account can be restored
-> for 30 days.
->
-> ℹ️ That last step is intentionally **not** runnable by automation here: this repo's
-> destructive-command safety hooks block service-account deletion (see
+> ℹ️ Deleting a service account is intentionally **not** runnable by automation here: this
+> repo's destructive-command safety hooks block it (see
 > [`operations_runbook.md`](operations_runbook.md)). It is an operator action, on purpose.
 
 **The exact `gcloud` commands for each live in the header comment of the workflow that
