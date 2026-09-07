@@ -9,6 +9,12 @@
 import * as React from 'react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render } from '@testing-library/react';
+// A nota e a calibração REAIS. O piso é aplicado no SERVIDOR (o corte top-N mora lá),
+// então aqui o alvo é a outra metade da regra: a tela nomear quem ficou de fora, e
+// anunciar o MESMO limiar que o servidor usou — a paridade entre os dois números é
+// prendida por tests/test_partner_price_floor_parity.py.
+import './seriesUtils.js';
+import './MaterialityFloorNote.jsx';
 
 // partnerData captures the metric it was asked for so we can prove the toggle
 // drives a server-side recompute (a new partnerData call per metric).
@@ -182,5 +188,78 @@ describe('ViewPartners — smoke + metric-toggle branches', () => {
     const top = container.querySelector('.kpi[data-label="Maior destino"] .kpi-value');
     expect(top.textContent).toBe('—');
     expect(container.querySelectorAll('.ptn-row').length).toBe(0);
+  });
+});
+
+describe('ViewPartners — o piso de materialidade do preço médio', () => {
+  beforeEach(() => { partnerDataCalls = []; });
+  afterEach(() => cleanup());
+
+  // ÂNCORA EXTERNA: o que o servidor devolve depois do piso, medido em produção
+  // 2026-09-07 sobre o COMEX. O topo era o Lesoto com 1 kg — US$ 11,00 de comércio em
+  // toda a história — e `belowFloor` é o que a tela precisa para NOMEAR quem saiu.
+  const COM_PISO = {
+    unit: 'US$',
+    flowLabel: 'destino',
+    notApplicable: null,
+    partners: [
+      { name: 'Estônia', price: 2.2, weight: 3.604334, value: 7.93 },
+      { name: 'Belarus', price: 1.99, weight: 1.279349, value: 2.55 },
+    ],
+    belowFloor: [
+      { name: 'Mônaco', price: 8.22, weight: 0.001522, value: 0.0125 },
+      { name: 'Nauru', price: 3.09, weight: 0.0006, value: 0.0019 },
+      { name: 'Lesoto', price: 11.0, weight: 0.000001, value: 0.000011 },
+    ],
+  };
+
+  function renderPreco(over = {}) {
+    stubGlobals({ value: COM_PISO, weight: COM_PISO, price: { ...COM_PISO, ...over } });
+    const { container } = render(
+      <ViewPartners summary={{}} conventions={{}} database="comex" />
+    );
+    const btn = [...container.querySelectorAll('.seg-opt')].find((b) => b.textContent === 'Preço médio');
+    fireEvent.click(btn);
+    return container;
+  }
+
+  it('o topo passa a ser o mercado de nicho REAL, não o de 1 kg', () => {
+    const container = renderPreco();
+    const top = container.querySelector('.kpi[data-label="Maior destino"] .kpi-value');
+    expect(top.textContent).toBe('Estônia');
+    const nomes = [...container.querySelectorAll('.ptn-name')].map((e) => e.textContent);
+    expect(nomes).not.toContain('Lesoto');
+  });
+
+  it('a tela NOMEIA quem o piso tirou, com o comércio de cada um', () => {
+    // Sem isto o piso vira filtragem invisível: o Lesoto sumiria da tela sem que
+    // ninguém pudesse saber que ele existiu, nem por que saiu.
+    const container = renderPreco();
+    expect(container.textContent).toContain('Fora do ranking de preço');
+    expect(container.textContent).toContain('Lesoto (1 kg)');
+    expect(container.textContent).toContain('Mônaco (1.522 kg)');
+    // Em toneladas isso virava "2 t" — o arredondamento apagava justamente a
+    // informação pela qual Mônaco saiu do ranking.
+    expect(container.textContent).not.toContain('Mônaco (2 t)');
+    // E diz que eles continuam existindo nos outros dois rankings, onde o peso deles
+    // é o próprio dado — a exclusão é do PREÇO, não do parceiro.
+    expect(container.textContent).toContain('Capital e Volume');
+  });
+
+  it('anuncia o MESMO limiar que o servidor aplicou', () => {
+    // 0,1 mil t = 100 t: o número tem de casar com serializers._PARTNER_PRICE_FLOOR
+    // (test_partner_price_floor_parity.py prende a conversão de unidade).
+    const container = renderPreco();
+    expect(window.PARTNER_PRICE_FLOOR.minAbs).toBe(0.1);
+    expect(container.textContent).toContain('100.000 kg no total');
+    // E o limiar relativo não pode sumir no arredondamento: 0,001% com duas casas
+    // vira "0,00%", que se lê como uma regra que não exclui ninguém.
+    expect(container.textContent).toContain('0,001% do peso do recorte');
+    expect(container.textContent).not.toContain('0,00% do peso');
+  });
+
+  it('sem belowFloor a nota não aparece (nada foi tirado, nada a declarar)', () => {
+    const container = renderPreco({ belowFloor: [] });
+    expect(container.textContent).not.toContain('Fora do ranking de preço');
   });
 });

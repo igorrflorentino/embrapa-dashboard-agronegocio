@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.59.0] - 2026-09-07
+
+### Corrigido
+
+- **O topo de "Preço médio" era o Lesoto, com 1 kg.** No ranking de parceiros, a métrica
+  *Preço médio* (US$/kg = valor ÷ peso) ordenava sem piso algum, e o pódio inteiro era
+  ruído: **Lesoto (1 kg, US$ 11,00 de comércio em toda a série)**, Mônaco (1.522 kg),
+  Nauru (600 kg). Um quilo não é um preço.
+
+  O comentário no topo de `ViewPartners.jsx` **já descrevia o fenômeno** — *"a niche
+  high-unit-price buyer tops the price ranking but has a small total value"* — e tirava a
+  conclusão oposta: garantiu que a ordenação fosse ao servidor **para que o comprador de
+  nicho subisse**. Ele subiu.
+
+  Agora o serializer aplica um piso de materialidade **antes** do corte top-N — e a ordem
+  importa, porque o SQL de `trade_by_partner` não tem `LIMIT` e o `head(max_rows)` **é** o
+  corte: um piso a jusante receberia uma página já feita só de artefatos. Vale **só para o
+  ranking de preço**; valor e volume são aditivos e um parceiro minúsculo afunda sozinho.
+
+  Calibração medida em `serving_comex_annual` (2026-09-07): **100 t** (`min_abs`) mais
+  0,001% do peso do recorte (`min_share`, para o recorte estreito onde 100 t pode ser o
+  comércio inteiro). Abaixo disso, os 38 parceiros excluídos somam de **US$ 11** a US$ 68
+  mil de comércio acumulado; logo acima está a **Estônia, 3.604 t a US$ 2,20/kg** — um
+  mercado pequeno de alto valor, que é exatamente a resposta que este ranking existe para
+  achar. Um piso relativo mais apertado a cortaria junto, jogando fora o achado com o
+  artefato. O topo passa a ser o **Cazaquistão, 173 t a US$ 4,82/kg**.
+
+  `belowFloor` viaja no contrato para a tela nomear quem saiu, e o teste de paridade
+  `test_partner_price_floor_parity.py` prende a calibração dos dois lados — ela vive em kg
+  no Python (que **aplica**) e em mil t no JS (que **anuncia**), e trocar um sem o outro
+  deixaria a tela declarando um limiar que ninguém usou.
+
+### Adicionado
+
+- **`measures.materiality_floor`** — a metade Python de `materialityFloor`, com a mesma
+  forma: duas provas, passar em uma basta, e devolver `(kept, dropped)` porque quem chama
+  é obrigado a receber os descartados.
+- **A nota longa recolhe em `<details>`.** A regra "enumere todas" foi escrita para listas
+  de 5 ou 6 nomes; aqui o piso tira **38 países**, e o parágrafo virava um paredão que
+  enterrava a própria conclusão. Recolher não é omitir: a contagem e a regra ficam à
+  vista, a lista inteira está a um clique, e truncar em *"e mais 30"* é que quebraria a
+  busca por um nome específico — que é a razão de a nota existir.
+
+### Corrigido (na nota compartilhada)
+
+- **Dois defeitos que a suíte não pegou e a tela pegou**, na v1.58.0: a nota saía dizendo
+  *"abaixo de 0,0% da produção do recorte e de — mil t no total"*. O limiar de 0,01%
+  arredondado a uma casa vira zero — uma regra que não excluiria ninguém, ao lado de uma
+  lista de excluídos — e a segunda cláusula anunciava um piso absoluto que aquele piso não
+  aplica. Agora as casas decimais acompanham a ordem de grandeza e a frase enuncia **só**
+  as provas configuradas. `MaterialityFloorNote.test.jsx` existe por causa disso.
+- **Concordância e unidade**: *"Cada uma"* servido a `parceiros` (masculino), e 1.522 kg
+  renderizados como *"2 t"* — um arredondamento que apagava justamente a informação pela
+  qual Mônaco saiu do ranking.
+
+---
+
 ## [1.58.0] - 2026-09-07
 
 ### Corrigido

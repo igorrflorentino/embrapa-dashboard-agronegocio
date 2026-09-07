@@ -1087,7 +1087,13 @@ def partners():
     summary, err = _with_filter_axes(_filter_summary())
     if err:
         return err
-    return jsonify(serializers.serialize_partner(seam.partner_data(banco, summary, rank_by=metric)))
+    return jsonify(
+        # O `metric` viaja para o serializer também: o piso de materialidade do preço
+        # médio vale só para esse ranking, e tem de ser aplicado ANTES do corte top-N.
+        serializers.serialize_partner(
+            seam.partner_data(banco, summary, rank_by=metric), rank_by=metric
+        )
+    )
 
 
 @api.get("/monthly")

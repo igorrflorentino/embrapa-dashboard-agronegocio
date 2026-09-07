@@ -56,6 +56,49 @@ def pct_present(numerator, denominator) -> float | None:
     return None if r is None else r * 100.0
 
 
+def materiality_floor(
+    rows: list[dict],
+    key: str,
+    *,
+    min_share: float = 0.0,
+    min_abs: float = 0.0,
+) -> tuple[list[dict], list[dict]]:
+    """Piso de materialidade sobre uma razão. A metade Python de ``materialityFloor``
+    em ``seriesUtils.js``, com a MESMA forma: duas provas e passar em UMA basta.
+
+    Uma razão mede INTENSIDADE (preço = valor ÷ peso, rendimento = t ÷ ha), e
+    intensidade sobre uma base minúscula não é uma medida. Medido em produção
+    2026-09-07 no ranking de parceiros do COMEX: o topo de "Preço médio" era o
+    **Lesoto com 1 kg** — US$ 11,00 de comércio em toda a história — seguido de Mônaco
+    (1.522 kg) e Nauru (600 kg).
+
+    * ``min_abs`` — a base se sustenta sozinha. Um preço é um preço independentemente
+      do tamanho do comércio total, então esta prova é ABSOLUTA por natureza.
+    * ``min_share`` — a fração é material ao recorte. Resgata quem é pequeno em termos
+      absolutos mas relevante num recorte estreito (um NCM, um ano, uma UF), onde o
+      absoluto sozinho esvaziaria o ranking.
+
+    Devolve ``(kept, dropped)`` — nunca só ``kept``: quem chama é OBRIGADO a receber os
+    descartados para poder nomeá-los na tela (regra do projeto: filtragem invisível é
+    proibida). Um piso não configurado é uma prova INEXISTENTE, não uma que todo mundo
+    passa; base total ausente ou não-positiva ⇒ não discrimina; e se derrubasse todo
+    mundo também não discrimina, e devolver tudo é melhor que uma lista vazia.
+    """
+    total = sum(f for f in (_finite(r.get(key)) for r in rows) if f is not None)
+    provas = []
+    if min_share > 0 and total > 0:
+        provas.append(lambda r: (ratio_present(r.get(key), total) or 0.0) >= min_share)
+    if min_abs > 0:
+        provas.append(lambda r: (_finite(r.get(key)) or 0.0) >= min_abs)
+    if not provas:
+        return list(rows), []
+    kept = [r for r in rows if any(p(r) for p in provas)]
+    if not kept:
+        return list(rows), []
+    keptset = {id(r) for r in kept}
+    return kept, [r for r in rows if id(r) not in keptset]
+
+
 def mean_present(values: Iterable) -> float | None:
     """Média dos valores PRESENTES, ou ``None`` quando não há nenhum.
 

@@ -6,6 +6,14 @@
 // producer so the ranking is recomputed SERVER-SIDE (a niche high-unit-price
 // buyer tops the price ranking but has a small total value — re-sorting a
 // value-ranked page client-side would drop it). See serving/sql.trade_by_partner.
+//
+// Esse mesmo comentário descrevia o defeito e tirava a conclusão oposta: garantiu que o
+// comprador de nicho SUBISSE, e o topo de "Preço médio" virou o Lesoto com 1 kg — US$
+// 11,00 de comércio em toda a história. Um quilo não é um preço. Desde a v1.59.0 o
+// serializer aplica um piso de materialidade ANTES do corte top-N (o SQL não tem LIMIT,
+// o `head` do serializer É o corte), e manda em `belowFloor` quem ficou de fora, para a
+// nota abaixo nomeá-los — o nicho REAL continua subindo: a Estônia, com 3.604 t a
+// US$ 2,20/kg, é o topo agora.
 
 const _PARTNER_METRICS = [
   { id: 'value',  label: 'Capital',     field: 'value',  additive: true },
@@ -106,6 +114,26 @@ function ViewPartners({ summary, conventions, database }) {
             </div>
           ))}
         </div>
+        {/* Quem o piso de materialidade tirou do ranking de PREÇO (só ele: valor e volume
+            são aditivos, e um parceiro minúsculo afunda sozinho — já uma RAZÃO sobe ao
+            topo com a base minúscula). Medido em produção: o topo era o Lesoto com 1 kg,
+            US$ 11,00 de comércio em toda a história. O piso vem do servidor, porque o
+            corte top-N acontece lá; `belowFloor` é o que permite nomeá-los aqui.
+            A grandeza sai sempre em kg: por definição do piso tudo aqui está abaixo de
+            100 t, e em toneladas os 1.522 kg de Mônaco viravam "2 t" — um arredondamento
+            que apaga justamente a informação pela qual ele saiu do ranking. */}
+        <window.MaterialityFloorNote
+          dropped={data.belowFloor}
+          valueKey="weight" labelKey="name"
+          fmt={(v) => _nf(v * 1e6, 0) + ' kg'}
+          floor={{ minShare: window.PARTNER_PRICE_FLOOR.minShare,
+                   minAbs: window.PARTNER_PRICE_FLOOR.minAbs }}
+          floorRel={null}
+          titulo="Fora do ranking de preço"
+          substantivo="parceiros" cada="Cada um"
+          base="do peso do recorte"
+          porque="comércio pequeno demais para o valor por quilo ser um preço de mercado"
+          segue="Continuam nos rankings de Capital e Volume, onde o peso deles é o próprio dado." />
         {metric === 'value' && (
           <div className="ptn-legend">
             <span className="ptn-legend-item"><span className="ptn-legend-dot exp"></span>Exportação</span>
