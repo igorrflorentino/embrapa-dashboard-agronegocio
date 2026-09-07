@@ -81,7 +81,7 @@
 #   gcloud iam service-accounts add-iam-policy-binding \
 #     "sa-ingest-deploy-ci@${PROJECT_ID}.iam.gserviceaccount.com" --project="${PROJECT_ID}" \
 #     --role="roles/iam.workloadIdentityUser" \
-#     --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/github/attribute.repository/igorrflorentino/embrapa-dashboard-produtos-agricolas"
+#     --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/github/attribute.repository/igorrflorentino/embrapa-dashboard-agronegocio"
 #
 #   # 6) Repo → Settings → Secrets and variables → Actions → Variables (or:
 #   #    gh variable set GCP_INGEST_DEPLOY_SERVICE_ACCOUNT --body "sa-ingest-deploy-ci@${PROJECT_ID}.iam.gserviceaccount.com")

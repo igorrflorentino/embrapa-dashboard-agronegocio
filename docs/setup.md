@@ -371,7 +371,7 @@ If the bootstrap scripts encounter issues, you can set up manually:
 
 For issues or questions:
 - **CLAUDE.md** — Project architecture and commands
-- **GitHub Issues** — https://github.com/igorrflorentino/embrapa-dashboard-produtos-agricolas/issues
+- **GitHub Issues** — https://github.com/igorrflorentino/embrapa-dashboard-agronegocio/issues
 - **Contributing** — See CLAUDE.md for setup and development workflow
 
 ## Architecture Diagram

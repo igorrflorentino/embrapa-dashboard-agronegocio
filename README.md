@@ -2,7 +2,7 @@
 
 > pt-BR (o nome que o pesquisador lê no produto): **Análise histórica de produtos agropecuários e florestais**
 
-[![CI](https://github.com/igorrflorentino/embrapa-dashboard-produtos-agricolas/actions/workflows/ci.yml/badge.svg)](https://github.com/igorrflorentino/embrapa-dashboard-produtos-agricolas/actions/workflows/ci.yml)
+[![CI](https://github.com/igorrflorentino/embrapa-dashboard-agronegocio/actions/workflows/ci.yml/badge.svg)](https://github.com/igorrflorentino/embrapa-dashboard-agronegocio/actions/workflows/ci.yml)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/release/python-3121/)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-orange.svg)](LICENSE)
 [![uv](https://img.shields.io/badge/pkg-uv-blueviolet)](https://docs.astral.sh/uv/)

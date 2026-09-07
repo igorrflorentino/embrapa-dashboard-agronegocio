@@ -21,7 +21,7 @@ If you discover a security vulnerability in this project, **do not open a public
 Send an email to: **igorlopesc@gmail.com**
 
 <!-- Alternative: if the repository has GitHub Security Advisories enabled:
-Use GitHub's [Security Advisories](https://github.com/igorrflorentino/embrapa-dashboard-produtos-agricolas/security/advisories/new) feature to report privately.
+Use GitHub's [Security Advisories](https://github.com/igorrflorentino/embrapa-dashboard-agronegocio/security/advisories/new) feature to report privately.
 -->
 
 ### What to include in the report

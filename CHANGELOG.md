@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.52.0] - 2026-09-07
+
+### Modificado
+
+- **O repositório passou a se chamar `embrapa-dashboard-agronegocio`** (era
+  `embrapa-dashboard-produtos-agricolas`). Badges, links de issue/segurança, o link
+  "Código-fonte no GitHub" no rodapé do dashboard, o `.env.example` e os comentários de
+  bootstrap dos três workflows de deploy foram atualizados. O **project id do GCP segue
+  congelado** — ele não acompanha renome nenhum.
+
+- **O inventário real do renome eram SEIS pontos no GCP, não os três que os comentários dos
+  workflows listavam.** Descoberto enumerando, não lendo a documentação:
+
+  | ponto | efeito se esquecido |
+  |---|---|
+  | `attribute.repository` em **5** service accounts de CI | o job autentica e falha ao assumir a SA |
+  | **`attributeCondition` do provider WIF** (`github-provider`) | **todo** job que autentica no GCP falha |
+
+  A condição do provider fixa o repositório pelo nome e é avaliada **antes** de qualquer
+  binding — esquecê-la quebra tudo, e os bindings novos não ajudam em nada. As docs
+  mencionavam só os bindings, e só de três SAs.
+
+  Ordem segura, seguida aqui: alargar a condição para aceitar os DOIS nomes → adicionar os
+  cinco bindings novos → renomear → provar que um job de CI autentica → só então estreitar
+  a condição e remover os bindings antigos. Sem o primeiro passo há uma janela em que todo
+  CI quebra, e o build agendado (que hoje dispara com 3 a 10 h de atraso) cairia nela.
+
+  O procedimento completo está em `CLAUDE.md`, junto da nota do project id congelado.
+
+---
+
 ## [1.51.0] - 2026-09-07
 
 ### Adicionado

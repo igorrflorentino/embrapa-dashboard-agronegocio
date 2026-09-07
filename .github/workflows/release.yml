@@ -35,7 +35,7 @@
 #   gcloud iam service-accounts add-iam-policy-binding \
 #     "sa-release-ci@${PROJECT_ID}.iam.gserviceaccount.com" --project="${PROJECT_ID}" \
 #     --role="roles/iam.workloadIdentityUser" \
-#     --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/github/attribute.repository/igorrflorentino/embrapa-dashboard-produtos-agricolas"
+#     --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/github/attribute.repository/igorrflorentino/embrapa-dashboard-agronegocio"
 #   # 4) Repo → Settings → Secrets and variables → Actions → Variables:
 #   #      GCP_RELEASE_SERVICE_ACCOUNT = sa-release-ci@${PROJECT_ID}.iam.gserviceaccount.com
 #   #    (GCP_PROJECT_ID + GCP_WIF_PROVIDER already exist from dbt-build-prod.yml.)
