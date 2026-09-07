@@ -102,15 +102,23 @@ on:
       - 'src/embrapa_dashboard/config.py'  # Settings defaults consumed by dbt env_var()
       - '.github/workflows/dbt-build-prod.yml'
   schedule:
-    # Daily prod build so INGESTED Bronze reaches Silver/Gold automatically —
+    # Scheduled prod build so INGESTED Bronze reaches Silver/Gold automatically —
     # the ingestion Job only writes Bronze, nothing here rebuilds the marts
     # between dbt-code pushes. This carries BOTH the nightly delta AND the
-    # monthly `reconcile` deep-refresh through to the dashboard. 11:30 UTC =
-    # 08:30 BRT: after the 05:00 BRT nightly ingest (1h max) has landed and
-    # after the 11:00 UTC freshness check. A PLAIN (non --full-refresh) build is
+    # monthly `reconcile` deep-refresh through to the dashboard. 11:30 UTC is the
+    # EARLIEST the run can start — chosen so it lands after the 05:00 BRT ingest
+    # (1h max) and after the 11:00 UTC freshness check. What the cron guarantees is
+    # that ORDER, never a finish time: GitHub schedules are best-effort, and this
+    # repo's measured delay grew from ~20min (while the cron was daily, up to
+    # 2026-08-26) to 3h35–9h58 after the twice-weekly change — e.g. 2026-09-03 fired
+    # 15:05 UTC and 2026-09-07 16:35 UTC. The ordering still holds (later is still
+    # after the ingest), so nothing downstream breaks; but do NOT schedule anything
+    # against "Gold is ready by 09:00 BRT" — read the run, do not assume the clock.
+    # A PLAIN (non --full-refresh) build is
     # enough — silver_ibge_pevs re-scans Bronze by ingestion_timestamp, not by
     # year, so an upstream correction to an OLD year flows all the way to Gold.
-    # 2×/semana (seg e qui, 08:30 BRT), não diário. Medido 2026-08-28: o build responde por
+    # 2×/semana (seg e qui), não diário — o horário é o do gatilho, não o da execução
+    # (ver acima). Medido 2026-08-28: o build responde por
     # 98,9% do BigQuery faturado (121,3 GB/semana contra 1,3 GB da ingestão inteira), e a
     # maior parte disso reconstruía entradas idênticas — as fontes não-câmbio avançam
     # mensal ou anualmente, e o câmbio entra no Gold como MÉDIA ANUAL (val_yearfx_* =
