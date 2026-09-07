@@ -1,6 +1,6 @@
 # Development Environment Setup
 
-Automated cross-platform setup for the Embrapa Produtos Agrícolas Dashboard project. Works on fresh machines with no prior setup.
+Automated cross-platform setup for the Embrapa Agricultural, Livestock & Forestry Dashboard project. Works on fresh machines with no prior setup.
 
 ## Quick Start
 

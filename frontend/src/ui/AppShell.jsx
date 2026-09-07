@@ -324,7 +324,7 @@ function AppShell({
   // ONE title for all three levels. The detailed level used to carry a title-cased
   // variant of its own, so the three references disagreed on the name of the work they
   // cite. Sentence case is also the ABNT NBR 6023:2025 form.
-  const CITE_TITLE = 'Dashboard de an\u00e1lise hist\u00f3rica de produtos agr\u00edcolas';
+  const CITE_TITLE = window.PRODUTO.tituloCitacao;
   const citeTail = `Bras\u00edlia, DF: Embrapa, ${editoraYear}. ${dispoStr}Acesso em: ${accessedOn}.`;
   // The data source at the 'banco' level. A cross perspective has no single banco, so
   // it names the sources it actually crosses — omitting them would make the middle
@@ -502,7 +502,12 @@ function AppShell({
           <img src="assets/logo-embrapa-white-cropped.png" alt="Embrapa" className="brand-logo"/>
         </button>
         <div className="sep"></div>
-        <div className="product-name">Análise histórica de produtos agrícolas</div>
+        {/* O <span> interno é o que recebe as reticências: `text-overflow` não se aplica
+            à caixa anônima dentro de um container flex. O `title` entrega o nome inteiro
+            quando ele trunca. */}
+        <div className="product-name" title={window.PRODUTO.nome}>
+          <span>{window.PRODUTO.nome}</span>
+        </div>
 
         <nav className="topnav">
           <button

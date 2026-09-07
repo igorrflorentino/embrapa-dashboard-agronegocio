@@ -3,15 +3,19 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Embrapa · Inteligência de Mercado · Produtos Agrícolas</title>
+  <!-- Duplicado de window.PRODUTO.tituloAba (src/ui/produto.js), de propósito: o HTML é
+       servido antes do JS rodar, e uma aba sem nome até a hidratação seria pior que a
+       duplicação. O JS reescreve este título no boot, e produto.test.js impede que as
+       duas cópias divirjam — num renome, mudar só produto.js faz este teste falhar. -->
+  <title>Embrapa · Inteligência de Mercado · Produtos Agropecuários e Florestais</title>
   <!-- Design-system CSS, verbatim from the handoff (served from public/assets so the
        relative fonts/ URLs inside the CSS keep resolving). Load order = cascade order.
        The ?v= query busts Safari's cache of these STABLE (unhashed) filenames — bump it
        on any CSS change so returning clients don't serve a stale copy. Keep in sync with
        the app version. -->
-  <link rel="stylesheet" href="/assets/colors_and_type.css?v=1.13.7">
-  <link rel="stylesheet" href="/assets/dashboard.css?v=1.13.7">
-  <link rel="stylesheet" href="/assets/filter-menu.css?v=1.13.7">
+  <link rel="stylesheet" href="/assets/colors_and_type.css?v=1.50.0">
+  <link rel="stylesheet" href="/assets/dashboard.css?v=1.50.0">
+  <link rel="stylesheet" href="/assets/filter-menu.css?v=1.50.0">
 </head>
 <body>
   <div id="root"></div>

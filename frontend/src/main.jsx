@@ -10,6 +10,7 @@ import { resolveChipCoverage } from './data/chipCoverage';
 import { subscribe as subscribeResource } from './data/resource';
 
 // ── registries + utils ────────────────────────────────────────────────────────
+import './ui/produto.js'; // window.PRODUTO — o nome do produto, fonte única (renome = 1 linha)
 import './ui/data.js'; // static registries (UF tiles, REGIONS, QUALITY_FLAGS, UNIT_FAMILIES) + pt-BR formatters
 import './ui/bancos.js';
 import './ui/views.js';

@@ -731,7 +731,7 @@ describe('AppShell — reference detail levels', () => {
     for (const label of ['Ferramenta geral', 'Por banco de dados', 'Consulta detalhada']) {
       pick(container, label);
       const txt = refText(container);
-      expect(txt).toContain('Dashboard de análise histórica de produtos agrícolas');
+      expect(txt).toContain(window.PRODUTO.tituloCitacao);
       expect(txt).not.toContain('Dashboard de Análise Histórica');
     }
   });
@@ -742,7 +742,7 @@ describe('AppShell — reference detail levels', () => {
     pick(container, 'Ferramenta geral');
     const txt = refText(container);
     expect(txt).toContain('EMPRESA BRASILEIRA DE PESQUISA AGROPECUÁRIA (EMBRAPA).');
-    expect(txt).toContain('Dashboard de análise histórica de produtos agrícolas.');
+    expect(txt).toContain(`${window.PRODUTO.tituloCitacao}.`);
     // The whole point of this level: no source, no scope.
     expect(txt).not.toContain('IBGE PEVS');
     expect(txt).not.toContain('Recorte:');
@@ -758,7 +758,7 @@ describe('AppShell — reference detail levels', () => {
     pick(container, 'Por banco de dados');
     const txt = refText(container);
     // Subtitle after a colon, per the requested format.
-    expect(txt).toContain('Dashboard de análise histórica de produtos agrícolas: IBGE PEVS.');
+    expect(txt).toContain(`${window.PRODUTO.tituloCitacao}: IBGE PEVS.`);
     expect(txt).not.toContain('Recorte:');
     expect(txt).not.toContain('Convenções métricas:');
   });
@@ -818,7 +818,7 @@ describe('AppShell — bold title in the reference', () => {
     openCite(container);
     const strongs = [...refBox(container).querySelectorAll('strong')];
     expect(strongs).toHaveLength(1);
-    expect(strongs[0].textContent).toBe('Dashboard de análise histórica de produtos agrícolas');
+    expect(strongs[0].textContent).toBe(window.PRODUTO.tituloCitacao);
   });
 
   it('leaves the SUBTITLE outside the bold on "Por banco de dados"', () => {
@@ -892,7 +892,7 @@ describe('AppShell — rich clipboard for the reference', () => {
     // Blob.text() is async — a couple of microtasks are not enough to read it back.
     await waitFor(() => expect(html).not.toBe(''));
 
-    expect(html).toContain('<b>Dashboard de análise histórica de produtos agrícolas</b>');
+    expect(html).toContain(`<b>${window.PRODUTO.tituloCitacao}</b>`);
     if (html.includes('Disponível em:')) expect(html).not.toMatch(/[^&]&(?!amp;|lt;|gt;)/);
   });
 

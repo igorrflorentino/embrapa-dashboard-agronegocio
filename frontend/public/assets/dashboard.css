@@ -73,7 +73,20 @@
   font-size: 13px;
   font-weight: 400;
   opacity: 0.95;
-  flex-shrink: 0;
+  /* ENCOLHE em vez de empurrar a barra. Era `flex-shrink: 0`, e o breakpoint de 980px
+     abaixo foi calculado para "clear the natural width with margin" — uma margem que
+     depende do COMPRIMENTO DO NOME. O renome da v1.50.0 a consumiu (o nome ficou 103px
+     mais largo) e a barra passou a transbordar até ~1085px, fora do alcance daquele
+     breakpoint. Com shrink + reticências, nenhum nome futuro pode reabrir essa janela:
+     entre 980px e a largura natural o nome trunca, e o `title` no elemento entrega o
+     texto inteiro. Abaixo de 980px ele some, como já sumia. */
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+.product-name > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .topnav {

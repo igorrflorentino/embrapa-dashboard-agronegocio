@@ -7,6 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.50.0] - 2026-09-07
+
+### Modificado
+
+- **O dashboard deixou de se chamar "produtos agrícolas".** O nome descrevia menos de um
+  terço do acervo: das 35 entradas das bases de produção, só **11 são lavouras**. As outras
+  24 são pecuária e produtos de origem animal (bovino, suíno, leite, ovos, mel, **lã**,
+  **casulos do bicho-da-seda**), extração vegetal de floresta nativa (castanha-do-pará,
+  açaí, madeira em tora, lenha, **carvão vegetal**) e silvicultura de floresta plantada.
+  Sericicultura e carvoaria não são agricultura por nenhuma leitura.
+
+  Duas contradições internas confirmavam isso antes de qualquer argumento externo: a
+  **citação ABNT** trazia `EMPRESA BRASILEIRA DE PESQUISA AGROPECUÁRIA` na autoria sobre um
+  título que dizia "agrícolas"; e o banco **PEVS** — cujo nome oficial é *Extração Vegetal e
+  Silvicultura* — era descrito como "produção e exploração de produtos agrícolas".
+
+  Novo nome: **"Análise histórica de produtos agropecuários e florestais"**. Um só, em todas
+  as superfícies — cabeçalho, título da aba, página Sobre e citação.
+
+- **O nome agora tem UMA fonte: `frontend/src/ui/produto.js` (`window.PRODUTO`).** Renomear
+  é mudar `ESCOPO` (e `ESCOPO_TITULO`, a variante capitalizada da aba); o nome do produto, o
+  título da citação e a prosa da página Sobre derivam dele. Antes o texto era literal em
+  cinco lugares — e eles **já haviam divergido**: o cabeçalho dizia "de produtos agrícolas",
+  a página Sobre "dos produtos agrícolas brasileiros" e a citação uma terceira forma.
+
+  `produto.test.js` tranca isso com âncora externa (lê os arquivos do disco, não importa o
+  módulo): nenhuma tela pode repetir o nome literalmente, e o `<title>` estático do
+  `index.html` — a única duplicação inevitável, porque o HTML é servido antes do JS — tem de
+  concordar com a constante. Os cinco testes da citação que fixavam o título antigo passaram
+  a derivá-lo de `window.PRODUTO`, senão o próximo renome os quebraria de novo.
+
+### Corrigido
+
+- **O `sub` do banco PEVS chamava produção florestal de agrícola**, nas duas cópias do
+  registro (`bancos.js` e `registries.py`). Agora: *"Extração vegetal de floresta nativa e
+  silvicultura de floresta plantada"*.
+- **A barra superior transbordava, e o nome novo piorou.** Medido: com o nome ANTIGO a barra
+  já estourava abaixo de ~1200px (1206px de conteúdo em 1009px de espaço, a 1024px de
+  viewport) — o defeito é anterior. O breakpoint de 980px em `dashboard.css` foi escrito
+  para *"clear the natural width with margin"*, e essa margem dependia do comprimento do
+  nome; o nome novo (+103px) a consumiu. Em vez de empurrar o número mágico, `.product-name`
+  passou a **encolher** (`flex-shrink: 1`, `min-width: 0`) e a truncar com reticências, com o
+  nome inteiro no `title`. Nenhum nome futuro pode reabrir essa janela.
+- Docs que ainda chamavam a view de curadoria de *"Cadastro de produtos agrícolas"* — a tela
+  se chama **"Cadastro de produtos"** desde antes desta versão; as docs é que estavam
+  desatualizadas.
+- `?v=` das três folhas de estilo, que o `index.html` pede para manter em sincronia com a
+  versão do app e estava em 1.13.7 contra um app 1.49.0.
+
+### Não alterado (de propósito)
+
+- **O project id do GCP** (`embrapa-dashboard-commodities`) segue congelado — um find/replace
+  já o corrompeu uma vez (v1.10.8) e quebrou todo comando IAM.
+- **O repositório no GitHub** (`embrapa-dashboard-produtos-agricolas`): renomeá-lo quebraria
+  as ligações `principalSet://` de Workload Identity nos três workflows de deploy. É uma
+  operação de infra com janela própria, não um efeito colateral de renomear o produto.
+- `docs/migration_history.md` e o comentário do incidente em `ci.yml` — registro histórico,
+  mantido verbatim.
+
+---
+
 ## [1.49.0] - 2026-09-07
 
 ### Corrigido

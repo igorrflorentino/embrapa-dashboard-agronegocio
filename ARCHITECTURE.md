@@ -1,4 +1,4 @@
-﻿# Architecture — Embrapa Produtos Agrícolas Dashboard
+﻿# Architecture — Embrapa Agricultural, Livestock & Forestry Dashboard
 
 > "Under the hood" technical document: folder structure, stack decisions, data flow, and diagrams.
 
