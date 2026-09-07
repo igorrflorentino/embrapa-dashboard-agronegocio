@@ -48,6 +48,55 @@ window.ratioPresent = (num, den) => {
   return num / den;
 };
 
+// Piso de materialidade sobre uma razão. Uma razão (rendimento = t/ha, preço =
+// valor/quantidade) mede INTENSIDADE, e intensidade medida sobre uma base minúscula
+// não é uma medida — é o arredondamento da fonte. Medido na PAM 2024: o DF aparecia
+// como a UF mais produtiva em cana-de-açúcar com 205 ha, 0,002% da área nacional, e
+// "85.000 kg/ha" redondo; o abacaxi tinha o mesmo DF no topo com 6 ha.
+//
+// DUAS provas, e passar em UMA basta — porque há duas razões diferentes para uma UF
+// merecer entrar num ranking nacional, e exigir as duas exclui quem tem direito:
+//   · minShare — ela PESA na lavoura (fração do recorte). Um piso só absoluto seria
+//     cego à escala: 1.000 ha é muita castanha de caju e nada de soja.
+//   · minAbs  — a base é grande o bastante para a medida se sustentar SOZINHA, ainda
+//     que a UF seja coadjuvante nacional. Um piso só relativo derrubava Sergipe com
+//     50 mil ha de cana (0,49% de uma lavoura de 10,1 mi ha) e o Tocantins com 36
+//     mil — rendimentos perfeitamente medidos, e o TO é o líder REAL da lavoura.
+//
+// A calibração de minAbs não é chute: varrendo as 11 lavouras da PAM 2024, um
+// rendimento múltiplo EXATO de 1.000 kg/ha — assinatura do arredondamento da fonte —
+// aparece em 20% das UFs abaixo de 100 ha, 6,7% entre 100 e 300 ha e em ZERO acima
+// de 300 ha. 1.000 ha fica com folga do outro lado dessa fronteira.
+//
+// Devolve { kept, dropped, total, shareOf } — nunca esconde: quem chama é obrigado a
+// receber os descartados para poder NOMEÁ-LOS na tela (regra do projeto: filtragem
+// invisível é proibida). Base ausente ou não-positiva ⇒ o piso não discrimina e tudo
+// passa; se o piso derrubasse TODO mundo ele também não discrimina, e devolver tudo
+// é melhor que um gráfico vazio.
+window.materialityFloor = (rows, key, { minShare = 0, minAbs = 0 } = {}) => {
+  const list = Array.isArray(rows) ? rows : [];
+  const total = window.sumPresent(list.map((r) => Number(r && r[key])));
+  const shareOf = (r) => window.ratioPresent(Number(r && r[key]), total);
+  if (!Number.isFinite(total) || total <= 0) return { kept: list, dropped: [], total: null, shareOf };
+  // Um piso não configurado é uma prova INEXISTENTE, não uma prova que todo mundo
+  // passa: com `minAbs = 0`, `area >= 0` é verdade sempre e a metade relativa morreria
+  // em silêncio — um piso ligado que não filtra nada é pior que piso nenhum.
+  const provas = [];
+  if (minShare > 0) provas.push((r) => { const sh = shareOf(r); return sh != null && sh >= minShare; });
+  if (minAbs > 0) provas.push((r) => { const v = Number(r && r[key]); return Number.isFinite(v) && v >= minAbs; });
+  if (!provas.length) return { kept: list, dropped: [], total, shareOf };
+  const kept = [], dropped = [];
+  list.forEach((r) => { (provas.some((f) => f(r)) ? kept : dropped).push(r); });
+  if (!kept.length) return { kept: list, dropped: [], total, shareOf };
+  return { kept, dropped, total, shareOf };
+};
+
+// A calibração do piso para ÁREA COLHIDA, ao lado da regra que o aplica em vez de
+// escondida no cálculo. Medido nas 11 lavouras da PAM 2024: nenhuma UF excluída
+// chega a 1.000 ha (a maior tem 972), nenhum ranking de 12 fica vazio, e o topo muda
+// em 3 das 11 — sempre tirando de lá uma UF de área desprezível.
+window.AREA_FLOOR = { minShare: 0.005, minAbs: 1000 };
+
 // Diferença entre duas medidas, preservando a ausência. Para grandezas que já são
 // percentuais (uma participação de mercado, por exemplo), onde a variação se declara em
 // PONTOS PERCENTUAIS e não em variação relativa — deltaPct responderia outra pergunta.

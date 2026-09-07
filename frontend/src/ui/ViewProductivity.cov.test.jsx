@@ -10,6 +10,11 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { cleanup, render } from '@testing-library/react';
+// O seriesUtils REAL — `materialityFloor` e a calibração `AREA_FLOOR` são o alvo do
+// teste do piso de área; com um stub, o teste examinaria o stub. Pelo mesmo motivo a
+// chamada na view é incondicional: o helper ausente tem de estourar, não voltar a pôr
+// uma UF de 205 ha no topo do ranking em silêncio.
+import './seriesUtils.js';
 
 function stubGlobals(prodData) {
   window.productivityData = () => prodData;
@@ -34,8 +39,17 @@ function stubGlobals(prodData) {
   );
   window.UnitFamilyTag = () => <span className="uf-tag" />;
   window.LineChart = (props) => <div className="line-chart" data-points={(props.data || []).length} />;
-  window.BarChart = (props) => <div className="bar-chart" data-points={(props.data || []).length} />;
-  window.BrazilTileMap = (props) => <div className="tile-map" data-points={(props.data || []).length} />;
+  window.BarChart = (props) => (
+    <div className="bar-chart" data-points={(props.data || []).length}
+         data-ufs={(props.data || []).map((d) => d.uf).join(',')}
+         data-hover-key={props.hoverKey || ''} />
+  );
+  window.BrazilTileMap = (props) => (
+    <div className="tile-map" data-points={(props.data || []).length}
+         data-ufs={(props.data || []).map((d) => d.uf).join(',')}
+         data-sem-cor={(props.data || []).filter((d) => d[props.valueKey] == null)
+           .map((d) => d.uf).join(',')} />
+  );
 }
 
 // A representative productivityData payload (PAM-shaped). Area/prod are in the
@@ -156,5 +170,76 @@ describe('ViewProductivity — full render (PAM)', () => {
     // Still renders the selector + KPI strip (no throw on the empty series).
     expect(container.textContent).toContain('Lavoura em análise');
     expect(container.querySelectorAll('.kpi').length).toBe(4);
+  });
+});
+
+// ── O piso de área (v1.57.0) ───────────────────────────────────────────────
+//
+// ÂNCORA EXTERNA: cana-de-açúcar, safra 2024, medida em serving_pam_annual em
+// 2026-09-07 — as 8 UFs de maior rendimento, na ordem real. Não é fixture inventada:
+// é exatamente o que a tela mostrava, com o DF (205 ha, 0,002% da área nacional)
+// encabeçando "UFs mais produtivas" por causa do arredondamento da fonte.
+const CANA_2024 = [
+  { uf: 'DF', name: 'Distrito Federal', areaHa: 205, yieldKgHa: 85000 },
+  { uf: 'TO', name: 'Tocantins', areaHa: 36105, yieldKgHa: 81663 },
+  { uf: 'MT', name: 'Mato Grosso', areaHa: 241946, yieldKgHa: 81479 },
+  { uf: 'GO', name: 'Goiás', areaHa: 1015810, yieldKgHa: 79735 },
+  { uf: 'MS', name: 'Mato Grosso do Sul', areaHa: 672523, yieldKgHa: 78063 },
+  { uf: 'SP', name: 'São Paulo', areaHa: 5398676, yieldKgHa: 77532 },
+  { uf: 'MG', name: 'Minas Gerais', areaHa: 1118810, yieldKgHa: 74869 },
+  { uf: 'BA', name: 'Bahia', areaHa: 74564, yieldKgHa: 74768 },
+];
+
+describe('ViewProductivity — piso de área no ranking e no mapa', () => {
+  function renderCana() {
+    stubGlobals(makeData({ crop: { code: 'C1', name: 'Cana-de-açúcar' }, byUF: CANA_2024 }));
+    return render(<ViewProductivity summary={{}} conventions={{}} database="ibge_pam" />);
+  }
+
+  it('o ranking deixa de ser liderado pela UF de área desprezível', () => {
+    const { container } = renderCana();
+    const ufs = container.querySelector('.bar-chart').getAttribute('data-ufs').split(',');
+    // TO é o líder que a consulta sobre as 27 UFs reais também devolve com o piso ligado.
+    expect(ufs[0]).toBe('TO');
+    expect(ufs).not.toContain('DF'); // 205 ha — reprova nas duas provas
+    // E as UFs comparáveis continuam TODAS lá, na ordem de rendimento. O TO está entre
+    // elas por causa da prova ABSOLUTA: 36.105 ha, apenas 0,42% do recorte.
+    expect(ufs).toEqual(['TO', 'MT', 'GO', 'MS', 'SP', 'MG', 'BA']);
+  });
+
+  it('as UFs de fora permanecem no MAPA, sem cor de intensidade (não somem)', () => {
+    const { container } = renderCana();
+    const mapa = container.querySelector('.tile-map');
+    // Todas as 8 continuam no grid — sair do gradiente não é sair do mapa.
+    expect(mapa.getAttribute('data-points')).toBe('8');
+    // A de fora chega com o valor NULO (índice -1 do quantil ⇒ célula neutra).
+    // Zero seria uma afirmação de rendimento zero; nulo é a recusa de comparar.
+    expect(mapa.getAttribute('data-sem-cor').split(',')).toEqual(['DF']);
+  });
+
+  it('a tela NOMEIA quem ficou de fora, com a área e o motivo', () => {
+    const { container } = renderCana();
+    expect(container.textContent).toContain('Fora da comparação por área');
+    expect(container.textContent).toContain('DF');
+    expect(container.textContent).toContain('205 ha'); // a área concreta, para o leitor julgar
+    // A nota enuncia a REGRA (as duas provas reprovadas), não uma causa que só valeria
+    // para parte da lista: "arredondamento da fonte" é verdade para 205 ha e mentira
+    // para 50 mil, e a mesma nota pode cobrir as duas.
+    expect(container.textContent).toContain('menos de 0,5% da área do recorte');
+    expect(container.textContent).toContain('menos de 1 mil ha no total');
+    expect(container.textContent).not.toContain('arredondamento da fonte');
+  });
+
+  it('a barra carrega a ÁREA no hover, para o leitor julgar a base de cada uma', () => {
+    const { container } = renderCana();
+    expect(container.querySelector('.bar-chart').getAttribute('data-hover-key')).toBe('areaHa');
+  });
+
+  it('sem coluna de área o piso não morde — o ranking não pode esvaziar', () => {
+    // makeData() padrão traz byUF SEM areaHa (um banco que não informa área).
+    stubGlobals(makeData());
+    const { container } = render(<ViewProductivity summary={{}} conventions={{}} database="ibge_pam" />);
+    expect(container.querySelector('.bar-chart').getAttribute('data-ufs')).toBe('MT,PR');
+    expect(container.textContent).not.toContain('Fora da comparação por área');
   });
 });

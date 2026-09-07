@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.57.0] - 2026-09-07
+
+### Corrigido
+
+- **A UF com MENOS lavoura liderava o ranking de produtividade.** Em *Produtividade → UFs
+  mais produtivas*, o Distrito Federal aparecia no topo da cana-de-açúcar com **205 ha** —
+  0,002% da área nacional — e "85.000 kg/ha" redondo; e no topo do abacaxi com **6 ha**.
+  A aritmética estava certa e a resposta, errada: um rendimento é uma razão, e uma razão
+  medida sobre uma base minúscula não é uma medida, é o arredondamento da fonte. Medido nas
+  11 lavouras da PAM 2024, três tinham um "líder de produtividade" de área desprezível.
+
+  O corte agora exige **duas provas, e passar em uma basta** — porque há duas razões
+  diferentes para uma UF merecer entrar num ranking nacional:
+
+  | prova | o que ela responde | calibração |
+  |---|---|---|
+  | relativa | a UF **pesa** na lavoura? | ≥ 0,5% da área do recorte |
+  | absoluta | a base se sustenta **sozinha**? | ≥ 1.000 ha |
+
+  A calibração da prova absoluta foi medida, não escolhida: varrendo as 11 lavouras, um
+  rendimento múltiplo **exato** de 1.000 kg/ha — assinatura do arredondamento — aparece em
+  20% das UFs abaixo de 100 ha, 6,7% entre 100 e 300 ha e em **zero** acima de 300 ha.
+
+  Um piso só relativo foi construído primeiro e **reprovado na verificação contra a tela**:
+  em uma lavoura de 10,1 mi ha ele apagava Sergipe (50 mil ha), Maranhão (46 mil) e
+  Tocantins (36 mil), rendimentos perfeitamente medidos — e o Tocantins é o **líder real**
+  da cana. Pior, a nota que os excluía afirmava "arredondamento da fonte", verdade para 205
+  ha e mentira para 50 mil. Com as duas provas, nenhuma UF excluída chega a 1.000 ha (a
+  maior tem 972) e o topo muda em 3 das 11 lavouras, sempre tirando de lá área desprezível.
+
+  Efeito nos líderes (PAM 2024): cana **DF → TO**, abacaxi **DF → PB**, açaí **CE → AP**.
+
+- **Nada some em silêncio** (regra do projeto: filtragem invisível é proibida). As UFs de
+  fora **continuam no mapa**, em cinza e sem cor de intensidade — `null`, não `0`, para não
+  afirmar rendimento zero — e uma nota sob o mapa **e** sob o ranking nomeia cada uma com
+  sua área e enuncia a regra que ela reprovou, em vez de uma causa que valeria só para
+  parte da lista.
+
+### Adicionado
+
+- `window.materialityFloor(rows, key, { minShare, minAbs })` em `seriesUtils.js`, ao lado
+  das demais primitivas de medida, com a calibração `window.AREA_FLOOR`. Devolve
+  `{ kept, dropped, total, shareOf }`: o chamador é **obrigado** a receber os descartados,
+  para poder nomeá-los. Um piso não configurado é uma prova **inexistente**, não uma que
+  todo mundo passa (`minAbs = 0` faria `área ≥ 0` valer sempre e mataria a prova relativa
+  em silêncio); um piso que derrubaria todo mundo não derruba ninguém.
+- `BarChart` aceita `hoverKey`/`hoverLabel` para levar ao hover a **base** por trás da razão
+  que a barra desenha — aqui, a área colhida sob o rendimento, para o leitor julgar sozinho
+  em vez de confiar no piso no escuro. Sem a prop, o template é o de antes, byte a byte.
+
+---
+
 ## [1.56.0] - 2026-09-07
 
 ### Adicionado
