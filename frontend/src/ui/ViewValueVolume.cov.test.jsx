@@ -157,6 +157,36 @@ describe('ViewValueVolume — value-bearing basket (mass + volume)', () => {
     expect(container.textContent).not.toContain('Produtos em volume');
   });
 
+  it('o empilhado NÃO recria o zero ao reescalar um valor ausente', () => {
+    // A camada passa por scalePresent (preserva null) e depois pelo _scaleStack, que
+    // dividia direto: `null / factor === 0` em JS. O ano que a moeda não alcança
+    // voltava como uma faixa colada no zero, dentro da área empilhada — desfazendo o
+    // que o serializer e o scalePresent tinham acabado de preservar.
+    // Só o ponto muda: o resto é o fixture que o teste vizinho já usa com autoScale.
+    const base = valueFixture();
+    base.productTS.P1 = [
+      { y: 2018, v: null, q: 60, family: 'mass' },   // a moeda não alcança este ano
+      { y: 2020, v: 3.0, q: 120, family: 'mass' },
+    ];
+    stubGlobals(base, { autoScale: true });
+    render(
+      <ViewValueVolume
+        families={['mass']}
+        summary={{}}
+        database="ibge_pevs"
+        conventions={{ currency: 'BRL', correction: 'IPCA', autoScale: true }}
+      />
+    );
+    const pilha = stackedCalls.find((p) => /\(mi\)|\(bi\)/.test(p.label));
+    expect(pilha, 'a pilha de valor não foi reescalada').toBeTruthy();
+    const camada = pilha.series.find((l) => l.code === 'P1');
+    expect(camada, 'a camada do produto não chegou ao gráfico').toBeTruthy();
+    const ponto = camada.data.find((d) => d.y === 2018);
+    expect(ponto.v, 'o ausente virou zero ao reescalar').toBeNull();
+    // E o ano presente segue reescalado de verdade.
+    expect(camada.data.find((d) => d.y === 2020).v).toBeGreaterThan(0);
+  });
+
   it('applies autoScale to the stacked composition labels (bi suffix)', () => {
     // value layer totals ~3e6 absolute → autoScaleNum returns mi; assert a scaled label.
     stubGlobals(valueFixture(), { autoScale: true });
@@ -181,6 +211,10 @@ describe('ViewValueVolume — value-less herd + combo-pending branches', () => {
         { y: 2018, v: 0, q_mass: 0, q_vol: 0 },
         { y: 2020, v: 0, q_mass: 0, q_vol: 0 },
       ],
+      // O rebanho tem measure_kind 'stock', e é ELE que autoriza a nota do rebanho —
+      // não a mera ausência de valor, que uma lacuna de moeda também produz.
+      products: [{ code: 'B1', name: 'Bovino', measure_kind: 'stock' }],
+      selectedProducts: ['B1'],
       productTS: {},
     });
     stubGlobals(fx);
@@ -195,6 +229,35 @@ describe('ViewValueVolume — value-less herd + combo-pending branches', () => {
     // valueMax 0 → hasValue false → the estoque-sem-valor note, no YoY bars.
     expect(container.textContent).toContain('estoque sem valor monetário');
     expect(yoyProps).toBeUndefined();
+  });
+
+  it('sem valor por LACUNA DE MOEDA não é "estoque sem valor monetário"', () => {
+    // Medido na tela em 2026-09-08: PEVS (madeira, carvão, lenha) em euro pré-1999
+    // recebia a nota do REBANHO — mandando o pesquisador ver "cabeças" e a perspectiva
+    // Rebanho, para produtos florestais. Toda cláusula era falsa. `valueMax > 0` é
+    // falso nos DOIS casos, e só `measure_kind` distingue.
+    stubGlobals(valueFixture({
+      ts: [
+        { y: 1990, v: null, q_mass: 100, q_vol: 10 },
+        { y: 1995, v: null, q_mass: 150, q_vol: 15 },
+      ],
+      products: [{ code: 'P2', name: 'Madeira' }],  // sem measure_kind: NÃO é estoque
+      selectedProducts: ['P2'],
+      productTS: {},
+    }));
+    const { container } = render(
+      <ViewValueVolume
+        families={['mass', 'volume']}
+        summary={{}}
+        database="ibge_pevs"
+        conventions={{ currency: 'EUR', correction: 'Nominal', autoScale: false }}
+      />
+    );
+    expect(container.textContent).not.toContain('estoque sem valor monetário');
+    expect(container.textContent).not.toContain('cabeças');
+    // E diz o motivo verdadeiro, sem afirmar produção zero.
+    expect(container.textContent).toContain('não alcançam esta janela');
+    expect(container.textContent).toContain('quantidades abaixo');
   });
 
   it('redirects to Rebanho only when a herd STOCK is in a value-bearing count basket', () => {

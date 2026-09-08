@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.65.0] - 2026-09-08
+
+### Corrigido
+
+- **Uma recusa com a CAUSA fabricada — pior que um número fabricado, porque
+  desencaminha.** Em *Valor × volume*, `hasValue = valueMax > 0` é falso em dois casos
+  que nada têm a ver: um rebanho (estoque, sem valor monetário por natureza) e uma janela
+  que a moeda ou o deflator não alcançam. A view atribuía os dois ao primeiro.
+
+  Medido na tela em 2026-09-08 — PEVS (madeira, carvão, lenha) em euro pré-1999:
+
+  > *"Esta cesta é um **estoque sem valor monetário (efetivo dos rebanhos)** — não há
+  > série de valor. Veja a quantidade em **cabeças** abaixo, ou a perspectiva
+  > **Rebanho** para a composição por espécie."*
+
+  Para produtos florestais. Toda cláusula é falsa, e a nota manda o pesquisador para
+  uma perspectiva onde ele não vai achar nada. `measure_kind` (via `hasStock`) é o sinal
+  de verdade, e agora decide qual das duas notas aparece. A nova diz o motivo real e
+  acrescenta o que importa: **"não é produção zero — as quantidades abaixo seguem
+  completas"**.
+
+- **A área empilhada recriava o zero ao reescalar.** `d[key] / factor` — e `null / factor`
+  é `0` em JS —, desfazendo o `scalePresent` de vinte linhas acima. O ano que a convenção
+  não alcança voltava como uma faixa colada no zero, dentro da pilha. Terceira forma da
+  mesma armadilha, depois de `null * fator` e `Math.round(null)`: **dividir também é
+  aritmética**, e a varredura de razões não cobre nenhuma delas.
+
+- **O Rebanho afirmava efetivo zero num período que a pesquisa não cobre.** Medido com a
+  janela em 1950–1960 (a PPM começa em 1974): *"Efetivo = **0 un**"*, *"Pico histórico =
+  **0 un** em 1960"* e *"Espécies no efetivo = **8**"* — três afirmações sobre um período
+  sem dado, com a procedência dizendo **"0 / 51 anos cobertos"** ao lado.
+
+  O fallback de janela vazia passa a ser `q: null` (`formatCountQty` já devolve "—"), e
+  a contagem de espécies passa a exigir **ponto na janela** — o card traz o período no
+  subtítulo, então contar espécies sem dado nele nomeia uma coisa e conta outra. A view
+  cai no estado vazio honesto que já existia.
+
+---
+
 ## [1.64.0] - 2026-09-08
 
 ### Corrigido

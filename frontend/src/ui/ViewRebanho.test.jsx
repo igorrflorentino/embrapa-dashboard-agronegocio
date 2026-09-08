@@ -110,6 +110,20 @@ describe('ViewRebanho — the herd (efetivo) perspective', () => {
     expect(container.textContent).toMatch(/234/); // 234e6 head, pt-BR formatted
   });
 
+  it('período FORA da cobertura não vira "0 cabeças" nem um pico de zero', () => {
+    // Medido na tela em 2026-09-08 com a janela em 1950–1960 (a PPM começa em 1974):
+    // "Efetivo = 0 un", "Pico histórico = 0 un em 1960" e "Espécies no efetivo = 8" —
+    // três afirmações sobre um período que a pesquisa não cobre. O rebanho não é zero
+    // ali, é desconhecido; e contar espécies "no efetivo" de um período sem dado nomeia
+    // uma coisa e conta outra.
+    stubGlobals({ ...FIXTURE, yearStart: 1950, yearEnd: 1960 });
+    const { container } = render(<ViewRebanho summary={{}} database="ibge_ppm" conventions={conv()} />);
+    expect(container.textContent).not.toMatch(/Efetivo · Bovino[\s\S]{0,40}\b0\b/);
+    expect(container.textContent).not.toContain('Pico histórico');
+    // Sem espécie com ponto na janela, a view cai no estado vazio honesto.
+    expect(container.textContent).toContain('Nenhum rebanho');
+  });
+
   it('renders an honest empty state when the basket has no stock species', () => {
     stubGlobals({
       ...FIXTURE,
