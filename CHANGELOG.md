@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.67.0] - 2026-09-08
+
+### Corrigido
+
+- **As duas perspectivas sem fonte afirmavam zeros.** `chainBalance` e
+  `harvestShipmentLag` são shells honestos — não existe fonte para eles (SEFAZ inter-UF;
+  PEVS mensal, que o IBGE não publica) e a tela carrega banner dizendo que é demonstração.
+  Mas os produtores devolviam **0** em toda medida, e a tela lia:
+
+  > *"Produção = **0 mil t**"* · *"Exportado = **0,0%**"* · *"Defasagem = **+0 meses**"*
+  > *"Correlação no lag = **0,00**"*
+
+  Um zero é uma afirmação, e aqui não há nem fonte para afirmar. As medidas passam a sair
+  `null` — `numBR`/`pctBR` já rendem `'—'` — e as **listas seguem vazias**, porque uma
+  série inexistente é uma série vazia, não uma série de nulos. O banner continua
+  explicando o porquê.
+
+- **Um crash latente, removido antes de virar crash.** `data.corrAtLag.toFixed(2)`
+  esperava só o dia em que o produtor devolvesse `null` — o mesmo formato que derrubou a
+  *Comparação entre fontes* na v1.66.1. Desta vez a ordem foi a certa: os consumidores
+  foram varridos **antes** de tornar o contrato anulável.
+
+---
+
+### A varredura das 22 perspectivas está FECHADA
+
+Iniciada na v1.61.0, ela examinou cada perspectiva contra dados de produção e verificou o
+resultado na tela. **22 examinadas · defeito em 15.** As sete limpas: Geografia,
+Sazonalidade, Fluxos territoriais, Base de dados, Valor agregado, e as duas de curadoria.
+
+O achado transversal: **três formas de aritmética crua** sobre medidas que podem faltar
+escaparam de todas as varreduras — `null * fator`, `Math.round(null)` e `null / fator` —
+porque as regex procuram razões (`x ? a/x : 0`, `|| 1`), não operações diretas. E **duas
+formas de `.toFixed`/`.toLocaleString`** sobre valores anuláveis derrubaram perspectivas
+inteiras. Nenhuma das duas famílias tem guarda hoje.
+
+---
+
 ## [1.66.1] - 2026-09-08
 
 ### Corrigido

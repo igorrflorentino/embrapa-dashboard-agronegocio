@@ -297,3 +297,29 @@ describe('trade producers thread the origin-UF (states) filter', () => {
     expect(data.notApplicable).toBeUndefined();
   });
 });
+
+// ── Produtores BLOQUEADOS: ausência, não zero ────────────────────────────────
+describe('produtores data-blocked devolvem AUSÊNCIA nas medidas', () => {
+  it('chainBalance e harvestShipmentLag não fabricam zeros', async () => {
+    // Os dois não têm fonte (SEFAZ inter-UF; PEVS mensal, que o IBGE não publica) e a
+    // view carrega banner dizendo que é demonstração. Mas devolver 0 fazia a tela
+    // afirmar "Produção = 0 mil t" e "Exportado = 0,0%" — zero é uma AFIRMAÇÃO, e aqui
+    // não há nem fonte para afirmar. As LISTAS seguem vazias: uma série inexistente é
+    // uma série vazia, não uma série de nulos.
+    await loadProducers(vi.fn(() => jsonRes({})));
+    const b = window.chainBalance('acai', 2024);
+    for (const k of ['produced', 'exported', 'internal', 'domestic',
+                     'expFrac', 'intFrac', 'domFrac', 'worldShare', 'worldTotal', 'exportUsd']) {
+      expect(b[k], `chainBalance.${k} afirmou um número`).toBeNull();
+    }
+    expect(b.sankey.nodes).toEqual([]);
+    expect(b.preview).toBe(true);
+
+    const l = window.harvestShipmentLag();
+    for (const k of ['peakHarvest', 'peakShip', 'lagMonths', 'corrAtLag']) {
+      expect(l[k], `harvestShipmentLag.${k} afirmou um número`).toBeNull();
+    }
+    expect(l.months).toEqual([]);
+    expect(l.preview).toBe(true);
+  });
+});

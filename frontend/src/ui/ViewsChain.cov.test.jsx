@@ -186,3 +186,35 @@ describe('ViewHarvestLag', () => {
     expect(codes).toContain('acai');
   });
 });
+
+describe('ViewsChain — a fonte bloqueada mostra AUSÊNCIA, não zero', () => {
+  it('o balanço sem fonte não afirma "0 mil t" nem "0,0%"', () => {
+    // Os produtores bloqueados devolviam 0 em toda medida. O banner já diz que a
+    // perspectiva é demonstração, mas "Produção = 0 mil t" e "Exportado = 0,0%" se leem
+    // como MEDIDA — e aqui não há nem fonte para medir. Com null, numBR/pctBR rendem '—'.
+    window.chainBalance = () => ({
+      preview: true, unit: 'mil t', year: 2024,
+      produced: null, exported: null, internal: null, domestic: null,
+      expFrac: null, intFrac: null, domFrac: null,
+      worldShare: null, worldTotal: null, exportUsd: null,
+      sankey: { nodes: [], links: [] },
+    });
+    const { container } = render(<ViewChainBalance view={{ id: 'cross_chain' }} />);
+    const vals = [...container.querySelectorAll('.kpi-value')].map((e) => e.textContent);
+    expect(vals.every((v) => v.includes('—')), `afirmou número: ${vals}`).toBe(true);
+    expect(container.textContent).not.toContain('0,0%');
+  });
+
+  it('a defasagem sem fonte não afirma "+0 meses" nem "0,00" de correlação', () => {
+    // `data.corrAtLag.toFixed(2)` era ainda um CRASH esperando o dia em que o produtor
+    // devolvesse null — o mesmo formato que derrubou a Comparação entre fontes.
+    window.harvestShipmentLag = () => ({
+      preview: true, months: [], production: [], shipments: [],
+      peakHarvest: null, peakShip: null, lagMonths: null, corrAtLag: null, lagProfile: [],
+    });
+    const { container } = render(<ViewHarvestLag view={{ id: 'cross_lag' }} />);
+    const vals = [...container.querySelectorAll('.kpi-value')].map((e) => e.textContent);
+    expect(vals.every((v) => v.includes('—')), `afirmou número: ${vals}`).toBe(true);
+    expect(container.textContent).not.toContain('+0 meses');
+  });
+});
