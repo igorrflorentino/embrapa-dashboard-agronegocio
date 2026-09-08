@@ -621,6 +621,10 @@ def fetch_comex_partners(
         table,
         partner_code_column="country_code",
         partner_name_column="country_name",
+        # O declarante do COMEX é SEMPRE o Brasil, e o MDIC tem código de país próprio
+        # para a mercadoria que volta (105, ISO BRA). Um país não é parceiro de si mesmo.
+        partner_iso_column="country_iso_a3",
+        self_iso="BRA",
         code_column="ncm_code",
         year_start=year_start,
         year_end=year_end,
@@ -674,6 +678,10 @@ def fetch_comtrade_partners(
         reporters=tuple(reporters),
         partners=tuple(partners),
         rank_by=rank_by,
+        # Aqui o declarante VARIA por linha (o backfill cobre todos os reporters), então
+        # o autocomércio é a comparação entre as duas colunas, não um ISO fixo.
+        partner_iso_column="partner_iso_a3",
+        reporter_iso_column="reporter_iso_a3",
     )
     return run_query(sql, params)
 

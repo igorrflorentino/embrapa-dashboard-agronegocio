@@ -125,6 +125,15 @@ function ViewPartners({ summary, conventions, database }) {
             A grandeza sai sempre em kg: por definição do piso tudo aqui está abaixo de
             100 t, e em toneladas os 1.522 kg de Mônaco viravam "2 t" — um arredondamento
             que apaga justamente a informação pela qual ele saiu do ranking. */}
+        {/* O autocomércio sai do ranking no SERVIDOR (sql._exclude_self_partner), e some
+            em silêncio se ninguém disser. É determinístico — é sempre o próprio
+            declarante —, então uma frase fixa é exata e não precisa de dado no contrato. */}
+        <p className="caption" style={{ marginTop: 10 }}>
+          O <strong>autocomércio</strong> fica fora deste ranking: a linha em que o
+          parceiro é o próprio país declarante registra mercadoria nacional retornada
+          (o MDIC lhe dá código de país próprio), e um país não é parceiro de si mesmo.
+          Media <strong>US$ 3,50/kg</strong> e ocupava a segunda posição em preço médio.
+        </p>
         <window.MaterialityFloorNote
           dropped={data.belowFloor}
           valueKey="weight" labelKey="name"

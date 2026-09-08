@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.69.0] - 2026-09-08
+
+### Corrigido
+
+- **Um país não é parceiro comercial de si mesmo.** Nos **dois** bancos de comércio, o
+  "Brasil" ocupava a **posição 2** do ranking de *Preço médio* — logo abaixo do
+  Cazaquistão, deslocando um mercado real.
+
+  Não é materialidade: com **1.755 t** no COMEX ele passa folgado no piso da v1.59.0, e o
+  piso julgou certo — há tonelagem para haver preço. É **identidade**: a pergunta do
+  ranking é *"quais mercados pagam mais por quilo"*, e o próprio país não é um deles.
+
+  O que essas linhas registram é **mercadoria nacional retornada**, e a fonte não erra —
+  o MDIC tem código de país próprio para isso (**105, ISO BRA**), com US$ 6,14 mi desde
+  1998, majoritariamente na importação (reimportação). O COMTRADE traz simplesmente
+  `reporter = partner`: **4.135 linhas, US$ 1,83 bi, 0,20%** do mart.
+
+  Os dois bancos declaram diferente e o predicado acompanha: no COMEX o declarante é
+  **sempre** o Brasil (ISO fixo, por parâmetro); no COMTRADE ele **varia por linha** (o
+  backfill cobre todos os reporters), e a comparação é entre colunas. Usa
+  `is distinct from`, não `!=`: sem os dois ISOs não dá para **afirmar** que é
+  autocomércio, e descartar a linha seria inventar a afirmação.
+
+  O ranking por **valor não muda** (China, Países Baixos, Espanha) — o corte atinge só
+  onde o Brasil aparecia. O topo do preço passa a ser Cazaquistão · Estônia · Belarus.
+
+  **Nada some em silêncio**: o card traz a frase explicando o que saiu e por quê. A
+  exclusão é determinística — é sempre o próprio declarante —, então uma frase fixa é
+  exata e não precisa de dado no contrato.
+
+- `country_iso_a3` entra na allowlist de colunas de `sql.py`. A allowlist barrou a
+  primeira tentativa, que é exatamente a função dela: identificadores interpolados passam
+  por allowlist, não por escape.
+
+---
+
 ## [1.68.0] - 2026-09-08
 
 ### Adicionado
