@@ -20,6 +20,7 @@ import './ui/urlState.js';
 import './ui/chipFmt.js';
 import './ui/scopeChips.js';
 import './ui/RecorteNote.jsx';
+import './ui/CollapsingNameList.jsx';
 import './ui/MaterialityFloorNote.jsx';
 import './ui/filterSummary.js';
 import './ui/geoSelect.js';

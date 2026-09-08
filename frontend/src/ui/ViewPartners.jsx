@@ -149,20 +149,23 @@ function ViewPartners({ summary, conventions, database }) {
           (o MDIC lhe dá código de país próprio), e um país não é parceiro de si mesmo.
           Media <strong>US$ 3,50/kg</strong> e ocupava a segunda posição em preço médio.
         </p>
-        {parcial.length > 0 && (
-          <p className="caption" style={{ marginTop: 10 }}>
-            Preço apoiado em parte do comércio:{' '}
-            <strong>
-              {parcial
-                .map((p) => `${p.name} (${window.fmtPct(p.pricedShare)})`)
-                .join(', ')}
-            </strong>
-            . O declarante registrou essas transações <em>sem</em> quantidade, e um preço
-            só pode ser calculado onde valor e peso existem juntos — a porcentagem é
-            quanto do comércio de cada um sustenta o número exibido. O restante entra no
-            ranking de Capital, onde o valor é o próprio dado.
-          </p>
-        )}
+        {/* Recolhe acima de 10 nomes, pelo mesmo átomo da nota do piso logo abaixo.
+            Medido em produção: no agrupamento madeira esta nota alcança 19 dos 30
+            parceiros exibidos, e enumerá-los inline ocupava cinco linhas — a conclusão
+            enterrada sob a própria lista. A nota irmã já resolvia isso na MESMA tela; foi
+            escrever uma segunda sem propagar a regra. */}
+        <window.CollapsingNameList
+          titulo="Preço apoiado em parte do comércio"
+          itens={parcial.map((p) => `${p.name} (${window.fmtPct(p.pricedShare)})`)}
+          substantivo="parceiros"
+          regra={
+            <>
+              O declarante registrou essas transações <em>sem</em> quantidade, e um preço
+              só pode ser calculado onde valor e peso existem juntos — a porcentagem é
+              quanto do comércio de cada um sustenta o número exibido. O restante entra no
+              ranking de Capital, onde o valor é o próprio dado.
+            </>
+          } />
         <window.MaterialityFloorNote
           dropped={data.belowFloor}
           valueKey="weight" labelKey="name"
