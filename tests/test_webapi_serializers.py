@@ -671,7 +671,7 @@ def test_serialize_productivity_handles_zero_area_and_empty():
     assert empty["series"] == [] and empty["byUF"] == []
     # national carries every contracted field, zeroed, even with no data.
     assert empty["national"] == {"yieldKgHa": 0.0, "areaHa": 0.0, "prodT": 0.0, "yieldCagr": 0.0}
-    # Zero harvested area must not divide-by-zero → yield 0.
+    # Área colhida zero: o rendimento é INDEFINIDO, não zero (ver o teste dedicado abaixo).
     zero = s.serialize_productivity(
         {
             "crops": [{"code": "1", "name": "X"}],
@@ -693,7 +693,77 @@ def test_serialize_productivity_handles_zero_area_and_empty():
             ),
         }
     )
-    assert zero["series"][0]["yieldKgHa"] == 0.0 and zero["byUF"][0]["yieldKgHa"] == 0.0
+    assert zero["series"][0]["yieldKgHa"] is None and zero["byUF"][0]["yieldKgHa"] is None
+
+
+def test_serialize_productivity_area_zero_e_rendimento_AUSENTE_nao_zero():
+    """Sem área colhida não há rendimento — a razão é indefinida, não nula.
+
+    ``0.0`` é uma AFIRMAÇÃO: "este estado colhe zero quilos por hectare". Medido em
+    produção 2026-09-07: 1.946 das 13.652 linhas (lavoura × ano × UF) não têm área, e
+    NENHUMA delas tem produção — são estados que não plantam aquela lavoura. Em 2024 são
+    43 linhas, 16 só na castanha de caju, que é lavoura do Nordeste. O grão NACIONAL
+    nunca cai aqui (0 de 506 linhas), então o defeito vivia só no lado por UF.
+
+    A tela já não mostrava esses zeros — o piso da v1.57.0 os tira do ranking e pinta o
+    mapa de neutro —, mas o CONTRATO os afirmava, e quem lê a API direto recebia o zero.
+    """
+    linhas = pd.DataFrame(
+        [
+            {
+                "reference_year": 2024,
+                "state_acronym": uf,
+                "state_name": uf,
+                "region": "Nordeste",
+                "region_abbrev": "NE",
+                "production_t": prod,
+                "area_planted_ha": area,
+                "area_harvested_ha": area,
+            }
+            # CE planta; RS não planta caju e chega com área e produção zeradas.
+            for uf, prod, area in (("CE", 100.0, 50.0), ("RS", 0.0, 0.0))
+        ]
+    )
+    out = s.serialize_productivity(
+        {
+            "crops": [{"code": "1", "name": "Caju"}],
+            "active": "1",
+            "active_name": "Caju",
+            "rows": linhas,
+        }
+    )
+    por_uf = {u["uf"]: u["yieldKgHa"] for u in out["byUF"]}
+    assert por_uf["CE"] == pytest.approx(2000.0)  # 100 t × 1000 ÷ 50 ha
+    assert por_uf["RS"] is None, "sem área, o rendimento foi AFIRMADO como zero"
+    # A área e a produção seguem 0.0, e isso está certo: o cubo do SIDRA publica "-" para
+    # a combinação sem produção, que é um zero MEDIDO. É a RAZÃO que não existe.
+    rs = next(u for u in out["byUF"] if u["uf"] == "RS")
+    assert rs["areaHa"] == 0.0 and rs["prodT"] == 0.0
+
+
+def test_serialize_productivity_cagr_nao_estoura_com_rendimento_ausente():
+    """`None > 0` estoura em Python — a guarda do CAGR tinha de acompanhar a mudança."""
+    linhas = pd.DataFrame(
+        [
+            {
+                "reference_year": y,
+                "state_acronym": "RS",
+                "state_name": "RS",
+                "region": "Sul",
+                "region_abbrev": "S",
+                "production_t": 0.0,
+                "area_planted_ha": 0.0,
+                "area_harvested_ha": 0.0,
+            }
+            for y in (2020, 2024)
+        ]
+    )
+    out = s.serialize_productivity(
+        {"crops": [{"code": "1", "name": "X"}], "active": "1", "active_name": "X", "rows": linhas}
+    )
+    assert out["series"][0]["yieldKgHa"] is None
+    # Sem os dois extremos não há taxa a declarar; o contrato mantém o 0.0 do default.
+    assert out["national"]["yieldCagr"] == 0.0
 
 
 def test_uf_data_emits_per_family_quantities():

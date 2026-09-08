@@ -22,7 +22,11 @@ import './MaterialityFloorNote.jsx';
 
 function stubGlobals(prodData) {
   window.productivityData = () => prodData;
-  window.numBR = (v, d) => Number(v).toFixed(d == null ? 0 : d).replace('.', ',');
+  // O stub tem de devolver '—' para ausente, como o numBR REAL: com
+  // `Number(null).toFixed()` ele imprimia "0", e um rendimento ausente aparecia como
+  // "0 kg/ha" no teste mesmo com o código correto — o stub escondia o defeito que o
+  // teste existe para pegar.
+  window.numBR = (v, d) => (v == null ? '—' : Number(v).toFixed(d == null ? 0 : d).replace('.', ','));
   window.fmtSigned = (v) => `${v >= 0 ? '+' : ''}${v}%`;
   // Widgets → readable DOM.
   window.EmptyCard = ({ children }) => <div className="empty-card">{children}</div>;
@@ -237,6 +241,28 @@ describe('ViewProductivity — piso de área no ranking e no mapa', () => {
   it('a barra carrega a ÁREA no hover, para o leitor julgar a base de cada uma', () => {
     const { container } = renderCana();
     expect(container.querySelector('.bar-chart').getAttribute('data-hover-key')).toBe('areaHa');
+  });
+
+  it('rendimento AUSENTE não vira "0 kg/ha" na tela', () => {
+    // Uma UF sem área colhida não tem rendimento: a razão é indefinida, e o serializer
+    // manda `null` desde a v1.60.2. `Math.round(null) === 0` transformava isso em "0
+    // kg/ha" — uma afirmação sobre um estado que sequer planta a lavoura.
+    stubGlobals(makeData({
+      series: [
+        { y: 2023, yieldKgHa: null, areaHa: 0, prodT: 0 },
+        { y: 2024, yieldKgHa: null, areaHa: 0, prodT: 0 },
+      ],
+      byUF: [
+        { uf: 'CE', name: 'Ceará', areaHa: 50000, yieldKgHa: 2000 },
+        { uf: 'RS', name: 'Rio Grande do Sul', areaHa: 0, yieldKgHa: null },
+      ],
+    }));
+    const { container } = render(<ViewProductivity summary={{}} conventions={{}} database="ibge_pam" />);
+    const valores = [...container.querySelectorAll('.kpi-value')].map((e) => e.textContent);
+    expect(valores.some((v) => /^0 kg\/ha/.test(v)), `KPI afirmou zero: ${valores}`).toBe(false);
+    // E no mapa a célula do RS chega NULA, não zerada — o quantil a pinta de neutro.
+    const semCor = container.querySelector('.tile-map').getAttribute('data-sem-cor').split(',');
+    expect(semCor).toContain('RS');
   });
 
   it('sem coluna de área o piso não morde — o ranking não pode esvaziar', () => {

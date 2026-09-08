@@ -290,3 +290,26 @@ describe('deltaUp — a ausência não aponta direção', () => {
     expect(window.deltaUp(window.deltaPct(null, 100))).toBeNull(); // base ausente
   });
 });
+
+// ── roundPresent — arredondar sem re-fabricar o zero ──────────────────────────
+describe('roundPresent — Math.round(null) é 0, e isso apagava a ausência', () => {
+  it('arredonda o que existe e devolve null para o que não existe', () => {
+    expect(window.roundPresent(3500.6)).toBe(3501);
+    expect(window.roundPresent(0)).toBe(0);      // zero MEDIDO continua zero
+    expect(window.roundPresent(null)).toBeNull();
+    expect(window.roundPresent(undefined)).toBeNull();
+    expect(window.roundPresent(NaN)).toBeNull();
+  });
+
+  it('é o contraste com Math.round que dá sentido ao helper', () => {
+    // Sem esta linha, "arredonda preservando ausência" não se distingue de Math.round
+    // em nenhum caso que um teste ingênuo cobriria.
+    expect(Math.round(null)).toBe(0);
+    expect(window.roundPresent(null)).toBeNull();
+  });
+
+  it('encadeia com numBR: a ausência chega à tela como travessão, não como zero', () => {
+    expect(window.numBR(window.roundPresent(null), 0)).toBe('—');
+    expect(window.numBR(Math.round(null), 0)).toBe('0'); // o que a tela mostrava antes
+  });
+});
