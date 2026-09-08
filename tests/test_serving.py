@@ -2030,6 +2030,50 @@ def test_fetch_comtrade_flows_pins_reporter_to_brazil(monkeypatch):
     assert recorded["params"]["flow"].value == "export"
 
 
+def test_partner_rankings_excluem_o_autocomercio(monkeypatch):
+    """Um país não é parceiro comercial de si mesmo.
+
+    ÂNCORA EXTERNA, medida em produção 2026-09-08: nos DOIS bancos o "Brasil" ocupava a
+    **posição 2** do ranking de *Preço médio* (US$ 3,50/kg no COMEX, 1.755 t). Não é
+    materialidade — passa folgado no piso da v1.59.0 — é IDENTIDADE: o que essas linhas
+    registram é mercadoria nacional retornada, e o MDIC lhe dá código de país próprio
+    (105, ISO BRA). No COMTRADE o autocomércio soma US$ 1,83 bi em 4.135 linhas.
+
+    Os dois bancos declaram diferente, e o predicado acompanha: no COMEX o declarante é
+    SEMPRE o Brasil (ISO fixo); no COMTRADE ele varia por linha (comparação de colunas).
+    """
+    pytest.importorskip("flask_caching")
+    from embrapa_dashboard.serving import gateway
+
+    recorded = {}
+
+    def recorder(query, params, **kwargs):
+        recorded.setdefault("queries", []).append(query)
+        recorded.setdefault("params", []).extend(params)
+        return "df"
+
+    monkeypatch.setattr(gateway, "run_query", recorder)
+    monkeypatch.setattr(gateway, "get_settings", lambda: _isolated_settings())
+    app, cache = _bind_simplecache()
+
+    with app.app_context():
+        cache.clear()
+        gateway.fetch_comex_partners(year_start=2022, ncm_codes=("08012100",))
+        comex = recorded["queries"][-1]
+        # ISO fixo, por parâmetro (nunca interpolado).
+        assert "country_iso_a3" in comex and "@self_iso" in comex
+        assert any(p.name == "self_iso" and p.value == "BRA" for p in recorded["params"])
+
+        cache.clear()
+        gateway.fetch_comtrade_partners(year_start=2022, cmd_codes=("080121",))
+        comtrade = recorded["queries"][-1]
+        # Comparação entre COLUNAS, porque o declarante varia por linha.
+        assert "partner_iso_a3 is distinct from reporter_iso_a3" in comtrade
+        # `is distinct from` (e não `!=`) preserva a linha sem ISO: sem os dois lados não
+        # dá para AFIRMAR que é autocomércio, e descartar seria inventar a afirmação.
+        assert "partner_iso_a3 != reporter_iso_a3" not in comtrade
+
+
 def test_fetch_comex_partners_does_not_pin_a_reporter(monkeypatch):
     """COMEX is Brazil's own customs (no reporter concept), so its readers must NOT
     add a reporter predicate — only the multi-reporter COMTRADE mart needs it."""

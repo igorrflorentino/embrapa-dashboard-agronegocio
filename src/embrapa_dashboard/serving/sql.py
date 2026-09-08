@@ -197,6 +197,9 @@ ALLOWED_DIMENSION_COLUMNS = frozenset(
         "state_name",
         "country_code",
         "country_name",
+        # O ISO do parceiro no COMEX — usado para tirar do ranking o autocomércio (o
+        # MDIC classifica mercadoria retornada com país 105, ISO BRA).
+        "country_iso_a3",
         "reporter_code",
         "reporter_name",
         "reporter_iso_a3",
@@ -1122,6 +1125,46 @@ _PARTNER_RANK_EXPR = {
 }
 
 
+def _exclude_self_partner(
+    conditions: list[str],
+    params: list,
+    partner_iso_column: str | None,
+    self_iso: str | None,
+    reporter_iso_column: str | None,
+) -> None:
+    """Tira do ranking a linha em que o PARCEIRO é o próprio declarante.
+
+    Um país não é parceiro comercial de si mesmo. O que essas linhas registram é
+    mercadoria nacional que voltou (reimportação) ou saiu sob regime que a fonte
+    classifica como destino "Brasil" — o MDIC tem código de país próprio para isso
+    (105, ISO BRA), e o COMTRADE simplesmente traz reporter = partner.
+
+    Medido em produção 2026-09-08: nos DOIS bancos o "Brasil" ocupava a **posição 2**
+    do ranking de *Preço médio*, deslocando um mercado real. Não é questão de
+    materialidade — ele tem 1.755 t no COMEX, folgadamente acima do piso da v1.59.0 —,
+    é questão de IDENTIDADE: a pergunta do ranking é "quais mercados pagam mais por
+    quilo", e o próprio país não é um deles. No COMTRADE o autocomércio soma US$ 1,83 bi
+    em 4.135 linhas (0,20% do total).
+
+    Duas formas, porque os dois bancos declaram diferente: no COMEX o declarante é
+    SEMPRE o Brasil (``self_iso='BRA'``); no COMTRADE ele varia por linha, e a
+    comparação é entre colunas (``reporter_iso_column``).
+    """
+    if not partner_iso_column:
+        return
+    parceiro = _validate_column(partner_iso_column, ALLOWED_DIMENSION_COLUMNS, "dimension column")
+    if reporter_iso_column:
+        declarante = _validate_column(
+            reporter_iso_column, ALLOWED_DIMENSION_COLUMNS, "dimension column"
+        )
+        # `is distinct from` mantém a linha quando um dos lados é NULL — sem ISO não há
+        # como afirmar que é autocomércio, e descartar seria inventar a afirmação.
+        conditions.append(f"{parceiro} is distinct from {declarante}")
+    elif self_iso:
+        conditions.append(f"({parceiro} is null or {parceiro} != @self_iso)")
+        params.append(bigquery.ScalarQueryParameter("self_iso", "STRING", self_iso))
+
+
 def trade_by_partner(
     table: str,
     *,
@@ -1141,6 +1184,9 @@ def trade_by_partner(
     reporters: Sequence[str] = (),
     partners: Sequence[str] = (),
     rank_by: str = "value",
+    partner_iso_column: str | None = None,
+    self_iso: str | None = None,
+    reporter_iso_column: str | None = None,
 ) -> tuple[str, list]:
     """Partner ranking with export/import split (backs partnerData).
 
@@ -1181,6 +1227,7 @@ def trade_by_partner(
     order_expr = _PARTNER_RANK_EXPR.get(rank_by, "value_usd")
     conditions: list[str] = []
     params: list = []
+    _exclude_self_partner(conditions, params, partner_iso_column, self_iso, reporter_iso_column)
     _year_bounds(conditions, params, year_start, year_end)
     _in_array(conditions, params, code_column, "codes", codes)
     _in_array(conditions, params, "state_acronym", "uf_codes", uf_codes)
