@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.60.3] - 2026-09-08
+
+### Documentação
+
+- **As regras que esta sessão estabeleceu passam a existir no `CLAUDE.md`.** Nenhuma
+  estava lá: `materialityFloor`, `roundPresent`, `deltaUp`, nem a armadilha do "lista
+  vazia = sem filtro". O arquivo documentava o `quality_value_floor` do dbt mas não o
+  piso equivalente da camada de leitura — e ele é justamente o que se lê **antes** de
+  escrever a próxima linha, enquanto os testes só pegam **depois**. Sem isso, a próxima
+  sessão reescreve `Math.round` num lugar novo e refaz o caminho inteiro.
+
+  Três regras, cada uma com o defeito real que a originou:
+
+  - **Ausência não é zero, e o arredondamento a recria.** As armadilhas em uma linha:
+    `null * fator === 0`, `x ? a/x : 0`, `null >= 0 === true` (um `—` pintado de verde
+    com seta para cima) e `Math.round(null) === 0` — esta última não coberta pela
+    varredura de razões, porque arredondar não é dividir. E uma recusa precisa de
+    **motivo**: "sem dado" e "moedas diferentes" são respostas diferentes.
+  - **Razão sobre base minúscula não é medida.** Duas provas, passar em uma basta,
+    porque há duas razões distintas para pertencer a um ranking nacional. Um piso com
+    uma prova só tem de tratar a outra como **inexistente**, nunca como trivialmente
+    satisfeita. As calibrações são **medidas** e moram ao lado da regra. E nada some em
+    silêncio: o piso devolve `(kept, dropped)` e quem chama é **obrigado** a nomear.
+  - **Lista de códigos vazia significa "sem filtro".** O caso perigoso é
+    **assimétrico** — tem código numa fonte e não tem em outra —, então uma sonda sem
+    código em fonte alguma não prova nada: toda view é barrada pela primeira guarda.
+
+- **Por que as views cruzadas somam as DUAS pesquisas do IBGE.** Um fato semântico que
+  um "simplificador" futuro poderia desfazer, e que só um teste pegaria depois do
+  estrago: a alfândega não distingue origem produtiva (o NCM do caju separa "com casca"
+  de "sem casca" — beneficiamento, não origem), e as duas pesquisas são disjuntas por
+  construção, então somam sem duplicar.
+
+---
+
 ## [1.60.2] - 2026-09-08
 
 ### Corrigido
