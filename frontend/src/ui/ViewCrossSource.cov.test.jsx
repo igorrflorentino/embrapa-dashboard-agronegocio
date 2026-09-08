@@ -123,6 +123,9 @@ function stubGlobals() {
   window.cagrPct = (v0, vT, span) => (v0 && span ? ((vT / v0) ** (1 / span) - 1) * 100 : 0);
   window.spanYears = (pts) => (pts.length ? pts[pts.length - 1].y - pts[0].y : 0);
   window.accumPct = (v0, vT) => (v0 ? ((vT - v0) / v0) * 100 : 0);
+  // O stub REAL devolve null quando não há dois pares comparáveis (v1.62.0) — este
+  // devolvia sempre número, e por isso nenhum teste exercitava o caminho da ausência.
+  // Foi assim que `corr[0][1].toFixed(2)` derrubou a perspectiva em produção.
   window.pearsonByYear = (a, b) => (a === b ? 1 : 0.42);
   window.corrColor = () => 'var(--ok)';
   window.fmtSigned = (x, d) => (x >= 0 ? '+' : '') + (x || 0).toFixed(d ?? 0) + '%';
@@ -214,6 +217,21 @@ describe('ViewCrossSource — smoke + default two-series base100', () => {
     expect(container.querySelectorAll('.pc-table tbody tr').length).toBe(2);
     // Correlation matrix present (≥2 series).
     expect(container.querySelector('.pc-corr')).toBeTruthy();
+  });
+
+  it('correlação AUSENTE não derruba a perspectiva — mostra "—"', () => {
+    // Reproduzido na tela em 2026-09-08: "ERRO AO RENDERIZAR A PERSPECTIVA — Cannot read
+    // properties of null (reading 'toFixed')". A v1.62.0 tornou `pearson` anulável (sem
+    // dois pares comparáveis não há correlação) e corrigiu a célula da MATRIZ, neste
+    // mesmo arquivo — e deixou o card do topo com `.toFixed`. Corrigir um consumidor sem
+    // varrer o arquivo atrás dos outros foi o defeito, não o null.
+    window.pearsonByYear = () => null;
+    const { container } = render(<ViewCrossSource value={defaultState()} onChange={vi.fn()} />);
+    const card = container.querySelector('.kpi[data-label="Correlação (par principal)"] .kpi-value');
+    expect(card, 'a perspectiva não renderizou (crash?)').toBeTruthy();
+    expect(card.textContent).toBe('—');
+    // E a matriz também recusa, sem inventar um "0,00".
+    expect(container.textContent).not.toContain('0,00');
   });
 
   it('falls back to DEFAULT_CROSS_STATE when value is undefined', () => {

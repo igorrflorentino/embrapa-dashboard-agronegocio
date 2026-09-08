@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.66.1] - 2026-09-08
+
+### Corrigido
+
+- **Um CRASH que eu introduzi na v1.62.0.** Aquela versão tornou `window.pearson`
+  anulável — certo, porque sem dois pares comparáveis não há correlação — e corrigiu a
+  célula da **matriz** em `ViewCrossSource.jsx`. Deixou, **no mesmo arquivo**, o card do
+  topo fazendo `corr[0][1].toFixed(2)`.
+
+  Reproduzido na tela: *"**ERRO AO RENDERIZAR A PERSPECTIVA** — Cannot read properties of
+  null (reading 'toFixed')"*. A perspectiva inteira caía no error boundary.
+
+  O defeito não foi o `null` — foi **corrigir um consumidor sem varrer o arquivo atrás
+  dos outros**. É a segunda vez em duas versões (a outra, na v1.66.0, foi a mesma coisa
+  em `ViewCuratedAnalyses`, felizmente numa view congelada).
+
+- **`ratioMean.toFixed(1)` no painel de razão**, pré-existente: `meanPresent` devolve
+  `null` quando nenhum ponto da razão existe, e o mesmo crash acontecia ali. Ambos passam
+  agora por `pctBR`/`numBR`, que já renderizam `'—'`.
+
+- **E o stub que deixou isso passar**: `ViewCrossSource.cov.test.jsx` definia
+  `pearsonByYear` devolvendo **sempre um número**, então nenhum teste podia exercitar o
+  caminho da ausência que a v1.62.0 criou. Terceiro stub divergente do original nesta
+  sessão.
+
+---
+
 ## [1.66.0] - 2026-09-08
 
 ### Corrigido
