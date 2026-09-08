@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.60.1] - 2026-09-07
+
+### Adicionado
+
+- **A varredura que impede a quarta instância de "lista vazia = sem filtro".**
+  `_codes(agrupamento_id, source)` devolve `()` quando o agrupamento não tem lado naquela
+  fonte, e `()` significa **"sem filtro"** para os leitores. As duas leituras são
+  individualmente razoáveis e a composição é uma armadilha: quem não guarda o resultado
+  publica o **banco inteiro** como se fosse o produto escolhido. Três instâncias num dia
+  — `export_coefficient`, `price_spread` (esta chegou à produção) e o cuidado que
+  `trade_mirror`/`market_nature` já tinham e serviu de contraste.
+
+  Nenhuma varredura textual pega isto: o defeito é a **ausência** de um `if`, e um leitor
+  chamado com códigos vazios é idêntico, no código, a um chamado sem escopo — que é
+  legítimo, é a cesta completa. Então a varredura é **comportamental**: uma barreira faz
+  todo leitor do gateway estourar se receber lista vazia, e cada entrada pública é
+  chamada com um agrupamento de sonda.
+
+  **A sonda certa é ASSIMÉTRICA**, e descobri isso errando primeiro. Uma sonda "sem
+  código em fonte alguma" é barrada pela primeira guarda de qualquer view, então passava
+  mesmo com o defeito injetado — e um teste que passa com o alvo morto não verifica nada.
+  Os três defeitos reais eram assimétricos: o agrupamento **tem** código numa fonte e não
+  tem em outra, a view guarda a que tem e lê a que não tem. Soja é o caso vivo — NCM sim,
+  PAM sim, PEVS não.
+
+  Duas camadas, porque a barreira rasa não alcança tudo: as **entradas públicas** (com
+  uma lista que falha quando alguém acrescenta uma nova sem guarda) e os **leitores
+  internos**, cobertos diretamente — encher a barreira com um DataFrame que satisfizesse
+  todos os leitores criaria um esquema-sombra que apodrece em silêncio.
+
+---
+
 ## [1.60.0] - 2026-09-07
 
 ### Corrigido
