@@ -229,6 +229,34 @@ describe('ViewProductProfile — flow product render', () => {
     expect(global.fetch).toHaveBeenCalled();
   });
 
+  it('quantidade AUSENTE não vira "0" na tela', () => {
+    // `_product_ts` no serializer devolve `q: None` para as famílias energia/area/
+    // desconhecida ("no display scale") — e o ramo de FLUXO só exige valor positivo,
+    // então um produto assim chega aqui com valor e sem quantidade. O card fazia
+    // `(last.q * qtyMul).toLocaleString(...)`, e `null * fator === 0` em JS: a tela
+    // afirmaria "0" para uma quantidade que ninguém sabe exprimir.
+    //
+    // LATENTE, não vivo: medido em produção 2026-09-08, os 142 produtos dos quatro
+    // bancos são todos massa/volume/contagem, e nenhum cai nessas famílias. O
+    // serializer as antecipa explicitamente, então a guarda vale — mas não há defeito
+    // na tela hoje, e este teste é o que impede que passe a haver.
+    stubGlobals({
+      ...FLOW_FIXTURE,
+      allProductTS: { P1: [{ y: 2019, v: 5, q: null }, { y: 2020, v: 8, q: null }] },
+      productTS: { P1: [{ y: 2019, v: 5, q: null }, { y: 2020, v: 8, q: null }] },
+      selectedProducts: ['P1'],
+    });
+    const { container } = render(
+      <ViewProductProfile families={['mass']} summary={{}} database="ibge_pevs" conventions={CONV} />
+    );
+    const card = [...container.querySelectorAll('.kpi')]
+      .find((e) => /Quantidade/.test(e.querySelector('.kpi-label')?.textContent || ''));
+    expect(card, 'card de quantidade não encontrado').toBeTruthy();
+    const valor = card.querySelector('.kpi-value').textContent;
+    expect(valor).toContain('—');
+    expect(valor, `afirmou zero: ${valor}`).not.toMatch(/^0\b/);
+  });
+
   it('shows the "sem dados por UF" empty-rows state when the per-UF fetch returns []', async () => {
     stubGlobals(FLOW_FIXTURE);
     stubFetch([]); // no UF rows

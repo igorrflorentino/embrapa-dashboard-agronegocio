@@ -9,6 +9,17 @@ import { describe, expect, it } from 'vitest';
 import './seriesUtils.js';
 
 describe('corrColor — correlation-cell tint (token-driven color-mix)', () => {
+  it('a correlação AUSENTE é neutra, não verde', () => {
+    // `null >= 0` é true em JS, então a célula sem base para correlacionar vinha
+    // pintada de verde — fraca, mas positiva. É o mesmo defeito de deltaUp, na matriz.
+    expect(window.corrColor(null)).toBe('var(--bg-surface-2)');
+    expect(window.corrColor(undefined)).toBe('var(--bg-surface-2)');
+    expect(window.corrColor(NaN)).toBe('var(--bg-surface-2)');
+    // E o contraste que dá sentido ao guarda: sem ele, o token seria o do positivo.
+    expect(window.corrColor(0.5)).toContain('--ok');
+    expect(window.corrColor(-0.5)).toContain('--err');
+  });
+
   it('positive r uses the institutional green --ok token', () => {
     const css = window.corrColor(0.5);
     expect(css).toContain('var(--ok)');
@@ -54,8 +65,14 @@ describe('accumPct — variação acumulada', () => {
   });
 
 
-  it('pearson returns 0 for n<2 and zero-variance inputs', () => {
-    expect(window.pearson([1], [1])).toBe(0); // n<2
-    expect(window.pearson([2, 2, 2], [1, 5, 9])).toBe(0); // a has zero variance
+  it('pearson RECUSA sem base (n<2), mas mantém o 0 da variância zero', () => {
+    // n<2 é falta de DADO, e devolver 0 ali afirmava descorrelação perfeita sobre um
+    // único ponto — medido na tela: com a janela em 2023–2024 a matriz inteira do PEVS
+    // mostrava "0,00" entre madeira, carvão e lenha.
+    expect(window.pearson([1], [1])).toBeNull();
+    expect(window.pearson([], [])).toBeNull();
+    // A variância zero segue devolvendo 0, e isso é uma decisão DELIBERADA, registrada
+    // em absenceGuard.test.js: uma série plana é propriedade medida, não dado faltante.
+    expect(window.pearson([2, 2, 2], [1, 5, 9])).toBe(0);
   });
 });

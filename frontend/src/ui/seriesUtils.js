@@ -263,11 +263,25 @@ window.indexTo100 = (pts, baseYear, key = 'v') => {
 };
 
 // ── Series statistics ──────────────────────────────────────────────────
-// Pearson correlation between two equal-intent arrays (truncated to the
-// shorter length). Returns 0 when undefined (n < 2 or zero variance).
+// Pearson correlation between two equal-intent arrays (truncated to the shorter length).
+// Correlação de Pearson — ou `null` quando não há base para calculá-la.
+//
+// Devolvia 0 nos dois casos degenerados, e 0 é uma AFIRMAÇÃO forte: "estas duas séries
+// não têm relação alguma". A verdade nos dois é "não há como dizer". Medido na tela: com
+// a janela em 2023–2024 há UM par de crescimento, e a matriz inteira do PEVS mostrava
+// "0,00" entre madeira, carvão e lenha — descorrelação perfeita, declarada com duas
+// casas decimais, sobre um único ponto.
+//
+// Os dois casos:
+// Só o caso da FALTA DE DADOS muda. A variância zero segue devolvendo 0, e não por
+// omissão: a permissão que a cobre em absenceGuard.test.js argumenta que uma série plana
+// é uma propriedade MEDIDA, não um dado que falta, e que "correlação 0 = sem relação
+// linear" é a leitura convencional ali. Discordar disso seria outra discussão; o defeito
+// medido não depende dela, e sobrescrever uma decisão deliberada de passagem seria pior
+// que o defeito.
 window.pearson = (a, b) => {
   const n = Math.min(a.length, b.length);
-  if (n < 2) return 0;
+  if (n < 2) return null;
   const ma = a.reduce((s, x) => s + x, 0) / n;
   const mb = b.reduce((s, x) => s + x, 0) / n;
   let num = 0, da = 0, db = 0;
@@ -371,6 +385,10 @@ window.linearFit = (pts, key = 'v') => {
 // error token, alpha scaled by |r| (0.12 floor → 0.72 at |r|=1). Token-driven
 // via color-mix so it tracks the palette — never a raw rgba() literal.
 window.corrColor = (r) => {
+  // TRÊS estados, pelo mesmo motivo de deltaUp: `null >= 0` é true em JS, então uma
+  // correlação INEXISTENTE vinha pintada de verde — fraca, mas positiva. Sem base para
+  // correlacionar, a célula é neutra.
+  if (!Number.isFinite(r)) return 'var(--bg-surface-2)';
   const token = r >= 0 ? 'var(--ok)' : 'var(--err)';
   const pct = Math.round((0.12 + Math.abs(r) * 0.6) * 100);
   return `color-mix(in srgb, ${token} ${pct}%, transparent)`;

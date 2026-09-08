@@ -148,6 +148,11 @@ function ViewProductProfile({ families, summary, database, conventions }) {
   const prevValAbs = window.scalePresent(prev.v, 1e6 * cvf);
   const deltaV = window.deltaPct(prevValAbs, lastValAbs);
   const deltaQ = window.deltaPct(prev.q, last.q);
+  // scalePresent, não `last.q * qtyMul`: em JS `null * fator === 0`, e a quantidade
+  // AUSENTE (janela sem ponto algum — `last` cai no fallback `{v: null, q: null}`)
+  // aparecia como "0 t", afirmando que o produto não rendeu nada. É o defeito da
+  // v1.49.0 numa forma que a varredura não cobre: multiplicação não é divisão.
+  const lastQtyScaled = window.scalePresent(last.q, qtyMul);
   const lastPrice = preco(last);
   const lastShare = parte(last);
   // Historical peak headcount (drives the stock KPI that replaces "Valor")
@@ -229,7 +234,9 @@ function ViewProductProfile({ families, summary, database, conventions }) {
         ) : (
           <window.KpiCardSpark
             label={<>Quantidade · <window.UnitFamilyTag family={family} conv={conv}/></>}
-            value={(last.q * qtyMul).toLocaleString('pt-BR', { maximumFractionDigits: 0 }) + ' ' + unitAx}
+            value={lastQtyScaled == null
+              ? '—'
+              : lastQtyScaled.toLocaleString('pt-BR', { maximumFractionDigits: 0 }) + ' ' + unitAx}
             delta={window.fmtSigned(deltaQ)}
             deltaPositive={window.deltaUp(deltaQ)}
             sub={`${last.y} vs. ${prev.y}`}

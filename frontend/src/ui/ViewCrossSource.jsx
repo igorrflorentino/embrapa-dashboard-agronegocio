@@ -348,8 +348,11 @@ function ViewCrossSource({ value, onChange }) {
                       const r = corr[i][j];
                       return (
                         <td key={colIt.key} className="tnum"
-                          style={{ background: i === j ? 'var(--bg-surface-2)' : corrColor(r), color: Math.abs(r) > 0.6 ? '#fff' : 'var(--fg-1)' }}>
-                          {i === j ? '—' : r.toFixed(2).replace('.', ',')}
+                          style={{ background: i === j ? 'var(--bg-surface-2)' : corrColor(r), color: Number.isFinite(r) && Math.abs(r) > 0.6 ? '#fff' : 'var(--fg-1)' }}>
+                          {/* `r` é null quando não há base para correlacionar (menos de dois
+                              pares comparáveis, ou variância zero num dos lados). "0,00" ali
+                              afirmava descorrelação perfeita sobre um único ponto. */}
+                          {i === j || !Number.isFinite(r) ? '—' : r.toFixed(2).replace('.', ',')}
                         </td>
                       );
                     })}

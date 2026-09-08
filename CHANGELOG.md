@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.62.0] - 2026-09-08
+
+### Corrigido
+
+- **A matriz de correlação afirmava "0,00" quando não havia base para correlacionar.**
+  `window.pearson` devolvia `0` com menos de dois pares comparáveis, e `0` não é uma
+  recusa — é a afirmação forte de que duas séries **não têm relação alguma**.
+
+  Medido na tela: com a janela em **2023–2024** há UM par de crescimento, e a matriz
+  inteira do PEVS mostrava `0,00` entre madeira em tora, carvão vegetal e lenha —
+  descorrelação perfeita, declarada com duas casas decimais, sobre um único ponto. Com a
+  janela completa as mesmas três dão 0,63 · 0,58 · 0,74, que é o esperado de produtos que
+  saem da mesma extração florestal.
+
+  Atinge as **duas** matrizes do app (*Comparação de produtos* e *Análise cruzada*), e a
+  célula era pintada de **verde**: `null >= 0` é `true` em JS, então `corrColor` lia a
+  ausência como correlação positiva fraca — o mesmo defeito que `deltaUp` corrigiu nos
+  KPIs, uma camada acima.
+
+  **A variância zero segue devolvendo `0`, e isso é deliberado.** A permissão que a cobre
+  em `absenceGuard.test.js` argumenta que uma série plana é propriedade **medida**, não
+  dado faltante, e que "correlação 0 = sem relação linear" é a leitura convencional ali.
+  O defeito medido não depende dessa escolha, e sobrescrever uma decisão registrada de
+  passagem seria pior que o defeito.
+
+### Corrigido (latente, não vivo)
+
+- **`(last.q * qtyMul)` no KPI de quantidade do perfil do produto.** `_product_ts` no
+  serializer devolve `q: None` para as famílias `energia`/`area`/`desconhecida` (*"no
+  display scale"*), e o ramo de fluxo só exige valor positivo — um produto assim chegaria
+  ao card com valor e sem quantidade, e `null * fator === 0` afirmaria "0". É o defeito da
+  v1.49.0 numa forma que a varredura não cobre: **multiplicação não é divisão**.
+
+  Medido em produção 2026-09-08: os **142 produtos** dos quatro bancos são todos
+  massa/volume/contagem, e nenhum cai nessas famílias — então **não há defeito na tela
+  hoje**. O serializer as antecipa explicitamente, a guarda vale, e o teste é o que impede
+  que passe a haver.
+
+### Documentação
+
+- Comentário obsoleto em `seriesUtils.js` (*"Returns 0 when undefined"*) alinhado ao
+  contrato novo.
+
+---
+
 ## [1.61.0] - 2026-09-08
 
 ### Corrigido
