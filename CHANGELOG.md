@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.60.2] - 2026-09-08
+
+### Corrigido
+
+- **Sem área colhida, o rendimento saía como `0`.** `_yield` devolvia `0.0` quando a área
+  era zero, e isso é uma **afirmação**: *"este estado colhe zero quilos por hectare"*.
+  Sem área não há rendimento — a razão é indefinida, não nula.
+
+  Medido em produção: **1.946 das 13.652** linhas (lavoura × ano × UF) não têm área, e
+  **nenhuma** delas tem produção — são estados que simplesmente não plantam aquela
+  lavoura. Na castanha de caju, que é do Nordeste, são **16 das 27 UFs**. O grão
+  **nacional nunca cai aqui** (0 de 506 linhas), então o defeito vivia só no lado por UF.
+
+  A tela já não mostrava esses zeros — o piso de materialidade da v1.57.0 os tira do
+  ranking e pinta o mapa de neutro —, mas o **contrato** os afirmava, e quem lê a API
+  direto recebia o zero. Verificado depois: nenhuma UF sai mais com rendimento zero
+  afirmado, e as 51 linhas da série nacional seguem todas presentes.
+
+### Adicionado
+
+- **`window.roundPresent`** — arredonda preservando a ausência, porque
+  `Math.round(null) === 0`. É a mesma armadilha de `null * fator === 0`, numa forma que
+  a varredura de razões não cobre: arredondamento não é divisão. Sem ele, o rendimento
+  ausente reaparecia como *"0 kg/ha"* no KPI e como um ponto colado no eixo do gráfico,
+  desfazendo na tela o que o serializer tinha acabado de corrigir.
+- A guarda do CAGR passou a aceitar extremos ausentes (`None > 0` estoura em Python).
+
+### Corrigido (no teste)
+
+- **Um stub que escondia o próprio defeito que o teste existe para pegar.**
+  `ViewProductivity.cov.test.jsx` definia `numBR` como `Number(v).toFixed(...)`, que
+  imprime `"0"` para `null` — enquanto o `numBR` real devolve `'—'`. Com esse stub, o
+  KPI aparecia como *"0 kg/ha"* mesmo com o código correto. Um stub que diverge do
+  original não testa o original.
+
+---
+
 ## [1.60.1] - 2026-09-07
 
 ### Adicionado

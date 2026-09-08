@@ -632,9 +632,22 @@ def serialize_productivity(payload: dict | None) -> dict | None:
     if _empty(df):
         return base
 
-    def _yield(prod_t: Any, area_ha: Any) -> float:
+    def _yield(prod_t: Any, area_ha: Any) -> float | None:
+        """Rendimento (kg/ha) = produção ÷ área, ou ``None`` quando não há área.
+
+        Devolvia ``0.0``, que é uma AFIRMAÇÃO: "este estado colhe zero quilos por
+        hectare". Sem área colhida não há rendimento — a razão é indefinida, não nula.
+        Medido em produção 2026-09-07: 1.946 das 13.652 linhas (lavoura × ano × UF) não
+        têm área, e NENHUMA delas tem produção — são estados que simplesmente não
+        plantam aquela lavoura. Em 2024 são 43 linhas, 16 delas só na castanha de caju,
+        que é lavoura do Nordeste. O grão NACIONAL nunca cai aqui (0 de 506 linhas).
+
+        A tela já não mostrava esses zeros — o piso de materialidade da v1.57.0 os tira
+        do ranking e pinta o mapa de neutro —, mas o contrato os afirmava mesmo assim, e
+        quem lê a API direto recebia o zero.
+        """
         area = _num(area_ha)
-        return (_num(prod_t) * 1000.0) / area if area > 0 else 0.0
+        return (_num(prod_t) * 1000.0) / area if area > 0 else None
 
     # National series: production + harvested area summed per year (additive across
     # UFs); yield recomputed from the two totals, never averaged.
@@ -664,7 +677,9 @@ def serialize_productivity(payload: dict | None) -> dict | None:
     if len(series) >= 2:
         first, last = series[0]["yieldKgHa"], series[-1]["yieldKgHa"]
         span = series[-1]["y"] - series[0]["y"]
-        if first > 0 and span > 0:
+        # `first`/`last` podem ser None desde que o rendimento preserva a ausência: sem
+        # os dois extremos não há taxa de crescimento a declarar (e `None > 0` estoura).
+        if first and last and first > 0 and span > 0:
             base["national"]["yieldCagr"] = ((last / first) ** (1.0 / span) - 1.0) * 100.0
 
     # Per-UF productivity for the LATEST year (the map + ranking grain). Carry

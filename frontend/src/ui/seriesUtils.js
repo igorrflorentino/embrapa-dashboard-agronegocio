@@ -40,6 +40,12 @@ window.sumPresent = (values) => (values || []).reduce((acc, v) => window.addPres
 // sobre uma medida que pode faltar é sempre um bug; passe por aqui.
 window.scalePresent = (v, factor) => (Number.isFinite(v) ? v * factor : null);
 
+// Arredonda PRESERVANDO a ausência. Existe porque `Math.round(null) === 0`: toda view
+// que arredondava uma medida para exibir ou desenhar re-fabricava o zero que o
+// serializer tinha acabado de eliminar — o mesmo defeito de `null * fator === 0`, numa
+// forma que a varredura de razões não cobre (arredondamento não é divisão).
+window.roundPresent = (v) => (Number.isFinite(v) ? Math.round(v) : null);
+
 // Razão entre duas medidas (preço = valor/quantidade, participação = parte/total),
 // preservando a ausência e recusando denominador não-positivo. Devolve null — que a
 // tela mostra como '—' — em vez do 0 que os call sites usavam como fallback.

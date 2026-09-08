@@ -31,7 +31,9 @@ function ViewProductivity({ summary, conventions, database }) {
   const activeCrop = data.crop.code;
   const yUnit = data.yieldUnit;
 
-  const fmtY    = (v) => window.numBR(Math.round(v), 0) + ' ' + yUnit;
+  // roundPresent, não Math.round: `Math.round(null) === 0` transformava um rendimento
+  // AUSENTE (UF sem área colhida) em "0 kg/ha", uma afirmação que ninguém mediu.
+  const fmtY    = (v) => window.numBR(window.roundPresent(v), 0) + ' ' + yUnit;
   // Sub-1000 values get the bare unit — without this tier they'd divide by 1e3 and round,
   // so 500 ha rendered as "1 mil ha" and the empty/loading frame (0) as "0 mil ha".
   const fmtArea = (v) => v >= 1e6 ? window.numBR(v / 1e6, 1) + ' mi ha' : v >= 1e3 ? window.numBR(v / 1e3, 0) + ' mil ha' : window.numBR(Math.round(v), 0) + ' ha';
@@ -57,12 +59,12 @@ function ViewProductivity({ summary, conventions, database }) {
   // zero, que é uma medida que ninguém fez.
   const mapData = data.byUF.map(u => ({
     ...u,
-    yieldKgHa: comparavel.has(u.uf) ? Math.round(u.yieldKgHa) : null,
+    yieldKgHa: comparavel.has(u.uf) ? window.roundPresent(u.yieldKgHa) : null,
   }));
   const byUFTop = floor.kept.slice()
     .sort((a, b) => b.yieldKgHa - a.yieldKgHa)
     .slice(0, 12)
-    .map(u => ({ uf: u.uf, name: u.name, yieldKgHa: Math.round(u.yieldKgHa), areaHa: u.areaHa }));
+    .map(u => ({ uf: u.uf, name: u.name, yieldKgHa: window.roundPresent(u.yieldKgHa), areaHa: u.areaHa }));
   // O piso relativo convertido em hectares DESTA lavoura, para o leitor comparar com
   // as áreas listadas. Vira null quando a metade absoluta é a que está mordendo.
   const floorHa = Number.isFinite(floor.total) ? floor.total * window.AREA_FLOOR.minShare : null;
@@ -142,7 +144,7 @@ function ViewProductivity({ summary, conventions, database }) {
             title={`${data.crop.name} · produtividade ${scopeWord}`}
           />
           <window.LineChart
-            data={series.map(d => ({ y: d.y, v: Math.round(d.yieldKgHa) }))}
+            data={series.map(d => ({ y: d.y, v: window.roundPresent(d.yieldKgHa) }))}
             label={yUnit} valueKey="v" color="var(--viz-6)" height={230} />
         </div>
         <div className="card">
