@@ -850,6 +850,81 @@ def test_export_coefficient_sem_ncm_recusa_com_motivo(monkeypatch):
     assert out["incompatibleReason"] == "sem-ncm"
 
 
+# ── trade mirror: a linha dos parceiros respeita o teto de cobertura ───────────
+
+
+def test_trade_mirror_parceiros_ausentes_alem_do_teto_de_cobertura(monkeypatch):
+    """Os parceiros atrasam 1–2 anos; além do teto a linha é AUSENTE, não baixa.
+
+    ÂNCORA EXTERNA, medida em produção 2026-09-08: 2025 trazia US$ 21,3 bi de parceiros
+    contra US$ 63,2 bi do MDIC — um terço, desenhado como colapso ao lado de duas linhas
+    completas. Não é queda de comércio, é reporte que ainda não chegou. É o mesmo teto
+    que `market_share` já aplicava, na perspectiva ao lado.
+    """
+    seam = _seam()
+    monkeypatch.setattr(
+        _base(),
+        "produto_catalog",
+        lambda: {"c": {"name": "C", "comex": ["1201"], "comtrade": ["120100"]}},
+    )
+
+    def fake_xyear(metric, codes, uf_codes=()):
+        return {
+            "mdic_comex:exp_value": {2024: 64e9, 2025: 63.2e9},
+            "un_comtrade:exp_value": {2024: 64e9, 2025: 63.2e9},
+            "un_comtrade:partner_exp": {2024: 63.7e9, 2025: 21.3e9},
+        }[metric]
+
+    monkeypatch.setattr(_base(), "_xyear", fake_xyear)
+    monkeypatch.setattr(_cross(), "_world_latest_complete_year", lambda: 2024)
+    out = seam.trade_mirror("c")
+    por_ano = {d["y"]: d for d in out["series"]}
+    assert por_ano[2024]["partners"] == pytest.approx(63.7)
+    assert por_ano[2025]["partners"] is None, "o ano incompleto foi desenhado como queda"
+    # As DUAS fontes completas seguem intactas no mesmo ano — o teto vale só para a
+    # linha que depende de terceiros.
+    assert por_ano[2025]["mdic"] == pytest.approx(63.2)
+    assert por_ano[2025]["comtrade"] == pytest.approx(63.2)
+
+
+# ── market share: a fatia mundial só compara produtos PAREADOS ─────────────────
+
+
+def test_market_share_sem_filtro_usa_so_os_agrupamentos_pareados(monkeypatch):
+    """Sem filtro, dividia TODO o COMEX por TODO o COMTRADE.
+
+    A razão é entre duas FONTES, e só significa algo sobre o mesmo universo de produtos
+    nas duas pontas. O laço de `by_product` logo abaixo já aplicava essa regra por
+    agrupamento; a série sem filtro não. Medido em produção 2026-09-08: açaí e cupuaçu
+    têm NCM sem correspondência HS, e as exportações deles iam ao numerador sem nada no
+    denominador — 0,0015% dele em 2021, IMATERIAL hoje. A regra vale para o dia em que
+    um agrupamento sem lado HS for grande.
+    """
+    seam = _seam()
+    monkeypatch.setattr(
+        _base(),
+        "produto_catalog",
+        lambda: {
+            "pareado": {"name": "Pareado", "comex": ["1201"], "comtrade": ["120100"]},
+            "so_comex": {"name": "Só COMEX", "comex": ["20079921"], "comtrade": []},
+        },
+    )
+    vistos = {}
+
+    def fake_series(comex_codes, comtrade_codes):
+        vistos["comex"] = tuple(comex_codes)
+        vistos["comtrade"] = tuple(comtrade_codes)
+        return []
+
+    monkeypatch.setattr(_cross(), "_market_share_series", fake_series)
+    monkeypatch.setattr(_cross(), "_market_share_latest", lambda *a: None)
+    seam.market_share(None)
+    # O NCM só-COMEX fica de fora do numerador; e nenhum dos lados vai vazio, que
+    # significaria "sem filtro" e devolveria os totais do banco inteiro.
+    assert vistos == {"comex": ("1201",), "comtrade": ("120100",)}
+    assert "20079921" not in vistos["comex"], "o agrupamento sem lado HS entrou no numerador"
+
+
 # ── price spread: o lado da PORTEIRA também precisa de códigos ─────────────────
 
 

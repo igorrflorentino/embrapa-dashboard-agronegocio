@@ -365,6 +365,55 @@ describe('ViewMirror', () => {
     expect(container.textContent).toContain('2010–2020');
   });
 
+  it('"Maior reporte" CONTA os anos em vez de afirmar uma tendência fixa', () => {
+    // Era a string literal "Parceiros" com o sub "tendem a registrar mais que a
+    // origem" — afirmada como se medida NESTA seleção. A tendência existe (medido em
+    // produção 2026-09-08: parceiros reportam mais em 18 dos 26 anos), mas os anos
+    // recentes ao lado do card a contradiziam: em 2022, 2023 e 2024 reportaram MENOS.
+    window.tradeMirror = () => ({
+      series: [
+        { y: 2021, mdic: 54.1, comtrade: 54.1, partners: 60.6 },  // parceiros +
+        { y: 2022, mdic: 75.3, comtrade: 75.3, partners: 74.2 },  // parceiros −
+        { y: 2023, mdic: 82.8, comtrade: 82.8, partners: 81.0 },  // parceiros −
+      ],
+      discrepancy: [{ y: 2021, v: 0 }],
+    });
+    const { container } = render(<ViewMirror />);
+    const card = container.querySelector('.kpi[data-label="Maior reporte"]');
+    expect(card.querySelector('.kpi-value').textContent).toBe('MDIC · SECEX');
+    expect(card.querySelector('.kpi-sub').textContent).toContain('2 de 3 anos');
+  });
+
+  it('e diz "Parceiros" quando são eles que reportam mais', () => {
+    window.tradeMirror = () => ({
+      series: [
+        { y: 2019, mdic: 1.0, comtrade: 1.0, partners: 1.5 },
+        { y: 2020, mdic: 2.0, comtrade: 2.0, partners: 2.5 },
+        { y: 2021, mdic: 3.0, comtrade: 3.0, partners: 2.0 },
+      ],
+      discrepancy: [{ y: 2019, v: 1 }],
+    });
+    const { container } = render(<ViewMirror />);
+    const card = container.querySelector('.kpi[data-label="Maior reporte"]');
+    expect(card.querySelector('.kpi-value').textContent).toBe('Parceiros');
+    expect(card.querySelector('.kpi-sub').textContent).toContain('2 de 3 anos');
+  });
+
+  it('anos SEM linha de parceiros não entram na contagem', () => {
+    // O ano mais recente vem com `partners: null` desde a v1.64.0 — os parceiros
+    // atrasam 1–2 anos e a linha cairia como se o comércio tivesse encolhido.
+    window.tradeMirror = () => ({
+      series: [
+        { y: 2024, mdic: 64.0, comtrade: 64.0, partners: 63.7 },
+        { y: 2025, mdic: 63.2, comtrade: 63.2, partners: null },
+      ],
+      discrepancy: [{ y: 2024, v: 0 }],
+    });
+    const { container } = render(<ViewMirror />);
+    const card = container.querySelector('.kpi[data-label="Maior reporte"]');
+    expect(card.querySelector('.kpi-sub').textContent).toContain('de 1 anos');
+  });
+
   it('an empty discrepancy series does not divide-by-zero (avgDisc guard)', () => {
     window.tradeMirror = () => ({
       series: [{ y: 2020, mdic: 2.0, comtrade: 2.1, partners: 2.3 }],

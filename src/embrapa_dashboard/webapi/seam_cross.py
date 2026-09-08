@@ -276,6 +276,23 @@ def _world_latest_complete_year() -> int | None:
     return max(complete) if complete else None
 
 
+def _paired_trade_codes() -> tuple[tuple, tuple]:
+    """(códigos COMEX, códigos COMTRADE) dos agrupamentos que têm os DOIS lados.
+
+    A fatia mundial é uma razão entre duas fontes, e só faz sentido sobre o mesmo
+    universo de produtos nas duas pontas.
+    """
+    pares = [
+        (c["comex"], c["comtrade"])
+        for c in seam_base.produto_catalog().values()
+        if c.get("comex") and c.get("comtrade")
+    ]
+    return (
+        tuple(sorted({x for cx, _ in pares for x in cx})),
+        tuple(sorted({x for _, ct in pares for x in ct})),
+    )
+
+
 def _market_share_series(comex_codes: tuple, comtrade_codes: tuple) -> list[dict]:
     """Yearly BR-export ÷ world-export share (US$ bi) over the common-year window,
     capped at the latest world year with SETTLED reporter coverage — a partially
@@ -316,11 +333,21 @@ def market_share(agrupamento_id: str | None) -> dict:
     comex_codes = seam_base._codes(agrupamento_id, "comex")
     comtrade_codes = seam_base._codes(agrupamento_id, "comtrade")
     series = []
-    # Guard (mirrors market_nature): a scoped commodity missing codes for either
-    # source must yield an EMPTY series — an empty tuple means "no filter" to the
-    # readers, which would silently serve the ALL-commodities totals as if scoped.
-    if not agrupamento_id or (comex_codes and comtrade_codes):
-        series = _market_share_series(comex_codes, comtrade_codes)
+    if agrupamento_id:
+        # Guard (mirrors market_nature): a scoped commodity missing codes for either
+        # source must yield an EMPTY series — an empty tuple means "no filter" to the
+        # readers, which would silently serve the ALL-commodities totals as if scoped.
+        if comex_codes and comtrade_codes:
+            series = _market_share_series(comex_codes, comtrade_codes)
+    else:
+        # SEM filtro, a mesma regra que o laço de `by_product` já aplica por
+        # agrupamento, logo abaixo: só entram os PAREADOS. Passar tupla vazia dos dois
+        # lados dividia TODO o COMEX por TODO o COMTRADE, e açaí e cupuaçu têm NCM sem
+        # correspondência HS — as exportações deles iam ao numerador sem nada no
+        # denominador. Medido em produção 2026-09-08: 0,0015% do numerador em 2021 e
+        # menos depois, ou seja IMATERIAL hoje; a regra vale porque um agrupamento
+        # futuro com lado COMEX grande e sem HS inflaria a fatia de verdade.
+        series = _market_share_series(*_paired_trade_codes())
     by_product = []
     for cid, c in seam_base.produto_catalog().items():
         if not (c["comex"] and c["comtrade"]):
@@ -653,8 +680,20 @@ def trade_mirror(agrupamento_id: str | None) -> dict:
         y: v / 1e9 for y, v in seam_base._xyear("un_comtrade:partner_exp", comtrade_codes).items()
     }
     years = sorted(set(mdic) & set(comtrade))
+    # A linha dos PARCEIROS é a soma de declarações de terceiros, e eles atrasam 1–2
+    # anos: no ano mais recente ela cai porque falta reporter, não porque o comércio
+    # caiu. Medido em produção 2026-09-08: 2025 trazia US$ 21,3 bi de parceiros contra
+    # US$ 63,2 bi do MDIC — um terço, desenhado como colapso ao lado de duas linhas
+    # completas. Além do teto, a linha fica AUSENTE (lacuna no gráfico), não zerada.
+    # É o mesmo teto que market_share já aplicava, na view ao lado.
+    cap = _world_latest_complete_year()
     series = [
-        {"y": y, "mdic": mdic[y], "comtrade": comtrade[y], "partners": partners.get(y)}
+        {
+            "y": y,
+            "mdic": mdic[y],
+            "comtrade": comtrade[y],
+            "partners": partners.get(y) if cap is None or y <= cap else None,
+        }
         for y in years
     ]
     discrepancy = [
