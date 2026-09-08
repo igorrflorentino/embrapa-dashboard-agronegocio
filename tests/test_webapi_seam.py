@@ -2414,6 +2414,9 @@ def test_export_coefficient_narrows_BOTH_sides_of_the_ratio(monkeypatch):
 
 def test_trade_mirror_happy_path_discrepancy(monkeypatch):
     seam = _seam()
+    # O teto de cobertura consulta o Gold (e portanto get_settings): sem este patch
+    # o teste passa na máquina do dev, que tem .env, e reprova no CI, que não tem.
+    monkeypatch.setattr(_cross(), "_world_latest_complete_year", lambda: None)
     monkeypatch.setattr(
         _base(),
         "produto_catalog",
@@ -2447,6 +2450,9 @@ def test_trade_mirror_partners_none_when_no_partner_data(monkeypatch):
     """A year present in mdic & comtrade but missing partner-reported data carries
     partners=None (the front end renders a gap, not a fabricated zero)."""
     seam = _seam()
+    # O teto de cobertura consulta o Gold (e portanto get_settings): sem este patch
+    # o teste passa na máquina do dev, que tem .env, e reprova no CI, que não tem.
+    monkeypatch.setattr(_cross(), "_world_latest_complete_year", lambda: None)
     monkeypatch.setattr(
         _base(),
         "produto_catalog",

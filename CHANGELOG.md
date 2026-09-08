@@ -40,6 +40,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
   agrupamento futuro com lado COMEX grande e sem HS inflaria a fatia de verdade — e
   porque a mesma view já a aplicava seis linhas abaixo.
 
+### Corrigido (no teste)
+
+- **Dois testes pré-existentes do espelho passavam na máquina do dev e reprovavam no CI.**
+  A correção acima fez `trade_mirror` chamar `_world_latest_complete_year()`, que lê
+  `get_settings()` — suprido pelo `.env` local e ausente no CI. É a mesma armadilha da
+  v1.56.0 desta mesma sessão, e desta vez a verificação foi feita do jeito certo:
+  rodando a suíte com o `.env` movido para fora, que é o único ambiente que prova algo.
+
 ---
 
 ## [1.63.0] - 2026-09-08
