@@ -115,6 +115,143 @@ const DENOMINADOR_MASCARADO = /\/\s*\([^()\n]*\|\|\s*1\s*\)/;
 // "perfeitamente disperso" — a afirmação oposta de "não há o que concentrar".
 const TOTAL_MASCARADO = /\b(?:const|let|var)\s+\w+\s*=[^;\n]*\|\|\s*1\s*;/;
 
+// ── AS DUAS FAMÍLIAS QUE ESCAPARAM DA VARREDURA ACIMA ────────────────────────
+//
+// A varredura das 22 perspectivas (v1.61.0–v1.67.0) achou 15 defeitos, e duas famílias
+// passaram por TODAS as guardas existentes:
+//
+//   1. Aritmética CRUA sobre uma medida que pode faltar — `null * fator`,
+//      `Math.round(null)` e `null / fator` são todos 0 em JS. Três instâncias, três
+//      versões. As regex acima procuram RAZÕES (`x ? a/x : 0`, `|| 1`), e nenhuma delas
+//      é uma razão: multiplicar e arredondar não são dividir.
+//   2. `.toFixed()` sobre um valor anulável — `null.toFixed` LEVANTA, e derrubou a
+//      perspectiva inteira duas vezes (Comparação entre fontes, na v1.66.1).
+//
+// As duas famílias têm a mesma origem: um contrato virou anulável e os consumidores dele
+// não foram varridos. Estas varreduras são o passo que faltava nesse procedimento.
+
+// Os campos que os serializers emitem por uma função ANULÁVEL. A lista é derivada do
+// Python em tests/test_absence_contract_fields.py, que falha se ela divergir — assim ela
+// não apodrece quando um serializer novo emitir outro campo anulável.
+const CAMPOS_ANULAVEIS = [
+  'coefPct', 'markup', 'price', 'share', 'v', 'value', 'valueShare', 'yieldKgHa',
+];
+const _campos = CAMPOS_ANULAVEIS.join('|');
+
+// `<algo>.<campo anulável> * x` ou `/ x` — aritmética direta sobre o que pode faltar.
+const ARITMETICA_CRUA = new RegExp(`\\.(?:${_campos})\\s*[*/]\\s*[A-Za-z0-9_$(]`);
+// `Math.round(<algo>.<campo anulável>)` — Math.round(null) === 0.
+const ARREDONDA_AUSENTE = new RegExp(`Math\\.round\\([A-Za-z_$][\\w$]*\\.(?:${_campos})\\b`);
+// `<identificador ou índice>.toFixed(` — o receptor NÃO é uma expressão entre parênteses
+// (essas sempre produzem número). É a forma exata dos dois crashes.
+const TOFIXED_NU = /(?<!\))\b[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\[[^\]]+\])*\.toFixed\(/;
+
+const PERMITIDOS_ARITMETICA = [
+  {
+    trecho: "width: (l.value / max * 100) + '%'",
+    razao: 'ViewFlows: LARGURA DE BARRA, não número exibido — e `l.value` vem de ' +
+           'serialize_flow, que usa _num sobre USD nominal do comércio (sem lacuna de ' +
+           'índice). Geometria sobre um campo que não fica nulo.',
+  },
+  {
+    trecho: 'const share = u.value / total;',
+    razao: 'ViewConcentration: vive DENTRO do .map sobre ufSorted, filtrado a value > 0 — ' +
+           'o corpo não roda com a lista vazia, e cada linha que chega tem valor positivo ' +
+           'por construção. A divisão nunca vê ausência.',
+  },
+];
+
+const PERMITIDOS_TOFIXED = [
+  {
+    trecho: "return (n >= 0 ? '+' : '') + n.toFixed(digits).replace('.', ',') + suffix;",
+    razao: 'data.fmtSigned: a linha ANTERIOR é `if (n == null) return \'—\';`. O guarda ' +
+           'existe, só não cabe na mesma linha — é o formatador central de variação, e ' +
+           'recusar a ausência é literalmente a função dele.',
+  },
+  {
+    trecho: "return 'US$ ' + n.toFixed(0);",
+    razao: 'enrichment.fmtUsdShort: `const n = Number(v || 0)` no topo da função, então n ' +
+           'é sempre número. O `|| 0` ali é sobre um TOTAL de matriz (contagem de valor ' +
+           'agregado), não sobre uma medida que possa faltar.',
+  },
+  {
+    trecho: "value: g.toFixed(2).replace('.', ','), ...giniBand(g) };",
+    razao: 'ViewConcentration.giniInfo: só roda no ramo `count >= 2`, e window.gini ' +
+           'devolve número sempre (0 nos casos degenerados, por decisão registrada). O ' +
+           'ramo count < 2 devolve "n/d" sem tocar em g.',
+  },
+];
+
+describe('varredura: aritmética crua sobre medida ausente', () => {
+  const arquivos = [...fontes(join(SRC, 'ui')), ...fontes(join(SRC, 'charts')), ...fontes(join(SRC, 'data'))];
+
+  it('a lista de campos anuláveis não está vazia (a varredura precisa de alvos)', () => {
+    expect(CAMPOS_ANULAVEIS.length).toBeGreaterThan(5);
+  });
+
+  it('nenhum campo anulável entra em aritmética direta', () => {
+    const achados = [];
+    for (const caminho of arquivos) {
+      readFileSync(caminho, 'utf-8').split('\n').forEach((linha, i) => {
+        const t = linha.trimStart();
+        if (t.startsWith('//') || t.startsWith('*')) return;
+        if (!ARITMETICA_CRUA.test(linha) && !ARREDONDA_AUSENTE.test(linha)) return;
+        if (linha.includes('Present(')) return;  // já passa por uma primitiva
+        // Guarda na MESMA linha: o ternário que recusa a ausência antes de operar.
+        if (/Number\.isFinite|== *null|!= *null/.test(linha)) return;
+        if (PERMITIDOS_ARITMETICA.some((p) => linha.includes(p.trecho))) return;
+        achados.push(`${relative(SRC, caminho)}:${i + 1}\n      ${linha.trim()}`);
+      });
+    }
+    expect(achados, [
+      'Aritmética direta sobre um campo que o serializer pode emitir NULO.',
+      'Em JS `null * f`, `null / f` e `Math.round(null)` são todos 0 — o zero que o',
+      'serializer acabou de recusar volta na tela. Use scalePresent / ratioPresent /',
+      'roundPresent. Se o campo aqui não puder ser nulo, registre em',
+      'PERMITIDOS_ARITMETICA com a razão.',
+      '', ...achados,
+    ].join('\n')).toEqual([]);
+  });
+
+  it('nenhum `.toFixed` sobre um receptor que pode ser nulo', () => {
+    const achados = [];
+    for (const caminho of arquivos) {
+      readFileSync(caminho, 'utf-8').split('\n').forEach((linha, i) => {
+        const t = linha.trimStart();
+        if (t.startsWith('//') || t.startsWith('*')) return;
+        if (!TOFIXED_NU.test(linha)) return;
+        // Guarda na MESMA linha: o ternário que já recusa a ausência.
+        if (/Number\.isFinite|== *null|!= *null/.test(linha)) return;
+        if (PERMITIDOS_TOFIXED.some((p) => linha.includes(p.trecho))) return;
+        achados.push(`${relative(SRC, caminho)}:${i + 1}\n      ${linha.trim()}`);
+      });
+    }
+    expect(achados, [
+      '`.toFixed()` sobre um identificador que pode ser null — e `null.toFixed` LEVANTA,',
+      'derrubando a perspectiva inteira no error boundary (aconteceu duas vezes).',
+      'Use numBR/pctBR, que já rendem "—", ou guarde na mesma linha com Number.isFinite.',
+      'Uma expressão entre parênteses — `(a / b).toFixed(1)` — sempre produz número e',
+      'não é sinalizada. Se o receptor aqui não puder ser nulo, registre em',
+      'PERMITIDOS_TOFIXED com a razão.',
+      '', ...achados,
+    ].join('\n')).toEqual([]);
+  });
+
+  it('cada permissão declara uma razão de verdade', () => {
+    for (const p of [...PERMITIDOS_ARITMETICA, ...PERMITIDOS_TOFIXED]) {
+      expect(p.razao.length, `sem razão: ${p.trecho}`).toBeGreaterThan(60);
+      expect(p.razao, `razão vazia: ${p.trecho}`).not.toMatch(/não deu problema|por enquanto|TODO/i);
+    }
+  });
+
+  it('toda permissão ainda corresponde a código existente', () => {
+    const todo = arquivos.map((c) => readFileSync(c, 'utf-8')).join('\n');
+    for (const p of [...PERMITIDOS_ARITMETICA, ...PERMITIDOS_TOFIXED]) {
+      expect(todo, `permissão obsoleta, remova: ${p.trecho}`).toContain(p.trecho);
+    }
+  });
+});
+
 describe('varredura: ausência não pode voltar a virar zero', () => {
   const arquivos = [...fontes(join(SRC, 'ui')), ...fontes(join(SRC, 'charts')), ...fontes(join(SRC, 'data'))];
 
