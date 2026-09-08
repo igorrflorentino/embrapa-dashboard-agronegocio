@@ -7,6 +7,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.68.0] - 2026-09-08
+
+### Adicionado
+
+- **As duas guardas que a varredura das 22 perspectivas provou faltarem.** Quinze
+  defeitos apareceram naquela varredura, e duas famílias passaram por **todas** as
+  guardas existentes — não por descuido, mas porque as regex procuravam RAZÕES
+  (`x ? a/x : 0`, `|| 1`) e nenhuma das duas é uma razão.
+
+  **1. Aritmética crua sobre uma medida que pode faltar.** `null * fator`,
+  `Math.round(null)` e `null / fator` são todos `0` em JavaScript — o zero que o
+  serializer acabou de recusar volta na tela. Três instâncias, em três versões
+  diferentes: multiplicar e arredondar não são dividir.
+
+  **2. `.toFixed()` sobre um valor anulável.** `null.toFixed` **levanta**, e derrubou a
+  perspectiva inteira no error boundary — duas vezes. A regra sinaliza um identificador
+  ou índice nu; uma expressão entre parênteses (`(a / b).toFixed(1)`) sempre produz
+  número e não é tocada.
+
+  As duas famílias têm a mesma origem: **um contrato virou anulável e os consumidores
+  dele não foram varridos** — o passo que faltou nas três vezes em que esta sessão
+  introduziu um defeito ao corrigir outro.
+
+- **A lista de campos anuláveis é DERIVADA, não escrita.** `test_absence_contract_fields.py`
+  extrai do Python toda chave de contrato atribuída por uma função que devolve `None`
+  (`_measure`, `_measure_scaled`, `_yield`, `ratio_present`, `pct_present`,
+  `mean_present`) e exige que o JS declare exatamente as mesmas — nas **duas** direções.
+  Faltar um campo cega a varredura; sobrar um faz ela sinalizar aritmética legítima, a
+  lista de permissões cresce para calar ruído, e é assim que uma varredura deixa de ser
+  levada a sério.
+
+### Corrigido
+
+- **O CSV exportava "0,00%" para uma participação ausente** — encontrado pela guarda
+  nova, na primeira vez que ela rodou. `q.share` é anulável desde a v1.61.0 (acontece
+  quando o filtro seleciona só flags sem linha no recorte) e a linha fazia
+  `(q.share * 100).toFixed(2)`. O helper `celulaValor`, oito linhas acima no mesmo
+  arquivo, já devolvia célula vazia para ausência. **Quarta instância** do mesmo padrão
+  meu — e a única que sai do dashboard: um "0,00%" ali vira número na planilha de alguém.
+
+### Verificação
+
+Os **cinco** defeitos reais desta sessão foram reintroduzidos um a um; as guardas pegaram
+todos:
+
+| defeito | versão | pego por |
+|---|---|---|
+| `last.q * qtyMul` | v1.60.2 | aritmética crua |
+| `Math.round(u.yieldKgHa)` | v1.60.2 | aritmética crua |
+| `d[key] / factor` | v1.65.0 | aritmética crua |
+| `corr[0][1].toFixed(2)` | v1.66.1 | `.toFixed` nu |
+| `(q.share * 100).toFixed(2)` | esta | ambas |
+
+E a paridade da lista foi injetada nos três sentidos: campo faltando, campo inventado, e
+um serializer novo emitindo um campo anulável que o JS não conhece.
+
+---
+
 ## [1.67.0] - 2026-09-08
 
 ### Corrigido

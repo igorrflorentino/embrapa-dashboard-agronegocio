@@ -188,7 +188,15 @@
       }
       case 'quality': {
         const headers = ['flag', 'descricao', 'linhas', 'participacao'];
-        const rows = f.qualityFlags.map(q => [q.id, q.label, q.count, (q.share * 100).toFixed(2).replace('.', ',') + '%']);
+        // Célula VAZIA quando a participação não existe, como celulaValor já faz acima:
+        // `q.share` é anulável desde a v1.61.0 (ratioPresent recusa denominador não
+        // positivo — acontece quando o filtro seleciona só flags sem linha no recorte),
+        // e `null * 100` é 0 em JS. O CSV sai do dashboard: um "0,00%" ali vira número
+        // numa planilha de alguém.
+        const rows = f.qualityFlags.map(q => [
+          q.id, q.label, q.count,
+          q.share == null ? '' : (q.share * 100).toFixed(2).replace('.', ',') + '%',
+        ]);
         return { headers, rows, subject: 'qualidade' };
       }
       default:
