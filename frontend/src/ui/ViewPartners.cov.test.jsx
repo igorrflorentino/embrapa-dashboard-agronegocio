@@ -139,6 +139,30 @@ describe('ViewPartners — preço apoiado em parte do comércio', () => {
     expect(nota.textContent).not.toContain('Outro');
   });
 
+  it('lista longa RECOLHE — 19 nomes num parágrafo enterram a conclusão', () => {
+    // O defeito que esta suíte não pegou na v1.70.0: a fixture tinha UM parceiro abaixo
+    // do limiar, e um nome inline está certo. Medido em produção depois: no agrupamento
+    // madeira a nota alcança 19 dos 30 parceiros exibidos — cinco linhas de nomes, com a
+    // nota irmã que JÁ recolhe logo abaixo na mesma tela.
+    const muitos = Array.from({ length: 19 }, (_, i) => ({
+      name: `País ${i + 1}`, price: 10 - i * 0.1, pricedShare: 0.5 + i * 0.01,
+    }));
+    stubGlobals({ ...BY_METRIC, price: { ...BY_METRIC.price, partners: muitos } });
+    const { container } = render(
+      <ViewPartners summary={{}} conventions={{}} database="un_comtrade" />
+    );
+    fireEvent.click([...container.querySelectorAll('.seg-opt')].find(
+      (b) => b.textContent === 'Preço médio'));
+    const det = [...container.querySelectorAll('details')].find(
+      (e) => e.parentElement.textContent.includes('Preço apoiado em parte'));
+    expect(det, 'a nota de cobertura não recolheu').toBeTruthy();
+    // A CONTAGEM e a regra ficam à vista, fora do <details>.
+    expect(det.parentElement.querySelector('p').textContent).toContain('19 parceiros');
+    // E nenhum nome se perde: recolher não é truncar.
+    expect(det.textContent.match(/País \d+ /g)).toHaveLength(19);
+    expect(container.textContent).not.toMatch(/e mais \d+/);
+  });
+
   it('a nota só existe no ranking de PREÇO', () => {
     // Capital e Volume são aditivos: a soma cobre tudo o que o parceiro comercia, e
     // não há parte de fora para enunciar.

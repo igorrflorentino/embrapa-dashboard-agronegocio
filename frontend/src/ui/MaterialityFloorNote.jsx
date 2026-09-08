@@ -1,3 +1,5 @@
+import './CollapsingNameList.jsx';
+
 // MaterialityFloorNote — nomeia quem um piso de materialidade tirou da comparação.
 //
 // A regra do projeto proíbe filtragem invisível: se um número deixou de ser mostrado,
@@ -12,11 +14,8 @@
 // provas reprovadas), não uma causa que só valeria para parte da lista. Os fragmentos
 // de texto em pt-BR ficam com quem chama, porque a medida muda de gênero e de unidade.
 //
-// Acima de LISTA_LONGA a enumeração vai para um <details> RECOLHIDO. A regra "enumere
-// todas" foi escrita para listas de 5 ou 6 nomes; no ranking de parceiros o piso tira
-// 38 países, e o parágrafo vira um paredão que enterra a própria conclusão. Recolher
-// não é omitir: a contagem e a regra ficam à vista, e a lista inteira está a um clique
-// — truncar em "e mais 30" é que quebraria a busca por um nome específico.
+// O RECOLHIMENTO de uma lista longa mora em CollapsingNameList.jsx, partilhado com a
+// nota de cobertura de preço do ViewPartners.
 function MaterialityFloorNote({
   dropped,          // as linhas descartadas (window.materialityFloor().dropped)
   valueKey,         // a grandeza que o piso mediu ('areaHa', 'production', …)
@@ -36,8 +35,7 @@ function MaterialityFloorNote({
   if (!dropped || !dropped.length) return null;
   const ordenadas = dropped.slice()
     .sort((a, b) => (b[valueKey] || 0) - (a[valueKey] || 0));
-  const lista = ordenadas.map(u => `${u[labelKey] ?? u.uf} (${fmt(u[valueKey] || 0)})`).join(', ');
-  const longa = ordenadas.length > LISTA_LONGA;
+  const itens = ordenadas.map(u => `${u[labelKey] ?? u.uf} (${fmt(u[valueKey] || 0)})`);
   // A frase enuncia SÓ as provas que o piso realmente aplica. materialityFloor aceita
   // uma ou duas (o piso de produção usa só a relativa, porque "é produtor de verdade
   // desta lavoura" é uma pergunta relativa; o de área usa as duas, porque a validade de
@@ -63,29 +61,11 @@ function MaterialityFloorNote({
       {provas.length > 1 ? <>{provas[0]} <em>e</em> de {provas[1]}</> : provas[0]} — {porque}. {segue}
     </>
   );
-  if (!longa) {
-    return (
-      <p className="caption" style={{ marginTop: 10 }}>
-        {titulo}: <strong>{lista}</strong>. {regra}
-      </p>
-    );
-  }
   return (
-    <div className="caption" style={{ marginTop: 10 }}>
-      <p style={{ margin: 0 }}>
-        {titulo}: <strong>{ordenadas.length}{substantivo ? ` ${substantivo}` : ''}</strong>. {regra}
-      </p>
-      <details style={{ marginTop: 4 }}>
-        <summary style={{ cursor: 'pointer' }}>Ver quais</summary>
-        <p style={{ margin: '4px 0 0' }}>{lista}</p>
-      </details>
-    </div>
+    <window.CollapsingNameList
+      titulo={titulo} itens={itens} substantivo={substantivo} regra={regra} />
   );
 }
-
-// Acima disto a enumeração vai para um <details>. 10 cabe em duas linhas na largura de
-// um card; 38 (o que o piso de preço tira do COMEX) ocupa oito.
-const LISTA_LONGA = 10;
 
 window.MaterialityFloorNote = MaterialityFloorNote;
 export default MaterialityFloorNote;

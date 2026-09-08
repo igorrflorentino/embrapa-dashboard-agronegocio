@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.71.1] - 2026-09-08
+
+### Corrigido
+
+- **A nota de cobertura virava paredão.** A nota que a v1.70.0 acrescentou ao ranking de
+  *Preço médio* enumerava todos os parceiros inline. Medido em produção: no agrupamento
+  **madeira** ela alcança **19 dos 30 parceiros exibidos** — cinco linhas de nomes que
+  enterram a própria conclusão.
+
+  O irritante é que o projeto já tinha resolvido isto. O `MaterialityFloorNote`, que fica
+  **logo abaixo na mesma tela**, recolhe em `<details>` acima de 10 itens, e o comentário
+  dele diz por quê. Escrevi uma nota irmã e não propaguei a regra — o padrão de defeito
+  mais frequente desta base, desta vez de autoria própria.
+
+  A correção não é copiar o limiar: o recolhimento saiu para
+  `frontend/src/ui/CollapsingNameList.jsx`, e as duas notas passam a usá-lo. A terceira
+  nota que alguém escrever herda o comportamento em vez de o reinventar.
+
+- **O teste que faltava, não o que passava.** Os 1209 testes de frontend estavam verdes e
+  não podiam pegar isto: a fixture tinha **um** parceiro abaixo do limiar, e um nome
+  inline está certo. Nenhuma suíte é capaz de julgar proporção sem um caso do tamanho
+  real. `ViewPartners.cov.test.jsx` ganhou o caso de 19.
+
+### Verificado na tela
+
+A checagem que faltou nas duas versões anteriores, e que achou duas coisas que nenhum
+teste acharia:
+
+- **`pricedShare` não chegava à resposta da API** — não por defeito, mas porque o servidor
+  local reaproveitado rodava código anterior às mudanças, sem auto-reload. Sem olhar o
+  payload, a ausência da nota na tela se leria como "nenhum parceiro abaixo de 90%".
+  Ausência só é prova quando a presença apareceria.
+- **A ausência da nota no recorte padrão está CERTA**: com reporter = Brasil todo parceiro
+  tem 100% de cobertura — o Brasil reporta peso em tudo que declara. Os parceiros
+  incompletos são de outros declarantes, e aparecem com o mundo inteiro como reporter.
+
+Confirmado com o mundo como declarante: 6 nomes inline (abaixo do limiar) no acervo
+inteiro, e em madeira o recolhimento em "19 parceiros" com a regra à vista e os 19 nomes
+atrás de *Ver quais* — nenhum truncado.
+
+---
+
 ## [1.71.0] - 2026-09-08
 
 ### Adicionado
