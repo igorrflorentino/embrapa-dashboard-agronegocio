@@ -85,12 +85,15 @@ function ViewRebanho({ summary, conventions, database }) {
     const s = filtered.allProductTS[c].filter(d => d.y <= yearEnd);
     latestByCode[c] = s.length ? s[s.length - 1] : null;
   });
-  const totalLatest = available.reduce((s, c) => s + ((latestByCode[c]?.q || 0) * qtyMul), 0) || 1;
-  const compData = available
+  // Idem: rebanho todo zerado não é "0% de cada espécie", é ausência de composição.
+  const totalLatest = window.sumPresent(
+    available.map(c => (latestByCode[c]?.q || 0) * qtyMul));
+  const compData = !totalLatest ? [] : available
     .map((c, i) => {
       const p = filtered.products.find(x => x.code === c);
       const q = (latestByCode[c]?.q || 0) * qtyMul;
-      return { name: p.name, color: PALETTE[i % PALETTE.length], share: q / totalLatest, q };
+      return { name: p.name, color: PALETTE[i % PALETTE.length],
+               share: window.ratioPresent(q, totalLatest), q };
     })
     .sort((a, b) => b.q - a.q);
 

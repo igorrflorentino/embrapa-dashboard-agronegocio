@@ -37,6 +37,40 @@ function fontes(dir) {
 // MEDIDO (uma contagem de verdade) ou se não houver divisão por medida ausente.
 // "Não deu problema até agora" NÃO é razão.
 const PERMITIDOS = [
+  // ── Os `= ... || 1;` que são GEOMETRIA, não afirmação ──────────────────────
+  // O total mascarado é legítimo quando o resultado vira desenho: um total zero desenha
+  // nada, e nada é o certo. É ilegítimo quando vira NÚMERO NA TELA — foi por isso que os
+  // outros seis do mesmo padrão foram corrigidos, não permitidos.
+  {
+    trecho: 'const span = max - min || 1;',
+    razao: 'Sparkline: `span` é a ESCALA VERTICAL do traço, não um valor exibido. Série ' +
+           'plana tem span 0, e dividir por 1 desenha a linha reta que é a leitura certa ' +
+           'dela — nenhum número sai daqui para a tela.',
+  },
+  {
+    trecho: 'const max = Math.max(...rows.map(x => x[valueKey] || 0)) || 1;',
+    razao: 'ViewGeography: `max` é a LARGURA DA BARRA do ranking de municípios. Com tudo ' +
+           'zerado toda barra fica com largura zero, que é o desenho correto; os valores ' +
+           'ao lado saem de outro caminho e recusam sozinhos.',
+  },
+  {
+    trecho: 'const total = data.reduce((s, d) => s + val(d), 0) || 1;',
+    razao: 'Donut: `total` normaliza os ÂNGULOS das fatias. Quem decide se existe ' +
+           'composição é o chamador — e desde a v1.61.0 os quatro chamadores devolvem ' +
+           'lista vazia quando não há total, então o Donut nunca recebe um anel de zeros.',
+  },
+  {
+    trecho: 'const total = sorted.reduce((s, v) => s + v, 0) || 1;',
+    razao: 'LorenzCurve: `total` normaliza o eixo acumulado da CURVA. Um conjunto vazio ' +
+           'desenha a diagonal, que é a leitura correta de "sem desigualdade medida"; a ' +
+           'afirmação numérica ao lado é o Gini, que recusa com "n/d" por conta própria.',
+  },
+  {
+    trecho: 'const total = ufSorted.reduce((s, u) => s + u.value, 0) || 1;',
+    razao: 'ViewConcentration: esta divisão vive DENTRO do .map sobre ufSorted, que é ' +
+           'filtrado a value > 0 — com a lista vazia o corpo não roda, e com um elemento ' +
+           'o total já é positivo. A guarda é código morto; o `|| 1` nunca decide nada.',
+  },
   {
     trecho: "v >= 1000 ? _nf(v / 1000, 1) + ' bi'",
     razao: 'ViewPartners: troca de ESCALA (bi vs mi), não guarda de denominador — o `: 0` ' +
@@ -70,6 +104,17 @@ const RAZAO_FALLBACK = /\?[^?:\n]*\/[^?:\n]*:\s*0(?![.0-9])/;
 // Denominador mascarado: `/ (algo || 1)`.
 const DENOMINADOR_MASCARADO = /\/\s*\([^()\n]*\|\|\s*1\s*\)/;
 
+// O MESMO denominador mascarado, uma linha antes: `const total = ... || 1;` e a divisão
+// depois. Escapava da regex acima, que exige o `|| 1` dentro da própria divisão — e foi
+// exatamente por aí que a concentração top-N devolvia "0%" para um conjunto vazio, no
+// mesmo arquivo em que o HHI já recusava com null, 20 linhas acima.
+//
+// O `|| 1` é LEGÍTIMO quando o resultado vira geometria (largura de barra, ângulo de
+// fatia, amplitude de sparkline): ali um total zero desenha nada, e nada é o certo. É
+// ilegítimo quando o resultado vira NÚMERO NA TELA, porque "0% concentrado" se lê como
+// "perfeitamente disperso" — a afirmação oposta de "não há o que concentrar".
+const TOTAL_MASCARADO = /\b(?:const|let|var)\s+\w+\s*=[^;\n]*\|\|\s*1\s*;/;
+
 describe('varredura: ausência não pode voltar a virar zero', () => {
   const arquivos = [...fontes(join(SRC, 'ui')), ...fontes(join(SRC, 'charts')), ...fontes(join(SRC, 'data'))];
 
@@ -84,7 +129,8 @@ describe('varredura: ausência não pode voltar a virar zero', () => {
       const linhas = readFileSync(caminho, 'utf-8').split('\n');
       linhas.forEach((linha, i) => {
         if (linha.trimStart().startsWith('//') || linha.trimStart().startsWith('*')) return;
-        if (!RAZAO_FALLBACK.test(linha) && !DENOMINADOR_MASCARADO.test(linha)) return;
+        if (!RAZAO_FALLBACK.test(linha) && !DENOMINADOR_MASCARADO.test(linha)
+            && !TOTAL_MASCARADO.test(linha)) return;
         if (PERMITIDOS.some((p) => linha.includes(p.trecho))) return;
         achados.push(`${relative(SRC, caminho)}:${i + 1}\n      ${linha.trim()}`);
       });

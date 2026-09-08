@@ -480,20 +480,27 @@ import './seriesUtils.js';
       // "0%" como se tivessem sido medidos e não tivessem produzido nada.
       .filter(p => Number.isFinite(p.value))
       .sort((a, b) => b.value - a.value);
-    const compTotal = window.sumPresent(compositionRaw.map(p => p.value)) || 1;
+    // Sem `|| 1`: ele fabricava o denominador. Com total não-positivo não há composição
+    // a mostrar — um donut de zeros rotula "0%" em cada fatia (Donut.jsx desenha o
+    // rótulo), afirmando participação nula onde o que existe é ausência de dado.
+    const compTotal = window.sumPresent(compositionRaw.map(p => p.value));
     const COLORS = [...window.VIZ_SCALE, 'var(--pres-gray-300)', 'var(--pres-gray-400)'];
     let topProducts;
-    if (compositionRaw.length <= 7) {
+    if (!compTotal || compTotal <= 0) {
+      topProducts = [];
+    } else if (compositionRaw.length <= 7) {
       topProducts = compositionRaw.map((p, i) => ({
-        ...p, share: p.value / compTotal, color: COLORS[i % COLORS.length],
+        ...p, share: window.ratioPresent(p.value, compTotal), color: COLORS[i % COLORS.length],
       }));
     } else {
       const head = compositionRaw.slice(0, 6);
       const tail = compositionRaw.slice(6);
       const tailVal = tail.reduce((s, p) => s + p.value, 0);
       topProducts = [
-        ...head.map((p, i) => ({ ...p, share: p.value / compTotal, color: COLORS[i] })),
-        { name: 'Outros', value: tailVal, share: tailVal / compTotal,
+        ...head.map((p, i) => ({
+          ...p, share: window.ratioPresent(p.value, compTotal), color: COLORS[i],
+        })),
+        { name: 'Outros', value: tailVal, share: window.ratioPresent(tailVal, compTotal),
           color: 'var(--pres-gray-200)', muted: true },
       ];
     }
@@ -504,8 +511,10 @@ import './seriesUtils.js';
       ? qualityFlagsAll.filter(f => flagSet.has(f.id))
       : qualityFlagsAll;
     // re-normalize shares to selected flags' world
-    const flagTotal = filteredFlags.reduce((s, f) => s + f.count, 0) || 1;
-    const qualityFlags = filteredFlags.map(f => ({ ...f, share: f.count / flagTotal }));
+    // Idem: nenhuma linha nas flags selecionadas não é "0% em cada flag" — é ausência.
+    const flagTotal = window.sumPresent(filteredFlags.map(f => f.count));
+    const qualityFlags = filteredFlags.map(
+      f => ({ ...f, share: window.ratioPresent(f.count, flagTotal) }));
 
     // quality time series — pass-through, optionally trim to window
     const qualityTs = QUALITY_TS_T.filter(d => d.y >= yearStart && d.y <= yearEnd);

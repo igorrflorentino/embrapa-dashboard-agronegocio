@@ -95,8 +95,17 @@ function ViewConcentration({ summary, conventions, database }) {
     if (!total || !vals.length) return null;
     return vals.reduce((s, v) => s + Math.pow((v / total) * 100, 2), 0);
   };
+  // A MESMA regra do HHI acima, que faltava aqui: `total = ... || 1` devolvia 0/1 = 0
+  // para um conjunto vazio, e "0% concentrado" se lê como "perfeitamente disperso" — a
+  // afirmação oposta de "não há o que concentrar". `hasGeo` só exige LINHAS de UF, não
+  // valores positivos, então um recorte cujos produtos não produzem nada em UF alguma
+  // chega até aqui com a lista cheia e os valores zerados. null vira '—' no fmtPct.
+  //
+  // Uma UF só NÃO é recusa: 100% é a resposta certa, e o piso aqui é sobre a ausência
+  // de base, não sobre base pequena.
   const topNShare = (sorted, n) => {
-    const total = sorted.reduce((s, x) => s + x.value, 0) || 1;
+    const total = window.sumPresent(sorted.map(x => x.value));
+    if (!total || total <= 0) return null;
     return sorted.slice(0, n).reduce((s, x) => s + x.value, 0) / total;
   };
 
