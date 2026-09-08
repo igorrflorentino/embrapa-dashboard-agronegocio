@@ -70,7 +70,7 @@ contracts.js shape. `preview:false` on all live producers (real data).
 | `/geo-yearly` | `banco,codes?,currency,correction` | `geo_yearly(banco,conv,summary)` | `{ufYearly:[{year,uf,name,region,value,q_mass,q_vol}]}` — basket-scoped product×UF×year cube (full history; client slices period/state). `[]` for a banco with no geo grain. Lets the hero/choropleth/series respect state+product+período together |
 | `/productivity` | `banco,crop?,y0?,y1?` | `productivity(banco,crop,summary)` | `ProductivityData` (PAM only; basket N/A — crop is the picker) |
 | `/flow` | `banco,codes?,states?,y0?,y1?` | `flow_data(banco,summary)` | `FlowData` (Sankey nodes/links); `states` = origin-UF filter (COMEX only) |
-| `/partners` | `banco,codes?,states?,y0?,y1?` | `partner_data(banco,summary)` | `PartnerData` (exp/imp split); `states` = origin-UF filter (COMEX only) |
+| `/partners` | `banco,metric?,codes?,states?,y0?,y1?,reporters?,partners?` | `partner_data(banco,summary,metric)` | `PartnerData` (exp/imp split + `weight`/`price`/`pricedShare` + `belowFloor`); `metric` picks the SERVER-side ranking dimension, because the row order is the top-N cut; `states` = origin-UF filter (COMEX only) |
 | `/monthly` | `banco,codes?,y0?,y1?` | `monthly_data(banco,summary)` | `MonthlyData` (COMEX only); UF (`states`) N/A — mart collapses UF away |
 | `/cross/metric-refs` | — | `cross_metric_refs()` | `[{banco,banco_short,metric,label,family}]` |
 | `/cross/series` | `banco,metric,y0?,y1?` | `cross_series(banco,metric,y0,y1)` | `SeriesResult` — `points` already in display unit |

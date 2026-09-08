@@ -205,9 +205,33 @@ município passes the cascade iff it clears every active facet (intersection).
 - `node.value` = Σ of the links touching it (pre-summed). value = `SUM(val_yearfx_usd)`.
 
 ### 4.2 `partnerData` → partner ranking
-`{ partners: [{ name, exp, imp, value }] }`, ordered by `value` desc.
+`{ preview, flowLabel, unit, partners: [{ name, exp, imp, value, weight, price, pricedShare }],
+belowFloor: [...] }`.
+
+The ranking DIMENSION is chosen server-side (`/api/partners?metric=value|weight|price` →
+`rank_by`), because the row order IS the top-N cut: the SQL has no `LIMIT` and the
+serializer's `head(max_rows)` does the cutting, so re-sorting a value-ranked page in the
+client would drop the niche high-price buyer the price ranking exists to find.
+
 - `name` = `country_name` (COMEX) / `partner_name` (COMTRADE).
-- `exp` = `SUM(val_yearfx_usd WHERE flow='export')`, `imp` = import; `value` = exp+imp.
+- `exp` = `SUM(val_yearfx_usd WHERE flow='export')`, `imp` = import; `value` = exp+imp,
+  all in **US$ mi**. `weight` = net weight in **mil t**.
+- `price` = **US$/kg**, `null` when the partner has no weight (never 0 — see §2).
+- `pricedShare` (0–1, nullable) = how much of that partner's trade BACKS the price. The
+  price divides only the value of rows that HAVE a weight, because the two halves of a
+  ratio must cover the same rows: COMTRADE publishes 79.528 rows (3,87% of the mart,
+  measured 2026-09-07) with a value and no net weight, and dividing the WHOLE value by
+  the weight of part of it inflated the number (Guam ranked 6th at US$ 1,251/kg and
+  belongs 41st at US$ 0,567). Below **0,9** the view names the partner — a value computed
+  over a subset must say which. COMEX is immune by DATA (zero rows without weight), not
+  by construction.
+- `belowFloor` = partners the materiality floor set aside BEFORE the top-N cut, non-empty
+  only for `metric=price` (100 t + 0,001% of the window's weight; a ratio over a tiny base
+  is not a measurement — the old top was Lesoto with 1 kg). The view MUST name them; the
+  additive rankings need no floor and get an empty list.
+- **Self-trade is excluded server-side**: the row where the partner is the declaring
+  country itself is returned merchandise, not a market. COMEX has a country code for it
+  (105, ISO BRA); COMTRADE simply has `reporter = partner`.
 - COMTRADE: **World is already excluded** in Silver (no `partner_code='0'`), so the
   ranking is clean — no extra filter needed.
 

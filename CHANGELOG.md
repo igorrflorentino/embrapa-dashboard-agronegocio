@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.71.2] - 2026-09-08
+
+### Corrigido
+
+- **A documentação do contrato de parceiros estava defasada — e não desde ontem.**
+  `docs/frontend_data_contract.md` §4.2 descrevia `{ name, exp, imp, value }` enquanto o
+  serializer já emitia `weight`, `price` e `belowFloor` havia várias versões. O
+  `pricedShare` da v1.70.0 apenas alargou a distância. Uma documentação defasada não
+  quebra teste, não aparece na tela e não tem sintoma: só o integrador que confia nela
+  descobre, e tarde.
+
+  A §4.2 passa a descrever o payload inteiro, incluindo POR QUE o ranking é ordenado no
+  servidor (a ordem das linhas **é** o corte top-N: o SQL não tem `LIMIT`), o que
+  `pricedShare` significa, e a exclusão do autocomércio. A linha `/partners` do
+  `PLANS/react_migration_contract_map.md` ganhou os parâmetros que faltavam
+  (`metric`, `reporters`, `partners`).
+
+### Adicionado
+
+- **`tests/test_partner_contract_doc.py`** — deriva do serializer as chaves que
+  `/api/partners` realmente devolve e exige que a §4.2 mencione cada uma. Não confere a
+  prosa (nenhum teste pode), mas impede que um campo novo entre no contrato sem aparecer
+  no documento. Provado por injeção: reprova o texto exato que estava no repositório.
+
+### Verificado na tela
+
+- **`price_spread` ("Preço: porteira vs. FOB")**, que a v1.71.0 alterou e eu só havia
+  testado em unidade. Castanha-de-caju: FOB US$ 5,81/kg, porteira US$ 0,80/kg, markup
+  ×7,2 em 2024; série 1997–2024 com **zero** `gate` nulo e **zero** fabricado —
+  confirmando que o vão do USD nominal do IBGE (até 1993) fica fora da interseção com o
+  COMEX, como a análise previa.
+
+---
+
 ## [1.71.1] - 2026-09-08
 
 ### Corrigido
