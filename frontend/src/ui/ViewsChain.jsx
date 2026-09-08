@@ -37,8 +37,8 @@ function ViewChainBalance({ view }) {
 
       <div className="kpi-row">
         <window.KpiCardSpark label="Produção" value={chNum(data.produced) + ' mil t'} sub={`${year} · base do balanço`} />
-        <window.KpiCardSpark label="Exportado" value={chPct(data.expFrac * 100)} sub={`${chNum(data.exported)} mil t p/ fora`} />
-        <window.KpiCardSpark label="Comércio interno" value={chPct(data.intFrac * 100)} sub={`${chNum(data.internal)} mil t entre UFs`} />
+        <window.KpiCardSpark label="Exportado" value={chPct(window.scalePresent(data.expFrac, 100))} sub={`${chNum(data.exported)} mil t p/ fora`} />
+        <window.KpiCardSpark label="Comércio interno" value={chPct(window.scalePresent(data.intFrac, 100))} sub={`${chNum(data.internal)} mil t entre UFs`} />
         <window.KpiCardSpark label="Fatia no mundo" value={chPct(data.worldShare)} sub={`exportação ÷ mercado mundial`} />
       </div>
 
@@ -93,10 +93,12 @@ function ViewHarvestLag({ view }) {
       <window.CrossProductPicker value={product} onChange={setProduct} />
 
       <div className="kpi-row">
-        <window.KpiCardSpark label="Defasagem" value={`${data.lagMonths >= 0 ? '+' : ''}${data.lagMonths} ${Math.abs(data.lagMonths) === 1 ? 'mês' : 'meses'}`} sub="embarques após a safra" />
-        <window.KpiCardSpark label="Correlação no lag" value={data.corrAtLag.toFixed(2).replace('.', ',')} sub="alinhamento safra × embarque" />
-        <window.KpiCardSpark label="Pico da safra" value={data.months[data.peakHarvest]} sub="mês de maior produção" />
-        <window.KpiCardSpark label="Pico de embarque" value={data.months[data.peakShip]} sub="mês de maior exportação" />
+        <window.KpiCardSpark label="Defasagem" value={data.lagMonths == null
+            ? '—'
+            : `${data.lagMonths >= 0 ? '+' : ''}${data.lagMonths} ${Math.abs(data.lagMonths) === 1 ? 'mês' : 'meses'}`} sub="embarques após a safra" />
+        <window.KpiCardSpark label="Correlação no lag" value={chNum(data.corrAtLag, 2)} sub="alinhamento safra × embarque" />
+        <window.KpiCardSpark label="Pico da safra" value={data.months[data.peakHarvest] ?? '—'} sub="mês de maior produção" />
+        <window.KpiCardSpark label="Pico de embarque" value={data.months[data.peakShip] ?? '—'} sub="mês de maior exportação" />
       </div>
 
       <div className="card">

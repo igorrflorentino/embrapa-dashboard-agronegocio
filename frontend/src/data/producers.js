@@ -397,17 +397,24 @@ window.valueAddedAnalysis = crossAnalytic('value-added', 'value-added', {
 // ── data-blocked producers (no upstream source — honest preview shells) ───────
 // chainBalance needs SEFAZ inter-UF flows; harvestShipmentLag needs MONTHLY PEVS
 // (annual-only). The views render their blocked-source banner.
+// As MEDIDAS saem `null`, não 0. O banner já diz que a perspectiva é demonstração, mas
+// "Produção = 0 mil t" e "Exportado = 0,0%" se leem como medida — um zero é uma
+// afirmação, e aqui não há nem fonte para afirmar. Com null, numBR/pctBR rendem '—' e a
+// tela diz o que é verdade: não há número porque não há dado. As LISTAS seguem vazias
+// (uma série inexistente é uma série vazia, não uma série de nulos).
 window.chainBalance = function chainBalance(_code, year) {
   return {
-    preview: true, unit: 'mil t', year: year || 2024, produced: 0, exported: 0, internal: 0,
-    domestic: 0, expFrac: 0, intFrac: 0, domFrac: 0, worldShare: 0, worldTotal: 0, exportUsd: 0,
+    preview: true, unit: 'mil t', year: year || 2024,
+    produced: null, exported: null, internal: null, domestic: null,
+    expFrac: null, intFrac: null, domFrac: null,
+    worldShare: null, worldTotal: null, exportUsd: null,
     sankey: { nodes: [], links: [] },
   };
 };
 window.harvestShipmentLag = function harvestShipmentLag() {
   return {
-    preview: true, months: [], production: [], shipments: [], peakHarvest: 0, peakShip: 0,
-    lagMonths: 0, corrAtLag: 0, lagProfile: [],
+    preview: true, months: [], production: [], shipments: [],
+    peakHarvest: null, peakShip: null, lagMonths: null, corrAtLag: null, lagProfile: [],
   };
 };
 // market-nature is EDIT-DRIVEN: COMTRADE value summed by the economic purpose
