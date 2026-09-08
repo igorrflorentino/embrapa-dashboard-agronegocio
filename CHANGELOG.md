@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.61.0] - 2026-09-08
+
+### Corrigido
+
+- **O denominador mascarado que a varredura não via.** `const total = … || 1;` e a divisão
+  na linha seguinte: a regex existente exigia o `|| 1` **dentro** da própria divisão, e
+  essa forma escapava. Foi por aí que *Concentração top-5 UFs* devolvia **"0%"** para um
+  conjunto vazio — no mesmo arquivo em que o HHI já recusava com `null` 20 linhas acima,
+  com um comentário explicando exatamente o raciocínio (*"um sinal de tudo-certo sobre
+  nada"*). "0% concentrado" se lê como **perfeitamente disperso**, a afirmação oposta de
+  "não há o que concentrar".
+
+  A varredura estendida achou **11 instâncias**. Cinco são legítimas e foram registradas
+  com razão: o total mascarado é aceitável quando o resultado vira **geometria** — largura
+  de barra, ângulo de fatia, escala de sparkline, eixo da curva de Lorenz —, porque ali um
+  total zero desenha nada, e nada é o certo. Mais uma cuja divisão vive dentro de um `.map`
+  sobre lista filtrada a `value > 0`, onde a guarda é código morto.
+
+  As outras **seis viravam número na tela** e foram corrigidas:
+
+  | onde | o que dizia com o conjunto vazio |
+  |---|---|
+  | `ViewConcentration` top-N | "0%" de concentração |
+  | `ViewPartners` top-3 | "0%" de concentração |
+  | `ViewQuality` | "— de **1** linhas examinadas" — um denominador inventado |
+  | `ViewRebanho` composição | "0%" em cada espécie |
+  | `ViewCuratedAnalyses` composição | "0%" em cada mercado |
+  | `dataFilters` composição + flags | idem, na camada de dados |
+
+  As quatro de composição alimentam o `Donut`, que **desenha o rótulo percentual** em cada
+  fatia — então um anel de zeros não é geometria inofensiva, é uma afirmação repetida. Elas
+  passam a devolver **lista vazia** quando não há total: sem base não há composição.
+
+### Adicionado
+
+- O padrão `TOTAL_MASCARADO` em `absenceGuard.test.js`, com a distinção que a lista de
+  permissões passa a exigir por escrito: **geometria pode, número na tela não**.
+
+### Corrigido (no teste)
+
+- **Mais um stub que escondia a própria recusa que o teste existe para pegar** — o segundo
+  em duas versões. `ViewConcentration.test.jsx` definia `fmtPct` como
+  `Math.round((x || 0) * 100)`, que imprime `"0%"` para `null`, enquanto o `fmtPct` real
+  devolve `'—'`. Com esse stub, a correção era invisível ao teste.
+
+---
+
 ## [1.60.3] - 2026-09-08
 
 ### Documentação

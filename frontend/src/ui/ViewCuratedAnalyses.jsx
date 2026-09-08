@@ -176,13 +176,17 @@ function ViewMarketNature() {
   }
 
   const L = data.latest;
-  const total = window.ENRICH_MARKETS.reduce((s, m) => s + (L[m.id] || 0), 0) || 1;
+  // Sem total positivo não há composição: um donut de zeros rotula "0%" em cada
+  // fatia (Donut.jsx desenha o rótulo), afirmando participação nula onde não há dado.
+  const total = window.sumPresent(window.ENRICH_MARKETS.map(m => L[m.id]));
   const areaSeries = window.ENRICH_MARKETS.map(m => ({
     name: m.short, color: m.color, data: data.series.map(d => ({ y: d.y, v: d[m.id] })),
   }));
-  const donut = window.ENRICH_MARKETS.map(m => ({
-    name: m.short, value: L[m.id], share: L[m.id] / total, color: m.color,
-  }));
+  const donut = total
+    ? window.ENRICH_MARKETS.map(m => ({
+        name: m.short, value: L[m.id], share: window.ratioPresent(L[m.id], total), color: m.color,
+      }))
+    : [];
 
   return (
     <>

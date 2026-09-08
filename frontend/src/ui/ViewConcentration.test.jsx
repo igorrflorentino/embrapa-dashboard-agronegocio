@@ -13,7 +13,10 @@ import './RecorteNote.jsx';
 
 function stubGlobals(filtered) {
   window.applyFilters = () => filtered;
-  window.fmtPct = (x) => `${Math.round((x || 0) * 100)}%`;
+  // O stub tem de devolver '—' para ausente, como o fmtPct REAL: com `(x || 0)` ele
+  // imprimia "0%" para null, e uma recusa aparecia como "0% de concentração" — a
+  // afirmação oposta. Um stub que diverge do original não testa o original.
+  window.fmtPct = (x) => (x == null ? '—' : `${Math.round(x * 100)}%`);
   window.isCanonicalUf = () => true;
   window.dataStore = { meta: () => null };
   window.KpiCardSpark = ({ label, value, sub }) => (
@@ -106,5 +109,46 @@ describe('ViewConcentration — value-less herd falls back to cabeças', () => {
     expect(byLabel('Gini · geográfico (UF)')).toBe('0,25');
     // the onCount note explains the basis is headcount, not value
     expect(container.textContent).toContain('cabeças');
+  });
+});
+
+describe('ViewConcentration — conjunto vazio não é "0% de concentração"', () => {
+  it('a concentração top-N RECUSA quando não há nada a concentrar', () => {
+    // `hasGeo` só exige LINHAS de UF, não valores positivos: um recorte cujos produtos
+    // não produzem nada em UF alguma chega aqui com a lista cheia e os valores zerados.
+    // `topNShare` fazia `total = 0 || 1` e devolvia 0/1 = 0 → "0%", que se lê como
+    // "nada concentrado" — a afirmação OPOSTA de "não há dado".
+    //
+    // A regra certa já existia 20 linhas acima, no mesmo arquivo: o HHI devolve `null`
+    // e o comentário dele explica exatamente este raciocínio ("um sinal de tudo-certo
+    // sobre nada"). O Gini recusa com "n/d". Só o top-N não tinha recebido a regra.
+    stubGlobals({
+      ...FIXTURE,
+      ufDataFull: [{ uf: 'PA', value: 0, real: true }, { uf: 'SP', value: 0, real: true }],
+      ufData: [{ uf: 'PA', value: 0, real: true }, { uf: 'SP', value: 0, real: true }],
+      productTS: { P1: [{ y: 2020, v: 0 }], P2: [{ y: 2020, v: 0 }] },
+    });
+    const { container } = render(<ViewConcentration summary={{}} conventions={{}} database="ibge_pevs" />);
+    const byLabel = (l) =>
+      container.querySelector(`.kpi[data-label="${l}"] .kpi-value`)?.textContent;
+    expect(byLabel('Concentração top-5 UFs')).toBe('—');
+    expect(byLabel('Concentração top-3 produtos')).toBe('—');
+    // E os vizinhos seguem recusando como já recusavam — a mudança não os altera.
+    expect(byLabel('HHI · geográfico (UF)')).toBe('n/d');
+    expect(byLabel('Gini · geográfico (UF)')).toBe('n/d');
+  });
+
+  it('com um único produtor, 100% é a resposta CERTA — não uma recusa', () => {
+    // O piso é sobre a AUSÊNCIA de base, não sobre base pequena: um recorte com uma UF
+    // só está de fato 100% concentrado nela, e recusar aqui perderia a informação.
+    stubGlobals({
+      ...FIXTURE,
+      ufDataFull: [{ uf: 'PA', value: 42, real: true }],
+      ufData: [{ uf: 'PA', value: 42, real: true }],
+    });
+    const { container } = render(<ViewConcentration summary={{}} conventions={{}} database="ibge_pevs" />);
+    expect(
+      container.querySelector('.kpi[data-label="Concentração top-5 UFs"] .kpi-value')?.textContent,
+    ).toBe('100%');
   });
 });

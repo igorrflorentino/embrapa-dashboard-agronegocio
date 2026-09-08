@@ -28,7 +28,9 @@ function ViewQuality({ summary, database }) {
   const filtered = window.applyFilters(summary || {}, database);
   const flags    = filtered.qualityFlags;
   const ts       = filtered.qualityTs;
-  const total    = flags.reduce((s, f) => s + f.count, 0) || 1;
+  // Sem `|| 1`: ele fabricava um denominador. Sem flag alguma a linha lia
+  // "— de 1 linhas examinadas sem ressalva", inventando uma linha que não existe.
+  const total    = window.sumPresent(flags.map(f => f.count));
   const okFlag   = flags.find(f => f.id === 'OK');
   const okCount  = okFlag ? okFlag.count : 0;
 
@@ -132,7 +134,7 @@ function ViewQuality({ summary, database }) {
           title={`% de linhas examinadas sem ressalva · ${filtered.yearStart}–${filtered.yearEnd}`}
           action={
             <span className="caption">
-              {okCount ? okCount.toLocaleString('pt-BR') : '—'} de {total.toLocaleString('pt-BR')} linhas examinadas sem ressalva
+              {okCount ? okCount.toLocaleString('pt-BR') : '—'} de {window.numBR(total)} linhas examinadas sem ressalva
             </span>
           }
         />

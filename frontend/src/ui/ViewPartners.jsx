@@ -47,11 +47,14 @@ function ViewPartners({ summary, conventions, database }) {
 
   // top-3 concentration only makes sense for additive metrics (valor, peso); for
   // preço médio (a ratio) show the value range across the ranked partners instead.
-  const sumField = partners.reduce((s, p) => s + valOf(p), 0) || 1;
+  // ratioPresent, não `|| 1`: sem parceiro algum a concentração top-3 saía "0%",
+  // que se lê como "perfeitamente disperso" — o oposto de "não há o que concentrar".
+  const sumField = window.sumPresent(partners.map(valOf));
   const kpi3 = spec.additive
     ? {
         label: 'Concentração top-3',
-        value: window.fmtPct(partners.slice(0, 3).reduce((s, p) => s + valOf(p), 0) / sumField),
+        value: window.fmtPct(window.ratioPresent(
+          partners.slice(0, 3).reduce((s, p) => s + valOf(p), 0), sumField)),
         sub: `do ${metric === 'value' ? 'fluxo' : 'volume'} total`,
       }
     : {
