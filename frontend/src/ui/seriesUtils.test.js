@@ -48,9 +48,17 @@ describe('pearsonByYear — aligns two series BY YEAR, not by array index (M2)',
     const a = [{ y: 2000, v: 100 }, { y: 2001, v: 110 }, { y: 2003, v: 121 }];
     const b = [{ y: 2000, v: 100 }, { y: 2001, v: 90 }, { y: 2002, v: 80 }, { y: 2003, v: 70 }];
     const r = window.pearsonByYear(a, b);
-    expect(Number.isFinite(r)).toBe(true);
-    expect(r).toBeGreaterThanOrEqual(-1);
-    expect(r).toBeLessThanOrEqual(1);
+    // A lacuna 2001→2003 descarta aquele par, sobrando UM (2000→2001): abaixo do mínimo
+    // de dois, então a resposta honesta é a ausência. Antes saía 0 — descorrelação
+    // perfeita afirmada sobre um ponto só.
+    expect(r).toBeNull();
+    // E com pares suficientes ela volta a existir, dentro do intervalo.
+    const c = [{ y: 2000, v: 100 }, { y: 2001, v: 110 }, { y: 2002, v: 121 }];
+    const d = [{ y: 2000, v: 100 }, { y: 2001, v: 90 }, { y: 2002, v: 80 }];
+    const r2 = window.pearsonByYear(c, d);
+    expect(Number.isFinite(r2)).toBe(true);
+    expect(r2).toBeGreaterThanOrEqual(-1);
+    expect(r2).toBeLessThanOrEqual(1);
   });
 
   it('correlates on a custom key (q for a value-less herd, not v)', () => {
@@ -60,7 +68,9 @@ describe('pearsonByYear — aligns two series BY YEAR, not by array index (M2)',
     const a = [{ y: 2000, q: 10, v: 0 }, { y: 2001, q: 20, v: 0 }, { y: 2002, q: 15, v: 0 }, { y: 2003, q: 30, v: 0 }];
     const b = [{ y: 2000, q: 100, v: 0 }, { y: 2001, q: 200, v: 0 }, { y: 2002, q: 150, v: 0 }, { y: 2003, q: 300, v: 0 }];
     expect(window.pearsonByYear(a, b, 'q')).toBeCloseTo(1, 6);
-    expect(window.pearsonByYear(a, b, 'v')).toBe(0); // all-zero value → no growth variance
+    // Valor todo zero ⇒ deltaPct recusa cada par (base não-positiva) ⇒ nenhum par
+    // sobra ⇒ n<2. Não é "variância zero", é falta de base — e a resposta é null.
+    expect(window.pearsonByYear(a, b, 'v')).toBeNull();
   });
 });
 

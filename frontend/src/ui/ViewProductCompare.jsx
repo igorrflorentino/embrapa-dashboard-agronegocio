@@ -236,8 +236,12 @@ function ViewProductCompare({ summary, conventions, database }) {
                       return (
                         <td key={colIt.code}
                             className="tnum"
-                            style={{ background: i === j ? 'var(--bg-surface-2)' : corrColor(r), color: Math.abs(r) > 0.6 ? '#fff' : 'var(--fg-1)' }}>
-                          {i === j ? '—' : r.toFixed(2).replace('.', ',')}
+                            style={{ background: i === j ? 'var(--bg-surface-2)' : corrColor(r), color: Number.isFinite(r) && Math.abs(r) > 0.6 ? '#fff' : 'var(--fg-1)' }}>
+                          {/* `r` é null quando não há base para correlacionar. Medido na
+                              tela com a janela em 2023–2024: a matriz inteira do PEVS
+                              mostrava "0,00" entre madeira, carvão e lenha — descorrelação
+                              perfeita, com duas casas decimais, sobre UM par de crescimento. */}
+                          {i === j || !Number.isFinite(r) ? '—' : r.toFixed(2).replace('.', ',')}
                         </td>
                       );
                     })}
