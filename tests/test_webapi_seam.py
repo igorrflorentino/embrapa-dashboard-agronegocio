@@ -887,6 +887,32 @@ def test_trade_mirror_parceiros_ausentes_alem_do_teto_de_cobertura(monkeypatch):
     assert por_ano[2025]["comtrade"] == pytest.approx(63.2)
 
 
+# ── valor agregado: o nível predominante precisa de um total ───────────────────
+
+
+def test_value_added_predominant_recusa_sem_valor_total():
+    """`total = point["totalV"] or 1` mascarava o denominador.
+
+    Com o `or 1`, a fração virava uma MULTIPLICAÇÃO por 100: um ano com níveis
+    presentes e valor todo zerado saía como "Nível predominante: X · 0,0% do valor",
+    declarando um vencedor sobre nada. É o gêmeo Python do `|| 1` varrido no frontend,
+    na forma que a regex não cobria — atribuição numa linha, divisão na seguinte.
+    """
+    from embrapa_dashboard.webapi import seam_attribute_engineering as sae
+
+    zerado = {"levels": {"bruto": {"v": 0.0}, "processado": {"v": 0.0}}, "totalV": 0.0}
+    assert sae._value_added_predominant(zerado) is None
+
+    # E o caminho normal segue dando a fração de verdade.
+    normal = {"levels": {"bruto": {"v": 30.0}, "processado": {"v": 70.0}}, "totalV": 100.0}
+    out = sae._value_added_predominant(normal)
+    assert out["level"] == "processado"
+    assert out["shareV"] == pytest.approx(70.0)
+
+    # Sem nível algum, também não há predominante.
+    assert sae._value_added_predominant({"levels": {}, "totalV": 0.0}) is None
+
+
 # ── market share: a fatia mundial só compara produtos PAREADOS ─────────────────
 
 

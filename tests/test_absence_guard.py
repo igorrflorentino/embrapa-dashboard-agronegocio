@@ -26,10 +26,39 @@ RAIZ = Path(__file__).resolve().parents[1] / "src" / "embrapa_dashboard"
 _FALLBACK_ZERO = re.compile(r"\bif\s+[A-Za-z_][\w.\[\]\"']*\s+else\s+0(?:\.0)?\b")
 # `/ (algo or 1)` — mascarar o denominador para que a divisão "não falhe".
 _DENOMINADOR_MASCARADO = re.compile(r"/\s*\(?[^()\n]*\bor\s+1\b")
+# O MESMO denominador mascarado, uma linha antes: `total = ... or 1` e a divisão depois.
+# Escapava da regex acima, que exige o `or 1` dentro da própria divisão — foi por aí que
+# `_value_added_predominant` declarava um "nível predominante · 0,0% do valor" sobre um
+# ano de valor zerado, transformando a fração numa multiplicação por 100. É o gêmeo da
+# mesma cegueira já corrigida na varredura do frontend (absenceGuard.test.js).
+#
+# `or 1` é LEGÍTIMO quando o resultado não vira afirmação: uma barra de progresso, ou uma
+# guarda morta cujo denominador nunca chega a zero porque a coleção só existe se tiver
+# linhas. É ilegítimo quando o quociente vai para a tela como fração de alguma coisa.
+_TOTAL_MASCARADO = re.compile(r"^\s*\w+ = [^\n]*\bor\s+1(?:\.0)?\b")
 
 # Cada permissão precisa do trecho literal E de uma razão. Uma razão só vale se o zero for
 # MEDIDO (uma contagem de verdade) ou se não houver divisão por medida ausente.
 PERMITIDOS: list[tuple[str, str]] = [
+    # ── Os `= ... or 1` que NÃO viram afirmação ────────────────────────────────
+    (
+        "chunks_total = max(state.chunks_total or 1, state.chunks_done + state.chunks_failed)",
+        "monitor/render.py: denominador de uma BARRA DE PROGRESSO na CLI do operador, não "
+        "um número na tela do pesquisador. Sem chunk algum a barra fica vazia, que é o "
+        "desenho certo; e o `max` já garante que o total nunca fica abaixo do concluído.",
+    ),
+    (
+        'total = sum(slot["counts"].values()) or 1.0',
+        "serializers._quality_by_product: divide CONTAGENS por total de contagens, e o "
+        "slot só existe porque teve linhas — o total nunca chega a zero ali. A guarda é "
+        "código morto; o `or 1.0` nunca decide nada.",
+    ),
+    (
+        "total = sum(flags.values()) or 1.0",
+        "serializers._quality_ts: idem — o ano só entra em by_year porque teve linha, "
+        "então a soma das flags dele é positiva por construção. Contagem, não medida: "
+        "zero linhas seria zero de verdade, e nem esse caso chega aqui.",
+    ),
     (
         'return row["production"] if row else 0.0',
         "seam_cross._uf_mass: uma UF SEM linha produziu zero daquele produto — as DUAS "
@@ -77,7 +106,11 @@ def test_nenhum_call_site_responde_zero_a_uma_razao_indefinida() -> None:
             despida = linha.strip()
             if despida.startswith("#") or not despida:
                 continue
-            if not (_FALLBACK_ZERO.search(linha) or _DENOMINADOR_MASCARADO.search(linha)):
+            if not (
+                _FALLBACK_ZERO.search(linha)
+                or _DENOMINADOR_MASCARADO.search(linha)
+                or _TOTAL_MASCARADO.search(linha)
+            ):
                 continue
             if any(trecho in linha for trecho, _ in PERMITIDOS):
                 continue
