@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.66.0] - 2026-09-08
+
+### Corrigido
+
+- **O gêmeo Python do `|| 1`, na forma que a varredura não via.**
+  `_value_added_predominant` fazia `total = point["totalV"] or 1` numa linha e a divisão
+  na seguinte — e com o `or 1` a fração vira uma **multiplicação por 100**. Um ano com
+  níveis presentes e valor todo zerado saía como *"Nível predominante: X · **0,0% do
+  valor**"*, declarando um vencedor sobre nada. A varredura Python tinha exatamente a
+  mesma cegueira que a do frontend tinha antes da v1.61.0: a regex exigia o `or 1`
+  **dentro** da própria divisão.
+
+  Estendida, ela achou 4 ocorrências. **Três são legítimas** e ficam registradas com
+  razão: uma barra de progresso da CLI e duas guardas mortas (dividem contagens por um
+  total que, por construção, nunca chega a zero — o slot só existe porque teve linhas).
+
+- **Uma regressão que EU introduzi na v1.61.0.** Ao tornar `total` anulável em
+  `ViewMarketNature`, deixei passar um bloco vinte linhas abaixo que ainda dividia por
+  ele: `L[m.id] / null` dá **`Infinity`**, pior que o `0,0%` que o `|| 1` produzia antes.
+  A view está **congelada** (entrada comentada na barra lateral, 0 valores distintos no
+  dado), então nunca chegou à tela — mas era sujeira minha e sai agora.
+
+### Verificado sem achado
+
+- **Base de dados** — e é o oposto do que a sessão vem encontrando: o CSV devolve
+  **célula vazia** para nulo e a grade mostra um glifo **`∅`** explícito. A perspectiva
+  que exporta dado para fora do dashboard é a que trata a ausência melhor.
+- **Valor agregado** — a view lê tudo do backend com guarda, e o backend já recusava o
+  prêmio de processamento com `None` quando há menos de dois níveis precificados.
+
+---
+
 ## [1.65.0] - 2026-09-08
 
 ### Corrigido

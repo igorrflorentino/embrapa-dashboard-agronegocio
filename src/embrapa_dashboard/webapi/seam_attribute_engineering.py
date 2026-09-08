@@ -365,12 +365,22 @@ def _value_added_premium(point: dict) -> float | None:
 
 
 def _value_added_predominant(point: dict) -> dict | None:
-    """The level with the largest export value at one year → {level, shareV%}."""
+    """The level with the largest export value at one year → {level, shareV%}.
+
+    ``None`` — not a level with 0% — quando não há valor total: o `or 1` que estava aqui
+    mascarava o denominador e transformava a fração numa multiplicação por 100. Um ano
+    com níveis presentes mas valor todo zerado saía como "Nível predominante: X · 0,0% do
+    valor", que declara um vencedor sobre nada. É o gêmeo Python do `|| 1` varrido no
+    frontend, na forma que a regex da varredura não cobria: a atribuição numa linha e a
+    divisão na seguinte.
+    """
     if not point["levels"]:
         return None
     lvl, cell = max(point["levels"].items(), key=lambda kv: kv[1]["v"])
-    total = point["totalV"] or 1
-    return {"level": lvl, "shareV": cell["v"] / total * 100}
+    share = measures.pct_present(cell["v"], point["totalV"])
+    if share is None:
+        return None
+    return {"level": lvl, "shareV": share}
 
 
 # ── Market-nature — COMTRADE value by economic purpose (consumo/processamento) ──

@@ -196,7 +196,11 @@ function ViewMarketNature() {
         {window.ENRICH_MARKETS.map(m => (
           <window.KpiCardSpark key={m.id} label={m.label}
             value={'US$ ' + caNum(L[m.id], 1) + ' bi'}
-            sub={caPct((L[m.id] / total) * 100) + ' do total'} />
+            // ratioPresent: quando não há total, `L[m.id] / null` dá Infinity — pior que
+            // o "0,0% do total" que o `|| 1` produzia antes da v1.61.0, e foi ELA que
+            // introduziu isto aqui, ao tornar `total` anulável vinte linhas acima sem
+            // olhar este bloco. pctBR devolve '—' para null.
+            sub={caPct(window.scalePresent(window.ratioPresent(L[m.id], total), 100)) + ' do total'} />
         ))}
         <window.KpiCardSpark label="Janela" value={`${data.series[0].y}–${L.y}`} sub="cobertura comparável" />
       </div>
