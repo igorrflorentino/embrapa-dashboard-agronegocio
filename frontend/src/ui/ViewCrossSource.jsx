@@ -83,6 +83,10 @@ function ViewCrossSource({ value, onChange }) {
   // ── Pairwise correlation on YoY growth, aligned BY YEAR (point.y), not array
   //    index — a series with an internal year gap would otherwise correlate
   //    misaligned years (shared helpers · seriesUtils.js). ─
+  // Também ANULÁVEL desde a v1.62.0 (sem dois pares comparáveis não há correlação). Ela
+  // corrigiu a célula da matriz lá embaixo, neste mesmo arquivo, e deixou o card do topo
+  // com `.toFixed` — que derrubava a perspectiva com a janela em dois anos. Corrigir um
+  // consumidor e não varrer o arquivo atrás dos outros foi o defeito, não o null.
   const corr = items.map(a => items.map(b => window.pearsonByYear(a.points, b.points)));
   const corrColor = window.corrColor;
 
@@ -103,6 +107,9 @@ function ViewCrossSource({ value, onChange }) {
     : null;
   // A média da razão ignora os anos sem razão definida (null): somá-los como 0 puxaria
   // a média para baixo com anos que ninguém mediu.
+  // ANULÁVEL, e os dois lugares que o exibem têm de saber disso: `meanPresent` devolve
+  // null quando nenhum ponto da razão existe, e `ratioMean.toFixed(1)` derrubava a
+  // perspectiva inteira. Ambos passam por pctBR/numBR, que já renderizam '—'.
   const ratioMean = ratioSeries ? window.meanPresent(ratioSeries.map(d => d.v)) : null;
 
   // ── Chart series in the shape each chart expects ──────────────────────
@@ -140,7 +147,9 @@ function ViewCrossSource({ value, onChange }) {
         <window.KpiCardSpark label="Famílias de unidade" value={families.length}
           sub={families.map(f => window.METRIC_FAMILIES[f]?.label || f).join(' · ')} />
         <window.KpiCardSpark label={ratioEligible ? 'Razão média (par)' : 'Correlação (par principal)'}
-          value={ratioEligible ? window.pctBR(ratioMean, 1) : (items.length >= 2 ? corr[0][1].toFixed(2).replace('.', ',') : '—')}
+          value={ratioEligible
+            ? window.pctBR(ratioMean, 1)
+            : (items.length >= 2 ? window.numBR(corr[0][1], 2) : '—')}
           sub={ratioEligible ? `${items[1].label} ÷ ${items[0].label}` : 'variação interanual'} />
       </div>
 
@@ -305,7 +314,7 @@ function ViewCrossSource({ value, onChange }) {
           <window.SectionHeader
             overline="Razão entre séries"
             title={`${items[1].label} como % de ${items[0].label}`}
-            action={<span className="caption">média {ratioMean.toFixed(1).replace('.', ',')}%</span>}
+            action={<span className="caption">média {window.pctBR(ratioMean, 1)}</span>}
           />
           <window.MultiLineChart
             series={[{ name: 'razão (%)', color: 'var(--embrapa-blue)', data: ratioSeries }]}
