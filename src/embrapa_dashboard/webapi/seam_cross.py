@@ -596,7 +596,13 @@ def _gate_value_qty_by_year(banco: str, codes: tuple, uf_codes: tuple = ()) -> d
     )
     if pts is None or pts.empty:
         return {}
-    g = pts.groupby("reference_year").agg(v=("total_value", "sum"), q=("total_qty_native", "sum"))
+    # `min_count=1`: a soma de um grupo INTEIRAMENTE ausente é ausente, não zero. O
+    # padrão do pandas devolve 0.0 aí, e um valor 0.0 é indistinguível de um zero medido
+    # — a ausência morre neste ponto, antes de qualquer guarda a jusante poder vê-la.
+    g = pts.groupby("reference_year").agg(
+        v=("total_value", lambda col: col.sum(min_count=1)),
+        q=("total_qty_native", lambda col: col.sum(min_count=1)),
+    )
     return {int(y): (row.v, row.q) for y, row in g.iterrows()}
 
 
@@ -611,9 +617,26 @@ def _gate_price_by_year(pevs_codes: tuple, pam_codes: tuple, uf_codes: tuple = (
     crop = _gate_value_qty_by_year("ibge_pam", pam_codes, uf_codes)
     saida = {}
     for y in set(extractive) | set(crop):
-        ve, qe = extractive.get(y, (0.0, 0.0))
-        vc, qc = crop.get(y, (0.0, 0.0))
-        saida[y] = measures.ratio_present((ve or 0) + (vc or 0), ((qe or 0) + (qc or 0)) * 1000)
+        # Cada pesquisa entra com as DUAS metades ou com NENHUMA. `(ve or 0) + (vc or 0)`
+        # sobre `(qe or 0) + (qc or 0)` somava as metades independentemente: uma pesquisa
+        # com quantidade e sem valor entrava com 0 no numerador e com a quantidade
+        # inteira no denominador, e o que saía não era um preço — era um preço diluído
+        # pela produção que ninguém precificou. Hoje isso não chega à tela porque o
+        # recorte se cruza com o COMEX, que começa em 1997, e o vão do USD nominal do
+        # IBGE termina em 1993; é imunidade por DADO, não por construção.
+        # `_finite` recusa None e NaN de uma vez — a soma do pandas devolve NaN para o
+        # ano cujo valor não existe, e `NaN is not None` é verdadeiro.
+        pares = [
+            (fv, fq)
+            for par in (extractive.get(y), crop.get(y))
+            if par is not None
+            for fv, fq in [(measures._finite(par[0]), measures._finite(par[1]))]
+            if fv is not None and fq is not None
+        ]
+        if not pares:
+            saida[y] = None
+            continue
+        saida[y] = measures.ratio_present(sum(v for v, _ in pares), sum(q for _, q in pares) * 1000)
     return saida
 
 

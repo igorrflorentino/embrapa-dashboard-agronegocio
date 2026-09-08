@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.71.0] - 2026-09-08
+
+### Adicionado
+
+- **A quarta regra, escrita.** O `CLAUDE.md` registrava **três** formas de um número
+  aritmeticamente certo responder à pergunta errada — ausência, materialidade, lista de
+  códigos vazia. Cada uma nasceu de um defeito que chegou à produção. Faltava a que a
+  v1.70.0 acabou de custar:
+
+  > **As duas metades de uma razão têm de cobrir as mesmas linhas.**
+
+  Ela é distinta das outras três, e é por isso que passa por revisão sem tropeço: as duas
+  metades estão individualmente corretas. O defeito exige **dois agregados** — uma divisão
+  por linha se recusa sozinha, porque o NULL propaga; `sum(a) / sum(b)` não, porque cada
+  soma pula os próprios nulos em silêncio.
+
+  Já tinha cobrado três vezes antes de ser nomeada: o `export_coefficient` lia só a PEVS
+  no denominador enquanto o numerador cobria as duas origens (736,2% de coeficiente para
+  castanha-de-caju), o `price_spread` tinha a mesma forma, e o preço por parceiro a levou
+  à produção. Foram tratadas como instâncias da regra dos códigos vazios; a raiz é esta.
+
+- **`tests/test_ratio_same_rows_guard.py` — a varredura da classe.** Percorre todo
+  `safe_divide(agregado, agregado)` do `serving/sql.py` e dos modelos e macros dbt. Duas
+  formas são coerentes **por construção** e a varredura as reconhece estruturalmente em
+  vez de as listar como exceção — uma lista de permissões guarda o que alguém lembrou de
+  justificar, uma regra estrutural guarda o que ainda não foi escrito:
+
+  - **fração de participação**: o denominador soma o próprio numerador sobre uma partição;
+  - **numerador condicionado**: `sum(if(<den> is null, null, <num>)) / sum(<den>)`.
+
+  A divisão **por linha** fica deliberadamente fora do escopo: incluí-la encheria a
+  varredura com as dezenas de `safe_divide(valor, índice)` da deflação, e ruído é como uma
+  varredura deixa de ser levada a sério. Provada por injeção nos dois sentidos — reprova o
+  texto exato que vigorou até a v1.70.0, e reprova uma razão nova e defeituosa plantada num
+  modelo dbt que ela nunca viu.
+
+### Corrigido
+
+- **O preço de porteira somava as metades independentemente.** `_gate_price_by_year` soma
+  as duas pesquisas do IBGE (PEVS extração + PAM lavoura) porque o outro lado da comparação
+  é o preço FOB da alfândega, que não distingue origem produtiva. A soma estava certa; o
+  **pareamento** não: `(ve or 0) + (vc or 0)` sobre `(qe or 0) + (qc or 0)` deixava uma
+  pesquisa com quantidade e sem valor entrar com `0` no numerador e com a quantidade
+  inteira no denominador. O que sai daí não é um preço — é um preço diluído pela produção
+  que ninguém precificou. Agora cada pesquisa entra com as **duas** metades ou com nenhuma.
+
+  **Latente, não visível**: o IBGE não tem `val_yearfx_usd` antes de 1994 (PEVS 1986–1993,
+  PAM 1974–1993) e a quantidade existe em todos esses anos, sempre tudo-ou-nada dentro do
+  ano — 1993 tem 232 de 232 linhas na PEVS e 260 de 260 na PAM. Esses anos não chegam à
+  tela apenas porque a série se cruza com o COMEX, que começa em 1997. É **imunidade por
+  dado, não por construção** — exatamente a forma que deixou o defeito irmão viver na
+  produção até a v1.70.0.
+
+- **A ausência morria um passo antes, no pandas.** `sum()` devolve `0.0` para um grupo
+  inteiramente NaN, e um `0.0` é indistinguível de um zero medido: nenhuma guarda a
+  jusante consegue ver o que já chegou como número. Corrigido com `min_count=1`.
+
+---
+
 ## [1.70.0] - 2026-09-08
 
 ### Corrigido
