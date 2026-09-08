@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.64.0] - 2026-09-08
+
+### Corrigido
+
+- **A linha "Reportado pelos parceiros" desenhava reporte incompleto como colapso.**
+  Os parceiros atrasam 1–2 anos: medido em produção 2026-09-08, **2025 trazia US$ 21,3 bi
+  contra US$ 63,2 bi do MDIC** — um terço, num gráfico onde as outras duas linhas estavam
+  completas. Não é queda de comércio, é declaração que ainda não chegou.
+
+  O teto de cobertura consolidada (`_world_latest_complete_year`, hoje **2023**) já
+  existia e era aplicado na perspectiva ao lado, para o denominador da fatia mundial. A
+  linha dos parceiros passa a respeitá-lo e fica **ausente** além dele — lacuna no
+  gráfico, não zero. **Custo assumido**: 2024 também sai, e o valor dele (63,7 contra
+  64,0 do MDIC) parecia completo — mas "parecia" não é a medida, e o teto é o único sinal
+  de cobertura que existe. As linhas MDIC e Comtrade seguem intactas no mesmo ano.
+
+- **"Maior reporte: Parceiros" era uma string LITERAL**, com o subtítulo *"tendem a
+  registrar mais que a origem"* — afirmado como se medido na seleção ativa. A tendência é
+  real (parceiros reportam mais em **18 de 24** anos comparáveis), mas os anos logo ao
+  lado do card a contradiziam: em 2022, 2023 e 2024 reportaram **menos**. O card passa a
+  contar os anos do recorte e a dizer o placar — e a nomear o **MDIC** quando é ele que
+  reporta mais.
+
+- **A fatia mundial dividia TODO o COMEX por TODO o COMTRADE.** Sem filtro, os dois lados
+  iam com tupla vazia (= "sem filtro"), enquanto o laço `by_product` logo abaixo já
+  exigia que o agrupamento tivesse **os dois lados**. Açaí e cupuaçu têm NCM sem
+  correspondência HS: as exportações deles entravam no numerador sem nada no denominador.
+
+  Medido: **0,0015% do numerador em 2021** e menos depois — **imaterial hoje**, e o
+  número na tela mal se move (17,5050% contra 17,5062%). A regra vale porque um
+  agrupamento futuro com lado COMEX grande e sem HS inflaria a fatia de verdade — e
+  porque a mesma view já a aplicava seis linhas abaixo.
+
+### Corrigido (no teste)
+
+- **Dois testes pré-existentes do espelho passavam na máquina do dev e reprovavam no CI.**
+  A correção acima fez `trade_mirror` chamar `_world_latest_complete_year()`, que lê
+  `get_settings()` — suprido pelo `.env` local e ausente no CI. É a mesma armadilha da
+  v1.56.0 desta mesma sessão, e desta vez a verificação foi feita do jeito certo:
+  rodando a suíte com o `.env` movido para fora, que é o único ambiente que prova algo.
+
+---
+
 ## [1.63.0] - 2026-09-08
 
 ### Corrigido

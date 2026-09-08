@@ -360,6 +360,21 @@ function ViewMirror() {
   // meanPresent: um ano sem dado nas DUAS fontes chega com v null e não pode entrar na
   // média como zero — puxaria a divergência média para baixo com anos que ninguém mediu.
   const avgDisc = window.meanPresent((data.discrepancy || []).map(d => d.v));
+  // "Maior reporte" era a STRING FIXA "Parceiros", com o sub "tendem a registrar mais
+  // que a origem". A tendência é real — medido em produção 2026-09-08, os parceiros
+  // reportam mais em 18 dos 26 anos —, mas o card a afirmava como se a tivesse medido
+  // NESTA seleção, e os anos recentes logo ao lado a contradiziam: em 2022, 2023 e 2024
+  // os parceiros reportaram MENOS. Agora conta os anos comparáveis do recorte ativo.
+  const comparaveis = (data.series || []).filter(d => d.partners != null && d.mdic != null);
+  const anosParceirosMaior = comparaveis.filter(d => d.partners > d.mdic).length;
+  const maiorReporte = !comparaveis.length
+    ? { valor: '—', sub: 'sem ano comparável no recorte' }
+    : anosParceirosMaior * 2 === comparaveis.length
+      ? { valor: 'Empate', sub: `${anosParceirosMaior} de ${comparaveis.length} anos para cada lado` }
+      : anosParceirosMaior * 2 > comparaveis.length
+        ? { valor: 'Parceiros', sub: `reportam mais em ${anosParceirosMaior} de ${comparaveis.length} anos` }
+        : { valor: 'MDIC · SECEX',
+            sub: `reporta mais em ${comparaveis.length - anosParceirosMaior} de ${comparaveis.length} anos` };
   // Real series window (#25) — never the hardcoded "1997–2024". Derived from the
   // same series the KPIs above read, so it tracks the actual data span.
   const mirrorYears = (data?.series || []).map(d => d.y);
@@ -377,7 +392,7 @@ function ViewMirror() {
 
       <div className="kpi-row">
         <window.KpiCardSpark label="Divergência média" value={msPct(avgDisc)} sub="entre MDIC e Comtrade" />
-        <window.KpiCardSpark label="Maior reporte" value="Parceiros" sub="tendem a registrar mais que a origem" />
+        <window.KpiCardSpark label="Maior reporte" value={maiorReporte.valor} sub={maiorReporte.sub} />
         <window.KpiCardSpark label="Exportação MDIC" value={'US$ ' + msNum(last?.mdic, 1) + ' bi'} sub={`${last?.y ?? '—'}`} />
         <window.KpiCardSpark label="Janela" value={mirrorWindow} sub="cobertura comparável" />
       </div>
