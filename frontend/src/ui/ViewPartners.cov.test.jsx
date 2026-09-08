@@ -87,13 +87,68 @@ const BY_METRIC = {
     flowLabel: 'destino',
     notApplicable: null,
     partners: [
-      { name: 'Suíça',  price: 42.5 },
-      { name: 'Japão',  price: 18 },
-      { name: 'França', price: 6.25 },
-      { name: 'Outro',  price: null }, // null price → '—' / filtered from range
+      // pricedShare = quanto do comércio do parceiro sustenta o preço exibido. O
+      // COMTRADE publica linhas com valor e sem peso, e o preço só existe onde as
+      // duas metades existem — abaixo de 90% a tela nomeia o parceiro.
+      { name: 'Suíça',  price: 42.5, pricedShare: 0.998 },  // cobre tudo → sem nota
+      { name: 'Japão',  price: 18,   pricedShare: 0.547 },  // metade sem peso → nota
+      { name: 'França', price: 6.25, pricedShare: 0.9 },    // NO limiar → sem nota
+      { name: 'Outro',  price: null, pricedShare: null },   // sem base → nunca nomeado
     ],
   },
 };
+
+describe('ViewPartners — preço apoiado em parte do comércio', () => {
+  // O preço divide valor por peso, e as duas metades têm de cobrir as MESMAS linhas.
+  // Corrigido isso no SQL (v1.70.0), o número fica certo e MUDO: o preço da Suíça
+  // descreve 99,8% do que ela comercia e o do Japão, 54,7% — e a tela mostrava os dois
+  // do mesmo jeito. Exibir um valor calculado sobre um recorte sem dizer qual é
+  // exatamente a filtragem invisível que o projeto proíbe.
+  const abrir = () => {
+    stubGlobals(BY_METRIC);
+    const r = render(<ViewPartners summary={{}} conventions={{}} database="un_comtrade" />);
+    fireEvent.click([...r.container.querySelectorAll('.seg-opt')].find(
+      (b) => b.textContent === 'Preço médio'));
+    return r;
+  };
+
+  it('nomeia o parceiro cujo preço se apoia em menos de 90% do comércio', () => {
+    const { container } = abrir();
+    expect(container.textContent).toContain('Preço apoiado em parte do comércio');
+    expect(container.textContent).toContain('Japão');
+  });
+
+  it('não nomeia quem tem cobertura suficiente — nem quem está NO limiar', () => {
+    const { container } = abrir();
+    const nota = [...container.querySelectorAll('p.caption')].find(
+      (e) => e.textContent.includes('Preço apoiado em parte'));
+    expect(nota).toBeTruthy();
+    expect(nota.textContent).not.toContain('Suíça');
+    // 0,9 exato NÃO é "abaixo de 0,9": um limiar que engolisse o próprio valor
+    // nomearia como ressalva o caso que ele define como aceitável.
+    expect(nota.textContent).not.toContain('França');
+  });
+
+  it('cobertura AUSENTE não vira cobertura baixa', () => {
+    // `c < 0.9` sozinho aceita null (null < 0.9 é true em JS), e a nota passaria a
+    // afirmar "o preço deste parceiro cobre pouco" sobre quem não sabemos nada — a
+    // ausência renderizada como afirmação, o defeito recorrente desta base.
+    const { container } = abrir();
+    const nota = [...container.querySelectorAll('p.caption')].find(
+      (e) => e.textContent.includes('Preço apoiado em parte'));
+    expect(nota.textContent).not.toContain('Outro');
+  });
+
+  it('a nota só existe no ranking de PREÇO', () => {
+    // Capital e Volume são aditivos: a soma cobre tudo o que o parceiro comercia, e
+    // não há parte de fora para enunciar.
+    stubGlobals(BY_METRIC);
+    const { container } = render(
+      <ViewPartners summary={{}} conventions={{}} database="un_comtrade" />
+    );
+    expect(container.textContent).not.toContain('Preço apoiado em parte do comércio');
+  });
+});
 
 describe('ViewPartners — smoke + metric-toggle branches', () => {
   it('renders the default Capital ranking with exp/imp bars + top-3 concentration', () => {

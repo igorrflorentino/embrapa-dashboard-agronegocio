@@ -1266,6 +1266,9 @@ def test_serialize_partner_populated_path_scales_and_truncates():
                 "imp_value_usd": 1_000_000,
                 "value_usd": 6_000_000,
                 "total_weight_kg": 2_000_000,
+                # Só 4,5 dos 6 milhões de dólares têm peso por trás: o preço divide
+                # essa parte, e `pricedShare` diz ao leitor que parte é.
+                "priced_value_usd": 4_500_000,
                 "price_usd_per_kg": 3.0,
             },
             {
@@ -1274,6 +1277,7 @@ def test_serialize_partner_populated_path_scales_and_truncates():
                 "imp_value_usd": 2_000_000,
                 "value_usd": 5_000_000,
                 "total_weight_kg": 1_000_000,
+                "priced_value_usd": 5_000_000,  # cobre tudo
                 "price_usd_per_kg": 5.0,
             },
         ]
@@ -1288,6 +1292,7 @@ def test_serialize_partner_populated_path_scales_and_truncates():
         "value": 6.0,
         "weight": 2.0,  # 2_000_000 kg ÷1e6 → mil t
         "price": 3.0,  # US$/kg, passthrough
+        "pricedShare": 0.75,  # 4,5 mi de 6 mi — o preço descreve três quartos
     }
 
 

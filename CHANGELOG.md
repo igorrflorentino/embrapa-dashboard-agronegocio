@@ -7,6 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.70.0] - 2026-09-08
+
+### Corrigido
+
+- **As duas metades de uma razão têm de cobrir as mesmas linhas.** O *Preço médio* por
+  parceiro dividia **todo** o valor comerciado pelo peso de **parte** das linhas. O UN
+  Comtrade publica transações com valor e **sem peso líquido** — o declarante registrou
+  a operação sem quantidade —, e o que sai daí não é um preço: é o preço inflado pela
+  fração que nunca entrou no denominador.
+
+  Medido em produção (2026-09-07): **79.528 linhas, 3,87%** do mart, carregando **3,83%**
+  do valor. No agregado a distorção é de **+3,98%** — parece pouco, e o efeito não era um
+  erro de arredondamento e sim uma **resposta trocada**. No agrupamento *madeira*,
+  **cinco dos dez primeiros** do ranking eram artefato da própria lacuna que mediam:
+
+  | parceiro | exibido | correto | distorção | do valor sem peso |
+  |---|---|---|---|---|
+  | Guam | 6º · US$ 1,251/kg | 41º · US$ 0,567/kg | +121% | 54,7% |
+  | Oceania, nep | 2º · US$ 1,567/kg | 13º · US$ 0,715/kg | +119% | 54,4% |
+  | São Tomé e Príncipe | 3º · US$ 1,461/kg | 14º · US$ 0,682/kg | +114% | 53,3% |
+
+  O ranking existe para responder *"quem paga mais por quilo"* e respondia *"quem reporta
+  peso para a menor fatia do que comercia"*. O COMEX é imune **por dado, não por
+  construção** — zero linhas sem peso —, e é por isso que a guarda é sobre o SQL: no dia
+  em que o MDIC publicar uma linha assim, a fórmula errada volta a mentir sozinha.
+
+### Adicionado
+
+- **A cobertura do preço, na tela.** Corrigido o cálculo, o número fica certo e **mudo**:
+  o preço da Suíça descreve 99,8% do que ela comercia e o do Japão, 54,7% — e os dois
+  apareciam iguais. `pricedShare` viaja no contrato e a view nomeia quem fica abaixo de
+  **90%** de cobertura (o limiar não é redondo por acaso: dos 247 parceiros com peso
+  material, 75,3% ficam acima de 95% e a cauda desce até 56%). Exibir um valor calculado
+  sobre um recorte sem dizer qual é a filtragem invisível que o projeto proíbe.
+
+  Cobertura **ausente** não vira cobertura baixa: `c < 0,9` sozinho aceita `null` (em JS
+  `null < 0.9` é `true`) e passaria a afirmar "cobre pouco" sobre quem não sabemos nada.
+
+### Varredura da camada dbt (sem defeito encontrado)
+
+Aplicadas as quatro lentes — ausência, materialidade, escopo, identidade — aos modelos
+Silver/Gold/serving e às macros. O achado acima veio dela, mas nasceu no `serving/sql.py`;
+o dbt em si passou limpo, e o que foi **verificado contra produção**, não presumido:
+
+- **A mediana do detector de outliers é comparável.** `qty_native` com partição
+  `(product_code, family)` só é seguro se a partição for homogênea em unidade — e é:
+  **zero** partições com unidade ou tabela mista nos três bancos IBGE.
+- **`sum()` sobre grupo parcialmente coberto** devolveria a soma da parte com cara de
+  total. **Zero** grupos mistos: a ausência é uniforme por ano (a lacuna do deflator),
+  então `sum()` devolve NULL e a recusa se propaga até a tela.
+- **`nullif(qty, 0)` no COMTRADE** supõe que 0 é sentinela de "quantidade não coletada".
+  Confirmado sobre 21.110.724 linhas do Bronze: das 411.121 com `qty = 0`, **411.101
+  (99,995%)** têm `primaryValue` positivo — não se comercia valor positivo com quantidade
+  zero.
+- **Nenhum `1 − OK`** em lugar algum, que varreria `UNSCORED` para dentro do dano.
+- **`coalesce(x, 0)`** em `serving_quality_by_source` é benigno: numa fração de somas
+  equivale a excluir a linha, no numerador **e** no denominador.
+- **O EUR deflacionado cobrir 45 dos 51 anos da PAM não é fabricação** — ele converte na
+  taxa do ano de referência; o EUR **nominal** cobre 26, a partir de 1999, quando o euro
+  passou a existir.
+
+---
+
 ## [1.69.0] - 2026-09-08
 
 ### Corrigido

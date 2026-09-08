@@ -134,7 +134,8 @@ const TOTAL_MASCARADO = /\b(?:const|let|var)\s+\w+\s*=[^;\n]*\|\|\s*1\s*;/;
 // Python em tests/test_absence_contract_fields.py, que falha se ela divergir — assim ela
 // não apodrece quando um serializer novo emitir outro campo anulável.
 const CAMPOS_ANULAVEIS = [
-  'coefPct', 'markup', 'price', 'share', 'v', 'value', 'valueShare', 'yieldKgHa',
+  'coefPct', 'markup', 'price', 'pricedShare', 'share', 'v', 'value', 'valueShare',
+  'yieldKgHa',
 ];
 const _campos = CAMPOS_ANULAVEIS.join('|');
 

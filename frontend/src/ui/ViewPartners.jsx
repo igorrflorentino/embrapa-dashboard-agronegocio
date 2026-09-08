@@ -21,6 +21,13 @@ const _PARTNER_METRICS = [
   { id: 'price',  label: 'Preço médio', field: 'price',  additive: false },
 ];
 
+// Abaixo desta cobertura a nota nomeia o parceiro. O preço divide só o valor das linhas
+// que TÊM peso (o COMTRADE publica linhas com valor e sem quantidade), então ele descreve
+// uma parte do que o parceiro comercia — e 90% é onde a distribuição afina: medido em
+// produção 2026-09-07 sobre os 247 parceiros com peso material, 75,3% ficam acima de 95%
+// de cobertura e a cauda desce até 56%.
+const _COBERTURA_MINIMA = 0.9;
+
 const _nf = (v, d = 0) =>
   Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: d, maximumFractionDigits: d });
 
@@ -41,6 +48,14 @@ function ViewPartners({ summary, conventions, database }) {
   };
 
   const partners = data.partners || [];
+  // Só no ranking de PREÇO: nos aditivos (capital, volume) a soma cobre tudo o que o
+  // parceiro comercia, e não há parte nenhuma de fora para enunciar.
+  const parcial = metric !== 'price' ? [] : partners.filter((p) => {
+    // `< 0.9` sozinho aceitaria null (null < 0.9 é true em JS) e nomearia como
+    // "cobertura baixa" justamente o parceiro de quem não sabemos a cobertura.
+    const c = p && p.pricedShare;
+    return typeof c === 'number' && c < _COBERTURA_MINIMA;
+  });
   const valOf = (p) => (p && p[spec.field]) || 0; // price null → 0 (bar/scale only)
   const max = Math.max(...partners.map(valOf), spec.id === 'price' ? 0.0001 : 1);
   const top = partners[0];
@@ -134,6 +149,20 @@ function ViewPartners({ summary, conventions, database }) {
           (o MDIC lhe dá código de país próprio), e um país não é parceiro de si mesmo.
           Media <strong>US$ 3,50/kg</strong> e ocupava a segunda posição em preço médio.
         </p>
+        {parcial.length > 0 && (
+          <p className="caption" style={{ marginTop: 10 }}>
+            Preço apoiado em parte do comércio:{' '}
+            <strong>
+              {parcial
+                .map((p) => `${p.name} (${window.fmtPct(p.pricedShare)})`)
+                .join(', ')}
+            </strong>
+            . O declarante registrou essas transações <em>sem</em> quantidade, e um preço
+            só pode ser calculado onde valor e peso existem juntos — a porcentagem é
+            quanto do comércio de cada um sustenta o número exibido. O restante entra no
+            ranking de Capital, onde o valor é o próprio dado.
+          </p>
+        )}
         <window.MaterialityFloorNote
           dropped={data.belowFloor}
           valueKey="weight" labelKey="name"

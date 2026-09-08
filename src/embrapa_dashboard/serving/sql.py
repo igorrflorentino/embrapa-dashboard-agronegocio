@@ -1245,7 +1245,19 @@ def trade_by_partner(
             sum(case when flow = 'import' then val_yearfx_usd end) as imp_value_usd,
             sum(val_yearfx_usd)                                    as value_usd,
             sum(net_weight_kg)                                     as total_weight_kg,
-            safe_divide(sum(val_yearfx_usd), sum(net_weight_kg))   as price_usd_per_kg
+            -- As duas metades de uma razão têm de cobrir as MESMAS linhas. O COMTRADE
+            -- publica 79.528 linhas (3,87%) com valor e SEM peso líquido — o declarante
+            -- reportou a transação sem quantidade —, e somar todo o valor contra o peso
+            -- de parte delas não dá um preço: dá o preço inflado pela fração que não
+            -- entrou no denominador. Medido em produção 2026-09-07: no agrupamento
+            -- madeira Guam aparecia em 6º com US$ 1,251/kg e pertence ao 41º com
+            -- US$ 0,567 — +121%, porque 54,7% do valor dela não tem peso. Cinco dos dez
+            -- primeiros do ranking eram artefato da própria lacuna que mediam.
+            -- `priced_value_usd` é quanto do valor SUSTENTA o preço; a razão entre ele e
+            -- `value_usd` é a cobertura que a tela precisa enunciar.
+            sum(if(net_weight_kg is null, null, val_yearfx_usd))    as priced_value_usd,
+            safe_divide(sum(if(net_weight_kg is null, null, val_yearfx_usd)),
+                        sum(net_weight_kg))                        as price_usd_per_kg
         from `{table}`
         {_where(conditions)}
         group by {partner_code_column}
