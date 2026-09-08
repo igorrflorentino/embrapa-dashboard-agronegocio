@@ -78,7 +78,10 @@ function ViewValueVolume({ families, conventions, summary, database }) {
     if (!suffix) return { layers, label: unit };
     const out = layers.map(l => ({
       ...l,
-      data: l.data.map(d => ({ ...d, [key]: d[key] / factor })),
+      // ratioPresent, não `d[key] / factor`: em JS `null / factor === 0`, e a divisão
+      // desfazia o scalePresent de vinte linhas acima — o ano que a moeda ou o deflator
+      // não alcança voltava como uma faixa colada no zero, dentro da área empilhada.
+      data: l.data.map(d => ({ ...d, [key]: window.ratioPresent(d[key], factor) })),
     }));
     return { layers: out, label: window.scaleLabel(unit, suffix) };  // shared grammar (DEDUP-9)
   };
@@ -107,6 +110,15 @@ function ViewValueVolume({ families, conventions, summary, database }) {
   // A value-less basket (the livestock herd — a stock) has R$ 0 every year; show the
   // monetary cards only when there IS value, and explain the absence honestly.
   const hasValue = valueMax > 0;
+  // POR QUE não há valor — e essa distinção é o que separa uma recusa honesta de uma
+  // desinformação. `valueMax > 0` é falso em DOIS casos que nada têm a ver: um rebanho
+  // (estoque, sem valor monetário por natureza) e uma janela que a moeda ou o deflator
+  // não alcança (o euro só existe desde 1999, o IPCA desde 1980). Medido na tela:
+  // madeira, carvão e lenha em euro pré-1999 recebiam a nota do REBANHO, mandando o
+  // pesquisador ver "cabeças" e a perspectiva Rebanho — para produtos florestais.
+  // `hasStock` lê measure_kind, que é o sinal de verdade.
+  const semValorPorEstoque = !hasValue && hasStock;
+  const semValorPorConvencao = !hasValue && !hasStock;
   // Basket × UF transient: filtered.ts sums ALL products over the selected UFs (the
   // basket is silently dropped) until the product×UF cube lands. Hold the ts-derived
   // aggregate value/quantity/YoY series at an honest loading note rather than render a
@@ -128,12 +140,24 @@ function ViewValueVolume({ families, conventions, summary, database }) {
         </div>
       )}
 
-      {!hasValue && (
+      {semValorPorEstoque && (
         <div className="card subtle" style={{ marginBottom: 12 }}>
           <p className="caption" style={{ padding: '10px 12px' }}>
             Esta cesta é um <strong>estoque sem valor monetário</strong> (efetivo dos rebanhos) — não
             há série de valor. Veja a quantidade em <strong>cabeças</strong> abaixo, ou a perspectiva
             <strong> Rebanho</strong> para a composição por espécie.
+          </p>
+        </div>
+      )}
+
+      {semValorPorConvencao && (
+        <div className="card subtle" style={{ marginBottom: 12 }}>
+          <p className="caption" style={{ padding: '10px 12px' }}>
+            Nenhum ano do período tem valor em <strong>{ccyLabel}</strong> na correção
+            escolhida — o índice ou a moeda não alcançam esta janela (o euro existe desde
+            1999; o IPCA, desde 1980). Não é produção zero: as <strong>quantidades abaixo
+            seguem completas</strong>. Escolha outra convenção métrica, ou um período que a
+            convenção atual cubra.
           </p>
         </div>
       )}

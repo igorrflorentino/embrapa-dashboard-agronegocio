@@ -18,7 +18,14 @@ function ViewRebanho({ summary, conventions, database }) {
   // (eggs, milk) share the count/volume families but belong to the value views — the
   // measure_kind discriminator is exactly what separates them.
   const herdCodes = filtered.products.filter(p => p.measure_kind === 'stock').map(p => p.code);
-  const available = herdCodes.filter(c => filtered.allProductTS[c]);
+  // COM PONTO NA JANELA, não apenas presente no banco: o card "Espécies no efetivo"
+  // traz o período no subtítulo, então contar espécies que não têm dado nele nomeia uma
+  // coisa e conta outra. Medido na tela em 2026-09-08 com a janela em 1950–1960 (fora da
+  // cobertura da PPM): "Espécies no efetivo = 8 · 1950–1960".
+  const available = herdCodes.filter(
+    c => (filtered.allProductTS[c] || []).some(
+      d => d.y >= filtered.yearStart && d.y <= filtered.yearEnd),
+  );
 
   const yearStart = filtered.yearStart, yearEnd = filtered.yearEnd;
   const qtyMul = window.countQtyMul(conv);
@@ -114,7 +121,11 @@ function ViewRebanho({ summary, conventions, database }) {
   // Focused-species KPIs (current efetivo, YoY, historical peak).
   const focusProd = filtered.products.find(p => p.code === activeFocus);
   const focusWin  = filtered.allProductTS[activeFocus].filter(d => d.y >= yearStart && d.y <= yearEnd);
-  const fLast = focusWin[focusWin.length - 1] || { y: yearEnd, q: 0 };
+  // `q: null`, não `q: 0`: uma janela sem ponto algum (período fora da cobertura da
+  // pesquisa) não tem efetivo ZERO, tem efetivo desconhecido. Medido na tela com
+  // 1950–1960: "Efetivo = 0 un" e "Pico histórico = 0 un em 1960" — duas afirmações
+  // sobre um período que a PPM não cobre. formatCountQty já devolve '—' para null.
+  const fLast = focusWin[focusWin.length - 1] || { y: yearEnd, q: null };
   const fPrev = focusWin[focusWin.length - 2] || fLast;
   const fDelta = window.deltaPct(fPrev.q, fLast.q);
   const fPeak = focusWin.reduce((m, d) => (d.q > m.q ? d : m), focusWin[0] || fLast);
