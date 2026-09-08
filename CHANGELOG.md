@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.63.0] - 2026-09-08
+
+### Corrigido
+
+- **Dois serializers zeravam o valor DEFLACIONADO — o defeito que abriu esta sessão,
+  em lugares que a limpeza da v1.49.0 não alcançou.** `serialize_product_uf` e
+  `serialize_products_by_uf` usavam `_num` (que mapeia NULL → 0,0, correto para uma
+  CONTAGEM) na coluna que as convenções de moeda/correção resolvem.
+
+  Medido em produção 2026-09-08, PEVS com **euro** na janela **1986–1998** — antes de o
+  euro existir:
+
+  | endpoint | antes | depois |
+  |---|---|---|
+  | `/product-uf` (açaí) | **26 UFs com `value: 0`** | 26 com `value: null` |
+  | `/products-by-uf` (Pará) | **10 produtos com `value: 0,0`** | 10 com `value: null` |
+
+  E as quantidades ao lado estavam intactas o tempo todo (0,874 mil t de açaí no
+  Amazonas; 1.398,8 mil t no Pará) — ou seja, a barra *"Onde X é produzido"* afirmava
+  produção de valor zero para toda UF enquanto a massa dizia o contrário. As três outras
+  ocorrências de `_num` sobre valor no arquivo são USD **nominal** do comércio, sem
+  lacuna de índice, e ficam como estão.
+
+- **`rows.sort(key=lambda d: d["value"])` derrubava a rota com HTTP 500.** Consequência
+  direta da correção acima: `sorted` compara `None` com `None` e levanta `TypeError`.
+  Presentes primeiro em ordem decrescente, ausentes no fim — sem inventar um lugar para
+  eles na escala.
+
+  **Meu teste não pegou isso**: ele tinha UMA linha, e com uma linha o `sort` nunca
+  compara. Quem pegou foi a chamada à API real. O teste agora usa quatro linhas, duas
+  delas ausentes.
+
+- `ViewTerritoryProfile` multiplicava `(p.value || 0) * 1e6 * cvf`: o `|| 0` refazia na
+  tela o zero que o serializer passou a recusar.
+
+### Verificado sem achado
+
+- **Fluxos territoriais**: limpa desta família. Somas de nós são aditivas, larguras de
+  barra são geometria, e o `max` das rotas vem de uma lista não vazia.
+
+### Encontrado e NÃO corrigido
+
+- Com uma janela que a moeda não alcança, `ViewProductProfile` rotula *madeira em tora*
+  como **"Efetivo"** com unidade "un", porque `isStock` infere "é estoque" de *"nenhum
+  valor positivo na janela"* — e uma lacuna de moeda produz exatamente isso. É
+  **pré-existente** e esta versão não o altera (`null > 0` e `0 > 0` são ambos falsos).
+  Corrigir significa decidir se `measure_kind` sozinho basta, o que é outra discussão.
+
+---
+
 ## [1.62.0] - 2026-09-08
 
 ### Corrigido

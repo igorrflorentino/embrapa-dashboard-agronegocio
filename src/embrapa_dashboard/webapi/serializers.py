@@ -577,14 +577,24 @@ def serialize_product_uf(df: pd.DataFrame | None) -> dict:
             "region": r.region_abbrev,
             # PEVS/PAM expose total_value; the COMEX-by-UF reader names it
             # total_value_usd — accept either so both geo bancos serialize.
-            "value": _num(getattr(r, "total_value", getattr(r, "total_value_usd", None))),
+            # _measure, não _num: `total_value` é a coluna DEFLACIONADA que as convenções
+            # resolveram, e o índice pode não alcançar a janela. Medido em produção
+            # 2026-09-08 no PEVS com euro em 1986–1998: as 26 UFs voltavam com `value: 0`
+            # enquanto `q_mass` trazia quantidade real (0,874 mil t de açaí no Amazonas) —
+            # a barra "Onde X é produzido" afirmava zero para toda UF porque o euro ainda
+            # não existia. O `_num` é certo para as CONTAGENS ao lado, não para o valor.
+            "value": _measure(getattr(r, "total_value", getattr(r, "total_value_usd", None))),
             "q_mass": _num(getattr(r, "q_mass", 0)) / 1e3,
             "q_vol": _num(getattr(r, "q_vol", 0)) / 1e6,
             "q_count": _num(getattr(r, "q_count", 0)) / 1e6,
         }
         for r in df.itertuples()
     ]
-    rows.sort(key=lambda d: d["value"], reverse=True)
+    # `value` passou a poder ser None (ver acima), e `sorted` compara None com None
+    # levantando TypeError — a rota devolvia HTTP 500 na janela que a moeda não alcança.
+    # Presentes primeiro, em ordem decrescente; ausentes no fim, sem inventar um lugar
+    # para eles na escala.
+    rows.sort(key=lambda d: (d["value"] is None, -(d["value"] or 0.0)))
     return {"uf": rows}
 
 
@@ -918,7 +928,10 @@ def serialize_products_by_uf(df: pd.DataFrame | None, max_rows: int = 100) -> di
             # de tabela única, o que mantém a chave presente e o contrato estável em vez de
             # aparecer e sumir por banco.
             "tabela": getattr(r, "tabela", None),
-            "value": _num(r.total_value) / 1e6,
+            # Idem: valor deflacionado preserva a ausência (ver serialize_product_uf).
+            # Medido no mesmo teste: "O que o Pará produz" trazia os 10 produtos com
+            # `value: 0.0` numa janela que o euro não alcança.
+            "value": _measure_scaled(r.total_value, 1e6),
             "q_mass": _num(getattr(r, "q_mass", 0)) / 1e3,
             "q_vol": _num(getattr(r, "q_vol", 0)) / 1e6,
             "q_count": _num(getattr(r, "q_count", 0)) / 1e6,
