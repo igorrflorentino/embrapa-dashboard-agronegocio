@@ -250,7 +250,9 @@ function ViewTerritoryProfile({ summary, database, conventions }) {
     (breakdown.products || []).slice()
       .sort((a, b) => (b.value || 0) - (a.value || 0)).slice(0, 12),
     database,
-  ).map((p) => ({ name: p.name || p.code, value: (p.value || 0) * 1e6 * cvf }));
+    // scalePresent, não `(p.value || 0) * …`: o `|| 0` refazia na tela o zero que o
+    // serializer passou a recusar, e `null * fator === 0` faria o mesmo sozinho.
+  ).map((p) => ({ name: p.name || p.code, value: window.scalePresent(p.value, 1e6 * cvf) }));
   const prodScaled = window.scaleSeries(
     prodRows, Math.max(...prodRows.map((p) => p.value), 0), conv, 'value', fx.symbol,
   );

@@ -1171,6 +1171,89 @@ def test_serialize_flow_none_and_empty_are_safe():
     assert empty_out["originLabel"] == "A"  # provided labels survive the empty path
 
 
+def test_serialize_product_uf_valor_deflacionado_ausente_nao_e_zero():
+    """O valor DEFLACIONADO preserva a ausência; as CONTAGENS ao lado seguem zerando.
+
+    ÂNCORA EXTERNA, medida em produção 2026-09-08: no PEVS com euro na janela
+    1986–1998 — antes de o euro existir — as **26 UFs** voltavam com ``value: 0``
+    enquanto ``q_mass`` trazia quantidade real (0,874 mil t de açaí no Amazonas). A barra
+    "Onde X é produzido" afirmava zero para toda UF porque a moeda ainda não existia.
+
+    A distinção é a mesma de ``_num`` vs ``_measure``: uma contagem ausente É zero (o
+    cubo do IBGE cobre as 27 UFs, e nenhuma linha significa nenhuma cabeça); um valor
+    que o índice não alcança não é zero, é desconhecido.
+    """
+    df = pd.DataFrame(
+        [
+            {
+                "state_acronym": "AM",
+                "state_name": "Amazonas",
+                "region_abbrev": "N",
+                "total_value": None,  # o euro não alcança 1986-1998
+                "q_mass": 874.0,
+                "q_vol": None,
+                "q_count": None,
+            }
+        ]
+    )
+    (linha,) = s.serialize_product_uf(df)["uf"]
+    assert linha["value"] is None, "o valor ausente foi AFIRMADO como zero"
+    assert linha["q_mass"] == pytest.approx(0.874)  # a quantidade existe e é real
+    # As contagens seguem zerando: ausência de linha é ausência de cabeça, medida.
+    assert linha["q_count"] == 0.0 and linha["q_vol"] == 0.0
+
+
+def test_serialize_product_uf_ordena_com_valores_ausentes_sem_estourar():
+    """A ordenação tem de sobreviver ao None — e uma linha só não prova isso.
+
+    Esta função ordena por valor, e `sorted` compara None com None levantando
+    TypeError. O teste acima passava com UMA linha (nada a comparar) enquanto a rota
+    devolvia **HTTP 500** na janela que a moeda não alcança: só a API real exercitou.
+    Presentes primeiro em ordem decrescente, ausentes no fim.
+    """
+    linhas = pd.DataFrame(
+        [
+            {
+                "state_acronym": uf,
+                "state_name": uf,
+                "region_abbrev": "N",
+                "total_value": v,
+                "q_mass": 1.0,
+                "q_vol": None,
+                "q_count": None,
+            }
+            for uf, v in (("AM", None), ("PA", 10.0), ("AP", None), ("MA", 50.0))
+        ]
+    )
+    ufs = [r["uf"] for r in s.serialize_product_uf(linhas)["uf"]]
+    assert ufs[:2] == ["MA", "PA"], "os valores presentes saíram fora de ordem"
+    assert set(ufs[2:]) == {"AM", "AP"}, "os ausentes não foram para o fim"
+
+
+def test_serialize_products_by_uf_valor_deflacionado_ausente_nao_e_zero():
+    """Mesma medição, na outra ponta: "O que <lugar> produz" trazia os 10 produtos do
+    Pará com ``value: 0.0`` numa janela que o euro não alcança."""
+    df = pd.DataFrame(
+        [
+            {
+                "product_code": "3403",
+                "product_name": "Açaí (fruto)",
+                "tabela": "289",
+                "total_value": None,
+                "q_mass": 168_530.0,
+                "q_vol": None,
+                "q_count": None,
+            }
+        ]
+    )
+    (prod,) = s.serialize_products_by_uf(df)["products"]
+    assert prod["value"] is None, "o valor ausente foi AFIRMADO como zero"
+    assert prod["q_mass"] == pytest.approx(168.53)
+    # E o caminho normal segue dividindo por 1e6 (valor em milhões da moeda).
+    df2 = df.assign(total_value=[2_000_000.0])
+    assert s.serialize_products_by_uf(df2)["products"][0]["value"] == pytest.approx(2.0)
+
+
 def test_serialize_partner_populated_path_scales_and_truncates():
     """serialize_partner's exp/imp/value ÷1e6 (US$ mi) + weight ÷1e6 (mil t) +
     price (US$/kg) scaling, and head(max_rows) truncation (otherwise only the
