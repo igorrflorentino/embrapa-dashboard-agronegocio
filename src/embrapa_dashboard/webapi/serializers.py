@@ -856,8 +856,11 @@ def serialize_partner(df: pd.DataFrame | None, max_rows: int = 30, rank_by: str 
     Each partner carries three comparable measures so the view can rank/display by
     Capital / Volume / Preço médio without a re-fetch when the row set is unchanged:
     ``value``/``exp``/``imp`` in US$ mi, ``weight`` in mil t (net weight), and
-    ``price`` in US$/kg (value ÷ net weight; ``None`` when the partner has no weight,
-    so the view shows "—" instead of a divide-by-zero artefact). The row ORDER is
+    ``price`` in US$/kg (``None`` when the partner has no weight, so the view shows "—"
+    instead of a divide-by-zero artefact). The price divides only the value of the rows
+    that HAVE a weight — the two halves of a ratio must cover the same rows — and
+    ``pricedShare`` is what fraction of the partner's trade that is, so the view can say
+    when a price rests on part of it. The row ORDER is
     the server-side ranking dimension (seam ``rank_by``), so ``df.head`` is the
     correct top-N for whichever metric was requested.
 
@@ -886,6 +889,14 @@ def serialize_partner(df: pd.DataFrame | None, max_rows: int = 30, rank_by: str 
             "weightKg": _num(getattr(r, "total_weight_kg", 0)),  # o piso mede em kg
             "weight": _num(getattr(r, "total_weight_kg", 0)) / 1e6,  # kg → mil t
             "price": None if price is None or pd.isna(price) else _num(price),  # US$/kg
+            # Quanto do comércio do parceiro SUSTENTA esse preço. O COMTRADE publica
+            # linhas com valor e sem peso, e o preço só pode ser calculado sobre as que
+            # têm as duas metades — então ele descreve uma PARTE do que o parceiro
+            # comercia, e a tela tem de dizer qual. `None` quando não há base (parceiro
+            # sem valor algum), nunca 0, que se leria como "nada sustenta o preço".
+            "pricedShare": measures.ratio_present(
+                getattr(r, "priced_value_usd", None), getattr(r, "value_usd", None)
+            ),
         }
 
     rows = [_row(r) for r in df.itertuples()]

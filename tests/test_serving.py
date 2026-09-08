@@ -712,7 +712,12 @@ def test_trade_by_partner_splits_export_and_import():
     assert {p.name: p for p in params}["codes"].values == ["08012100"]
     # quantity + implied unit price always present so the view can switch metric
     assert "sum(net_weight_kg)" in query
-    assert "safe_divide(sum(val_yearfx_usd), sum(net_weight_kg))" in query
+    # O numerador do preço CONDICIONA o valor à presença do peso: as duas metades de
+    # uma razão têm de cobrir as mesmas linhas (a fórmula anterior, com o valor inteiro
+    # sobre o peso de parte dele, punha cinco artefatos no top-10 — ver
+    # tests/test_partner_price_same_rows.py).
+    assert "sum(if(net_weight_kg is null, null, val_yearfx_usd))" in query
+    assert "safe_divide(sum(val_yearfx_usd), sum(net_weight_kg))" not in query
 
 
 def test_trade_by_partner_rank_by_switches_order_clause():
