@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.74.1] - 2026-09-09
+
+### Corrigido
+
+- **`docs/iam_setup.md` não conhecia a `sa-claude-code-web-dev`.** O arquivo se apresenta
+  como o inventário de identidades do projeto — é ele que a nota do `sa-dashboard-smoke-ci`
+  manda consultar antes de migrar qualquer identidade — e essa SA não estava lá, embora
+  tenha permissões reais no BigQuery e no bucket de produção que guarda os backups. Nova
+  **§2.5** com o que ela detém, quem a cria (`scripts/setup-claude-code-web-sa.sh`) e o
+  registro da restrição feita hoje.
+
+  Junto, duas coisas que o arquivo afirmava e não se sustentam:
+
+  - O comando de verificação (§2.6) filtra por `displayName:*Prod`, que **não lista** essa
+    SA ("Claude Code Web Development"). Enumerar por ali e tratar como inventário completo é
+    exatamente a armadilha que carregou o `sa-dashboard-smoke-ci` através do rename da
+    v1.52.0, três semanas depois de ele ter sido declarado aposentado. A nota agora diz que
+    o inventário é o arquivo, e o comando é só uma amostragem.
+  - O Overview dizia "quatro service accounts". São cinco; a quinta só não é criada por
+    este guia.
+
+### Alterado
+
+- **`sa-claude-code-web-dev` perdeu `roles/storage.admin` no bucket do datalake**
+  (`gs://…-datalake`, onde vivem os snapshots de Gold e de `research_inputs`). O binding era
+  de bucket, não de projeto, mas permitia a essa identidade de DESENVOLVIMENTO apagar o
+  bucket, seus objetos, e reescrever IAM e retenção dele.
+
+  Trocado por `roles/storage.objectUser` + um papel custom novo,
+  `bucketConfigReaderWriter` (`storage.buckets.get` + `update`). O papel custom é
+  necessário: `objectUser` **não concede permissão de bucket alguma**, e `ensure_bucket()`
+  chama `bucket.exists()`/`reload()` em todo `backup-gold` e em toda ingestão — só
+  `objectUser` quebraria os dois na primeira linha.
+
+  Aplicado na ordem conceder → provar → revogar, e provado DEPOIS da revogação,
+  impersonando a SA: `exists()` ok, `reload()` ok (versioning + 7 regras de lifecycle),
+  objeto create/get/delete ok, `getIamPolicy` negado.
+
+### Notas
+
+- **Fica registrado em aberto**, na §2.5: as permissões vivas dessa SA divergiram do script
+  que a cria, para MAIS privilégio. O script concede `bigquery.dataViewer` e comenta, com
+  todas as letras, por que não usa `dataEditor` ("a leaked key = full prod-data write") — e
+  é `dataEditor` project-wide que a conta detém hoje, com uma chave JSON emitida. Não
+  alterado aqui: decidir qual é a intenção é decisão de dono, não faxina.
+
+---
+
 ## [1.74.0] - 2026-09-08
 
 ### Corrigido

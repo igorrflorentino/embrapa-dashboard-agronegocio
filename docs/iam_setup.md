@@ -15,6 +15,11 @@ This guide creates:
 1. **Four service accounts** with distinct responsibilities
 2. **IAM role bindings** for developers and automation
 
+A **fifth** identity exists that this guide does not create — `sa-claude-code-web-dev`,
+the Claude Code Web sandbox account. It is documented in [§2.5](#25-claude-code-web-dev-sa)
+because it holds real grants on the prod datalake bucket and on BigQuery, and until
+2026-09-09 nothing in this repo recorded that.
+
 No JSON keyfiles are generated, stored, or distributed. All access flows
 through OAuth + service account impersonation.
 
@@ -269,7 +274,98 @@ gcloud projects add-iam-policy-binding embrapa-dashboard-commodities \
 > `research_inputs` curation log. Read-only + a write-scoped sandbox closes that
 > gap while still letting the agent materialize its own report tables.
 
-### 2.5 Verify Service Accounts Created
+### 2.5 Claude Code Web Dev SA
+
+**This one is NOT created by this guide** — it is created by a script, and no IAM doc
+recorded it until now, so it was absent from the inventory this file is supposed to be. It
+is the identity a Claude Code Web sandbox session runs as.
+
+It is created by **`scripts/setup-claude-code-web-sa.sh`** — read that script before
+changing anything here; its comments carry the reasoning for each grant.
+
+```bash
+# Already created. Recorded for parity with the sections above:
+gcloud iam service-accounts create sa-claude-code-web-dev \
+  --display-name="Claude Code Web Development" \
+  --description="Limited-scope dev account for Claude Code Web sandbox (dbt_dev only, no prod access)."
+```
+
+**What it holds today (verified 2026-09-09):**
+
+| Scope | Role | Why |
+|---|---|---|
+| project | `roles/bigquery.dataEditor` | ⚠️ write on **every** dataset incl. prod — drift, see below; the script grants `dataViewer` |
+| project | `roles/bigquery.jobUser` | run query jobs |
+| bucket `…-datalake` | `roles/storage.objectUser` | read/write/delete objects — `backup-gold` and the raw ingestion archive |
+| bucket `…-datalake` | `projects/…/roles/bucketConfigReaderWriter` (custom) | `storage.buckets.get` + `update` |
+
+**Why the custom role exists — do not "simplify" it away.** `roles/storage.objectUser`
+grants **no bucket permissions at all** (`gcloud iam roles describe roles/storage.objectUser`
+— not one `storage.buckets.*`). But `ensure_bucket()` calls `bucket.exists()` and
+`bucket.reload()` (both `storage.buckets.get`) and patches lifecycle/versioning when they
+drift (`storage.buckets.update`) — and it runs on **every** `backup-gold`
+(`src/embrapa_dashboard/backup.py`) and **every** ingestion
+(`src/embrapa_dashboard/core/raw.py`). Object roles alone therefore break both at the first
+call, before a single byte is written. `doctor.py` carries the same warning inline.
+
+```bash
+SA="sa-claude-code-web-dev@embrapa-dashboard-commodities.iam.gserviceaccount.com"
+BUCKET="gs://embrapa-dashboard-commodities-datalake"
+
+gcloud iam roles create bucketConfigReaderWriter --project=embrapa-dashboard-commodities \
+  --title="Bucket config get/update" \
+  --permissions=storage.buckets.get,storage.buckets.update --stage=GA
+
+gcloud storage buckets add-iam-policy-binding "$BUCKET" \
+  --member="serviceAccount:${SA}" --role="roles/storage.objectUser"
+gcloud storage buckets add-iam-policy-binding "$BUCKET" \
+  --member="serviceAccount:${SA}" \
+  --role="projects/embrapa-dashboard-commodities/roles/bucketConfigReaderWriter"
+```
+
+> **Held `roles/storage.admin` on the datalake bucket until 2026-09-09.** The binding was
+> bucket-scoped (not project-wide), so the blast radius was one bucket — but that bucket is
+> where **the Gold + `research_inputs` backups live**, and `storage.admin` let this dev
+> identity delete the bucket, its objects, and rewrite its IAM and retention.
+>
+> Replaced by `objectUser` + the custom role above, in the order **grant → prove → revoke**,
+> so no window existed without permission. Proven *after* the revocation by impersonating
+> the SA: `bucket.exists()` → `True`, `bucket.reload()` → versioning on + 7 lifecycle rules,
+> object create/get/delete → ok, `buckets.getIamPolicy` → **denied**.
+>
+> ⚠️ Deleting a custom role blocks reusing its name for ~37 days. Rename rather than
+> recreate if it ever needs to change.
+
+> ⚠️ **The LIVE grants drifted away from the script that creates this SA, toward MORE
+> privilege — and the script argues, in its own comments, against exactly what is live.**
+> `scripts/setup-claude-code-web-sa.sh` grants three roles; the account holds different
+> ones (measured 2026-09-09):
+>
+> | | script says | live holds |
+> |---|---|---|
+> | BigQuery data | `roles/bigquery.dataViewer` (read-only) | **`roles/bigquery.dataEditor`** (write) |
+> | BigQuery jobs | `roles/bigquery.user` (jobs + create OWN datasets) | `roles/bigquery.jobUser` |
+> | datalake bucket | `roles/storage.objectViewer` (read-only) | `roles/storage.objectUser` + the custom role |
+>
+> The script's comment on the first row is explicit: *"NOT dataEditor: a project-wide
+> dataEditor would let this 'dbt_dev only, no prod access' SA WRITE/DELETE prod
+> silver/gold — directly contradicting its own scope, so a leaked key = full prod-data
+> write."* That is the state the account is in. And it **does** hold a JSON key — the
+> script's step 5 writes one, which is what makes "a leaked key" a concrete rather than
+> theoretical worry.
+>
+> The script's design also shows `dataEditor` is not needed: `roles/bigquery.user` lets the
+> SA create its own `dbt_dev_*` datasets and become their OWNER, so it has full write on its
+> sandbox and none on prod. Same shape §2.4 adopted for `sa-ai-agent-admin-prod`.
+>
+> The bucket row is drift in the other direction, and deliberate: `objectViewer` is
+> read-only, so it could never have run `backup-gold`. That is why the write grant exists.
+>
+> **Open — not changed here.** Reconciling means deciding which is the intent (almost
+> certainly the script's, for BigQuery) and then either re-granting to match or updating the
+> script. Both are decisions about what this identity is *for*, not cleanups.
+
+### 2.6 Verify Service Accounts Created
 
 ```bash
 gcloud iam service-accounts list --filter="displayName:*Prod"
@@ -281,6 +377,17 @@ gcloud iam service-accounts list --filter="displayName:*Prod"
 # sa-web-dashboard-prod                           sa-web-dashboard-prod@embrapa-dashboard-commodities.iam.gserviceaccount.com
 # sa-ai-agent-admin-prod                          sa-ai-agent-admin-prod@embrapa-dashboard-commodities.iam.gserviceaccount.com
 ```
+
+> ⚠️ **This filter does not list every identity.** `displayName:*Prod` matches the four
+> accounts above and misses `sa-claude-code-web-dev` (§2.5), whose display name is "Claude
+> Code Web Development". Enumerating with it and treating the result as the full inventory
+> is exactly the trap that carried `sa-dashboard-smoke-ci` across the v1.52.0 repo rename
+> three weeks after it had been declared retired. **This file is the inventory; the
+> command is a spot check.** To see them all:
+>
+> ```bash
+> gcloud iam service-accounts list --format="table(email,displayName)"
+> ```
 
 ## Step 3: Grant Developer Impersonation Access
 
