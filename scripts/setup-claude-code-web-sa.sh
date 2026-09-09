@@ -16,7 +16,7 @@ echo "Setting up sa-claude-code-web-dev in project: $PROJECT_ID"
 echo ""
 
 # 1. Create service account
-echo "[1/4] Creating service account..."
+echo "[1/5] Creating service account..."
 gcloud iam service-accounts create sa-claude-code-web-dev \
   --project="$PROJECT_ID" \
   --display-name="Claude Code Web Development" \
@@ -32,7 +32,7 @@ echo ""
 #    own scope, so a leaked key = full prod-data write. dataViewer is read-only
 #    and lets the dev build read Bronze sources (and inspect prod for debugging)
 #    without being able to mutate any dataset.
-echo "[2/4] Granting BigQuery dataViewer (project read-only)..."
+echo "[2/5] Granting BigQuery dataViewer (project read-only)..."
 gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   --member="serviceAccount:$SA_EMAIL" \
   --role="roles/bigquery.dataViewer" \
@@ -46,7 +46,7 @@ echo ""
 #    sandbox — but NO write to prod datasets it didn't create. This is the
 #    dev-write path that replaces the project-wide dataEditor above (and it
 #    subsumes jobUser, so no separate jobUser grant is needed).
-echo "[3/4] Granting BigQuery user (jobs + own-dataset create/write)..."
+echo "[3/5] Granting BigQuery user (jobs + own-dataset create/write)..."
 gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   --member="serviceAccount:$SA_EMAIL" \
   --role="roles/bigquery.user" \
@@ -55,16 +55,73 @@ gcloud projects add-iam-policy-binding "$PROJECT_ID" \
 echo "✅ Granted BigQuery user role"
 echo ""
 
-# 4. Grant GCS read access to landing bucket
-echo "[4/4] Granting GCS permissions (landing bucket read-only)..."
+# 4. Grant GCS access to the landing bucket.
+#    objectViewer (read-only) is NOT enough: this SA runs `backup-gold` and the raw
+#    ingestion archive, which WRITE objects. Hence objectUser.
+#
+#    And objectUser alone is still not enough, which is the non-obvious part: it grants
+#    NO bucket-level permission at all (`gcloud iam roles describe roles/storage.objectUser`
+#    — not one storage.buckets.*). But ensure_bucket() calls bucket.exists() and
+#    bucket.reload() (storage.buckets.get) on EVERY backup and EVERY ingestion, and patches
+#    lifecycle/versioning when they drift (storage.buckets.update). Object roles alone break
+#    both at the first call, before a byte is written. Hence the tiny custom role below.
+#
+#    NOT storage.admin, which this bucket carried until 2026-09-09: it let a DEV identity
+#    delete the bucket holding the Gold + research_inputs backups, and rewrite its IAM and
+#    retention. See docs/iam_setup.md §2.5.
+echo "[4/5] Granting GCS permissions (objects RW + minimal bucket config)..."
 BUCKET="${PROJECT_ID}-datalake"
+BUCKET_ROLE="bucketConfigReaderWriter"
+
+gcloud iam roles create "$BUCKET_ROLE" \
+  --project="$PROJECT_ID" \
+  --title="Bucket config get/update" \
+  --description="storage.buckets.get + update — the minimum ensure_bucket() requires." \
+  --permissions=storage.buckets.get,storage.buckets.update \
+  --stage=GA --quiet 2>/dev/null || echo "   (custom role already exists — reusing)"
 
 gcloud storage buckets add-iam-policy-binding "gs://${BUCKET}" \
   --member="serviceAccount:$SA_EMAIL" \
-  --role="roles/storage.objectViewer" \
+  --role="roles/storage.objectUser" \
   --quiet 2>/dev/null || true
 
-echo "✅ Granted GCS read access"
+gcloud storage buckets add-iam-policy-binding "gs://${BUCKET}" \
+  --member="serviceAccount:$SA_EMAIL" \
+  --role="projects/${PROJECT_ID}/roles/${BUCKET_ROLE}" \
+  --quiet 2>/dev/null || true
+
+echo "✅ Granted GCS object RW + bucket config"
+echo ""
+
+# 4b. The dev WRITE path. Step 3's comment says the SA "becomes OWNER of the dbt_dev_*
+#     datasets it creates" — true only for datasets IT creates. Where a human operator
+#     already created them, the SA owns none of them and bigquery.user does not reach them,
+#     so the dev build fails on write. An explicit dataset WRITER entry is required for each
+#     pre-existing dataset. This was invisible for as long as a project-wide dataEditor was
+#     masking it.
+echo "[4b/5] Granting WRITER on any pre-existing dbt_dev_* datasets..."
+for DS in dbt_dev_silver dbt_dev_gold dbt_dev_serving; do
+  if bq show --project_id="$PROJECT_ID" "$DS" >/dev/null 2>&1; then
+    python3 - "$PROJECT_ID" "$DS" "$SA_EMAIL" <<'PYEOF'
+import subprocess, json, sys
+project, ds, sa = sys.argv[1], sys.argv[2], sys.argv[3]
+raw = subprocess.run(["bq", "show", "--project_id", project, "--format=prettyjson", ds],
+                     capture_output=True, text=True, check=True).stdout
+meta = json.loads(raw)
+if any(a.get("userByEmail") == sa for a in meta.get("access", [])):
+    print(f"   {ds}: already present")
+    sys.exit(0)
+meta.setdefault("access", []).append({"role": "WRITER", "userByEmail": sa})
+path = f"/tmp/{ds}.acl.json"
+json.dump(meta, open(path, "w"))
+subprocess.run(["bq", "update", "--project_id", project, "--source", path, ds],
+               capture_output=True, check=True)
+print(f"   {ds}: WRITER granted")
+PYEOF
+  else
+    echo "   $DS: does not exist yet — the SA will own the one it creates"
+  fi
+done
 echo ""
 
 # 5. Create JSON keyfile

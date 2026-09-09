@@ -294,10 +294,26 @@ gcloud iam service-accounts create sa-claude-code-web-dev \
 
 | Scope | Role | Why |
 |---|---|---|
-| project | `roles/bigquery.dataEditor` | ⚠️ write on **every** dataset incl. prod — drift, see below; the script grants `dataViewer` |
-| project | `roles/bigquery.jobUser` | run query jobs |
+| project | `roles/bigquery.dataViewer` | read Bronze/Silver/Gold — the dev build's sources |
+| project | `roles/bigquery.user` | run jobs + create its OWN datasets (subsumes `jobUser`) |
+| dataset `dbt_dev_{silver,gold,serving}` | `WRITER` (dataset ACL) | the dev write path — see the note below on why the ACL entry is required |
 | bucket `…-datalake` | `roles/storage.objectUser` | read/write/delete objects — `backup-gold` and the raw ingestion archive |
 | bucket `…-datalake` | `projects/…/roles/bucketConfigReaderWriter` (custom) | `storage.buckets.get` + `update` |
+
+**No project-wide write.** Confirmed by asking the API as the SA itself
+(`cloudresourcemanager…:testIamPermissions`, impersonated, 2026-09-09): it holds
+`bigquery.tables.getData`, `bigquery.jobs.create` and `bigquery.datasets.create`, and it
+does **not** hold `tables.create`, `tables.updateData`, `tables.delete` or
+`datasets.update`. Prefer this over reading the policy — the policy says what was granted,
+`testIamPermissions` says what is *effective*, and it needs no write to prove a write is
+impossible.
+
+⚠️ **The dataset `WRITER` entries are load-bearing — do not drop them as redundant.** The
+creating script's premise is that the SA "becomes OWNER of the `dbt_dev_*` datasets it
+creates". The datasets that actually exist were created by a **human** operator, so the SA
+owns none of them, and `bigquery.user` only covers datasets it creates itself. Without the
+explicit ACL entry, removing project-wide `dataEditor` takes the sandbox's dev write access
+with it. This was only invisible while `dataEditor` was masking it.
 
 **Why the custom role exists — do not "simplify" it away.** `roles/storage.objectUser`
 grants **no bucket permissions at all** (`gcloud iam roles describe roles/storage.objectUser`
@@ -336,34 +352,51 @@ gcloud storage buckets add-iam-policy-binding "$BUCKET" \
 > ⚠️ Deleting a custom role blocks reusing its name for ~37 days. Rename rather than
 > recreate if it ever needs to change.
 
-> ⚠️ **The LIVE grants drifted away from the script that creates this SA, toward MORE
-> privilege — and the script argues, in its own comments, against exactly what is live.**
-> `scripts/setup-claude-code-web-sa.sh` grants three roles; the account holds different
-> ones (measured 2026-09-09):
+> **Reconciled with the script on 2026-09-09.** The live grants had drifted toward MORE
+> privilege than `scripts/setup-claude-code-web-sa.sh` intends, and the script argues in its
+> own comments against exactly what was live: it holds `roles/bigquery.dataViewer` and
+> explains *"NOT dataEditor: a project-wide dataEditor would let this 'dbt_dev only, no prod
+> access' SA WRITE/DELETE prod silver/gold — so a leaked key = full prod-data write."*
+> The account held project-wide `dataEditor`.
 >
-> | | script says | live holds |
+> | | before | after |
 > |---|---|---|
-> | BigQuery data | `roles/bigquery.dataViewer` (read-only) | **`roles/bigquery.dataEditor`** (write) |
-> | BigQuery jobs | `roles/bigquery.user` (jobs + create OWN datasets) | `roles/bigquery.jobUser` |
-> | datalake bucket | `roles/storage.objectViewer` (read-only) | `roles/storage.objectUser` + the custom role |
+> | BigQuery data | `dataEditor` (write everywhere) | `dataViewer` (read) |
+> | BigQuery jobs | `jobUser` | `bigquery.user` |
+> | dev write path | (implicit, via `dataEditor`) | explicit `WRITER` on the three `dbt_dev_*` datasets |
 >
-> The script's comment on the first row is explicit: *"NOT dataEditor: a project-wide
-> dataEditor would let this 'dbt_dev only, no prod access' SA WRITE/DELETE prod
-> silver/gold — directly contradicting its own scope, so a leaked key = full prod-data
-> write."* That is the state the account is in. And it **does** hold a JSON key — the
-> script's step 5 writes one, which is what makes "a leaked key" a concrete rather than
-> theoretical worry.
+> Applied **grant → prove → revoke** so no window existed without permission, and proven
+> *after* the revocations with `testIamPermissions` (see above), which needs no write.
 >
-> The script's design also shows `dataEditor` is not needed: `roles/bigquery.user` lets the
-> SA create its own `dbt_dev_*` datasets and become their OWNER, so it has full write on its
-> sandbox and none on prod. Same shape §2.4 adopted for `sa-ai-agent-admin-prod`.
+> ⚠️ **Not yet exercised end-to-end.** The dev datasets are empty (7-day expiry), so there
+> was no table to test the sandbox's write path against, and creating one to prove it is a
+> write this repo's safety hooks decline to make against a production project. The ACL entry
+> is verified by reading it back; the first `dbt build --target dev` from the sandbox is what
+> closes the loop. If it fails on a write to `dbt_dev_*`, the ACL entry is what to check.
+
+> ⚠️ **A never-expiring USER_MANAGED key is outstanding — this is the remaining exposure.**
+> Step 5 of the creating script issues a downloadable JSON key, base64'd into the Claude Code
+> Web sandbox env. Measured 2026-09-09: key `490bfb9a…`, created 2026-05-21,
+> `validBeforeTime` **9999-12-31** — it never expires and cannot be rotated by anything in
+> this repo.
 >
-> The bucket row is drift in the other direction, and deliberate: `objectViewer` is
-> read-only, so it could never have run `backup-gold`. That is why the write grant exists.
+> Good news first: it was **never committed** (`git log --all` finds no such path) and
+> `.gitignore` covers `**/sa-*.json`.
 >
-> **Open — not changed here.** Reconciling means deciding which is the intent (almost
-> certainly the script's, for BigQuery) and then either re-granting to match or updating the
-> script. Both are decisions about what this identity is *for*, not cleanups.
+> The narrowing above shrank what a leak of that key would reach — no prod write, no bucket
+> admin — but the key itself is unchanged. Rotating or removing it **breaks the sandbox until
+> a human pastes the replacement**, so it is deliberately an operator action, like deleting a
+> service account:
+>
+> ```bash
+> # inventory first — SYSTEM_MANAGED keys are Google's own and are not the concern
+> gcloud iam service-accounts keys list \
+>   --iam-account=sa-claude-code-web-dev@embrapa-dashboard-commodities.iam.gserviceaccount.com
+> ```
+>
+> The durable fix is to stop using a key at all: the four CI identities in this file already
+> authenticate keylessly through the WIF pool. Until the sandbox can do the same, treat the
+> key as the highest-value secret in the project and rotate it on a schedule.
 
 ### 2.6 Verify Service Accounts Created
 
