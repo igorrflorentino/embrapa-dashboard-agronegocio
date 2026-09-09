@@ -146,7 +146,7 @@ window.FILTER_SCHEMAS = {
       { id: 'qualidade', tier: 'specific',  type: 'flags',
         requires: 'quality', backed: true,
         label: 'Qualidade dos dados',      column: 'data_quality_flag',
-        hint: 'Bandeira de qualidade por linha.' },
+        hint: 'Bandeira de qualidade por linha. Recorta a perspectiva Qualidade dos dados; as séries das demais perspectivas não são recortadas por ela — nenhum mart de serving carrega a coluna, e o acervo é preservado por inteiro.' },
     ],
   },
 
@@ -168,7 +168,7 @@ window.FILTER_SCHEMAS = {
       { id: 'qualidade', tier: 'specific',  type: 'flags',
         requires: 'quality', backed: true,
         label: 'Qualidade dos dados',      column: 'data_quality_flag',
-        hint: 'Bandeira de qualidade por linha.' },
+        hint: 'Bandeira de qualidade por linha. Recorta a perspectiva Qualidade dos dados; as séries das demais perspectivas não são recortadas por ela — nenhum mart de serving carrega a coluna, e o acervo é preservado por inteiro.' },
     ],
   },
 
@@ -190,7 +190,7 @@ window.FILTER_SCHEMAS = {
       { id: 'qualidade', tier: 'specific',  type: 'flags',
         requires: 'quality', backed: true,
         label: 'Qualidade dos dados',      column: 'data_quality_flag',
-        hint: 'Bandeira de qualidade por linha.' },
+        hint: 'Bandeira de qualidade por linha. Recorta a perspectiva Qualidade dos dados; as séries das demais perspectivas não são recortadas por ela — nenhum mart de serving carrega a coluna, e o acervo é preservado por inteiro.' },
     ],
   },
 

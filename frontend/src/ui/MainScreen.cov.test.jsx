@@ -245,3 +245,38 @@ describe('MainScreen — banco/view gating', () => {
     expect(container.textContent).toContain('UFs cobertas');
   });
 });
+
+// O contador "Seleção ativa · Linhas" descreve o que está NA TELA. A seleção de
+// qualidade não recorta série alguma (nenhum mart de serving carrega a flag), então
+// incluí-la no produto fazia o cabeçalho afirmar um recorte que nenhum gráfico refletia.
+describe('MainScreen — o contador de linhas ignora a seleção de qualidade', () => {
+  function comShares(shares) {
+    window.applyFilters = () => ({
+      ts: [{ y: 2024, v: 1 }],
+      ufData: [{ uf: 'PA', value: 5, real: true }],
+      ufDataFull: [{ uf: 'PA', value: 5, real: true }],
+      qualityFlags: [{ id: 'OK', count: 1000 }],
+      productsTotal: 3,
+      _shares: shares,
+    });
+  }
+  const linhasLidas = (container) => {
+    const row = [...container.querySelectorAll('.meta-row')].find(
+      (e) => e.textContent.includes('Linhas'));
+    return row ? row.textContent : '';
+  };
+
+  it('flagShare 0,02 NÃO encolhe o contador', () => {
+    comShares({ flagShare: 0.02 });
+    const { container } = render(<MainScreen />);
+    // 1000 linhas (a soma das flags), inteiras: com flagShare no produto seriam 20.
+    expect(linhasLidas(container)).toContain('1000');
+    expect(linhasLidas(container)).not.toContain('20 de');
+  });
+
+  it('as demais dimensões continuam encolhendo', () => {
+    comShares({ yearShare: 0.5 });
+    const { container } = render(<MainScreen />);
+    expect(linhasLidas(container)).toContain('500');
+  });
+});

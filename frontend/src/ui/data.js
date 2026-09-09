@@ -231,6 +231,18 @@ window.QUALITY_FLAGS = [
   { id: 'INFERRED_VALUE',       label: 'Valor financeiro inferido',               color: 'var(--viz-10)', reserved: true, desc: 'Valor financeiro que veio em branco e seria preenchido automaticamente por uma etapa do pipeline. Reservado para preenchimento automático futuro; ainda não utilizado (sempre 0 hoje).' },
 ];
 
+// As flags que significam "o detector de preço implícito RODOU nesta linha" — as que
+// ele examinou e liberou (OK) e as que ele examinou e MARCOU (atípico, problemático).
+// Existe porque "examinado" não é o complemento de "não avaliada": as linhas incompletas
+// (valor/quantidade/peso ausente) e a área inconsistente também nunca passaram pelo
+// detector, e `1 - UNSCORED` as contava como examinadas. No COMTRADE isso são 0,893% do
+// valor (25.630 linhas com valor e sem quantidade), medido em produção 2026-09-08 — o
+// número saía 96,8% sob um rótulo que promete 95,9%. Pequeno, e é justamente o formato de
+// erro que este projeto persegue: aritmética certa respondendo outra pergunta.
+window.EXAMINED_FLAGS = [
+  'OK', 'OUTLIER_VALUE', 'OUTLIER_QUANTITY', 'PROBLEMATIC_VALUE', 'PROBLEMATIC_QUANTITY',
+];
+
 // ────────────────────────────────────────────────────────────────────
 // Formatters
 // ────────────────────────────────────────────────────────────────────

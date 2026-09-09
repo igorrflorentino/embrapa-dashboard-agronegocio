@@ -420,7 +420,14 @@ function MainScreen({ filters, view = 'overview', database = 'ibge_pevs', infoPa
     (_shares.productShare ?? 1) *
     (_shares.valueShare   ?? 1) *
     (_shares.yearShare    ?? 1) *
-    (_shares.flagShare    ?? 1) *
+    // flagShare NÃO entra. Este contador descreve as linhas que o dashboard está
+    // MOSTRANDO, e a seleção de qualidade não recorta série alguma: nenhum mart de
+    // serving carrega `data_quality_flag`. Com ela no produto, marcar só "Valor
+    // problemático" fazia o cabeçalho ler "20 de 1,4 mi linhas" enquanto todos os
+    // gráficos seguiam desenhando 1,4 mi — o contador afirmava um recorte que não
+    // existe. Mesmo motivo pelo qual `valueShareForRange` saiu daqui na v1.45.0.
+    // `_shares.flagShare` continua exposto: como NÚMERO ele é honesto ("esta fração
+    // das linhas do Gold carrega as flags marcadas"), só não é um recorte da tela.
     (_shares.stateShare   ?? 1)
   )) : null;
   const fmtRows = window.fmtRows;  // shared compact mi/mil counter (data.js)

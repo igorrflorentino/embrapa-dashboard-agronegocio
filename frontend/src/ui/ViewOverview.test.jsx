@@ -136,16 +136,42 @@ describe('ViewOverview — KPI strip + quality digest (H3 + P0 lock-in)', () => 
     const card = [...container.querySelectorAll('.kpi')].find(
       (e) => /examinadas sem ressalva/i.test(e.textContent));
     expect(card, 'card de qualidade não encontrado').toBeTruthy();
-    // O NÚMERO, não só o texto: "examinado" é o COMPLEMENTO do não avaliado
-    // (1 − 0,007 = 99,3%), porque uma linha marcada como outlier/problemática também
-    // passou pelo exame. Usar o valueShare do OK daria 99,3% → 79,1% e poria um número
-    // sob um rótulo que nomeia outra coisa — o defeito que a v1.49.0 existiu para tirar.
+    // O NÚMERO, não só o texto: "examinado" SOMA as flags que o detector rodou —
+    // OK + atípicas + problemáticas —, porque uma linha marcada também passou pelo
+    // exame. Usar só o valueShare do OK daria 99,3% → 79,1% e poria um número sob um
+    // rótulo que nomeia outra coisa. (Neste recorte, com só OK e UNSCORED presentes,
+    // a soma coincide com 1 − UNSCORED; o teste seguinte separa as duas contas.)
     // (o stub de fmtPct neste arquivo arredonda para inteiro — 99%, não 99,3%)
     expect(card.textContent).toContain('99% do valor examinado');
     expect(card.textContent).toContain('82% das linhas sem base para avaliar');
     // A asserção que realmente prende o defeito: 79% é o valueShare do OK, e usá-lo
     // subestimaria a cobertura porque exclui as linhas EXAMINADAS e marcadas.
     expect(card.textContent).not.toContain('79%');
+  });
+
+  it('"valor examinado" soma as flags EXAMINADAS — não é o complemento do não avaliado', () => {
+    // As duas contas divergem sempre que existe uma flag que não é UNSCORED e também
+    // nunca passou pelo detector: incompleto, valor/quantidade/peso ausente, área
+    // inconsistente. No COMTRADE em produção são 25.630 linhas com valor e sem
+    // quantidade — 0,893% do valor. O complemento as contava como examinadas.
+    stubGlobals({
+      ...FIXTURE,
+      qualityFlags: [
+        { id: 'OK', label: 'Normais', share: 0.337, count: 693055, valueShare: 0.835 },
+        { id: 'UNSCORED', label: 'Não avaliada', share: 0.646, count: 1327364, valueShare: 0.032 },
+        { id: 'MISSING_QUANTITY', label: 'Quantidade ausente', share: 0.012, count: 25630, valueShare: 0.009 },
+        { id: 'OUTLIER_VALUE', label: 'Valor atípico', share: 0.002, count: 3692, valueShare: 0.115 },
+      ],
+    });
+    const { container } = render(
+      <ViewOverview families={['mass']} summary={{}} database="un_comtrade" conventions={{}} />
+    );
+    const card = [...container.querySelectorAll('.kpi')].find(
+      (e) => /examinadas sem ressalva/i.test(e.textContent));
+    // 0,835 + 0,115 = 0,95 → 95%. O complemento (1 − 0,032 = 0,968) daria 97%, varrendo
+    // para dentro do "examinado" as 25.630 linhas que o detector nunca olhou.
+    expect(card.textContent).toContain('95% do valor examinado');
+    expect(card.textContent).not.toContain('97% do valor examinado');
   });
 
   it('renders the count (efetivo) KPI off q_count for a livestock (count) basket', () => {

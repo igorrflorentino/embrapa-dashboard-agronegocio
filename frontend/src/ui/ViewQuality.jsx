@@ -29,6 +29,13 @@ const QTS_KEY = {
   UNSCORED: 'unscored',
 };
 
+// Quantas barras o painel por produto desenha. O corte é de LEGIBILIDADE e por isso vive
+// aqui, DEPOIS do recorte por produto — no servidor ele cortava antes, e um banco de 110
+// códigos (COMEX) devolvia 20: escolher o 50º maior abria um painel vazio, sem dizer por
+// quê. Como as linhas chegam ordenadas por volume, o corte tira as menos volumosas DA
+// SELEÇÃO, e a legenda diz quando ele agiu — um recorte silencioso é o defeito, não o corte.
+const TOP_PRODUTOS = 20;
+
 function ViewQuality({ summary, database }) {
   const filtered = window.applyFilters(summary || {}, database);
   const flags    = filtered.qualityFlags;
@@ -56,8 +63,13 @@ function ViewQuality({ summary, database }) {
   // the same name really appears twice in what is on screen — one half selected alone
   // stays unsuffixed, because there is nothing to disambiguate.
   const selectedCodes = new Set(filtered.selectedProducts);
+  const qaSelecionados = filtered.qualityByProduct.filter(r => selectedCodes.has(r.code));
+  // O corte de legibilidade cai AQUI, sobre o que o pesquisador escolheu — e ANTES de
+  // rotular: `labelProductRows` desambigua o que está NA TELA, então uma metade que o
+  // corte tirou não pode continuar sufixando a outra.
+  const qaOcultos = Math.max(0, qaSelecionados.length - TOP_PRODUTOS);
   const qaByProduct = window.labelProductRows(
-    filtered.qualityByProduct.filter(r => selectedCodes.has(r.code)), database,
+    qaSelecionados.slice(0, TOP_PRODUTOS), database,
   )
     .map(r => {
       const row = { code: r.code, name: r.name };
@@ -169,7 +181,15 @@ function ViewQuality({ summary, database }) {
         <window.SectionHeader
           overline="Distribuição de flags · acervo"
           title="Por produto"
-          action={<span className="caption">{qaByProduct.length} de {filtered.qualityByProduct.length} produtos</span>}
+          action={
+            <span className="caption">
+              {qaByProduct.length} de {filtered.qualityByProduct.length} produtos
+              {/* O corte, quando age, é DITO. O denominador agora é o universo real do
+                  banco (o servidor devolve todos os produtos); antes era 20, e um banco de
+                  110 códigos apresentava 20 como se fosse tudo o que existe. */}
+              {qaOcultos > 0 && ` · os ${TOP_PRODUTOS} com mais linhas (${qaOcultos} não exibidos)`}
+            </span>
+          }
         />
         {qaByProduct.length === 0 ? (
           <p className="caption" style={{ padding: '24px 4px', textAlign: 'center' }}>
