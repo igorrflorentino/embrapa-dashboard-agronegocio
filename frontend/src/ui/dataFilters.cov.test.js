@@ -273,6 +273,52 @@ describe('applyFilters — _shares provenance (flag/year/state)', () => {
   });
 });
 
+// ── As DUAS frações da qualidade cobrem a mesma população ────────────────────
+describe('applyFilters — share e valueShare renormalizam JUNTOS', () => {
+  function snapComValor() {
+    const snap = makeSnapshot();
+    // Um acervo onde as duas leituras divergem por ordem de grandeza, que é o caso real:
+    // a marca majoritária em LINHAS é minoritária em VALOR.
+    snap.quality = [
+      { id: 'UNSCORED', label: 'Não avaliada', count: 800, share: 0.8, valueShare: 0.01 },
+      { id: 'OK', label: 'Normais', count: 150, share: 0.15, valueShare: 0.79 },
+      { id: 'OUTLIER_VALUE', label: 'Valor atípico', count: 50, share: 0.05, valueShare: 0.20 },
+    ];
+    return snap;
+  }
+
+  it('sem recorte de flags, as duas frações continuam somando 1', () => {
+    installGlobals(snapComValor());
+    const out = window.applyFilters({ basket: null, flags: null }, 'ibge_pevs');
+    const soma = (k) => out.qualityFlags.reduce((s, f) => s + f[k], 0);
+    expect(soma('share')).toBeCloseTo(1, 6);
+    expect(soma('valueShare')).toBeCloseTo(1, 6);
+  });
+
+  it('com recorte, valueShare renormaliza igual a share — nunca sobre o acervo inteiro', () => {
+    installGlobals(snapComValor());
+    const out = window.applyFilters({ basket: null, flags: ['OK', 'UNSCORED'] }, 'ibge_pevs');
+    expect(out.qualityFlags).toHaveLength(2);
+    const ok = out.qualityFlags.find((f) => f.id === 'OK');
+    // 150/(150+800) e 0,79/(0,79+0,01): as duas do MESMO mundo. Antes, o valueShare
+    // atravessava intacto (0,79, do acervo inteiro) ao lado de um share já recortado.
+    expect(ok.share).toBeCloseTo(150 / 950, 6);
+    expect(ok.valueShare).toBeCloseTo(0.79 / 0.8, 6);
+    expect(ok.valueShare).not.toBeCloseTo(0.79, 6);
+  });
+
+  it('um banco sem valor algum mantém valueShare NULO — não vira 0%', () => {
+    const snap = makeSnapshot();
+    snap.quality = [
+      { id: 'OK', label: 'Normais', count: 900, share: 0.9, valueShare: null },
+      { id: 'UNSCORED', label: 'Não avaliada', count: 100, share: 0.1, valueShare: null },
+    ];
+    installGlobals(snap);
+    const out = window.applyFilters({ basket: null, flags: null }, 'ibge_pevs');
+    expect(out.qualityFlags.every((f) => f.valueShare === null)).toBe(true);
+  });
+});
+
 // ── State narrowing via the basket geoYearly cube ────────────────────────────
 describe('applyFilters — state + basket narrowing (geoYearly cube)', () => {
   it('a loaded basket cube drives ufData/ts and clears the notFilteredByBasket transient', () => {

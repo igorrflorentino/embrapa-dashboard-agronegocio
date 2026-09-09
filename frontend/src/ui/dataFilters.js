@@ -512,9 +512,25 @@ import './seriesUtils.js';
       : qualityFlagsAll;
     // re-normalize shares to selected flags' world
     // Idem: nenhuma linha nas flags selecionadas não é "0% em cada flag" — é ausência.
-    const flagTotal = window.sumPresent(filteredFlags.map(f => f.count));
-    const qualityFlags = filteredFlags.map(
-      f => ({ ...f, share: window.ratioPresent(f.count, flagTotal) }));
+    //
+    // As DUAS frações são renormalizadas, e isso não é simetria decorativa. Só `share`
+    // era, e `valueShare` atravessava intacto com o valor do acervo inteiro: o card do
+    // Panorama lia a fração de linhas do mundo das flags MARCADAS e, na linha de baixo,
+    // a fração de valor do mundo INTEIRO — dois números de populações diferentes na
+    // mesma frase, cada um certo sozinho. É a quarta regra do projeto ("as duas metades
+    // de uma razão cobrem as mesmas linhas") na sua forma mais discreta: aqui não é uma
+    // razão, são dois totais lidos lado a lado, e o defeito é o mesmo.
+    //
+    // `sumPresent`/`ratioPresent` e não `+`/`/`: `valueShare` é NULO num banco sem valor
+    // algum ("não há base para a fração"), e um null somado como zero viraria uma
+    // afirmação de que nenhum dinheiro passou ali.
+    const flagTotal  = window.sumPresent(filteredFlags.map(f => f.count));
+    const valueTotal = window.sumPresent(filteredFlags.map(f => f.valueShare));
+    const qualityFlags = filteredFlags.map(f => ({
+      ...f,
+      share:      window.ratioPresent(f.count, flagTotal),
+      valueShare: window.ratioPresent(f.valueShare, valueTotal),
+    }));
 
     // quality time series — pass-through, optionally trim to window
     const qualityTs = QUALITY_TS_T.filter(d => d.y >= yearStart && d.y <= yearEnd);

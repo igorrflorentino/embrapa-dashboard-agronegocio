@@ -1619,6 +1619,19 @@ function FilterMenu({ open = false, banco = 'ibge_pevs', value, onClose, onApply
               </div>
 
               <div className="fm-section-inner">
+                {/* O ESCOPO desta seção, dito onde ele é decidido. Nenhum mart de serving
+                    carrega `data_quality_flag` (só o serving_quality_by_source, que é a
+                    própria contagem de flags), então não há caminho para recortar as séries
+                    por bandeira — a seleção alcança os painéis de qualidade e mais nada.
+                    Sem esta frase a seção parece um filtro do acervo como os de cima, e o
+                    rodapé ("os filtros serão aplicados sobre gold_…") reforçava a leitura
+                    errada. Dizer o alcance é honesto; deixar implícito não é. */}
+                <p className="fm-scope-note caption">
+                  Esta seleção recorta a perspectiva <strong>Qualidade dos dados</strong> —
+                  a distribuição de flags e os painéis por produto. Ela <strong>não</strong> recorta
+                  as séries de produção, valor e geografia das demais perspectivas: o acervo
+                  é preservado por inteiro, com as linhas problemáticas sinalizadas, nunca removidas.
+                </p>
                 <div className="fm-grid-scroll">
                   <div className="fm-grid">
                     {filteredFlags.length === 0 ? (
@@ -1656,7 +1669,10 @@ function FilterMenu({ open = false, banco = 'ibge_pevs', value, onClose, onApply
                 {/* Read the Gold table from the LIVE provenance (dataStore.meta →
                     /api/source-meta overlay), not the static bancoTable/registry
                     literal — so a backend rename of the served table propagates here. */}
-                Os filtros serão aplicados sobre <strong>{window.dataStore.meta(bancoMeta?.id || banco).table || 'gold_pevs_production'}</strong>
+                {/* "Os filtros" excluía-se de dizer QUAIS: a seleção de qualidade não recorta
+                    esta tabela (nenhum mart carrega a flag), e a frase afirmava o contrário
+                    para ela junto com as demais. O qualificador é curto e verdadeiro. */}
+                Os filtros de produto, geografia e período serão aplicados sobre <strong>{window.dataStore.meta(bancoMeta?.id || banco).table || 'gold_pevs_production'}</strong>
                 <span className="fm-dot"></span>
                 {bancoMeta?.prov?.refresh ? `Refresh ${bancoMeta.prov.refresh}` : 'Atualização diária às 06h00 BRT'}
               </div>

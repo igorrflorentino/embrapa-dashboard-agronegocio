@@ -248,6 +248,18 @@
   padding: 16px 22px 18px;
 }
 
+/* Nota de ESCOPO de uma seção — diz o que aquela seleção alcança, quando o alcance
+   não é o acervo inteiro. Hoje só a Qualidade dos dados a usa: nenhum mart de serving
+   carrega `data_quality_flag`, então a seleção recorta os painéis de qualidade e nada
+   mais. Discreta como legenda, mas com uma barra à esquerda para não passar por texto
+   de apoio de um controle. */
+.fm-scope-note {
+  margin: 0 0 14px;
+  padding: 8px 0 8px 12px;
+  border-left: 2px solid var(--border, rgba(0, 0, 0, 0.12));
+  line-height: 1.5;
+}
+
 .fm-section-head {
   display: flex;
   align-items: center;

@@ -7,6 +7,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.74.0] - 2026-09-08
+
+### Corrigido
+
+- **O filtro "Qualidade dos dados" não recorta dado nenhum — e a tela dizia o
+  contrário em dois lugares.** Nenhum mart de serving carrega `data_quality_flag`
+  (só `serving_quality_by_source`, que é a própria contagem de flags), então não
+  existe caminho para recortar as séries por bandeira: a seleção alcança os painéis
+  de qualidade e nada mais. Mas ela aparecia como uma seção numerada do menu, ao lado
+  de produto e geografia, e o rodapé afirmava *"os filtros serão aplicados sobre
+  gold_…"* — para ela, falso.
+
+  Pior, o contador **"Seleção ativa · Linhas"** multiplicava a estimativa pelo
+  `flagShare`: marcar só *"Valor problemático"* fazia o cabeçalho ler **"20 de 1,4 mi
+  linhas"** enquanto todos os gráficos seguiam desenhando 1,4 mi. O contador descreve
+  o que está na tela, então `flagShare` sai do produto — o mesmo motivo pelo qual
+  `valueShareForRange` saiu dali na v1.45.0. Ele continua exposto em `_shares`: como
+  NÚMERO é honesto ("esta fração das linhas do Gold carrega as flags marcadas"), só
+  não é um recorte da tela.
+
+  A seção ganha uma nota de escopo dizendo o que a seleção alcança, o rodapé passa a
+  nomear os filtros que realmente se aplicam à tabela, e os `hint` do
+  `filtersSchema` dizem o mesmo — a resposta fica onde a pergunta nasce.
+
+- **`share` e `valueShare` cobriam populações diferentes.** Ao recortar por flags,
+  `dataFilters` renormalizava só a fração de LINHAS; a de VALOR atravessava intacta,
+  com o número do acervo inteiro. O card do Panorama lia então a fração de linhas do
+  mundo das flags marcadas e, na linha de baixo, a fração de valor do mundo inteiro —
+  dois números certos sozinhos e incoerentes juntos. É a quarta regra do projeto ("as
+  duas metades de uma razão cobrem as mesmas linhas") na sua forma mais discreta: aqui
+  não é uma razão, são dois totais lado a lado, e o defeito é o mesmo. As duas passam
+  a renormalizar juntas, por `sumPresent`/`ratioPresent` — um banco sem valor algum
+  mantém a fração NULA em vez de virar "0% do valor".
+
+- **"X% do valor examinado" era o complemento do não avaliado.** `1 − UNSCORED`
+  parece a mesma conta e não é: incompleto, valor/quantidade/peso ausente e área
+  inconsistente também nunca passaram pelo detector, e o complemento os contava como
+  examinados. Medido em produção 2026-09-08, o COMTRADE publica **25.630** linhas com
+  valor e sem quantidade (`MISSING_QUANTITY`), **0,893% do valor**: o card lia
+  **96,8%** sob um rótulo que promete **95,9%**. Passa a somar as flags EXAMINADAS
+  (`window.EXAMINED_FLAGS` — OK + atípicas + problemáticas), que é o que o rótulo diz.
+
+- **O corte de 20 produtos era aplicado ANTES do recorte do pesquisador.** O
+  serializer devolvia o top-20 por volume de linhas, e só então o cliente filtrava
+  pelos produtos selecionados — de modo que escolher o 50º maior código do COMEX (que
+  tem **110**) abria um painel **vazio**, sem dizer por quê, e a legenda "N de 20
+  produtos" apresentava 20 como o universo do banco. O corte é de LEGIBILIDADE, então
+  passa a cair no cliente, **depois** da seleção; o servidor devolve o banco inteiro
+  (com um teto de payload de 500, mantida a ordenação). Medido: COMEX passa de 20 para
+  **107** produtos no payload (110 menos os 3 escondidos pelo gate de visibilidade), o
+  denominador da legenda vira o universo real, e quando o corte age ele é NOMEADO —
+  *"20 de 107 produtos · os 20 com mais linhas (87 não exibidos)"*.
+
+### Adicionado
+
+- **`dataFilters.cov.test.js`** — as duas frações renormalizam juntas; um banco sem
+  valor mantém `valueShare` nulo.
+- **`ViewOverview.test.jsx`** — um recorte com `MISSING_QUANTITY` separa a soma das
+  examinadas do complemento do não avaliado (95% e não 97%).
+- **`ViewQuality.test.jsx`** — um produto fora dos 20 maiores aparece quando é o
+  selecionado; o corte age em 20 e diz quantos ficaram de fora.
+- **`MainScreen.cov.test.jsx`** — o contador de linhas ignora `flagShare` e continua
+  honrando as demais dimensões.
+
+---
+
 ## [1.73.0] - 2026-09-08
 
 ### Corrigido

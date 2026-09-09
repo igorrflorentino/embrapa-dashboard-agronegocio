@@ -79,12 +79,21 @@ function ViewOverview({ families, summary, database, conventions }) {
   // materialidade, numerosas e economicamente irrelevantes. "33,5%" sozinho diz ao
   // pesquisador que dois terços do acervo não foram examinados: verdade sobre as LINHAS,
   // falso sobre o ASSUNTO.
-  // O COMPLEMENTO do não avaliado, não o valueShare do OK. "Examinado" inclui o que o
-  // detector olhou E MARCOU (outlier, problemático): essas linhas passaram pelo exame.
-  // Usar o valueShare do OK subestimaria — no PEVS daria 79% em vez de 99,3% — e poria
-  // um número sob um rótulo que nomeia outra coisa, que é o defeito desta sessão inteira.
-  const naoAvaliadaValueShare = naoAvaliada ? naoAvaliada.valueShare : null;
-  const valorExaminado = naoAvaliadaValueShare == null ? null : 1 - naoAvaliadaValueShare;
+  // "Examinado" inclui o que o detector olhou E MARCOU (outlier, problemático): essas
+  // linhas passaram pelo exame. Usar só o valueShare do OK subestimaria — no PEVS daria
+  // 79% em vez de 99,3% — e poria um número sob um rótulo que nomeia outra coisa.
+  //
+  // Somamos as flags EXAMINADAS em vez de fazer `1 - UNSCORED`. O complemento parece a
+  // mesma conta e não é: incompleto, valor/quantidade/peso ausente e área inconsistente
+  // também nunca passaram pelo detector, e o complemento os contava como examinados. No
+  // COMTRADE são 0,893% do valor (medido em produção 2026-09-08). `sumPresent`, não `+`:
+  // num banco sem valor algum a fração é NULA, e somar null como zero afirmaria que
+  // nenhum dinheiro passou pelo exame quando o certo é "não há base para a fração".
+  const valorExaminado = window.sumPresent(
+    filtered.qualityFlags
+      .filter(f => window.EXAMINED_FLAGS.includes(f.id))
+      .map(f => f.valueShare)
+  );
 
   // "UFs cobertas" must count REAL Brazilian states only. For a trade banco
   // (COMEX) ufData includes non-state pseudo-origins (ND/EX/ZN/CB/RE/MC…) that

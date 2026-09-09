@@ -278,15 +278,23 @@ def serialize_source_meta(meta: dict | None) -> dict:
     }
 
 
-def _quality_by_product(df: pd.DataFrame | None, top: int = 20) -> list[dict]:
+def _quality_by_product(df: pd.DataFrame | None, top: int = 500) -> list[dict]:
     """product×flag counts → [{code, tabela, name, OK, MISSING_VALUE, …}] per-product
-    flag shares (fractions 0-1; FlagBars keys on the flag *ids*). Top-N by row volume so
-    a 110-NCM banco stays a readable chart.
+    flag shares (fractions 0-1; FlagBars keys on the flag *ids*), RANKED by row volume.
 
     Keyed on (code, tabela) — the produto's identity — not on the code alone, and
     ``tabela`` travels to the client so a consumer can disambiguate two produtos that
     share a name (``labelProductRows``). Selecting rows by NAME on the client silently
-    pulled in the other PEVS half; the code is the join key, the name is a label."""
+    pulled in the other PEVS half; the code is the join key, the name is a label.
+
+    ``top`` is a PAYLOAD guard, not a display cut. It used to be 20, which made the
+    server drop produtos before the client had applied the researcher's own selection:
+    COMEX carries 110 NCM codes and COMTRADE 89, so selecting the 50th-largest code
+    showed an EMPTY panel, and the view's "N de 20 produtos" caption presented 20 as the
+    banco's whole universe. The readable-chart cut belongs after the selection filter,
+    which is where the view now applies it; the ranking is kept so that a banco ever
+    exceeding this bound loses its least voluminous produtos rather than an arbitrary set.
+    """
     if _empty(df):
         return []
     by_produto: dict[tuple[str, str], dict] = {}

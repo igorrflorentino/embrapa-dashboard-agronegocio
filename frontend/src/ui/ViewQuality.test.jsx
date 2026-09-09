@@ -198,3 +198,54 @@ describe('ViewQuality — produtos that share a name across the two PEVS halves'
     expect(names).toContain('Madeira em tora · silvicultura');
   });
 });
+
+// O corte de legibilidade do painel por produto: 20 barras. Ele tem de cair DEPOIS do
+// recorte por produto — no servidor caía antes, e um banco de 110 códigos devolvia 20,
+// de modo que escolher o 50º maior abria um painel vazio sem dizer por quê.
+function bancoGrande(selecionados) {
+  const linhas = [];
+  const produtos = [];
+  for (let i = 1; i <= 40; i++) {
+    const code = `N${String(i).padStart(2, '0')}`;
+    // Ordenadas por volume decrescente, como o servidor devolve.
+    linhas.push({ code, name: `NCM ${i}`, OK: 0.5, UNSCORED: 0.5 });
+    produtos.push({ code, name: `NCM ${i}` });
+  }
+  return {
+    qualityFlags: [
+      { id: 'OK', label: 'OK', color: 'var(--ok)', share: 0.5, count: 500 },
+      { id: 'UNSCORED', label: 'Não avaliada', color: 'var(--fg-4)', share: 0.5, count: 500 },
+    ],
+    qualityTs: [{ y: 2020, ok: 0.5, unscored: 0.5 }],
+    qualityByProduct: linhas,
+    selectedProducts: selecionados,
+    products: produtos,
+    yearStart: 2000,
+    yearEnd: 2024,
+  };
+}
+
+describe('ViewQuality — o corte por legibilidade age sobre a SELEÇÃO', () => {
+  it('um produto fora dos 20 maiores continua aparecendo quando é o selecionado', () => {
+    stubGlobals(bancoGrande(['N33'])); // o 33º em volume
+    render(<ViewQuality summary={{}} database="mdic_comex" />);
+    expect(flagBarsProps.rows.map((r) => r.code)).toEqual(['N33']);
+  });
+
+  it('corta em 20 e DIZ quantos ficaram de fora', () => {
+    const todos = Array.from({ length: 40 }, (_, i) => `N${String(i + 1).padStart(2, '0')}`);
+    stubGlobals(bancoGrande(todos));
+    const { container } = render(<ViewQuality summary={{}} database="mdic_comex" />);
+    expect(flagBarsProps.rows).toHaveLength(20);
+    // O denominador é o universo do banco, não o corte; e o corte é nomeado.
+    expect(container.textContent).toContain('20 de 40 produtos');
+    expect(container.textContent).toContain('20 não exibidos');
+  });
+
+  it('sem corte, nada é dito sobre ele', () => {
+    stubGlobals(bancoGrande(['N01', 'N02']));
+    const { container } = render(<ViewQuality summary={{}} database="mdic_comex" />);
+    expect(container.textContent).toContain('2 de 40 produtos');
+    expect(container.textContent).not.toContain('não exibidos');
+  });
+});
