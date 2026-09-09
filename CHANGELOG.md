@@ -7,6 +7,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.73.0] - 2026-09-08
+
+### Corrigido
+
+- **2.022.856 linhas de rebanho eram `OK` sem nunca terem passado pelo detector.**
+  Desde a v1.49.0 `OK` significa **examinada pelo detector de preço implícito e
+  aprovada** — e a PPM foi o único banco onde essa distinção não chegou. As linhas de
+  **estoque** (`measure_kind = 'stock'`, o efetivo dos rebanhos) são uma contagem de
+  cabeças: não têm valor por construção, logo não têm preço implícito, logo não há o que
+  examinar nelas. É o caso de manual do "sem base para avaliar" — exatamente o que
+  `UNSCORED` nomeia. Mas elas recebiam `OK`, afirmando um exame que nunca aconteceu, em
+  **57% do banco inteiro**.
+
+  Era isso que fazia a PPM parecer o banco mais saudável do acervo (69,7% `OK`, contra
+  18,2% do PEVS). Não era saúde: era a marca não aplicada. Medido contra o BigQuery de
+  produção em 2026-09-08, com o modelo compilado e rodado sem escrever:
+
+  | | antes | depois |
+  |---|---|---|
+  | `OK` (linhas) | 69,70% | **12,53%** |
+  | `UNSCORED` (linhas) | 29,98% | **87,15%** |
+  | `OK` (valor) | 76,755% | **76,755%** |
+  | `OUTLIER_VALUE` (valor) | 21,975% | **21,975%** |
+
+  **As frações por VALOR não se movem um dígito**, e é isso que mantém a leitura honesta
+  em vez de alarmante: um rebanho vale R$ 0 aqui por construção, então o card do Panorama
+  continua lendo "99,7% do valor examinado" ao lado da fração de linhas. A completude
+  continua tendo precedência — um efetivo sem contagem segue `MISSING_QUANTITY` — e o
+  ramo é gatilhado pelas mesmas vars da flag, então uma build com o recurso desligado
+  compila para o par `OK`/`MISSING_QUANTITY` anterior.
+
+  ⚠️ **Exige rebuild do Gold** (`gold_ppm_production` é `materialized='table'`): a flag
+  é materializada. O `dbt build` diário propaga; para uma preservação de fronteira use
+  `make dbt-build-prod-with-backup`.
+
+- **A legenda "o que significa cada flag" explicava a minoria dos casos de "Não
+  avaliada".** O texto citava só a lacuna do deflator — **12,8%** das linhas `UNSCORED`
+  da PAM. O motivo dominante, **69,8%**, é o **zero medido** (o `-` do SIDRA: o município
+  produziu zero, e sem quantidade não há preço a conferir), e outros **17,4%** são o piso
+  de materialidade. No COMEX o piso sozinho responde por **98,2%**. A descrição passa a
+  enumerar as quatro situações + o caso estrutural do rebanho, e diz a proporção que
+  importa: costuma ser a marca da maioria das linhas e de quase nada do valor.
+
+  A descrição de `OK` também ficou explícita sobre ser uma afirmação **estreita** —
+  "examinada e aprovada", não "íntegra".
+
+- **As cinco entradas de `data_quality_flag` no glossário descreviam a taxonomia anterior
+  à v1.49.0.** Nenhuma delas mencionava `UNSCORED` — a flag majoritária em quatro dos
+  cinco bancos — nem `AREA_INCONSISTENT`. O glossário é a referência que o pesquisador
+  abre dentro do produto; ele descrevia um sistema que não existe mais. As cinco passam a
+  explicar as duas perguntas que a flag responde (completude e plausibilidade) e a listar
+  as marcas reais de cada banco.
+
+- **Comentários e contratos que afirmavam o estado anterior.** `gold_comtrade_flows.sql`
+  dizia que as ~56,5 mil linhas sem peso "ficam OK": desde o escopo `all` elas são
+  `UNSCORED` — **53.898**, medido. `contracts.js` e `docs/frontend_data_contract.md`
+  listavam parte dos motivos. `CLAUDE.md` chamava a taxonomia de "12 valores / 10
+  emitidos" quando são **13 / 11 emissíveis** — nunca mencionou `AREA_INCONSISTENT`.
+
+### Adicionado
+
+- **`tests/test_quality_macros_invariants.py`** — o ramo de estoque da PPM chega a
+  `UNSCORED`, `MISSING_QUANTITY` continua tendo precedência, e o ramo segue gatilhado
+  pelas vars (build com o recurso desligado volta ao par anterior).
+
+---
+
 ## [1.72.0] - 2026-09-08
 
 ### Corrigido
