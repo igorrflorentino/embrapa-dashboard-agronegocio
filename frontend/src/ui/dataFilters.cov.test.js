@@ -57,9 +57,11 @@ function makeSnapshot() {
       { uf: 'SP', year: 2020, value: 2000, q_mass: 1, q_vol: 0, q_count: 0 },
       { uf: 'SP', year: 2021, value: 3000, q_mass: 2, q_vol: 0, q_count: 0 },
     ],
+    // `share` vem SEMPRE da API (serving_quality_by_source), e a fixture não o trazia —
+    // invisível enquanto o cliente renormalizava por cima. Sem ele, `share` era undefined.
     quality: [
-      { id: 'OK', label: 'Normais', count: 900 },
-      { id: 'PROBLEMATIC', label: 'Problemático', count: 100 },
+      { id: 'OK', label: 'Normais', count: 900, share: 0.9 },
+      { id: 'PROBLEMATIC', label: 'Problemático', count: 100, share: 0.1 },
     ],
     qualityTs: [
       { y: 2019, ok: 1 }, // outside the default window when startDate is 2020
@@ -218,18 +220,30 @@ describe('applyFilters — national path', () => {
 describe('applyFilters — quality flags', () => {
   beforeEach(() => installGlobals(makeSnapshot()));
 
-  it('flags=null keeps all flags and re-normalizes shares to 1', () => {
+  it('flags=null devolve todas as flags, com a fração do acervo intacta', () => {
     const out = window.applyFilters({ basket: null, flags: null }, 'ibge_pevs');
     expect(out.qualityFlags).toHaveLength(2);
-    const total = out.qualityFlags.reduce((s, f) => s + f.share, 0);
-    expect(total).toBeCloseTo(1, 6);
+    expect(out.qualityFlags.map((f) => f.share)).toEqual([0.9, 0.1]);
   });
 
-  it('a flag subset filters + re-normalizes shares within the selected world', () => {
+  // A chip de flag escolhe O QUE OLHAR; ela não redefine a população. Renormalizar
+  // fazia a fração MUDAR quando o leitor clicava, sem o dado mudar — marcar só uma flag
+  // de 14 linhas lia "100%" —, e alcançava só os cartões: a linha temporal e a área
+  // empilhada leem `qualityTs` cru, então a tela mostrava dois denominadores ao mesmo
+  // tempo. A legenda do strip e o subtítulo do card do Panorama já prometiam o acervo.
+  it('um subconjunto RECORTA a lista mas NÃO renormaliza — a fração segue do acervo', () => {
     const out = window.applyFilters({ basket: null, flags: ['OK'] }, 'ibge_pevs');
     expect(out.qualityFlags).toHaveLength(1);
     expect(out.qualityFlags[0].id).toBe('OK');
-    expect(out.qualityFlags[0].share).toBeCloseTo(1, 6); // only flag → 100%
+    expect(out.qualityFlags[0].share).toBe(0.9);   // não 1.0
+  });
+
+  it('qualityFlagsFull ignora o recorte, para os totais do acervo', () => {
+    const out = window.applyFilters({ basket: null, flags: ['OK'] }, 'ibge_pevs');
+    expect(out.qualityFlags).toHaveLength(1);
+    expect(out.qualityFlagsFull).toHaveLength(2);
+    // "X de Y linhas" soma esta lista: Y não pode encolher porque uma chip foi desmarcada.
+    expect(out.qualityFlagsFull.reduce((s, f) => s + f.count, 0)).toBe(1000);
   });
 
   it('flags=[] (none) yields an empty flag list', () => {
@@ -274,7 +288,16 @@ describe('applyFilters — _shares provenance (flag/year/state)', () => {
 });
 
 // ── As DUAS frações da qualidade cobrem a mesma população ────────────────────
-describe('applyFilters — share e valueShare renormalizam JUNTOS', () => {
+// A preocupação que criou este bloco continua: `share` (linhas) e `valueShare` (dinheiro)
+// são lidos LADO A LADO no card do Panorama, e dois números de populações diferentes na
+// mesma frase estão cada um certo sozinho e errados juntos.
+//
+// O que mudou é COMO ela é satisfeita. A primeira solução renormalizou as duas pelo mundo
+// das flags marcadas: coerente entre si, incoerente com o resto da tela — a linha temporal
+// e a área empilhada leem `qualityTs` cru — e fazia a fração mudar quando o leitor clicava.
+// Agora nenhuma das duas é renormalizada: ambas vêm do acervo, que é o que a legenda do
+// strip e o subtítulo do card já prometiam.
+describe('applyFilters — share e valueShare vêm ambos do ACERVO', () => {
   function snapComValor() {
     const snap = makeSnapshot();
     // Um acervo onde as duas leituras divergem por ordem de grandeza, que é o caso real:
@@ -287,7 +310,7 @@ describe('applyFilters — share e valueShare renormalizam JUNTOS', () => {
     return snap;
   }
 
-  it('sem recorte de flags, as duas frações continuam somando 1', () => {
+  it('sem recorte, as duas frações somam 1', () => {
     installGlobals(snapComValor());
     const out = window.applyFilters({ basket: null, flags: null }, 'ibge_pevs');
     const soma = (k) => out.qualityFlags.reduce((s, f) => s + f[k], 0);
@@ -295,16 +318,15 @@ describe('applyFilters — share e valueShare renormalizam JUNTOS', () => {
     expect(soma('valueShare')).toBeCloseTo(1, 6);
   });
 
-  it('com recorte, valueShare renormaliza igual a share — nunca sobre o acervo inteiro', () => {
+  it('com recorte, NENHUMA das duas é renormalizada — seguem do mesmo acervo', () => {
     installGlobals(snapComValor());
     const out = window.applyFilters({ basket: null, flags: ['OK', 'UNSCORED'] }, 'ibge_pevs');
     expect(out.qualityFlags).toHaveLength(2);
     const ok = out.qualityFlags.find((f) => f.id === 'OK');
-    // 150/(150+800) e 0,79/(0,79+0,01): as duas do MESMO mundo. Antes, o valueShare
-    // atravessava intacto (0,79, do acervo inteiro) ao lado de um share já recortado.
-    expect(ok.share).toBeCloseTo(150 / 950, 6);
-    expect(ok.valueShare).toBeCloseTo(0.79 / 0.8, 6);
-    expect(ok.valueShare).not.toBeCloseTo(0.79, 6);
+    // Intactas. Renormalizar daria 150/950 e 0,79/0,80 — coerentes entre si, e de um
+    // mundo que só existe enquanto a chip estiver marcada.
+    expect(ok.share).toBe(0.15);
+    expect(ok.valueShare).toBe(0.79);
   });
 
   it('um banco sem valor algum mantém valueShare NULO — não vira 0%', () => {
@@ -318,8 +340,6 @@ describe('applyFilters — share e valueShare renormalizam JUNTOS', () => {
     expect(out.qualityFlags.every((f) => f.valueShare === null)).toBe(true);
   });
 });
-
-// ── State narrowing via the basket geoYearly cube ────────────────────────────
 describe('applyFilters — state + basket narrowing (geoYearly cube)', () => {
   it('a loaded basket cube drives ufData/ts and clears the notFilteredByBasket transient', () => {
     const snap = makeSnapshot();

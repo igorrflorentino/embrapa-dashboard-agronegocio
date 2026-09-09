@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.76.0] - 2026-09-09
+
+### Corrigido
+
+- **A perspectiva Qualidade mostrava dois denominadores ao mesmo tempo.** Os cartões de
+  flag renormalizavam pelas flags marcadas; a linha temporal e a área empilhada leem
+  `qualityTs` cru, do acervo. Com um subconjunto marcado, os cartões somavam 100% e o
+  gráfico logo abaixo somava 34% — na mesma tela, sobre os mesmos dados.
+
+  Fazer os dois baterem tinha duas soluções opostas, e a tela já dizia qual: a legenda do
+  strip promete *"Distribuição no **acervo completo** do banco"* e o subtítulo do card do
+  Panorama promete *"acervo do banco"*. Quem contradizia era a renormalização. Ela sai.
+
+  O segundo defeito que ela causava é o pior: **uma fração renormalizada muda quando o
+  leitor clica, sem o dado mudar.** Marcar só "Valor problemático" — 14 linhas no PEVS —
+  fazia o cartão ler **"100%"**. Agora lê **"0,0% · 14 linhas"**, que é a verdade. As chips
+  de flag escolhem *o que olhar*; não redefinem a população.
+
+  No Panorama o mesmo card lia **"100%"** sob o subtítulo *"acervo do banco"* quando só o
+  OK estava marcado, e o *"% do valor examinado"* caía para o `valueShare` do OK sozinho
+  (79% em vez de 99,3%), porque as demais flags examinadas tinham sido filtradas fora. Os
+  três números passam a ler `qualityFlagsFull` — a lista sem o recorte, irmã do
+  `ufDataFull` que já existia pelo mesmo motivo. Medido em produção: PEVS com só o OK
+  marcado lê **18,2% · acervo do banco · 99,3% do valor examinado**.
+
+  Também corrige o total do "X de Y linhas" na Qualidade, que somava só as flags marcadas
+  — com o OK sozinho, o denominador virava o próprio numerador e a linha lia "X de X".
+
+  Segue renormalizando **uma** coisa, e deliberadamente: a composição por produto
+  (`FlagBars`), onde a barra empilhada precisa fechar em 100% para ser legível. Ali a
+  fração é uma afirmação sobre o produto, não sobre o acervo.
+
+---
+
 ## [1.75.0] - 2026-09-09
 
 ### Alterado

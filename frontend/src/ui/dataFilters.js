@@ -19,7 +19,7 @@ import './seriesUtils.js';
 //   }
 //
 // Output: { ts, productTS, ufData, regionData, topMunis, topProducts,
-//           qualityFlags, qualityTs, selectedProducts, yearStart, yearEnd,
+//           qualityFlags, qualityFlagsFull, qualityTs, selectedProducts, yearStart, yearEnd,
 //           notFilteredByBasket, _shares }
 
 (function () {
@@ -510,27 +510,26 @@ import './seriesUtils.js';
     const filteredFlags = flagSet
       ? qualityFlagsAll.filter(f => flagSet.has(f.id))
       : qualityFlagsAll;
-    // re-normalize shares to selected flags' world
-    // Idem: nenhuma linha nas flags selecionadas não é "0% em cada flag" — é ausência.
+    // As frações NÃO são renormalizadas pelas flags marcadas — elas são do ACERVO, que é
+    // o que a tela promete: a legenda do strip diz "Distribuição no acervo completo do
+    // banco" e o subtítulo do card do Panorama diz "acervo do banco".
     //
-    // As DUAS frações são renormalizadas, e isso não é simetria decorativa. Só `share`
-    // era, e `valueShare` atravessava intacto com o valor do acervo inteiro: o card do
-    // Panorama lia a fração de linhas do mundo das flags MARCADAS e, na linha de baixo,
-    // a fração de valor do mundo INTEIRO — dois números de populações diferentes na
-    // mesma frase, cada um certo sozinho. É a quarta regra do projeto ("as duas metades
-    // de uma razão cobrem as mesmas linhas") na sua forma mais discreta: aqui não é uma
-    // razão, são dois totais lidos lado a lado, e o defeito é o mesmo.
+    // A renormalização (que existiu até aqui) tinha dois problemas, e o segundo é o pior:
     //
-    // `sumPresent`/`ratioPresent` e não `+`/`/`: `valueShare` é NULO num banco sem valor
-    // algum ("não há base para a fração"), e um null somado como zero viraria uma
-    // afirmação de que nenhum dinheiro passou ali.
-    const flagTotal  = window.sumPresent(filteredFlags.map(f => f.count));
-    const valueTotal = window.sumPresent(filteredFlags.map(f => f.valueShare));
-    const qualityFlags = filteredFlags.map(f => ({
-      ...f,
-      share:      window.ratioPresent(f.count, flagTotal),
-      valueShare: window.ratioPresent(f.valueShare, valueTotal),
-    }));
+    //  1. Ela alcançava só os cartões. A linha temporal e a área empilhada leem `qualityTs`
+    //     cru, do acervo — então com um subconjunto marcado a tela mostrava DOIS
+    //     denominadores ao mesmo tempo: os cartões somando 100% e o gráfico logo abaixo
+    //     somando 34%. Espalhar a renormalização para o `qualityTs` faria os dois baterem,
+    //     mas no denominador errado.
+    //  2. Uma fração renormalizada MUDA quando o leitor clica, sem o dado mudar. Marcar só
+    //     "Valor problemático" — 14 linhas no PEVS — fazia o cartão ler "100%". As chips de
+    //     flag escolhem O QUE OLHAR, não redefinem a população.
+    //
+    // O corte por flag segue existindo: ele decide quais cartões, séries e colunas aparecem.
+    // A composição POR PRODUTO (`ViewQuality.qaByProduct`) continua renormalizando por
+    // linha, e isso é outra coisa — ali a barra empilhada precisa fechar em 100% para ser
+    // legível, o que é uma afirmação sobre o produto, não sobre o acervo.
+    const qualityFlags = filteredFlags;
 
     // quality time series — pass-through, optionally trim to window
     const qualityTs = QUALITY_TS_T.filter(d => d.y >= yearStart && d.y <= yearEnd);
@@ -555,7 +554,12 @@ import './seriesUtils.js';
 
     return {
       ts, productTS, ufData, regionData, topMunis, topProducts,
-      qualityFlags, qualityTs, selectedProducts,
+      qualityFlags,
+      // A lista SEM o corte por flag — como `ufDataFull`, e pelo mesmo motivo: um total do
+      // acervo ("X de Y linhas", "% do valor examinado") não pode encolher porque o leitor
+      // desmarcou uma chip. Quem quer o recorte usa `qualityFlags`.
+      qualityFlagsFull: qualityFlagsAll,
+      qualityTs, selectedProducts,
       yearStart, yearEnd,
       // The choropleth/tile map's TRUE data year (max UF year within the window),
       // and whether it stops short of the requested yearEnd. The geo views label the
