@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.76.1] - 2026-09-09
+
+### Adicionado
+
+- **`accepted_values` na flag do `serving_quality_by_source`.** As cinco tabelas Gold já
+  tinham a guarda; o mart — que é o que a TELA lê — só tinha `not_null`. Uma flag nova ou
+  com typo chegaria ao donut sem rótulo pt-BR: o `_FLAG_LABEL_PT` do serializer não a
+  conheceria e o `decorate` cairia no id em inglês, violando a regra de idioma justamente
+  na tela do pesquisador. Falhar o build custa menos que descobrir isso em produção.
+
+### Alterado
+
+- **A janela do detector de outliers passa a incluir a `tabela`** nos dois bancos
+  multi-tabela (`partition by product_code, tabela, family`). A identidade de um produto é
+  `(banco, tabela, código)`: sem a tabela, dois produtos de metades diferentes que
+  dividissem um código compartilhariam a mediana de preço, e o detector escoraria um
+  contra a distribuição do outro.
+
+  **Não muda um número sequer, e isso foi medido, não suposto:** rodei o modelo compilado
+  contra produção sem escrever e comparei linha a linha com a tabela viva — **0
+  divergências em 1.351.477 linhas do PEVS**. Os conjuntos de códigos das duas metades são
+  disjuntos hoje. A mudança é de correto-por-acidente para correto-por-construção, que é a
+  mesma lição da v1.46.5 — lá o gate de visibilidade casava só `(source, code)` e as duas
+  metades sumiam juntas, invisível pelo mesmo motivo até deixar de ser.
+
+### Corrigido
+
+- **Dois comentários no `MainScreen` diziam "~95 mil linhas" para o PEVS.** São
+  **1.351.477** — 14× fora. Comentário não quebra teste e não aparece na tela; só engana
+  quem for calibrar alguma coisa por ordem de grandeza.
+
+---
+
 ## [1.76.0] - 2026-09-09
 
 ### Corrigido

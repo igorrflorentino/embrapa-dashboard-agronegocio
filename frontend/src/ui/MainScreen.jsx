@@ -370,7 +370,7 @@ function MainScreen({ filters, view = 'overview', database = 'ibge_pevs', infoPa
   // Unfiltered snapshot pass — gives the LIVE totals for the hero denominators
   // (products / rows). The prov.* registry values are synthetic prototype
   // leftovers (e.g. PEVS shows 12 products / 11,2 mi rows when the live Gold has
-  // 3 products / ~95 mil rows); the live snapshot is the source of truth.
+  // 3 products / 1,35 mi rows); the live snapshot is the source of truth.
   const _fAll = window.applyFilters ? window.applyFilters({}, database) : null;
   const _shares = (_f && _f._shares) || {};
   // UFs that survive the state filter AND still carry production — REAL Brazilian
@@ -404,7 +404,8 @@ function MainScreen({ filters, view = 'overview', database = 'ibge_pevs', infoPa
   const productsSelected = basket == null ? productsTotal : basket.length;
   // Total rows = sum of the snapshot's quality-flag counts (every Gold row carries
   // exactly one quality flag, so the sum IS the row count). Live ⇒ matches the real
-  // table (~95 mil for PEVS) instead of prov.totalRows' synthetic 11,2 mi. Fallback
+  // table (1,35 mi for PEVS, measured 2026-09-08) instead of prov.totalRows' synthetic
+  // 11,2 mi. Fallback
   // to the registry estimate only if quality counts are unavailable.
   const _liveRows = _fAll && Array.isArray(_fAll.qualityFlags)
     ? _fAll.qualityFlags.reduce((s, f) => s + (f.count || 0), 0)
