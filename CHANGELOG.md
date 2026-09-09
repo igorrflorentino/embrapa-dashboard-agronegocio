@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.74.2] - 2026-09-09
+
+### Alterado
+
+- **A `sa-claude-code-web-dev` perdeu escrita em produção.** Ela detinha
+  `roles/bigquery.dataEditor` no projeto inteiro — escrita e exclusão em `gold`, `silver` e
+  no log append-only de `research_inputs`, cujo `edited_by` é a trilha de auditoria da
+  curadoria. O script que cria a conta já argumentava contra isso nos próprios comentários
+  (*"a leaked key = full prod-data write"*) e concede `dataViewer`; as permissões vivas é que
+  tinham divergido, para mais privilégio.
+
+  | | antes | depois |
+  |---|---|---|
+  | dados | `bigquery.dataEditor` (escrita em tudo) | `bigquery.dataViewer` (leitura) |
+  | jobs | `bigquery.jobUser` | `bigquery.user` (subsume o jobUser) |
+  | caminho dev | implícito, via `dataEditor` | `WRITER` explícito nos três `dbt_dev_*` |
+
+  **A entrada de WRITER não é redundante, e essa é a parte não óbvia.** O script pressupõe
+  que a SA *"becomes OWNER of the `dbt_dev_*` datasets it creates"* — verdade só para os que
+  ela mesma cria. Os que existem foram criados por um operador humano, então ela não é dona
+  de nenhum, e `bigquery.user` não alcança dataset alheio. Sem o ACL explícito, tirar o
+  `dataEditor` levaria junto a escrita do sandbox. Ficou invisível enquanto o `dataEditor`
+  mascarava.
+
+  Aplicado conceder → provar → revogar. Provado DEPOIS das revogações via
+  `testIamPermissions` impersonando a SA — método que prova a ausência de escrita **sem
+  escrever nada**: ela tem `tables.getData`, `jobs.create` e `datasets.create`; e não tem
+  `tables.create`, `tables.updateData`, `tables.delete` nem `datasets.update`.
+
+- **`scripts/setup-claude-code-web-sa.sh` reproduzia um estado quebrado.** Concedia
+  `storage.objectViewer` — leitura — no bucket onde a SA precisa **escrever** (`backup-gold`
+  e o arquivo raw da ingestão), e não criava o papel custom que o `ensure_bucket()` exige.
+  Um projeto novo nasceria sem caminho de escrita. Agora concede `objectUser` + o papel
+  `bucketConfigReaderWriter`, e adiciona o WRITER nos `dbt_dev_*` pré-existentes.
+
+### Corrigido
+
+- **`docs/iam_setup.md` §2.5** deixou de descrever a divergência como item em aberto — ela
+  foi reconciliada. Registra o estado final, o método de prova (e por que
+  `testIamPermissions` é preferível a ler a política: a política diz o que foi concedido, o
+  teste diz o que é efetivo) e a razão pela qual o papel custom e as entradas de WRITER não
+  podem ser removidos como redundantes.
+
+### Notas
+
+- **Segue em aberto, e é agora a exposição principal: a chave JSON.** O passo 5 do script
+  emite uma chave `USER_MANAGED` baixável — medida em 2026-09-09, `490bfb9a…`, criada em
+  2026-05-21, `validBeforeTime` **9999-12-31**: nunca expira. Nunca foi commitada
+  (`git log --all` não acha o caminho) e o `.gitignore` cobre `**/sa-*.json`. O
+  estreitamento acima reduziu o que um vazamento dela alcançaria, mas não mexeu na chave.
+  Rotacionar **quebra o sandbox até alguém colar a substituta**, então é ação de operador,
+  como apagar uma service account. A saída durável é ficar sem chave: as quatro identidades
+  de CI deste repo já autenticam via WIF.
+
+---
+
 ## [1.74.1] - 2026-09-09
 
 ### Corrigido
