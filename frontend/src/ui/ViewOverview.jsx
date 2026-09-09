@@ -61,8 +61,14 @@ function ViewOverview({ families, summary, database, conventions }) {
   const comboPending = !!filtered.geoComboPending;
   const kpiVal = (fmt) => (comboPending ? '…' : fmt);
 
-  // Quality digest from filtered flag set
-  const okFlag    = filtered.qualityFlags.find(f => f.id === 'OK');
+  // Quality digest. Lê a lista COMPLETA, não a recortada pelas chips de flag: este card
+  // se declara "acervo do banco" no próprio subtítulo, e um número do acervo não muda
+  // porque o leitor desmarcou uma chip. Antes, desmarcar "Não avaliada" fazia o card ler
+  // "99,6%" com o subtítulo ainda dizendo "acervo do banco" — certo como aritmética,
+  // respondendo outra pergunta. As chips seguem valendo na perspectiva Qualidade, que é
+  // onde elas escolhem o que olhar.
+  const qFlags    = filtered.qualityFlagsFull || filtered.qualityFlags;
+  const okFlag    = qFlags.find(f => f.id === 'OK');
   const okShare   = okFlag ? okFlag.share : 0;
   const okCount   = okFlag ? okFlag.count : 0;
   // Desde a v1.49.0 'OK' significa EXAMINADA pelo detector de preço implícito e sem
@@ -71,7 +77,7 @@ function ViewOverview({ families, summary, database, conventions }) {
   // a soar como se dois terços do acervo estivessem quebrados. Não estão: a maior parte
   // é célula vazia do cubo (município que não produz aquilo) e valor abaixo do piso de
   // materialidade. O card nomeia o que MEDE, e a linha de baixo diz o que é o resto.
-  const naoAvaliada = filtered.qualityFlags.find(f => f.id === 'UNSCORED');
+  const naoAvaliada = qFlags.find(f => f.id === 'UNSCORED');
   const naoAvaliadaShare = naoAvaliada ? naoAvaliada.share : 0;
   // A MESMA fração pesada por dinheiro (v1.56.0). Sem ela o card conta só metade da
   // história: no PEVS, 81,6% das LINHAS não foram avaliadas e 0,7% do VALOR — porque o
@@ -90,7 +96,7 @@ function ViewOverview({ families, summary, database, conventions }) {
   // num banco sem valor algum a fração é NULA, e somar null como zero afirmaria que
   // nenhum dinheiro passou pelo exame quando o certo é "não há base para a fração".
   const valorExaminado = window.sumPresent(
-    filtered.qualityFlags
+    qFlags
       .filter(f => window.EXAMINED_FLAGS.includes(f.id))
       .map(f => f.valueShare)
   );
@@ -194,10 +200,11 @@ function ViewOverview({ families, summary, database, conventions }) {
             sparkColor="var(--viz-9)"
           />
         )}
-        {/* Quality is a banco-wide (acervo) figure: applyFilters narrows quality
-            ONLY by the flag chips, never by basket/UF/period (the API has no
-            per-basket quality). The other KPIs in this strip ARE filtered, so we
-            mark the scope here rather than present an acervo % as if it were
+        {/* Quality is a banco-wide (acervo) figure, and now literally so: it reads
+            qualityFlagsFull, so NOTHING in the filter menu narrows it — not the
+            basket/UF/period (the API has no per-basket quality) and not the flag
+            chips either. The other KPIs in this strip ARE filtered, so the scope is
+            marked in the sub-line rather than presenting an acervo % as if it were
             scoped to the active selection ("no invisible filtering"). */}
         <window.KpiCardSpark
           label="Linhas examinadas sem ressalva"

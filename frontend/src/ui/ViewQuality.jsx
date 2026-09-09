@@ -42,7 +42,11 @@ function ViewQuality({ summary, database }) {
   const ts       = filtered.qualityTs;
   // Sem `|| 1`: ele fabricava um denominador. Sem flag alguma a linha lia
   // "— de 1 linhas examinadas sem ressalva", inventando uma linha que não existe.
-  const total    = window.sumPresent(flags.map(f => f.count));
+  //
+  // Soma a lista COMPLETA, não a recortada: este é o total do acervo ("X de Y linhas"),
+  // e ele não pode encolher porque o leitor desmarcou uma chip. Com a recortada, marcar
+  // só OK fazia o denominador virar o próprio numerador e a linha ler "X de X".
+  const total    = window.sumPresent((filtered.qualityFlagsFull || flags).map(f => f.count));
   const okFlag   = flags.find(f => f.id === 'OK');
   const okCount  = okFlag ? okFlag.count : 0;
 
