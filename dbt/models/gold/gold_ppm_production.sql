@@ -177,7 +177,15 @@ from {% if var('enable_quality_outliers', false) -%}
     select e.*,
 {{ quality_scored_bounds('val_real_ipca_brl', 'qty_native') }}
     from enriched e
-    window _qw as (partition by product_code, family)
+    -- A janela é o grão da IDENTIDADE do produto — (banco, TABELA, código) — mais a
+    -- família. Sem a `tabela`, dois produtos de metades diferentes que dividissem um
+    -- código compartilhariam a mediana de preço, e o detector escoraria um contra a
+    -- distribuição do outro. Hoje os conjuntos de códigos das duas tabelas são
+    -- DISJUNTOS (verificado em produção 2026-09-09), então incluí-la não muda um número
+    -- sequer: muda de correto-por-acidente para correto-por-construção, que é a mesma
+    -- lição da v1.46.5, quando o gate de visibilidade casava só (source, code) e as duas
+    -- metades sumiam juntas — invisível pelo mesmo motivo, até deixar de ser.
+    window _qw as (partition by product_code, tabela, family)
 ) enriched
 {%- else -%}
 enriched

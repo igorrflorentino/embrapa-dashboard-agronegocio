@@ -231,7 +231,19 @@ models:
               arguments:
                 values: ["ibge_pevs", "ibge_pam", "ibge_ppm", "mdic_comex", "un_comtrade"]
       - name: data_quality_flag
-        tests: [not_null]
+        description: >
+          The union of every banco's flag domain — MISSING_WEIGHT is COMEX-only and
+          AREA_INCONSISTENT is PAM-only, so no single source emits all of these.
+        tests:
+          - not_null
+          # As cinco tabelas Gold têm esta guarda; o mart, que é o que a tela LÊ, não
+          # tinha. Uma flag nova (ou com typo) chegaria ao donut sem rótulo pt-BR — o
+          # `_FLAG_LABEL_PT` do serializer não a conheceria e o decorate cairia no id em
+          # inglês, violando a regra de idioma justamente na tela do pesquisador. Falhar
+          # o build é mais barato que descobrir isso em produção.
+          - accepted_values:
+              arguments:
+                values: ["OK", "MISSING_VALUE", "MISSING_QUANTITY", "MISSING_WEIGHT", "INCOMPLETE", "OUTLIER_QUANTITY", "PROBLEMATIC_QUANTITY", "OUTLIER_VALUE", "PROBLEMATIC_VALUE", "INFERRED_QUANTITY", "INFERRED_VALUE", "AREA_INCONSISTENT", "UNSCORED"]
       - name: share
         description: "count ÷ source total; sums to 1 within a source."
       - name: value_share
