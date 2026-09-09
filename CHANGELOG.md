@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.76.2] - 2026-09-09
+
+### Adicionado
+
+- **`docs/divergencias_de_conteudo.md`** — o registro do código cujo **conteúdo** a fonte
+  classificou errado. É a contraparte declarada do `nomenclatura_divergencias.md`, e a
+  diferença decide onde uma coisa entra: aquele é de **nome** e gerado por script; este é de
+  **conteúdo**, achado empírico, mantido à mão. Uma divergência de conteúdo **não tem
+  conserto no pipeline** — valor e quantidade estão certos, o código sob o qual a fonte os
+  declarou é que não está.
+
+  Primeiro caso registrado, medido em produção: **`1005 10` (milho para semeadura)**. No
+  COMTRADE, **75% do peso** declarado como semente está a preço de commodity — 88,88 mi t
+  contra 29,71 mi t. Quem calcular o preço implícito do código no mundo obtém US$ 1,01/kg
+  quando a semente é **3,27**. No COMEX a contaminação é de **10,8% do peso e 1,5% do
+  valor**: o MDIC classifica bem, o agregado de ~200 reportantes não — e essa assimetria é
+  o achado mais útil, porque diz de qual lado o dado serve.
+
+  **A curadoria separou os agrupamentos** (fora do repo, no `research_inputs`): `milho`
+  ficou com os códigos de grão e foi **renomeado para "Milho em grão"** — ele perde ~530
+  mil t (COMEX) e 29,7 mi t (COMTRADE) de volume, e uma série que muda de conteúdo sem
+  mudar de nome é o defeito que este projeto persegue em toda parte. Os códigos de
+  semeadura foram para o novo `semente_de_milho`.
+
+  O doc também diz o que a separação **não** conserta: "Semente de milho" continua com 75%
+  de milho comum do lado COMTRADE. Arrumou-se o agrupamento, não o dado do reportante.
+
+  Vale registrar como isso apareceu: **ninguém procurava.** O detector de preço implícito
+  marcou 2.989 linhas do COMTRADE em `PROBLEMATIC` e elas estavam lá havia versões — o
+  sistema funcionava, faltava ler a saída. A assinatura que distingue este caso de um erro
+  de digitação é ser **sistemático**, não esparso.
+
+---
+
 ## [1.76.1] - 2026-09-09
 
 ### Adicionado
