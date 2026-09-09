@@ -22,6 +22,11 @@ const QTS_KEY = {
   INFERRED_VALUE: 'inferred_value', INFERRED_QUANTITY: 'inferred_quantity',
   // PAM-only: planted < harvested area (a SIDRA source error surfaced in-product).
   AREA_INCONSISTENT: 'area_inconsistent',
+  // The row the implied-price detector could not examine. It was MISSING from this map
+  // and only resolved through the `f.id.toLowerCase()` fallback below — which happens to
+  // be right for every key, and so quietly voided the "add a new flag deliberately"
+  // guarantee this map exists for. It is the MAJORITY flag in four of the five bancos.
+  UNSCORED: 'unscored',
 };
 
 function ViewQuality({ summary, database }) {
@@ -41,13 +46,19 @@ function ViewQuality({ summary, database }) {
   const flagSet = new Set(flags.map(f => f.id));
   // Restrict per-product breakdown to selected products AND selected flags.
   // We zero out unselected flag columns and re-normalize each row.
-  const selectedProductNames = new Set(
-    filtered.selectedProducts
-      .map(c => (filtered.products.find(p => p.code === c) || {}).name)
-      .filter(Boolean)
-  );
-  const qaByProduct = filtered.qualityByProduct
-    .filter(r => selectedProductNames.has(r.name))
+  //
+  // The join key is the CODE. It used to be the product NAME (codes → names, then match
+  // by name), and three PEVS produtos carry the same name in both halves — madeira em
+  // tora (3435/3457), lenha (3434/3456) and carvão vegetal (3433/3455). Selecting the
+  // native-extraction half therefore also dragged in the silviculture one, and the two
+  // rendered as two bars under an IDENTICAL label. A name is a label; only the code
+  // identifies. `labelProductRows` then adds the "· Silvicultura" suffix, but ONLY when
+  // the same name really appears twice in what is on screen — one half selected alone
+  // stays unsuffixed, because there is nothing to disambiguate.
+  const selectedCodes = new Set(filtered.selectedProducts);
+  const qaByProduct = window.labelProductRows(
+    filtered.qualityByProduct.filter(r => selectedCodes.has(r.code)), database,
+  )
     .map(r => {
       const row = { code: r.code, name: r.name };
       let sum = 0;

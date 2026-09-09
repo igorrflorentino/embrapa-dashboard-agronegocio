@@ -147,18 +147,24 @@ The `discover` commands are **auxiliary and not part of the production pipeline*
 
 ## `data_quality_flag`
 
-An 11-value taxonomy: **9 emitted + 2 reserved**. The first five are always emitted; the four implied-price tiers are produced only when the dbt var `enable_quality_outliers` is `true` (on in prod); and two **reserved** auto-fill tiers (`INFERRED_QUANTITY` / `INFERRED_VALUE`) are accepted-but-absent — no Gold rule emits them yet (always 0), reserved for a future auto-fill pipeline. The custom dashboard renders the pt-BR labels shown (see its "O que significa cada flag?" legend).
+A **13-value** taxonomy: **11 emittable + 2 reserved**. The completeness tiers are always emitted; the four implied-price tiers and `UNSCORED` are produced only when the dbt var `enable_quality_outliers` is `true` (on in prod); `AREA_INCONSISTENT` is PAM-only; and two **reserved** auto-fill tiers (`INFERRED_QUANTITY` / `INFERRED_VALUE`) are accepted-but-absent — no Gold rule emits them yet (always 0), reserved for a future auto-fill pipeline. The custom dashboard renders the pt-BR labels shown (see its "O que significa cada flag?" legend).
+
+The flag answers **two independent questions** per row: is the row *complete* (does it carry a quantity and a value?), and is the number *plausible* (is `value ÷ quantity` near the product's median implied price?). The second question needs a price, so it cannot be asked of every row — and a row it could not be asked of is `UNSCORED`, **not** `OK`.
 
 | Value | UI label (pt-BR) | Meaning |
 |---|---|---|
-| `OK` | Normais | quantity (in any unit) **and** value, with a plausible implied price |
+| `OK` | Normais | complete **and** the detector EXAMINED the implied price and found it plausible |
+| `UNSCORED` | Não avaliada | the detector had **no basis** to examine the row: measured zero, value under the materiality floor, deflated value absent (pre-1980 IPCA gap), or fewer than `quality_min_obs` observations for that product. **Not a defect** — a row with nothing to evaluate, not a damaged one |
 | `MISSING_VALUE` | Valor financeiro ausente | quantity reported but monetary value missing |
 | `MISSING_QUANTITY` | Quantidade ausente | monetary value reported but quantity missing |
-| `MISSING_WEIGHT` | Peso ausente | COMEX/COMTRADE only — value reported but net weight missing |
+| `MISSING_WEIGHT` | Peso ausente | COMEX only — value reported but net weight missing |
 | `INCOMPLETE` | Incompleto | both missing |
 | `OUTLIER_VALUE` / `OUTLIER_QUANTITY` | Valor / Quantidade atípica (válida) | high-magnitude but price-consistent — a genuinely large value, **not** an error |
 | `PROBLEMATIC_VALUE` / `PROBLEMATIC_QUANTITY` | Valor / Quantidade problemática (provável erro) | implied price (value ÷ quantity) >100× or <1/100× the product median ⇒ likely typo |
+| `AREA_INCONSISTENT` | Área inconsistente (plantada < colhida) | PAM only — planted area below harvested area, an agronomic impossibility; a SIDRA source error carried faithfully rather than silently corrected |
 | `INFERRED_QUANTITY` / `INFERRED_VALUE` | Quantidade / Valor financeiro inferido | **reserved** — a blank value that a future auto-fill pipeline would impute; no rule emits it yet (always 0) |
+
+> ⚠️ **`UNSCORED` is the majority flag by ROWS and a rounding error by VALUE, and both facts matter.** Measured on prod 2026-09-08 — PEVS **81,7%** of rows / **0,70%** of value · PAM 66,3% / 0,10% · COMEX 65,2% / 0,48% · COMTRADE 64,6% / 3,17% · PPM 30,0% / 0,28%. The detector therefore examines **over 96% of the money in every banco**. The rows it skips are numerous and economically negligible: in the IBGE surveys mostly a município that measurably produced **zero** (SIDRA's `-`), and in the trade banks shipments under the US$ 100k floor (98,2% of COMEX's unscored rows). Reading the row share alone says two thirds of the acervo went unexamined — true of the *rows*, false of the *subject*.
 
 IBGE "no-data" placeholders (`...`, `..`, `*`, `X`) are converted to `NULL` in Silver by the `safe_numeric` macro. SIDRA's `-` is **not** a placeholder — it is an exact measured zero ("dado numérico igual a zero não resultante de arredondamento"), so for IBGE `valor` it maps to `0` (via `dash_is_zero=true`), kept distinct from missing so "production went to zero" isn't conflated with "not surveyed".
 
@@ -192,7 +198,9 @@ One row per `(reference_year, state_acronym, city_name, product_code)`. Columns:
 
 - Connect **directly** to the `${BQ_GOLD_DATASET}.gold_pevs_production` table (not to views or a "custom query").
 - Enable **BI Engine** with 1–2 GB covering the Gold dataset — it cuts latency and the cost of repeated queries.
-- Suggested default filter for exploratory analyses: `data_quality_flag = 'OK'` (shown as *Normais* in the custom dashboard) — or exclude the `PROBLEMATIC_*` tiers to drop likely typos while keeping the valid `OUTLIER_*` giants.
+- Suggested default filter for exploratory analyses: **`data_quality_flag NOT IN ('PROBLEMATIC_VALUE', 'PROBLEMATIC_QUANTITY')`** — it drops the likely typos and keeps everything else.
+
+  > ⚠️ **Do not filter to `data_quality_flag = 'OK'`.** This README recommended exactly that until v1.72.0, and it stopped being safe when `UNSCORED` was split out of `OK` (v1.49.0). Measured on prod 2026-09-08, that filter now discards **66% to 82% of the rows** of every banco — and, far worse, **8% to 23% of the value**, because the rows it throws away include every `OUTLIER_*`: the price-consistent giants, which are the largest legitimate producers (20,2% of PEVS value, 23,0% of PPM). `OK` no longer means "the good rows"; it means "the rows the implied-price detector examined and cleared", which is a much narrower claim.
 
 ## Structure
 

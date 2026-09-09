@@ -216,8 +216,13 @@ describe('ViewProductProfile — flow product render', () => {
     // The ficha técnica uses the banco's code label.
     expect(container.textContent).toContain('Código IBGE');
     expect(container.textContent).toContain('toneladas');
-    // qaRow present → "Linhas íntegras (Normais)" row rendered.
-    expect(container.textContent).toContain('Linhas íntegras');
+    // qaRow present → the quality pair is rendered. NOT "Linhas íntegras": since
+    // v1.49.0 'OK' means EXAMINED by the implied-price detector and cleared, and on a
+    // PEVS produto that share is ~18% — the old label read as "82% of this produto is
+    // broken". The share the card omits is named on the line below it, never left blank.
+    expect(container.textContent).toContain('Linhas examinadas sem ressalva');
+    expect(container.textContent).toContain('Sem base para avaliar');
+    expect(container.textContent).not.toContain('Linhas íntegras');
 
     // Charts render (value/quantity/price/share line charts present).
     expect(container.querySelectorAll('.line-chart').length).toBeGreaterThanOrEqual(4);

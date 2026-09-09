@@ -2345,6 +2345,21 @@ def test_visibility_clause_and_builder_injection():
     assert clause in bp1
 
 
+def test_quality_by_product_groups_by_the_produto_identity_including_tabela():
+    """The per-product quality breakdown is grained on (código, TABELA) — the produto's
+    identity — not on the code alone. Three PEVS produtos share a product_description
+    across the two halves, and without the table the client has no way to tell two
+    identically-named bars apart. Every Gold table carries the column, so there is no
+    per-source branch to get wrong."""
+    from embrapa_dashboard.serving import sql
+
+    q, _ = sql.quality_by_product(
+        "t", code_column="product_code", name_column="product_description"
+    )
+    assert "group by product_code, tabela, data_quality_flag" in " ".join(q.split())
+    assert "tabela," in q  # and it is SELECTed, not only grouped
+
+
 def test_visibility_clause_matches_the_sidra_table_only_for_multi_table_bancos():
     """A identidade de um produto é (banco, tabela, código), então o gate casa também a
     tabela — mas SÓ nos bancos que têm duas. `comex`/`comtrade`/`pam` não têm a coluna
