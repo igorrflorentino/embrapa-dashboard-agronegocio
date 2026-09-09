@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.75.0] - 2026-09-09
+
+### Alterado
+
+- **plotly.js 3.7.0 → 4.0.0.** Substitui o #408 do dependabot, que estava com o CI
+  vermelho: a v4 quebra um teste, e o bump sozinho não bastava.
+
+  **A quebra, e por que ela não é do dashboard.** Os `plotly.js/lib/*` são fachadas —
+  `lib/core.js` é literalmente `require('../src/core')` — e na v4 esse fonte está migrando
+  para TypeScript: `src/lib/index.js` faz `require('./mod')` onde só existe `mod.ts` (19
+  arquivos `.ts` no `src/`, nenhum no `lib/`). O Vite/Rolldown resolve a extensão, então o
+  **build de produção passa**; o Vitest carrega em CommonJS e morre com
+  `Cannot find module './mod'`. Não é o `server.deps.inline` que resolve — o `require`
+  acontece fora do resolvedor do Vite.
+
+  A correção é uma linha e é o padrão da casa: `_base.colorbar.test.js` era o **único**
+  teste de gráfico que não mockava o `plotlyBundle`, e ele nem quer o Plotly — testa
+  `colorbarAnchors`, função pura, e só o alcançava de carona pelo import de `_base.jsx`.
+  Todos os outros (BarChart, Heatmap, StackedArea, FlagBars, …) já mockavam.
+
+  **Verificado no navegador contra o BigQuery de produção**, porque a v4 troca o parser de
+  cores (TinyColor → culori, que *rejeita* cores não-CSS-válidas) e nenhum teste pega isso.
+  Os quatro traços do bundle parcial renderizam: `scatter` (2 linhas, eixo com os sufixos
+  pt-BR "20 bi"/"40 bi" — o `ptBrMagnitude` sobreviveu), `bar` (60 barras), `heatmap`
+  (com colorbar) e `sankey` (31 nós, 40 links). A paleta resolve certo: `--viz-1` `#1D4D7E`
+  chega como `rgb(29, 77, 126)`.
+
+  O risco do culori é baixo aqui **por construção, não por sorte**: `resolveColor` já
+  converte `var(--x)` para o valor concreto antes do Plotly, e toda a paleta é hex puro —
+  nenhum `oklch`/`lab`/`color-mix` em variável que alimente gráfico.
+
+  Sem impacto das demais quebras da v4: os traços `*mapbox` removidos não eram usados (o
+  mapa é `heatmap` em grade + MapLibre à parte), não há MathJax, e o Node mínimo 22 está
+  coberto — `engines: ^24`, `node:24-slim` no Dockerfile, `.nvmrc` no CI.
+
+---
+
 ## [1.74.2] - 2026-09-09
 
 ### Alterado
