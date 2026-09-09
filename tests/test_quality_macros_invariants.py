@@ -51,3 +51,22 @@ def test_problematic_takes_precedence_over_outlier():
     (valid-but-large) branch — else a typo would be mislabeled as a valid large value."""
     macro = _macro("quality_outlier_ctes")
     assert macro.index("'problematic'") < macro.index("'outlier'")
+
+
+def test_ppm_stock_rows_are_unscored_not_ok():
+    """A PPM herd row (measure_kind='stock') is a headcount with NO value, so the
+    implied-price detector has nothing to score. Since v1.49.0 'OK' means EXAMINED and
+    cleared, so marking a stock row OK asserts an examination that never happened — it did,
+    for 2.022.856 rows, 57% of the whole banco (measured on prod 2026-09-08). The stock
+    branch must reach UNSCORED, and MISSING_QUANTITY must still win when the headcount
+    itself is absent."""
+    sql = _model("gold_ppm_production")
+    stock = sql[sql.index("when measure_kind = 'stock'") :]
+    stock = stock[: stock.index("else {{ data_quality_flag")]
+    assert "'UNSCORED'" in stock
+    # Completeness still takes precedence over the unscored tier.
+    assert stock.index("'MISSING_QUANTITY'") < stock.index("'UNSCORED'")
+    # And the branch is gated on the same vars as the flag itself, so a build with the
+    # feature off still compiles to the previous OK/MISSING_QUANTITY pair.
+    assert "enable_quality_outliers" in stock and "quality_unscored_scope" in stock
+    assert "'OK'" in stock

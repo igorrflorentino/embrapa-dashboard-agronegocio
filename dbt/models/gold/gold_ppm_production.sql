@@ -25,8 +25,9 @@
 -- colhida/rendimento (no 'yield' capability). It DOES carry a `measure_kind`
 -- discriminator: 'stock' (efetivo dos rebanhos — a headcount with NO price) vs
 -- 'flow' (animal production — quantity + value). A stock row's val_* are NULL by
--- design; the quality flag treats a stock as OK on quantity alone (value is N/A,
--- not "missing").
+-- design, so the completeness rule for it is the HEADCOUNT alone (value is N/A, not
+-- "missing") and the implied-price detector has nothing to score — which makes a
+-- complete stock row UNSCORED, not OK. See the quality CASE below.
 --
 -- NOTE: val_raw is nominal R$ for the FULL history — silver_ibge_ppm applies the
 -- date-aware historical_currency_factors join, so pre-1994 years (Mil Cruzeiros/
@@ -139,12 +140,31 @@ select
     safe_divide(val_real_igpdi_brl, brl_per_eur_current)     as val_real_igpdi_eur,
 
     -- ── Quality + provenance ─────────────────────────────────────────────────
-    -- Stock rows (efetivo) have NO value by design → OK on quantity alone; flow rows use the
-    -- standard qty+value rule via data_quality_flag (the full taxonomy when enable_quality_outliers
-    -- is on, legacy 4-value when off). Stock rows only ever emit OK / MISSING_QUANTITY.
+    -- Stock rows (efetivo) have NO value by design, so completeness is the HEADCOUNT alone;
+    -- flow rows use the standard qty+value rule via data_quality_flag (the full taxonomy when
+    -- enable_quality_outliers is on, legacy 4-value when off).
+    --
+    -- A COMPLETE stock row is UNSCORED, not OK. Since v1.49.0 'OK' means the implied-price
+    -- detector EXAMINED the row and cleared it, and a headcount has no price to examine —
+    -- it is the textbook "no basis to evaluate", which is what UNSCORED names. Marking it OK
+    -- made 2.022.856 rows (57% of the whole banco, measured on prod 2026-09-08) assert an
+    -- examination that never happened, and it is what made PPM look like the healthiest banco
+    -- (69,7% OK) when it was only the one where the distinction had not been applied. The
+    -- ROW share drops hard and the VALUE share does not move at all: a herd is worth R$ 0
+    -- here by construction, so serving_quality_by_source's value_share is untouched.
+    --
+    -- Gated on the same vars as the flag itself, so a build with the feature off compiles to
+    -- the previous OK/MISSING_QUANTITY pair.
     case
         when measure_kind = 'stock'
-            then case when qty_native is not null then 'OK' else 'MISSING_QUANTITY' end
+            then case
+                when qty_native is null then 'MISSING_QUANTITY'
+                {%- if var('enable_quality_outliers', false) and var('quality_unscored_scope', 'absent') %}
+                else 'UNSCORED'
+                {%- else %}
+                else 'OK'
+                {%- endif %}
+            end
         else {{ data_quality_flag('qty_native', 'val_raw',
                  quality_qty_level('val_real_ipca_brl', 'qty_native'),
                  quality_val_level('val_real_ipca_brl', 'qty_native'),
