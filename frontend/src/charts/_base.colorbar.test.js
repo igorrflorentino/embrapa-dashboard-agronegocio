@@ -1,4 +1,18 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+// `colorbarAnchors`/`ptBrMagnitude` são funções PURAS — este arquivo não quer o Plotly,
+// só o alcança de carona pelo import de `_base.jsx`. Mockar é o padrão de todo teste de
+// gráfico aqui (BarChart, Heatmap, StackedArea, …); esta era a única exceção.
+//
+// Deixou de ser opcional na plotly.js v4: os `lib/*` são fachadas `require('../src/*')`,
+// e esse fonte está migrando para TypeScript — `src/lib/index.js` faz `require('./mod')`
+// onde só existe `mod.ts`. O Vite/Rolldown resolve (o build de produção passa); o Vitest
+// carrega em CommonJS e morre com "Cannot find module './mod'". `server.deps.inline`
+// não cobre, porque o require acontece fora do resolvedor do Vite.
+vi.mock('./plotlyBundle', () => ({
+  default: { react: () => {}, purge: () => {}, Plots: { resize: () => {} } },
+}));
+
 import { colorbarAnchors, ptBrMagnitude } from './_base.jsx';
 
 // The colorbar's three anchors (min / centro / max) exist so the reader can place any
