@@ -547,6 +547,44 @@ def test_quality_by_product_per_product_shares_top_n():
     # OUTLIER/ESTIMATED/BOUNDARY_HISTORIC keys no longer exist at all.
     assert out[1]["OK"] == 1.0 and out[1]["MISSING_WEIGHT"] == 0.0
     assert "OUTLIER" not in out[1] and "BOUNDARY_HISTORIC" not in out[1]
+    # No `tabela` column in the frame → the key is absent, not an empty string.
+    assert "tabela" not in out[0]
+
+
+def test_quality_by_product_keys_on_the_produto_identity_not_the_name():
+    """A produto is (banco, tabela, código), and three PEVS produtos carry the SAME
+    product_description in both halves (madeira em tora 3435/3457, lenha, carvão). Two
+    such rows must stay TWO rows and each must carry its `tabela`, so the client can
+    tell them apart — joining or labelling by name merges two legitimate produtos."""
+    df = pd.DataFrame(
+        [
+            {
+                "code": "3435",
+                "tabela": "289",
+                "name": "Madeira em tora",
+                "data_quality_flag": "OK",
+                "n": 300,
+            },
+            {
+                "code": "3435",
+                "tabela": "289",
+                "name": "Madeira em tora",
+                "data_quality_flag": "UNSCORED",
+                "n": 700,
+            },
+            {
+                "code": "3457",
+                "tabela": "291",
+                "name": "Madeira em tora",
+                "data_quality_flag": "OK",
+                "n": 500,
+            },
+        ]
+    )
+    out = s._quality_by_product(df)
+    assert [(r["code"], r["tabela"]) for r in out] == [("3435", "289"), ("3457", "291")]
+    assert out[0]["OK"] == 0.3 and out[0]["UNSCORED"] == 0.7
+    assert out[1]["OK"] == 1.0
 
 
 def test_serialize_market_nature_passthrough():

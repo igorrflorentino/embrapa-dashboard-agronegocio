@@ -372,7 +372,16 @@ function ViewProductProfile({ families, summary, database, conventions }) {
               ? <><dt>Efetivo ({last.y})</dt><dd>{window.formatCountQty(last.q, conv)}</dd></>
               : <><dt>Valor ({last.y})</dt><dd>{window.formatValue(window.scalePresent(last.v, 1e6), conv)}</dd></>}
             <dt>{isStock ? 'Participação no efetivo' : 'Participação na cesta'}</dt><dd>{window.fmtPct(window.scalePresent(lastShare, 0.01))}</dd>
-            {qaRow && <><dt>Linhas íntegras (Normais)</dt><dd>{window.fmtPct(qaRow.OK)}</dd></>}
+            {/* Since v1.49.0 'OK' means EXAMINED by the implied-price detector and cleared —
+                the rows it could not score left for 'UNSCORED'. This spec sheet was the last
+                screen still calling that share "Linhas íntegras", a label the rest of the
+                product retired: on a PEVS produto it reads 18,2% and the researcher concludes
+                four fifths of the acervo is broken. It is not — most of the remainder is an
+                exact measured zero or a row under the materiality floor. The card now names
+                what it MEASURES, and the line below it says what the rest is, so the missing
+                share is never left unexplained (the same pairing ViewOverview's KPI uses). */}
+            {qaRow && <><dt>Linhas examinadas sem ressalva</dt><dd>{window.fmtPct(qaRow.OK)}</dd></>}
+            {qaRow && <><dt>Sem base para avaliar</dt><dd>{window.fmtPct(qaRow.UNSCORED)}</dd></>}
             {qaRow && !isStock && <><dt>Valor ausente</dt><dd>{window.fmtPct(qaRow.MISSING_VALUE)}</dd></>}
             {qaRow && isStock && qaRow.MISSING_QUANTITY != null && <><dt>Quantidade ausente</dt><dd>{window.fmtPct(qaRow.MISSING_QUANTITY)}</dd></>}
           </dl>

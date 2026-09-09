@@ -39,6 +39,9 @@ beforeEach(async () => {
   flagBarsProps = undefined;
   flagBarsCalls = [];
   await import('./data.js'); // sets window.QUALITY_FLAGS to the REAL Gold flags
+  // The REAL labelProductRows + TABELA_OPTIONS, not a stub: the point of the
+  // name-collision test below is that the shipped disambiguation actually fires.
+  await import('./filtersSchema.js');
   await import('./ViewQuality.jsx'); // registers window.ViewQuality
   ViewQuality = window.ViewQuality;
 });
@@ -149,5 +152,49 @@ describe('ViewQuality — stock/flow facet for livestock (measure_kind)', () => 
     stubGlobals(FIXTURE); // ibge_pevs products carry no measure_kind
     render(<ViewQuality summary={{}} database="ibge_pevs" />);
     expect(flagBarsCalls).toHaveLength(1); // unchanged single-list behaviour
+  });
+});
+
+// PEVS is a single banco holding TWO surveys, and three produtos carry the SAME
+// product_description in both halves. The per-product breakdown used to be joined on
+// that name, so selecting one half silently pulled in the other and the two rendered
+// under an identical label — the exact defect labelProductRows exists to prevent.
+const PEVS_HOMONIMOS = {
+  qualityFlags: [
+    { id: 'OK', label: 'OK', color: 'var(--ok)', share: 0.2, count: 200000 },
+    { id: 'UNSCORED', label: 'Não avaliada', color: 'var(--fg-4)', share: 0.8, count: 800000 },
+  ],
+  qualityTs: [{ y: 2020, ok: 0.2, unscored: 0.8 }],
+  qualityByProduct: [
+    { code: '3435', tabela: '289', name: 'Madeira em tora', OK: 0.3, UNSCORED: 0.7 },
+    { code: '3457', tabela: '291', name: 'Madeira em tora', OK: 0.9, UNSCORED: 0.1 },
+  ],
+  selectedProducts: ['3435'], // ONLY the native-extraction half
+  products: [
+    { code: '3435', tabela: '289', name: 'Madeira em tora', family: 'volume' },
+    { code: '3457', tabela: '291', name: 'Madeira em tora', family: 'volume' },
+  ],
+  yearStart: 1986,
+  yearEnd: 2024,
+};
+
+describe('ViewQuality — produtos that share a name across the two PEVS halves', () => {
+  it('selects by CODE, so the unselected half stays out of the breakdown', () => {
+    stubGlobals(PEVS_HOMONIMOS);
+    render(<ViewQuality summary={{}} database="ibge_pevs" />);
+    const rows = flagBarsProps.rows;
+    expect(rows).toHaveLength(1);        // not 2 — the name matched both, the code does not
+    expect(rows[0].code).toBe('3435');
+    // One half alone is unambiguous on screen, so no suffix is appended.
+    expect(rows[0].name).toBe('Madeira em tora');
+  });
+
+  it('disambiguates the label when BOTH halves are on screen', () => {
+    stubGlobals({ ...PEVS_HOMONIMOS, selectedProducts: ['3435', '3457'] });
+    render(<ViewQuality summary={{}} database="ibge_pevs" />);
+    const names = flagBarsProps.rows.map((r) => r.name);
+    expect(new Set(names).size).toBe(2); // two bars, two DISTINCT labels
+    expect(names).toContain('Madeira em tora · extração');
+    expect(names).toContain('Madeira em tora · silvicultura');
   });
 });

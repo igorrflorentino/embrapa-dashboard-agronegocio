@@ -7,6 +7,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.72.0] - 2026-09-08
+
+### Corrigido
+
+- **Três telas liam a taxonomia de qualidade com a definição anterior à v1.49.0.**
+  Desde aquela versão `OK` significa **examinada pelo detector de preço implícito e
+  aprovada** — as linhas que ele não pôde escorar saíram para `UNSCORED`. A mudança
+  chegou ao modelo e ao card do Panorama, mas três leitores ficaram para trás, cada um
+  afirmando algo que os dados não sustentam.
+
+  - **A ficha técnica do Perfil do produto ainda chamava essa fatia de "Linhas
+    íntegras"** — o rótulo que o resto do produto aposentou justamente por ler como
+    laudo de integridade. Num produto do PEVS a linha marcava *"Linhas íntegras:
+    20,5%"* e **não dizia nada sobre os outros 79%**, que não são defeito: são
+    município que mediu produção zero, remessa abaixo do piso de materialidade e o
+    vão do deflator pré-1980. O card passa a se chamar **"Linhas examinadas sem
+    ressalva"** e ganha ao lado **"Sem base para avaliar"**, o mesmo par que o
+    Panorama já usava. Medido em produção com o servidor local contra o BigQuery:
+    madeira em tora (extração) lê 20,5% / 79,0%.
+
+  - **O `README` recomendava `data_quality_flag = 'OK'` como filtro padrão no Looker
+    Studio.** Era correto quando foi escrito e virou conselho danoso: medido em
+    2026-09-08, esse filtro descarta **66% a 82% das linhas** de cada banco e — muito
+    pior — **8% a 23% do valor**, porque joga fora todos os `OUTLIER_*`, que são os
+    grandes produtores legítimos (20,2% do valor no PEVS, 23,0% no PPM). A recomendação
+    passa a ser excluir só os `PROBLEMATIC_*`, com o aviso do porquê.
+
+  - **A tabela de flags do `README` descrevia 11 valores.** São **13** (11 emissíveis +
+    2 reservadas): faltavam `UNSCORED` — a flag MAJORITÁRIA em quatro dos cinco bancos —
+    e `AREA_INCONSISTENT`. Ambas entram, junto da leitura pesada por valor, que é a que
+    impede o número de linhas de soar como alarme.
+
+- **A qualidade por produto casava e rotulava pelo NOME do produto, não pelo código.**
+  Três produtos do PEVS carregam a MESMA `product_description` nas duas metades —
+  madeira em tora (3435/3457), lenha (3434/3456) e carvão vegetal (3433/3455). Selecionar
+  a metade de extração arrastava junto a de silvicultura, e as duas apareciam como duas
+  barras sob um rótulo **idêntico** — com perfis bem diferentes (madeira: 20,5% contra
+  48,6% de linhas examinadas sem ressalva). É o mesmo defeito que o Donut do Panorama já
+  tinha corrigido; o helper `labelProductRows` existe desde então e a perspectiva
+  Qualidade não o usava. Agora o recorte é por **código** e o rótulo passa pelo helper,
+  que sufixa "· extração" / "· silvicultura" **apenas quando os dois estão na tela** —
+  uma metade sozinha não tem o que desambiguar.
+
+  Para isso `qualityByProduct` passou a carregar a `tabela`: a identidade de um produto é
+  `(banco, tabela, código)`, então o grão do agregado — no SQL e no serializer — é o trio,
+  não o código sozinho. Hoje os conjuntos de códigos das duas tabelas são disjuntos e o
+  agrupamento antigo era exato; o que faltava não era a soma, era o leitor conseguir
+  distinguir duas barras homônimas.
+
+- **`QTS_KEY` (ViewQuality) não tinha `UNSCORED`.** Resolvia pelo fallback
+  `f.id.toLowerCase()`, que por acaso acerta todas as chaves — e com isso anulava
+  silenciosamente a garantia que o próprio mapa existe para dar ("uma flag nova tem de ser
+  adicionada deliberadamente, em vez de renderizar zero"). A entrada que faltava era a da
+  flag majoritária.
+
+### Adicionado
+
+- **`ViewQuality.test.jsx`** — dois testes sobre os homônimos do PEVS, com o
+  `labelProductRows` REAL (não um stub): uma metade selecionada produz **uma** barra;
+  as duas produzem **duas barras com rótulos distintos**.
+- **`tests/test_webapi_serializers.py`** — `_quality_by_product` mantém dois produtos
+  homônimos como duas linhas, cada uma com a sua `tabela`.
+- **`tests/test_serving.py`** — o `group by` do agregado inclui a tabela.
+
+---
+
 ## [1.71.2] - 2026-09-08
 
 ### Corrigido

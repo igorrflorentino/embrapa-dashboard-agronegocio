@@ -1449,19 +1449,28 @@ def quality_by_product(
     """data_quality_flag counts per product, from a Gold table (backs the
     per-product quality FlagBars). Same cheap-aggregate rationale as
     :func:`quality_timeseries`. ``code_column``/``name_column`` are validated
-    identifiers (one pair per source)."""
+    identifiers (one pair per source).
+
+    ``tabela`` is part of the GRAIN, not a decoration: a produto's identity is
+    (banco, tabela, código), and three PEVS produtos — madeira em tora, lenha,
+    carvão vegetal — carry the SAME product_description in both halves. Grouping by
+    the code alone happens to be exact today (the 289/291 code sets are disjoint),
+    but it leaves the reader with no way to tell two identically-named bars apart —
+    which is the defect ``labelProductRows`` exists to prevent everywhere else.
+    Every Gold table carries the column, so this needs no per-source branch."""
     code_column = _validate_column(code_column, ALLOWED_PRODUCT_COLUMNS, "product column")
     name_column = _validate_column(name_column, ALLOWED_PRODUCT_COLUMNS, "product column")
     where = f"where {visibility_predicate}" if visibility_predicate else ""
     sql = f"""
         select
             {code_column}            as code,
+            tabela,
             any_value({name_column}) as name,
             data_quality_flag,
             count(*)                 as n
         from `{table}`
         {where}
-        group by {code_column}, data_quality_flag
+        group by {code_column}, tabela, data_quality_flag
     """
     return sql, []
 

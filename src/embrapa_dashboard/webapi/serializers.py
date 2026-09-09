@@ -279,24 +279,33 @@ def serialize_source_meta(meta: dict | None) -> dict:
 
 
 def _quality_by_product(df: pd.DataFrame | None, top: int = 20) -> list[dict]:
-    """product×flag counts → [{code, name, OK, MISSING_VALUE, …}] per-product flag
-    shares (fractions 0-1; FlagBars keys on the flag *ids*). Top-N by row volume so
-    a 200-NCM banco stays a readable chart."""
+    """product×flag counts → [{code, tabela, name, OK, MISSING_VALUE, …}] per-product
+    flag shares (fractions 0-1; FlagBars keys on the flag *ids*). Top-N by row volume so
+    a 110-NCM banco stays a readable chart.
+
+    Keyed on (code, tabela) — the produto's identity — not on the code alone, and
+    ``tabela`` travels to the client so a consumer can disambiguate two produtos that
+    share a name (``labelProductRows``). Selecting rows by NAME on the client silently
+    pulled in the other PEVS half; the code is the join key, the name is a label."""
     if _empty(df):
         return []
-    by_code: dict[str, dict] = {}
+    by_produto: dict[tuple[str, str], dict] = {}
     for r in df.itertuples():
         code = str(r.code)
-        slot = by_code.setdefault(code, {"name": None, "counts": {}})
+        tabela = getattr(r, "tabela", None)
+        tabela = tabela if isinstance(tabela, str) else ""
+        slot = by_produto.setdefault((code, tabela), {"name": None, "counts": {}})
         slot["name"] = r.name if (isinstance(r.name, str) and r.name) else code
         slot["counts"][r.data_quality_flag] = slot["counts"].get(r.data_quality_flag, 0.0) + _num(
             r.n
         )
-    ranked = sorted(by_code.items(), key=lambda kv: sum(kv[1]["counts"].values()), reverse=True)
+    ranked = sorted(by_produto.items(), key=lambda kv: sum(kv[1]["counts"].values()), reverse=True)
     out = []
-    for code, slot in ranked[:top]:
+    for (code, tabela), slot in ranked[:top]:
         total = sum(slot["counts"].values()) or 1.0
         row = {"code": code, "name": slot["name"]}
+        if tabela:
+            row["tabela"] = tabela
         for flag in _FLAG_KEY:  # the real Gold flag ids — absent flags read 0
             row[flag] = slot["counts"].get(flag, 0.0) / total
         out.append(row)
