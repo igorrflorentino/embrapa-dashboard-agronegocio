@@ -73,7 +73,7 @@ def test_trade_route_threads_basket_and_year_window_to_seam(
     client = _client(monkeypatch)
     captured = {}
 
-    def fake_seam(banco, summary=None, rank_by="value"):  # rank_by: partner route only
+    def fake_seam(banco, summary=None, **_k):  # rank_by/conv: partner route only
         captured["banco"] = banco
         captured["summary"] = summary
         return None
@@ -344,7 +344,7 @@ def test_trade_route_cleared_basket_drops_basket_key(monkeypatch):
     monkeypatch.setattr(
         seam,
         "partner_data",
-        lambda banco, summary=None, rank_by="value": captured.update(
+        lambda banco, summary=None, rank_by="value", conv=None: captured.update(
             summary=summary, rank_by=rank_by
         ),
     )
@@ -366,7 +366,7 @@ def test_partners_route_metric_param(monkeypatch):
     monkeypatch.setattr(
         seam,
         "partner_data",
-        lambda banco, summary=None, rank_by="value": captured.update(rank_by=rank_by),
+        lambda banco, summary=None, rank_by="value", conv=None: captured.update(rank_by=rank_by),
     )
     monkeypatch.setattr(serializers, "serialize_partner", lambda *a, **k: {})
     assert client.get("/api/partners?banco=mdic_comex&metric=weight").status_code == 200
@@ -375,6 +375,27 @@ def test_partners_route_metric_param(monkeypatch):
     assert captured["rank_by"] == "price"
     bad = client.get("/api/partners?banco=mdic_comex&metric=bogus")
     assert bad.status_code == 400
+
+
+def test_partners_route_threads_the_convention(monkeypatch):
+    """currency+correction reach the seam. Until v1.77.0 this route read neither, and the
+    ranking stayed nominal US$ under a conventions strip saying "IPCA". An invalid value
+    400s like /snapshot instead of silently deflating with a default."""
+    from embrapa_dashboard.webapi import seam, serializers
+
+    client = _client(monkeypatch)
+    captured = {}
+    monkeypatch.setattr(
+        seam,
+        "partner_data",
+        lambda banco, summary=None, rank_by="value", conv=None: captured.update(conv=conv),
+    )
+    monkeypatch.setattr(serializers, "serialize_partner", lambda *a, **k: {})
+    ok = client.get("/api/partners?banco=mdic_comex&currency=USD&correction=IPCA")
+    assert ok.status_code == 200
+    assert captured["conv"] == {"currency": "USD", "correction": "IPCA"}
+    assert client.get("/api/partners?banco=mdic_comex&currency=XYZ").status_code == 400
+    assert client.get("/api/partners?banco=mdic_comex&correction=ipca").status_code == 400
 
 
 @pytest.mark.parametrize(
@@ -392,7 +413,7 @@ def test_trade_route_threads_origin_uf_filter_to_seam(monkeypatch, endpoint, sea
     client = _client(monkeypatch)
     captured = {}
     monkeypatch.setattr(
-        seam, seam_fn, lambda banco, summary=None, rank_by="value": captured.update(summary=summary)
+        seam, seam_fn, lambda banco, summary=None, **_k: captured.update(summary=summary)
     )
     monkeypatch.setattr(serializers, serialize_fn, lambda *a, **k: {})
     resp = client.get(f"{endpoint}?banco=mdic_comex&states=PA,SP&y0=2020")
@@ -1052,7 +1073,7 @@ def test_trade_get_endpoints_shape_empty_seam_payload(monkeypatch):
 
     client = _client(monkeypatch)
     monkeypatch.setattr(seam, "flow_data", lambda banco, summary=None: None)
-    monkeypatch.setattr(seam, "partner_data", lambda banco, summary=None, rank_by="value": None)
+    monkeypatch.setattr(seam, "partner_data", lambda banco, summary=None, **_k: None)
     monkeypatch.setattr(seam, "monthly_data", lambda banco, summary=None: None)
 
     flow = client.get("/api/flow?banco=mdic_comex").get_json()

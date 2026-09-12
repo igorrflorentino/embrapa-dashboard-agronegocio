@@ -867,14 +867,26 @@ def serialize_flow(d: dict | None, max_links: int = 40) -> dict:
 _PARTNER_PRICE_FLOOR = {"min_abs": 1e5, "min_share": 1e-5}
 
 
-def serialize_partner(df: pd.DataFrame | None, max_rows: int = 30, rank_by: str = "value") -> dict:
+def serialize_partner(
+    df: pd.DataFrame | None,
+    max_rows: int = 30,
+    rank_by: str = "value",
+    *,
+    value_column: str | None = None,
+    value_label: str | None = None,
+) -> dict:
     """seam.partner_data() → PartnerData. Partner ranking with exp/imp split.
+
+    ``value_column`` is the currency × correction column the seam summed (default: the
+    US$-native nominal one) and sets ``unit`` — the symbol of THAT column, not of the
+    request, since a combo the mart lacks falls back to R$. ``value_label`` names the
+    convention on screen ("Valor real (IPCA) — US$ · FOB").
 
     Each partner carries three comparable measures so the view can rank/display by
     Capital / Volume / Preço médio without a re-fetch when the row set is unchanged:
-    ``value``/``exp``/``imp`` in US$ mi, ``weight`` in mil t (net weight), and
-    ``price`` in US$/kg (``None`` when the partner has no weight, so the view shows "—"
-    instead of a divide-by-zero artefact). The price divides only the value of the rows
+    ``value``/``exp``/``imp`` in millions of ``unit``, ``weight`` in mil t (net weight),
+    and ``price`` in ``unit``/kg (``None`` when the partner has no weight, so the view shows
+    "—" instead of a divide-by-zero artefact). The price divides only the value of the rows
     that HAVE a weight — the two halves of a ratio must cover the same rows — and
     ``pricedShare`` is what fraction of the partner's trade that is, so the view can say
     when a price rests on part of it. The row ORDER is
@@ -887,32 +899,33 @@ def serialize_partner(df: pd.DataFrame | None, max_rows: int = 30, rank_by: str 
     ``belowFloor`` carries who was set aside, so the view can name them (a filtragem
     invisível é proibida) — it is empty for the additive rankings, which need no floor.
     """
+    currency = fmt.column_currency(value_column or "val_yearfx_usd") or "USD"
+    head = {
+        "preview": False,
+        "flowLabel": "Parceiro",
+        "unit": fmt.CURRENCY_SYMBOL[currency],
+        "valueLabel": value_label,
+    }
     if _empty(df):
-        return {
-            "preview": False,
-            "flowLabel": "Parceiro",
-            "unit": "US$",
-            "partners": [],
-            "belowFloor": [],
-        }
+        return {**head, "partners": [], "belowFloor": []}
 
     def _row(r) -> dict:
-        price = getattr(r, "price_usd_per_kg", None)
+        price = getattr(r, "price_per_kg", None)
         return {
             "name": r.partner_name,
-            "exp": _num(r.exp_value_usd) / 1e6,
-            "imp": _num(r.imp_value_usd) / 1e6,
-            "value": _num(r.value_usd) / 1e6,
+            "exp": _num(r.exp_value) / 1e6,
+            "imp": _num(r.imp_value) / 1e6,
+            "value": _num(r.total_value) / 1e6,
             "weightKg": _num(getattr(r, "total_weight_kg", 0)),  # o piso mede em kg
             "weight": _num(getattr(r, "total_weight_kg", 0)) / 1e6,  # kg → mil t
-            "price": None if price is None or pd.isna(price) else _num(price),  # US$/kg
+            "price": None if price is None or pd.isna(price) else _num(price),  # unit/kg
             # Quanto do comércio do parceiro SUSTENTA esse preço. O COMTRADE publica
             # linhas com valor e sem peso, e o preço só pode ser calculado sobre as que
             # têm as duas metades — então ele descreve uma PARTE do que o parceiro
             # comercia, e a tela tem de dizer qual. `None` quando não há base (parceiro
             # sem valor algum), nunca 0, que se leria como "nada sustenta o preço".
             "pricedShare": measures.ratio_present(
-                getattr(r, "priced_value_usd", None), getattr(r, "value_usd", None)
+                getattr(r, "priced_value", None), getattr(r, "total_value", None)
             ),
         }
 
@@ -923,9 +936,7 @@ def serialize_partner(df: pd.DataFrame | None, max_rows: int = 30, rank_by: str 
     for r in rows + below:
         r.pop("weightKg", None)
     return {
-        "preview": False,
-        "flowLabel": "Parceiro",
-        "unit": "US$",
+        **head,
         "partners": rows[:max_rows],
         # Ordenado do maior para o menor, como a nota os enumera na tela.
         "belowFloor": sorted(below, key=lambda d: -(d["weight"] or 0)),

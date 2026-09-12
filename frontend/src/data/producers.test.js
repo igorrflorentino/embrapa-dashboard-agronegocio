@@ -128,6 +128,29 @@ describe('trade producers thread the active filter summary', () => {
     expect(url).toContain('y1=2022');
   });
 
+  it('partnerData sends the active currency × correction and keys the cache by it', async () => {
+    // Until v1.77.0 it sent neither: the ranking stayed nominal US$ under a conventions
+    // strip saying "IPCA", and switching the strip re-rendered the same answer.
+    const f = vi.fn(() => jsonRes({}));
+    const w = await loadAll(f);
+    let conv = { currency: 'USD', correction: 'IPCA' };
+    w.dataStore = { ...(w.dataStore || {}), conv: () => conv };
+    w.CURRENCY_FX = { BRL: { symbol: 'R$' }, USD: { symbol: 'US$' } };
+
+    const cold = w.partnerData('mdic_comex', {}, 'value');
+    expect(urlOf(f)).toContain('currency=USD');
+    expect(urlOf(f)).toContain('correction=IPCA');
+    expect(cold.unit).toBe('US$'); // the loading shell already names the chosen currency
+
+    w.partnerData('mdic_comex', {}, 'value'); // same convention → cache hit
+    expect(f).toHaveBeenCalledTimes(1);
+    conv = { currency: 'BRL', correction: 'Nominal' };
+    w.partnerData('mdic_comex', {}, 'value'); // the strip changed → refetch
+    expect(f).toHaveBeenCalledTimes(2);
+    expect(urlOf(f, 1)).toContain('currency=BRL');
+    expect(urlOf(f, 1)).toContain('correction=Nominal');
+  });
+
   it('keys the resource by the filter signature so a changed window refetches', async () => {
     const f = vi.fn(() => jsonRes({}));
     const w = await loadAll(f);

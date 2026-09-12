@@ -75,11 +75,11 @@ def _linha_do(alias: str) -> str:
 def test_o_extrator_recorta_um_campo_de_cada_vez():
     """Guarda do próprio instrumento: sem isto os testes abaixo medem a lista inteira."""
     assert _linha_do("total_weight_kg") == "sum(net_weight_kg)"
-    assert "exp_value_usd" not in _linha_do("value_usd")
+    assert "exp_value" not in _linha_do("total_value")
 
 
 def test_o_denominador_do_preco_e_o_peso_somado():
-    assert "sum(net_weight_kg)" in _linha_do("price_usd_per_kg")
+    assert "sum(net_weight_kg)" in _linha_do("price_per_kg")
 
 
 def test_o_numerador_do_preco_ignora_a_linha_sem_peso():
@@ -89,7 +89,7 @@ def test_o_numerador_do_preco_ignora_a_linha_sem_peso():
     CONDICIONE o valor à presença do peso. Qualquer forma que faça isso passa; a forma
     que soma o valor inteiro, não.
     """
-    numerador = _linha_do("price_usd_per_kg")
+    numerador = _linha_do("price_per_kg")
     # Recorta o que está DENTRO do safe_divide, antes da vírgula que separa do peso.
     dentro = numerador.split("safe_divide(", 1)[1]
     primeiro = dentro.split(", sum(net_weight_kg)", 1)[0]
@@ -99,19 +99,19 @@ def test_o_numerador_do_preco_ignora_a_linha_sem_peso():
 
 
 def test_a_cobertura_viaja_junto_para_a_tela():
-    """Sem `priced_value_usd` o número fica certo e MUDO.
+    """Sem `priced_value` o número fica certo e MUDO.
 
     Um preço apoiado em 56% do comércio do parceiro é um preço legítimo de uma PARTE — e
     a regra do projeto proíbe exibir um valor calculado sobre um recorte sem dizer qual.
     """
-    expr = _linha_do("priced_value_usd")
+    expr = _linha_do("priced_value")
     assert "net_weight_kg is null" in expr and "val_yearfx_usd" in expr
 
 
 def test_o_valor_total_continua_inteiro():
     """A correção não pode encolher o ranking de Capital.
 
-    `value_usd` responde "quanto se comerciou" e a linha sem peso comerciou de verdade:
+    `total_value` responde "quanto se comerciou" e a linha sem peso comerciou de verdade:
     ela sai do PREÇO por não ter denominador, não do valor.
     """
-    assert _linha_do("value_usd") == "sum(val_yearfx_usd)"
+    assert _linha_do("total_value") == "sum(val_yearfx_usd)"

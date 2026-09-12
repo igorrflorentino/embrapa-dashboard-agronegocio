@@ -708,7 +708,7 @@ def test_trade_by_partner_splits_export_and_import():
     assert "case when flow = 'export' then val_yearfx_usd end" in query
     assert "case when flow = 'import' then val_yearfx_usd end" in query
     assert "any_value(country_name)" in query
-    assert "order by value_usd desc" in query
+    assert "order by total_value desc" in query
     assert {p.name: p for p in params}["codes"].values == ["08012100"]
     # quantity + implied unit price always present so the view can switch metric
     assert "sum(net_weight_kg)" in query
@@ -730,10 +730,33 @@ def test_trade_by_partner_rank_by_switches_order_clause():
     q_weight, _ = sql.trade_by_partner("p.s.t", rank_by="weight", **base)
     assert "order by total_weight_kg desc nulls last" in q_weight
     q_price, _ = sql.trade_by_partner("p.s.t", rank_by="price", **base)
-    assert "order by price_usd_per_kg desc nulls last" in q_price
+    assert "order by price_per_kg desc nulls last" in q_price
     # an unknown metric falls back to value (never an unvalidated literal)
     q_bad, _ = sql.trade_by_partner("p.s.t", rank_by="; drop table x", **base)
-    assert "order by value_usd desc" in q_bad
+    assert "order by total_value desc" in q_bad
+
+
+def test_trade_by_partner_sums_the_convention_column_everywhere():
+    """The conventions strip picks the column, and EVERY monetary measure reads it.
+
+    Until v1.77.0 `val_yearfx_usd` was written into this builder, so the Parceiros ranking
+    stayed nominal US$ under a strip saying "IPCA". A half-fix that deflated the total
+    but not the price numerator would put two valuations side by side on one row.
+    """
+    base = dict(
+        partner_code_column="country_code",
+        partner_name_column="country_name",
+        code_column="ncm_code",
+    )
+    query, _ = sql.trade_by_partner("p.s.t", value_column="val_real_ipca_usd", **base)
+    assert "val_yearfx_usd" not in query
+    assert "case when flow = 'export' then val_real_ipca_usd end" in query
+    assert "case when flow = 'import' then val_real_ipca_usd end" in query
+    assert "sum(val_real_ipca_usd)" in query
+    assert "sum(if(net_weight_kg is null, null, val_real_ipca_usd))" in query
+    # An identifier cannot be a bind param — the allowlist is what keeps it injection-safe.
+    with pytest.raises(ValueError):
+        sql.trade_by_partner("p.s.t", value_column="val_yearfx_usd) --", **base)
 
 
 def test_trade_flows_groups_by_origin_and_dest():

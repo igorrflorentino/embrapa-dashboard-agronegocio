@@ -1,8 +1,9 @@
 // ViewPartners — trading-partner rankings (country or UF). Generic via
 // the partnerData contract (real Gold data).
 //
-// The ranking dimension is switchable between Capital (valor US$), Volume (peso
-// líquido) and Preço médio (US$/kg = valor ÷ peso). The metric is sent to the
+// The ranking dimension is switchable between Capital (valor, in the currency ×
+// correction of the conventions strip — `data.unit`), Volume (peso líquido) and Preço
+// médio (valor ÷ peso, per kg in that same currency). The metric is sent to the
 // producer so the ranking is recomputed SERVER-SIDE (a niche high-unit-price
 // buyer tops the price ranking but has a small total value — re-sorting a
 // value-ranked page client-side would drop it). See serving/sql.trade_by_partner.
@@ -37,14 +38,16 @@ function ViewPartners({ summary, conventions, database }) {
   const data  = window.partnerData(database, summary, metric);
   const spec  = _PARTNER_METRICS.find((m) => m.id === metric) || _PARTNER_METRICS[0];
 
-  // How each metric formats a partner's measure for display.
+  // How each metric formats a partner's measure for display. The currency is `data.unit`
+  // — the one the server summed, which follows the conventions strip — never a fixed US$:
+  // a hard-coded symbol is how this screen kept saying "US$" over whatever was chosen.
   const fmtMoney = (v) =>
     data.unit + ' ' + (v >= 1000 ? _nf(v / 1000, 1) + ' bi' : _nf(v, v < 10 ? 2 : 0) + ' mi');
   const fmtMetric = (p) => {
     const v = p && p[spec.field];
     if (metric === 'value')  return fmtMoney(v || 0);
     if (metric === 'weight') return _nf((v || 0) * 1000) + ' t'; // mil t → t (pt-BR)
-    return v == null ? '—' : 'US$ ' + _nf(v, 2) + '/kg';          // price (US$/kg)
+    return v == null ? '—' : data.unit + ' ' + _nf(v, 2) + '/kg'; // price (unit/kg)
   };
 
   const partners = data.partners || [];
@@ -75,7 +78,7 @@ function ViewPartners({ summary, conventions, database }) {
     : {
         label: 'Faixa de preço',
         value: partners.length
-          ? `US$ ${_nf(Math.min(...partners.map(valOf).filter((v) => v > 0)), 2)}–${_nf(max, 2)}/kg`
+          ? `${data.unit} ${_nf(Math.min(...partners.map(valOf).filter((v) => v > 0)), 2)}–${_nf(max, 2)}/kg`
           : '—',
         sub: 'menor – maior',
       };
@@ -113,6 +116,15 @@ function ViewPartners({ summary, conventions, database }) {
             </div>
           }
         />
+        {/* A convenção que o número REALMENTE carrega, dita pelo servidor. Sem ela a
+            faixa de convenções dizia "IPCA" sobre uma soma nominal, e ninguém na tela
+            tinha como saber: num ranking histórico a correção pesa mais nos fluxos
+            antigos e pode reordenar os países. Volume não tem moeda. */}
+        {metric !== 'weight' && data.valueLabel && (
+          <p className="caption ptn-valuation" style={{ marginBottom: 8 }}>
+            {data.valueLabel}
+          </p>
+        )}
         <div className="ptn-list">
           {partners.map((p, i) => (
             <div key={p.name} className="ptn-row">

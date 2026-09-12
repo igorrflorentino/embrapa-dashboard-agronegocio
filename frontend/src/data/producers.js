@@ -477,17 +477,26 @@ window.partnerData = function partnerData(bancoId, summary, metric) {
   // drop niche high-price buyers — see serving/sql.trade_by_partner).
   const m = metric || 'value';
   const ax = activeAxisParams();
-  const key = `trade:partners:${bancoId}:${m}:${filterSig(summary)}:${countrySig(summary)}:${axisKey(ax)}`;
+  // currency × correction pick the value column server-side (the same resolver as
+  // /snapshot), so they belong in the request AND the cache key. Until v1.77.0 this
+  // producer sent neither: the ranking was always nominal US$ while the conventions strip
+  // claimed "IPCA" — and in a historical ranking the correction can reorder the countries.
+  const conv = window.dataStore && window.dataStore.conv
+    ? window.dataStore.conv()
+    : { currency: 'BRL', correction: 'IPCA' };
+  const key = `trade:partners:${bancoId}:${m}:${conv.currency}|${conv.correction}:${filterSig(summary)}:${countrySig(summary)}:${axisKey(ax)}`;
   ensure(key, () =>
     `${API}/partners?${qs({
       banco: bancoId, codes, states, y0, y1, metric: m,
+      currency: conv.currency, correction: conv.correction,
       reporters: filterReporters(summary), partners: filterPartners(summary), ...ax,
     })}`);
   const data = get(key);
   const flowLabel = (window.bancoDim && window.bancoDim(bancoId, 'partner').label) || 'Parceiro';
+  const unit = (window.CURRENCY_FX && window.CURRENCY_FX[conv.currency] || {}).symbol || conv.currency;
   return data
     ? { ...data, flowLabel, notApplicable }
-    : { preview: false, flowLabel, unit: 'US$', notApplicable, partners: [], loadError: errorOf(key) };
+    : { preview: false, flowLabel, unit, notApplicable, partners: [], loadError: errorOf(key) };
 };
 // Per-product ranking WITHIN the selected UF(s) — the "Base de dados" per-UF
 // product breakdown (inverse of ViewProductProfile's "onde X é produzido"). The

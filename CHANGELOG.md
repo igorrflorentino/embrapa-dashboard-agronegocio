@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.77.0] - 2026-09-12
+
+### Corrigido
+
+- **"Parceiros comerciais" ignorava a moeda e a correção escolhidas.** A faixa de
+  convenções dizia "Correção IPCA" e o ranking somava **US$ nominal** para qualquer
+  escolha: `val_yearfx_usd` estava escrito no SQL de `trade_by_partner`, e nem a rota nem o
+  produtor liam `currency`/`correction`. Achado conferindo a planilha de uma pesquisadora
+  contra o painel — Acre × castanha-do-pará, 1997–2026: o painel mostrava Peru US$ 78 mi e
+  Bolívia US$ 48 mi sob "IPCA", e isso é, ao dólar, a soma **nominal** de exportação +
+  importação (77,65 + 0,56 e 47,12 + 0,69, medido em `serving_comex_annual`). Corrigida
+  pelo método do Gold (US$ → R$ no câmbio do ano → IPCA → US$ no câmbio atual), a
+  exportação fica Peru **84,84 mi** e Bolívia **51,77 mi**. Aqui a ordem não mudou; num
+  ranking histórico ela pode mudar, porque a correção pesa mais nos fluxos antigos.
+
+  `/api/partners` agora recebe `currency` + `correction` como o `/snapshot` e resolve a
+  coluna por `seam.effective_value_column`. Exportação, importação, total, a parte com
+  peso e o numerador do preço leem a **mesma** coluna — um total deflacionado ao lado de um
+  preço nominal seria o mesmo defeito em outra linha. O `unit` do payload vem da coluna
+  **realmente somada**, não do pedido (US$ × IGP-M cai para R$, e a unidade acompanha), e o
+  novo `valueLabel` põe a convenção na tela, logo acima do ranking. O preço médio e a
+  faixa de preço tinham "US$" escrito à mão e passaram a usar a unidade do servidor.
+
+- Os aliases do SQL de parceiros deixaram de afirmar a moeda: `value_usd` →
+  `total_value`, `price_usd_per_kg` → `price_per_kg`, e `exp_value`/`imp_value`/
+  `priced_value`. A coluna não é mais sempre dólar.
+
+### Observado, fora deste escopo
+
+- A planilha que motivou a conferência corrige US$ multiplicando direto pela razão do
+  IPCA — a inflação do **real** aplicada ao **dólar**, sem a variação cambial. Um dólar de
+  2005 sai 3,07× o de hoje (1,56× pelo método do Gold); como as vendas do Acre à Bolívia se
+  concentram em 2004–2015 e as ao Peru a partir de 2016, a planilha inverte o ranking
+  (Bolívia 106,8 mi × Peru 93,9 mi). Os dados das duas são idênticos, ano a ano, ao dólar.
+- **Fluxos territoriais** (Sankey) tem o mesmo defeito: `trade_flows` também soma
+  `val_yearfx_usd` sem ler as convenções. Fica para uma versão própria.
+
 ## [1.76.2] - 2026-09-09
 
 ### Adicionado

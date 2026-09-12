@@ -342,3 +342,43 @@ describe('ViewPartners — o piso de materialidade do preço médio', () => {
     expect(container.textContent).not.toContain('Fora do ranking de preço');
   });
 });
+
+describe('ViewPartners — a moeda é a que o servidor somou', () => {
+  // Até a v1.77.0 o ranking somava sempre US$ nominal sob uma faixa de convenções que
+  // dizia "IPCA", e o preço médio e a faixa de preço tinham "US$" escrito à mão — então
+  // mesmo com o servidor certo a tela continuaria afirmando dólar.
+  const EM_REAIS = {
+    unit: 'R$',
+    valueLabel: 'Valor real (IPCA) — R$ · FOB',
+    flowLabel: 'destino',
+    notApplicable: null,
+    partners: [
+      { name: 'Peru',    value: 400, exp: 400, imp: 0, weight: 30, price: 13.3 },
+      { name: 'Bolívia', value: 250, exp: 250, imp: 0, weight: 80, price: 3.1 },
+    ],
+  };
+  const abrir = () => {
+    stubGlobals({ value: EM_REAIS, weight: EM_REAIS, price: EM_REAIS });
+    return render(<ViewPartners summary={{}} conventions={{}} database="mdic_comex" />).container;
+  };
+  const clicar = (c, label) =>
+    fireEvent.click([...c.querySelectorAll('.seg-opt')].find((b) => b.textContent === label));
+  const valores = (c) => [...c.querySelectorAll('.ptn-val')].map((e) => e.textContent);
+
+  it('Capital, preço e faixa de preço usam `unit`, nunca um US$ fixo', () => {
+    const container = abrir();
+    expect(valores(container)[0]).toBe('R$ 400 mi');
+    clicar(container, 'Preço médio');
+    expect(valores(container)[0]).toBe('R$ 13,30/kg');
+    const faixa = container.querySelector('.kpi[data-label="Faixa de preço"] .kpi-value');
+    expect(faixa.textContent).toBe('R$ 3,10–13,30/kg');
+  });
+
+  it('a convenção aparece acima do ranking — e some no Volume, que não tem moeda', () => {
+    const container = abrir();
+    expect(container.querySelector('.ptn-valuation').textContent)
+      .toBe('Valor real (IPCA) — R$ · FOB');
+    clicar(container, 'Volume');
+    expect(container.querySelector('.ptn-valuation')).toBeFalsy();
+  });
+});

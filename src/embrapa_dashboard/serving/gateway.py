@@ -606,6 +606,7 @@ def fetch_comex_partners(
     uf_codes: Sequence[str] = (),
     flow: str | None = None,
     rank_by: str = "value",
+    value_column: str = "val_yearfx_usd",
 ):
     """COMEX partner (country) ranking with export/import split (backs partnerData).
 
@@ -613,7 +614,8 @@ def fetch_comex_partners(
     no UF filter. COMTRADE has no origin-UF column, so its partner reader omits it.
     ``flow`` narrows the ranking to one direction (export/import); ``None`` sums both
     (COMEX has no overlapping sub-flow, so no ``sum_flows`` guard is needed). ``rank_by``
-    ∈ {value, weight, price} picks the server-side ORDER BY dimension.
+    ∈ {value, weight, price} picks the server-side ORDER BY dimension. ``value_column``
+    is the currency × correction column the seam resolved from the conventions strip.
     """
     settings = get_settings()
     table = sqlbuild.table_ref(settings, "bq_serving_dataset", "serving_comex_annual")
@@ -632,6 +634,7 @@ def fetch_comex_partners(
         uf_codes=tuple(uf_codes),
         flow=flow,
         rank_by=rank_by,
+        value_column=value_column,
     )
     return run_query(sql, params)
 
@@ -648,6 +651,7 @@ def fetch_comtrade_partners(
     reporters: Sequence[str] = (),
     partners: Sequence[str] = (),
     pin_reporter: str | None = _REPORTER_PIN_DEFAULT,
+    value_column: str = "val_yearfx_usd",
 ):
     """COMTRADE partner ranking with export/import split (backs partnerData).
 
@@ -657,7 +661,8 @@ def fetch_comtrade_partners(
     mercado) narrow to one procedure / purpose (None = every one). ``rank_by`` ∈
     {value, weight, price} picks the server-side ORDER BY dimension. ``reporters``/
     ``partners`` (ISO-A3) narrow the ranking by country; ``pin_reporter`` keeps the
-    Brazil pin by default (see :func:`_resolve_reporter_pin`).
+    Brazil pin by default (see :func:`_resolve_reporter_pin`). ``value_column`` is the
+    currency × correction column the seam resolved from the conventions strip.
     """
     settings = get_settings()
     table = sqlbuild.table_ref(settings, "bq_serving_dataset", "serving_comtrade_annual")
@@ -678,6 +683,7 @@ def fetch_comtrade_partners(
         reporters=tuple(reporters),
         partners=tuple(partners),
         rank_by=rank_by,
+        value_column=value_column,
         # Aqui o declarante VARIA por linha (o backfill cobre todos os reporters), então
         # o autocomércio é a comparação entre as duas colunas, não um ISO fixo.
         partner_iso_column="partner_iso_a3",

@@ -669,10 +669,16 @@ def test_partner_data_comex_threads_uf_filter(monkeypatch):
     recorded = {}
 
     def fake_partners(
-        year_start=None, year_end=None, ncm_codes=(), uf_codes=(), flow=None, rank_by="value"
+        year_start=None,
+        year_end=None,
+        ncm_codes=(),
+        uf_codes=(),
+        flow=None,
+        rank_by="value",
+        value_column="val_yearfx_usd",
     ):
         recorded.update(uf_codes=uf_codes, rank_by=rank_by, flow=flow)
-        return pd.DataFrame(columns=["partner_code", "partner_name", "value_usd"])
+        return pd.DataFrame(columns=["partner_code", "partner_name", "total_value"])
 
     monkeypatch.setattr(seam.gateway, "fetch_comex_partners", fake_partners)
     seam.partner_data("mdic_comex", {"states": ["PA"]})
@@ -684,6 +690,39 @@ def test_partner_data_comex_threads_uf_filter(monkeypatch):
     recorded.clear()
     seam.partner_data("mdic_comex", {}, rank_by="price")
     assert recorded["rank_by"] == "price"
+
+
+def test_partner_data_sums_the_column_the_conventions_resolve(monkeypatch):
+    """The ranking reads the currency × correction the strip shows (v1.77.0).
+
+    Before it both readers always summed nominal US$: Acre × castanha-do-pará showed Peru
+    at US$ 78 mi under "Correção IPCA", which is to the dollar the nominal export+import
+    sum (77,65 + 0,56, measured in serving_comex_annual 2026-09-12)."""
+    seam = _seam()
+    recorded = {}
+
+    def fake(**k):
+        recorded.update(k)
+        return pd.DataFrame()
+
+    monkeypatch.setattr(seam.gateway, "fetch_comex_partners", fake)
+    monkeypatch.setattr(seam.gateway, "fetch_comtrade_partners", fake)
+
+    out = seam.partner_data("mdic_comex", {}, conv={"currency": "USD", "correction": "IPCA"})
+    assert recorded["value_column"] == "val_real_ipca_usd"
+    assert out["value_column"] == "val_real_ipca_usd"
+    assert "IPCA" in out["value_label"] and "US$" in out["value_label"]
+
+    # A combo the mart lacks falls back to R$ — and the payload says which column it
+    # summed, so the serializer's unit follows the fallback instead of the request.
+    out = seam.partner_data("mdic_comex", {}, conv={"currency": "USD", "correction": "IGP-M"})
+    assert out["value_column"] == recorded["value_column"] == "val_real_igpm_brl"
+
+    seam.partner_data("un_comtrade", {}, conv={"currency": "EUR", "correction": "Nominal"})
+    assert recorded["value_column"] == "val_yearfx_eur"
+
+    # No convention → the customs-native reading, for direct callers.
+    assert seam.partner_data("mdic_comex", {})["value_column"] == "val_yearfx_usd"
 
 
 def test_partner_data_comtrade_ignores_uf_filter(monkeypatch):

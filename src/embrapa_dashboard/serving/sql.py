@@ -1119,9 +1119,9 @@ def comex_by_uf_yearly(
 # would silently drop it. Keys are an exact-match enum (validated below); the
 # values are trusted literal expressions, never user input.
 _PARTNER_RANK_EXPR = {
-    "value": "value_usd",
+    "value": "total_value",
     "weight": "total_weight_kg",
-    "price": "price_usd_per_kg",
+    "price": "price_per_kg",
 }
 
 
@@ -1187,15 +1187,22 @@ def trade_by_partner(
     partner_iso_column: str | None = None,
     self_iso: str | None = None,
     reporter_iso_column: str | None = None,
+    value_column: str = "val_yearfx_usd",
 ) -> tuple[str, list]:
     """Partner ranking with export/import split (backs partnerData).
+
+    ``value_column`` (allowlist-validated) is the currency × correction column every
+    monetary measure sums — the export/import split, the total, the priced share and the
+    price numerator all read the SAME column, so a deflated total never sits beside a
+    nominal price. The aliases are currency-neutral (``total_value``, ``price_per_kg``)
+    because the column is no longer always US$.
 
     COMEX: partner = country_*; COMTRADE: partner = partner_*. The World partner is
     already dropped upstream (Silver), so no extra filter is needed for COMTRADE.
 
     ``flow`` narrows to one direction (export/import) so the server-side ranking is by
     that flow; ``None`` + ``sum_flows`` sums only the primary totals
-    (:data:`COMTRADE_TOTAL_FLOWS`) so the ranking metrics (value_usd / total_weight_kg /
+    (:data:`COMTRADE_TOTAL_FLOWS`) so the ranking metrics (total_value / total_weight_kg /
     price) never double-count the re-export/re-import SUBSETS (X ⊇ RX, M ⊇ RM). ``customs``
     (regime aduaneiro) and ``market`` (tipo de mercado) narrow the COMTRADE mart to one
     procedure / purpose; only ``un_comtrade`` carries them, so COMEX passes ``None`` for
@@ -1224,7 +1231,8 @@ def trade_by_partner(
     partner_name_column = _validate_column(
         partner_name_column, ALLOWED_DIMENSION_COLUMNS, "dimension column"
     )
-    order_expr = _PARTNER_RANK_EXPR.get(rank_by, "value_usd")
+    order_expr = _PARTNER_RANK_EXPR.get(rank_by, "total_value")
+    value_column = _validate_column(value_column, ALLOWED_VALUE_COLUMNS, "value_column")
     conditions: list[str] = []
     params: list = []
     _exclude_self_partner(conditions, params, partner_iso_column, self_iso, reporter_iso_column)
@@ -1241,9 +1249,9 @@ def trade_by_partner(
         select
             {partner_code_column}                                  as partner_code,
             any_value({partner_name_column})                       as partner_name,
-            sum(case when flow = 'export' then val_yearfx_usd end) as exp_value_usd,
-            sum(case when flow = 'import' then val_yearfx_usd end) as imp_value_usd,
-            sum(val_yearfx_usd)                                    as value_usd,
+            sum(case when flow = 'export' then {value_column} end) as exp_value,
+            sum(case when flow = 'import' then {value_column} end) as imp_value,
+            sum({value_column})                                    as total_value,
             sum(net_weight_kg)                                     as total_weight_kg,
             -- As duas metades de uma razão têm de cobrir as MESMAS linhas. O COMTRADE
             -- publica 79.528 linhas (3,87%) com valor e SEM peso líquido — o declarante
@@ -1253,11 +1261,11 @@ def trade_by_partner(
             -- madeira Guam aparecia em 6º com US$ 1,251/kg e pertence ao 41º com
             -- US$ 0,567 — +121%, porque 54,7% do valor dela não tem peso. Cinco dos dez
             -- primeiros do ranking eram artefato da própria lacuna que mediam.
-            -- `priced_value_usd` é quanto do valor SUSTENTA o preço; a razão entre ele e
-            -- `value_usd` é a cobertura que a tela precisa enunciar.
-            sum(if(net_weight_kg is null, null, val_yearfx_usd))    as priced_value_usd,
-            safe_divide(sum(if(net_weight_kg is null, null, val_yearfx_usd)),
-                        sum(net_weight_kg))                        as price_usd_per_kg
+            -- `priced_value` é quanto do valor SUSTENTA o preço; a razão entre ele e
+            -- `total_value` é a cobertura que a tela precisa enunciar.
+            sum(if(net_weight_kg is null, null, {value_column}))    as priced_value,
+            safe_divide(sum(if(net_weight_kg is null, null, {value_column})),
+                        sum(net_weight_kg))                        as price_per_kg
         from `{table}`
         {_where(conditions)}
         group by {partner_code_column}

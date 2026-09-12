@@ -1293,30 +1293,30 @@ def test_serialize_products_by_uf_valor_deflacionado_ausente_nao_e_zero():
 
 
 def test_serialize_partner_populated_path_scales_and_truncates():
-    """serialize_partner's exp/imp/value ÷1e6 (US$ mi) + weight ÷1e6 (mil t) +
-    price (US$/kg) scaling, and head(max_rows) truncation (otherwise only the
+    """serialize_partner's exp/imp/value ÷1e6 (unit mi) + weight ÷1e6 (mil t) +
+    price (unit/kg) scaling, and head(max_rows) truncation (otherwise only the
     empty path was covered)."""
     df = pd.DataFrame(
         [
             {
                 "partner_name": "China",
-                "exp_value_usd": 5_000_000,
-                "imp_value_usd": 1_000_000,
-                "value_usd": 6_000_000,
+                "exp_value": 5_000_000,
+                "imp_value": 1_000_000,
+                "total_value": 6_000_000,
                 "total_weight_kg": 2_000_000,
                 # Só 4,5 dos 6 milhões de dólares têm peso por trás: o preço divide
                 # essa parte, e `pricedShare` diz ao leitor que parte é.
-                "priced_value_usd": 4_500_000,
-                "price_usd_per_kg": 3.0,
+                "priced_value": 4_500_000,
+                "price_per_kg": 3.0,
             },
             {
                 "partner_name": "EUA",
-                "exp_value_usd": 3_000_000,
-                "imp_value_usd": 2_000_000,
-                "value_usd": 5_000_000,
+                "exp_value": 3_000_000,
+                "imp_value": 2_000_000,
+                "total_value": 5_000_000,
                 "total_weight_kg": 1_000_000,
-                "priced_value_usd": 5_000_000,  # cobre tudo
-                "price_usd_per_kg": 5.0,
+                "priced_value": 5_000_000,  # cobre tudo
+                "price_per_kg": 5.0,
             },
         ]
     )
@@ -1338,11 +1338,11 @@ def _parceiro(nome, valor_usd, peso_kg):
     """Uma linha do ranking, no formato que ``trade_by_partner`` devolve."""
     return {
         "partner_name": nome,
-        "exp_value_usd": valor_usd,
-        "imp_value_usd": 0,
-        "value_usd": valor_usd,
+        "exp_value": valor_usd,
+        "imp_value": 0,
+        "total_value": valor_usd,
         "total_weight_kg": peso_kg,
-        "price_usd_per_kg": (valor_usd / peso_kg) if peso_kg else None,
+        "price_per_kg": (valor_usd / peso_kg) if peso_kg else None,
     }
 
 
@@ -1419,17 +1419,37 @@ def test_serialize_partner_null_weight_yields_none_price():
         [
             {
                 "partner_name": "X",
-                "exp_value_usd": 0,
-                "imp_value_usd": 0,
-                "value_usd": 10,
+                "exp_value": 0,
+                "imp_value": 0,
+                "total_value": 10,
                 "total_weight_kg": None,
-                "price_usd_per_kg": None,
+                "price_per_kg": None,
             }
         ]
     )
     out = s.serialize_partner(df)
     assert out["partners"][0]["weight"] == 0.0
     assert out["partners"][0]["price"] is None
+
+
+def test_serialize_partner_unit_follows_the_column_actually_summed():
+    """`unit` is the symbol of the SUMMED column, not of the request (v1.77.0).
+
+    US$ × IGP-M is a combo the trade marts lack, so the seam falls back to
+    `val_real_igpm_brl` — and a payload saying "US$" over reais would repeat, in the unit,
+    the very defect this version fixes in the sum."""
+    df = pd.DataFrame([_parceiro("Peru", 84_840_000, 30_000_000)])
+    assert s.serialize_partner(df)["unit"] == "US$"  # default: the customs-native column
+    out = s.serialize_partner(
+        df,
+        value_column="val_real_igpm_brl",
+        value_label="Valor real (IGP-M) — R$ (moeda indisponível no mart → R$) · FOB",
+    )
+    assert out["unit"] == "R$"
+    assert out["valueLabel"].startswith("Valor real (IGP-M) — R$")
+    assert s.serialize_partner(df, value_column="val_real_ipca_eur")["unit"] == "€"
+    # The empty payload names the unit too — the view formats its KPIs with it.
+    assert s.serialize_partner(None, value_column="val_yearfx_brl")["unit"] == "R$"
 
 
 def test_serialize_products_by_uf_carries_the_sidra_table_when_the_reader_selects_it() -> None:

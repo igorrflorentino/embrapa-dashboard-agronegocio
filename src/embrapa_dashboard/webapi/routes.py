@@ -1079,19 +1079,27 @@ def partners():
     via ``codes``/``states``/``y0``/``y1``; ``states`` applies to COMEX only).
 
     ``metric`` ∈ {value, weight, price} (default ``value``) ranks by Capital /
-    Volume / Preço médio server-side, so the top-N is by the chosen dimension."""
+    Volume / Preço médio server-side, so the top-N is by the chosen dimension.
+    currency+correction pick the value column server-side, same as /snapshot."""
     banco = request.args.get("banco", "")
     metric = request.args.get("metric", "value")
     if metric not in _ALLOWED_PARTNER_METRICS:
         return jsonify(error=f"métrica inválida: {metric!r}"), 400
+    conv, err = _conversion_or_400()
+    if err:
+        return err
     summary, err = _with_filter_axes(_filter_summary())
     if err:
         return err
+    payload = seam.partner_data(banco, summary, rank_by=metric, conv=conv) or {}
     return jsonify(
         # O `metric` viaja para o serializer também: o piso de materialidade do preço
         # médio vale só para esse ranking, e tem de ser aplicado ANTES do corte top-N.
         serializers.serialize_partner(
-            seam.partner_data(banco, summary, rank_by=metric), rank_by=metric
+            payload.get("rows"),
+            rank_by=metric,
+            value_column=payload.get("value_column"),
+            value_label=payload.get("value_label"),
         )
     )
 
