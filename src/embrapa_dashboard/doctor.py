@@ -598,6 +598,18 @@ def _check_bcb(settings: Settings) -> CheckResult:
         return CheckResult("BCB SGS reachable", False, str(exc)[:120])
 
 
+def _redact(text: str, secret: str) -> str:
+    """Keep a configured API key out of a health-check line.
+
+    The BLS key travels in the QUERY STRING, and requests puts the full URL into its
+    exception messages ("404 Client Error: … for url: …&registrationkey=…"). So the
+    one path that reports a failure is also the one that would print the secret to the
+    operator's terminal and into whatever captures that output. Redact before
+    truncating, never after: slicing a half-replaced string can leave a usable prefix.
+    """
+    return text.replace(secret, "***") if secret else text
+
+
 def _check_foreign_inflation(settings: Settings) -> CheckResult:
     """BLS and the ECB Data Portal each answer for their configured series.
 
@@ -610,7 +622,18 @@ def _check_foreign_inflation(settings: Settings) -> CheckResult:
     results: list[str] = []
     ok = True
     cpi = settings.foreign_inflation_cpi_code
-    url = f"{settings.bls_api_base_url}/v1/timeseries/data/{cpi}?startyear={year}&endyear={year}"
+    # Probe the endpoint the INGEST will actually use. Keyless that is v1, whose 25/day
+    # quota is counted per calling IP and so is shared with every other caller on that
+    # address; with a key it is v2, whose 500/day quota belongs to the key. Probing v1
+    # while the ingest runs keyed would spend a quota the real run never touches and
+    # report a refusal it never meets — the mirror image of the false green above.
+    version = "v2" if settings.bls_api_key else "v1"
+    url = (
+        f"{settings.bls_api_base_url}/{version}/timeseries/data/{cpi}"
+        f"?startyear={year}&endyear={year}"
+    )
+    if settings.bls_api_key:
+        url = f"{url}&registrationkey={settings.bls_api_key}"
     try:
         response = requests.get(url, timeout=PROBE_TIMEOUT_S)
         response.raise_for_status()
@@ -627,7 +650,7 @@ def _check_foreign_inflation(settings: Settings) -> CheckResult:
         results.append(f"bls.{cpi} 200 OK")
     except Exception as exc:
         ok = False
-        results.append(f"bls.{cpi} {str(exc)[:160]}")
+        results.append(f"bls.{cpi} {_redact(str(exc), settings.bls_api_key)[:160]}")
 
     hicp = settings.foreign_inflation_hicp_code
     dataflow, _, key = hicp.partition(".")

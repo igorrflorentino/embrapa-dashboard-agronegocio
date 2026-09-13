@@ -107,11 +107,9 @@ gcloud builds submit "$REPO_ROOT" --project "$PROJECT" \
 #   IBGE_* / PAM_* / PPM_* / BCB_* / COMEX_*    — per-source scope (codes, years, flows, delta)
 #   FOREIGN_INFLATION_* + {BLS,ECB}_API_BASE_URL — the foreign deflators (US CPI-U · euro-area
 #                                                 HICP), which ride `ingest all`. BLS_API_KEY is
-#                                                 deliberately NOT forwarded: it is optional, and
-#                                                 the keyless v1 endpoint covers this Job's load
-#                                                 (6 requests for a full backfill, 1 per delta
-#                                                 run, against a 25/day cap). Keeping it out
-#                                                 leaves the Job's secret surface unchanged.
+#                                                 never forwarded FROM .env — it is a credential,
+#                                                 so it rides Secret Manager via BLS_KEY_SECRET
+#                                                 (step 3c), exactly like the Comtrade key.
 #   CATALOG_* + BQ_RESEARCH_INPUTS_DATASET/BQ_PRODUTO_CATALOG_LOG_TABLE — catalog-driven
 #                                                 ingestion: the CATALOG_AUTHORITATIVE_INGESTION
 #                                                 flag + safety cap, and the catalog log the
@@ -146,6 +144,43 @@ if [ -n "$COMTRADE_SECRET" ]; then
       done >> "$ENV_YAML"
 fi
 
+# 3c) OPTIONAL — the BLS API key. The keyless v1 endpoint the Job falls back to has a
+#     25 requests/day quota counted PER CALLING IP, not per project or per key. The Job
+#     therefore shares it with everything else egressing from the same address and can
+#     find it already spent without having made a single request — measured 2026-09-13,
+#     when BLS answered `REQUEST_NOT_PROCESSED` (HTTP 200, zero observations) to a first
+#     call. A registered key moves the call to v2, whose 500/day quota is the KEY's
+#     alone, and widens the window from 10 to 20 years. Like the Comtrade key it never
+#     touches .env or this script: BLS_KEY_SECRET names a Secret Manager secret.
+#       gcloud secrets create bls-api-key --replication-policy=automatic --project "$PROJECT"
+#       printf '%s' 'YOUR_BLS_KEY' | gcloud secrets versions add bls-api-key --data-file=- --project "$PROJECT"
+#       gcloud secrets add-iam-policy-binding bls-api-key --project "$PROJECT" \
+#         --member "serviceAccount:<INGEST_JOB_RUNTIME_SA>" --role roles/secretmanager.secretAccessor
+BLS_SECRET="${BLS_KEY_SECRET:-$(get_env BLS_KEY_SECRET)}"
+if [ -n "$BLS_SECRET" ]; then
+  echo "BLS key enabled: mounting BLS_API_KEY from secret '$BLS_SECRET' (v2 endpoint)."
+fi
+
+# 3d) Collect every mounted secret into ONE --set-secrets value. gcloud parses a
+#     repeated flag as a REPLACEMENT, not an addition, so passing two --set-secrets
+#     would silently drop the first and leave that key unmounted at runtime. Omitting
+#     the flag entirely (neither secret configured) leaves the Job's existing secrets
+#     untouched, which is the long-standing behaviour when only Comtrade was possible.
+#     Built with plain `if` blocks, not `[ -n "$x" ] && arr+=(…)`: under `set -e` an
+#     AND-list whose test fails is a non-zero statement, and the empty-array expansion
+#     that follows is the other half of the same trap under `set -u`.
+SECRET_MOUNTS=()
+if [ -n "$COMTRADE_SECRET" ]; then
+  SECRET_MOUNTS+=("COMTRADE_API_KEY=${COMTRADE_SECRET}:latest")
+fi
+if [ -n "$BLS_SECRET" ]; then
+  SECRET_MOUNTS+=("BLS_API_KEY=${BLS_SECRET}:latest")
+fi
+SECRETS_ARG=""
+if [ ${#SECRET_MOUNTS[@]} -gt 0 ]; then
+  SECRETS_ARG="$(IFS=,; printf '%s' "${SECRET_MOUNTS[*]}")"
+fi
+
 # 4) Deploy / update the Cloud Run Job (create-or-update).
 echo "Deploying Cloud Run Job…"
 gcloud run jobs deploy "$JOB_NAME" --project "$PROJECT" --region "$REGION" \
@@ -156,7 +191,7 @@ gcloud run jobs deploy "$JOB_NAME" --project "$PROJECT" --region "$REGION" \
   --max-retries 2 \
   --memory "$MEMORY" \
   --cpu "$CPU" \
-  ${COMTRADE_SECRET:+--set-secrets COMTRADE_API_KEY=${COMTRADE_SECRET}:latest}
+  ${SECRETS_ARG:+--set-secrets "$SECRETS_ARG"}
 
 cat <<EOF
 

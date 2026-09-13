@@ -225,6 +225,53 @@ def test_check_foreign_inflation_fails_when_ecb_answers_200_with_no_observations
     assert "bls." in result.detail and "200 OK" in result.detail
 
 
+def test_check_foreign_inflation_probes_v2_when_a_key_is_configured(settings: Settings) -> None:
+    """The probe must exercise the endpoint the INGEST will actually use. The two BLS
+    versions draw on DIFFERENT quotas — v1's 25/day is counted per calling IP and shared
+    with every other caller on that address, v2's 500/day belongs to the key — so probing
+    v1 for a keyed pipeline spends a quota the real run never touches and can report a
+    refusal it never meets."""
+    settings.bls_api_key = "SEGREDO123"
+    with patch(
+        "embrapa_dashboard.doctor.requests.get",
+        side_effect=lambda url, **_kw: _foreign_inflation_response(url),
+    ) as get:
+        result = doctor._check_foreign_inflation(settings)
+    assert result.ok is True
+    bls_url = next(c.args[0] for c in get.call_args_list if "api.bls.gov" in c.args[0])
+    assert "/v2/timeseries/data/" in bls_url
+    assert "registrationkey=SEGREDO123" in bls_url
+
+
+def test_check_foreign_inflation_never_prints_the_key(settings: Settings) -> None:
+    """The key rides the QUERY STRING, and requests puts the whole URL into its exception
+    text. So the one path that reports a failure is also the one that would print the
+    secret to the operator's terminal and into whatever captures that output."""
+    settings.bls_api_key = "SEGREDO123"
+
+    def bls_raises(url, **_kw):
+        if "api.bls.gov" not in url:
+            return _foreign_inflation_response(url)
+        response = MagicMock()
+        response.raise_for_status.side_effect = RuntimeError(f"404 Client Error for url: {url}")
+        return response
+
+    with patch("embrapa_dashboard.doctor.requests.get", side_effect=bls_raises):
+        result = doctor._check_foreign_inflation(settings)
+    assert result.ok is False
+    assert "SEGREDO123" not in result.detail
+    assert "***" in result.detail
+
+
+def test_redact_is_a_no_op_without_a_configured_key() -> None:
+    """`"abc".replace("", x)` splices x between EVERY character, so an unguarded redaction
+    would mangle every failure line on the default (keyless) setup — the common case."""
+    plain = "404 Client Error for url: https://api.bls.gov/publicAPI/v1"
+    assert doctor._redact(plain, "") == plain
+    redacted = doctor._redact("registrationkey=abc123 refused", "abc123")
+    assert redacted == "registrationkey=*** refused"
+
+
 @pytest.mark.parametrize(
     ("caida", "marca", "erro"),
     [("data-api", "ECB 503", "ECB 503"), ("api.bls.gov", "BLS 503", "BLS 503")],
