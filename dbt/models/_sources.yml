@@ -116,6 +116,7 @@ sources:
         identifier: "{{ env_var('BQ_BRONZE_FOREIGN_INFLATION_TABLE', 'inflation_series_raw') }}"
         description: "Monthly price-index LEVELS (not % change) — CPI-U and euro-area HICP."
         config:
+          enabled: "{{ var('enable_foreign_inflation', false) }}"
           loaded_at_field: ingestion_timestamp
           # WEEKLY delta ingest, riding the same batch as the BCB indices it pairs with.
           # Both publish monthly, so the window matches bronze_bcb.inflation_raw exactly:

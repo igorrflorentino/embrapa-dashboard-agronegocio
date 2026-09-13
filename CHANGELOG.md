@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.83.1] - 2026-09-13
+
+### Corrigido
+
+- **O monitor de obsolescência do Bronze voltou a poder passar.** A v1.82.0 declarou a
+  fonte `bronze_foreign` com bloco de `freshness`, mas o dataset só existe depois da
+  primeira ingestão dos deflatores estrangeiros — então o `dbt source freshness` diário
+  passou a reprovar com `Dataset bronze_foreign was not found`, todo dia, desde o merge
+  daquela versão (runs 91–93 verdes em `e2c2c5a`; run 94, o primeiro em `320e2dce`,
+  vermelho).
+  - A causa é um gate que cobriu metade do problema. O `enable_foreign_inflation` foi
+    pensado como gate de ORDEM DE BUILD e aplicado ao MODELO (`silver_foreign_inflation`),
+    onde de fato evitava a cascata até o Gold. Mas `dbt source freshness` é outro comando,
+    em outro workflow, e lê a declaração da FONTE — que ficou sem gate.
+  - O custo não é um quadrado vermelho. Esse workflow é o monitor de obsolescência de TODO
+    o Bronze e o cabeçalho dele diz que uma violação de nível error avisa o operador por
+    e-mail; um run que sempre falha enterra o sinal que ele existe para carregar. Monitor
+    que não consegue passar é monitor desligado — a mesma forma do defeito da sonda que
+    não conseguia reprovar, corrigido na v1.82.1.
+  - A fonte passa a andar no MESMO gate do modelo, via `config: enabled:` da própria fonte
+    (o `{% if %}` estruturado não serve: o dbt parseia o schema YAML ANTES de renderizar o
+    Jinja, que só roda dentro de valores string). Com o gate desligado o dbt simplesmente
+    não tem freshness para essa fonte e a pula; as outras nove seguem medidas. Ligado, ela
+    volta com `loaded_at_field` e a mesma janela 10d/17d das séries do BCB com que divide
+    o lote semanal. Os dois estados verificados com `dbt parse`.
+  - `tests/test_foreign_inflation_gate.py` fixa o invariante que faltava: fonte e modelo
+    andam no mesmo gate, porque as duas direções quebram — fonte ligada sem modelo derruba
+    o monitor, modelo ligado sem fonte derruba o `dbt build` com "source is disabled".
+
 ## [1.83.0] - 2026-09-13
 
 ### Adicionado
