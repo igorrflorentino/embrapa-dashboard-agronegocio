@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.81.0] - 2026-09-13
+
+### Corrigido
+
+- **O IGP-DI passa a corrigir 1974–1979 do PAM e do PPM.** Esses anos não tinham valor
+  corrigido em índice nenhum, mas o motivo era do pipeline, não da fonte: a inflação era
+  ingerida a partir de `BCB_START_YEAR=1980`, o mesmo ano em que o IPCA começa, e isso
+  cortava o IGP-DI (SGS 190), que tem série mensal desde 1944. O padrão passa a ser **1974**,
+  o primeiro ano do PAM/PPM. As séries que começam depois respondem 404 antes de existir, e
+  o cliente pula essas janelas — conferido contra o BCB: de 1974, o IGP-DI traz 312 meses
+  até 1999, o IPCA começa em 1980, o IGP-M em 1989, o dólar em 1984, o euro em 1999.
+
+  Previsto antes do merge, com os dados de produção e a variação mensal do BCB: o PAM
+  inteiro em R$ · IGP-DI fica entre R$ 195 e 254 bi em 1974–1979, contínuo com os R$ 202 bi
+  de 1980 — sem salto de escala, o que confirma a conversão das moedas antigas nesses anos.
+
+  **Exige um passo de operação**: a ingestão semanal é incremental e nunca volta a 1974.
+  Depois do merge, rodar uma vez `BCB_START_YEAR=1974 uv run embrapa ingest bcb-inflation
+  --full` (o prefixo vence um `.env` antigo com 1980); o build diário do dbt leva ao Gold.
+  Até lá, o `reconcile-check` acusa os meses de 1974–1979 que a fonte tem e o Bronze não.
+
+- **A nota de lacuna diz qual correção alcança os anos.** Com o IGP-DI desde 1974, PAM e
+  PPM em R$ · IPCA mostram: "A série do IPCA não alcança esses anos. Esses anos ficam fora
+  das somas. IGP-DI alcança esses anos." — e a variação acumulada, "(o IGP-DI alcança)". O
+  snapshot PERGUNTA aos dados (`valueGap.coveredBy`): antes do backfill a nota não oferece
+  nada, porque o IGP-DI ainda tem o mesmo buraco. Um caso já aparece sem backfill nenhum,
+  verificado no preview contra produção: o PEVS em R$ · IGP-M não tem 1986–1988 (o IGP-M
+  começa em 1989), e a nota diz "IPCA e IGP-DI alcançam esses anos."
+
+- A descrição do IGP-DI no `_gold.yml` dizia "publicado desde 1980"; é desde 1944.
+
 ## [1.80.0] - 2026-09-13
 
 ### Corrigido

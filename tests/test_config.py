@@ -188,7 +188,8 @@ def test_defaults_match_documented_values() -> None:
     assert s.ibge_classification_id == "193"
     # IBGE_START_YEAR is intentionally None — the discover step must populate it.
     assert s.ibge_start_year is None
-    assert s.bcb_start_year == 1980
+    # 1974 = the first PAM/PPM year: IGP-DI (since 1944) deflates 1974–1979 (v1.81.0).
+    assert s.bcb_start_year == 1974
 
 
 def test_get_settings_returns_settings_instance(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:

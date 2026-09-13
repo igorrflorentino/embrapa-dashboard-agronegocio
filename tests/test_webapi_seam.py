@@ -391,6 +391,41 @@ def test_snapshot_ibge_names_the_years_the_convention_cannot_value(monkeypatch):
     assert pedidos == []
 
 
+def test_snapshot_asks_the_other_corrections_only_when_there_is_a_gap(monkeypatch):
+    """v1.81.0: IGP-DI, ingested from 1974, reaches the PAM/PPM years IPCA cannot. The note
+    names it only after ASKING the data — so the snapshot fetches the other corrections'
+    gaps, in the same currency, and only when the convention actually has a hole."""
+    seam = _seam()
+    _stub_snapshot_readers(seam, monkeypatch, uf_yearly=pd.DataFrame(), source="ibge_pevs")
+    lacuna = pd.DataFrame(
+        [
+            {"reference_year": 1979, "rows_without_value": 9, "rows_with_value": 0},
+            {"reference_year": 1980, "rows_without_value": 0, "rows_with_value": 9},
+        ]
+    )
+    pedidos: list = []
+
+    def leitor(source, value_column):
+        pedidos.append(value_column)
+        return lacuna if value_column == "val_real_ipca_brl" else f"alt:{value_column}"
+
+    monkeypatch.setattr(seam.gateway, "fetch_annual_value_gap", leitor)
+    out = seam.snapshot("ibge_pevs", {"currency": "BRL", "correction": "IPCA"})
+    assert out["value_gap_alternatives"] == {
+        "IGP-M": "alt:val_real_igpm_brl",
+        "IGP-DI": "alt:val_real_igpdi_brl",
+    }
+    assert pedidos == ["val_real_ipca_brl", "val_real_igpm_brl", "val_real_igpdi_brl"]
+
+    # Sem lacuna, nenhuma pergunta a mais.
+    sem_lacuna = lacuna.assign(rows_without_value=0, rows_with_value=9)
+    assert seam._value_gap_alternatives("ibge_pevs", "val_real_ipca_brl", sem_lacuna) == {}
+    # O nominal (o euro antes de 1999, que índice nenhum preenche) e o COMEX ficam de fora.
+    assert seam._value_gap_alternatives("ibge_pevs", "val_yearfx_eur", lacuna) == {}
+    assert seam._value_gap_alternatives("mdic_comex", "val_real_ipca_brl", lacuna) == {}
+    assert seam._value_gap_alternatives("ibge_pevs", "val_real_ipca_brl", None) == {}
+
+
 # ── snapshot: the server-side flow (export/import) filter ──────────────────────
 
 

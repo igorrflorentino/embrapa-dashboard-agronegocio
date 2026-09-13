@@ -101,7 +101,7 @@ models:
       - name: val_real_igpm_eur
         description: "val_real_igpm_brl converted at today's FX. NULL before 1989 (see val_real_igpm_brl)."
       - name: val_real_igpdi_brl
-        description: "As val_real_ipca_brl but via the IGP-DI (FGV) chain, published since 1980 — the only deflator here that covers reference years before 1989."
+        description: "As val_real_ipca_brl but via the IGP-DI (FGV) chain — published since 1944 and ingested from BCB_START_YEAR (1974, the first PAM/PPM year), so the only deflator here that covers reference years before 1980 (IPCA) and 1989 (IGP-M)."
       - name: val_real_igpdi_usd
         description: "val_real_igpdi_brl converted at today's FX."
       - name: val_real_igpdi_eur
@@ -220,7 +220,7 @@ models:
       - name: val_real_igpm_eur
         description: "val_real_igpm_brl converted at today's FX. NULL before 1989 (see val_real_igpm_brl)."
       - name: val_real_igpdi_brl
-        description: "As val_real_ipca_brl but via the IGP-DI (FGV) chain, published since 1980 — the only deflator here that covers reference years before 1989."
+        description: "As val_real_ipca_brl but via the IGP-DI (FGV) chain — published since 1944 and ingested from BCB_START_YEAR (1974, the first PAM/PPM year), so the only deflator here that covers reference years before 1980 (IPCA) and 1989 (IGP-M)."
       - name: val_real_igpdi_usd
         description: "val_real_igpdi_brl converted at today's FX."
       - name: val_real_igpdi_eur
@@ -325,7 +325,7 @@ models:
       - name: val_real_igpm_eur
         description: "val_real_igpm_brl converted at today's FX. NULL before 1989 (see val_real_igpm_brl)."
       - name: val_real_igpdi_brl
-        description: "As val_real_ipca_brl but via the IGP-DI (FGV) chain, published since 1980 — the only deflator here that covers reference years before 1989."
+        description: "As val_real_ipca_brl but via the IGP-DI (FGV) chain — published since 1944 and ingested from BCB_START_YEAR (1974, the first PAM/PPM year), so the only deflator here that covers reference years before 1980 (IPCA) and 1989 (IGP-M)."
       - name: val_real_igpdi_usd
         description: "val_real_igpdi_brl converted at today's FX."
       - name: val_real_igpdi_eur
@@ -460,7 +460,7 @@ models:
       - name: val_real_igpm_eur
         description: "val_real_igpm_brl converted at today's FX. NULL before 1989 (see val_real_igpm_brl)."
       - name: val_real_igpdi_brl
-        description: "As val_real_ipca_brl but via the IGP-DI (FGV) chain, published since 1980 — the only deflator here that covers reference years before 1989."
+        description: "As val_real_ipca_brl but via the IGP-DI (FGV) chain — published since 1944 and ingested from BCB_START_YEAR (1974, the first PAM/PPM year), so the only deflator here that covers reference years before 1980 (IPCA) and 1989 (IGP-M)."
       - name: val_real_igpdi_usd
         description: "val_real_igpdi_brl converted at today's FX."
       - name: val_real_igpdi_eur
@@ -601,7 +601,7 @@ models:
       - name: val_real_igpm_eur
         description: "val_real_igpm_brl converted at today's FX. NULL before 1989 (see val_real_igpm_brl)."
       - name: val_real_igpdi_brl
-        description: "As val_real_ipca_brl but via the IGP-DI (FGV) chain, published since 1980 — the only deflator here that covers reference years before 1989."
+        description: "As val_real_ipca_brl but via the IGP-DI (FGV) chain — published since 1944 and ingested from BCB_START_YEAR (1974, the first PAM/PPM year), so the only deflator here that covers reference years before 1980 (IPCA) and 1989 (IGP-M)."
       - name: val_real_igpdi_usd
         description: "val_real_igpdi_brl converted at today's FX."
       - name: val_real_igpdi_eur

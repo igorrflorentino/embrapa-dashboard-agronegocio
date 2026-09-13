@@ -450,6 +450,7 @@ def snapshot(banco_id: str, conv: dict, summary: dict | None = None) -> dict:
             tabela=tabela,
         )
 
+    gap_rows = _value_gap_rows(banco_id, value_col)
     return {
         "products": products,
         "product_ts": product_ts,
@@ -462,8 +463,38 @@ def snapshot(banco_id: str, conv: dict, summary: dict | None = None) -> dict:
         "value_column": value_col,
         "value_label": value_label,
         "value_era_breaks": value_era_breaks(value_col),
-        "value_gap_rows": _value_gap_rows(banco_id, value_col),
+        "value_gap_rows": gap_rows,
+        "value_gap_alternatives": _value_gap_alternatives(banco_id, value_col, gap_rows),
     }
+
+
+_CORRECTIONS = ("IPCA", "IGP-M", "IGP-DI")
+
+
+def _value_gap_alternatives(banco_id: str, value_col: str, gap_rows) -> dict:
+    """For an annual banco whose corrected convention leaves years without value: the
+    OTHER corrections in the same currency, each with its own gap frame — so the note can
+    name the one that does reach those years (PAM/PPM 1974–1979: IGP-DI, from the v1.81.0
+    backfill on). {} when there is no gap to fill.
+
+    Asked of the data, never assumed: until IGP-DI is re-ingested from 1974, its frame shows
+    the same hole and nothing is offered. Nominal is left out (its only hole is the euro
+    before 1999, which no index fills), and so is COMEX (its hole is the latest month, and
+    no other index is sure to have reached it).
+    """
+    if banco_id == "mdic_comex" or value_col.startswith("val_yearfx_"):
+        return {}
+    if gap_rows is None or getattr(gap_rows, "empty", True):
+        return {}
+    if not (gap_rows["rows_without_value"].fillna(0) > 0).any():
+        return {}
+    currency = fmt.column_currency(value_col)
+    out = {}
+    for correction in _CORRECTIONS:
+        col = fmt.monetary_column(currency, correction)
+        if col != value_col and col in sqlbuild.ALLOWED_VALUE_COLUMNS:
+            out[correction] = gateway.fetch_annual_value_gap(banco_id, value_column=col)
+    return out
 
 
 # The column each banco's value is DECLARED in — it never goes missing, so asking which

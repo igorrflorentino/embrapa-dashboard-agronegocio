@@ -202,11 +202,41 @@ def _snapshot_gap(df: pd.DataFrame | None) -> dict | None:
     }
 
 
+def _covering(gap: dict | None, alternatives: dict | None) -> list[str]:
+    """The other corrections (same currency) that value EVERY whole year of ``gap`` — a
+    year counts only with no valueless row and at least one valued one. [] when none.
+
+    PAM/PPM in R$ · IPCA have no value in 1974–1979 (IPCA starts in 1980); IGP-DI reaches
+    them once it is ingested from 1974 (v1.81.0), and the note says so. An empty frame is
+    no information, never "covers".
+    """
+    if not gap or not alternatives:
+        return []
+    years = set(gap["years"]) - set(gap["partial"])
+    if not years:
+        return []
+    out = []
+    for correction, df in alternatives.items():
+        if _empty(df):
+            continue
+        anos = pd.to_numeric(df["reference_year"], errors="coerce")
+        sem = pd.to_numeric(df["rows_without_value"], errors="coerce").fillna(0)
+        com = pd.to_numeric(df["rows_with_value"], errors="coerce").fillna(0)
+        cobertos = {int(y) for y in anos[(sem == 0) & (com > 0)].dropna()}
+        if years <= cobertos:
+            out.append(correction)
+    return out
+
+
 def serialize_snapshot(snap: dict) -> dict:
     """seam.snapshot() (DataFrames) → BancoSnapshot (contracts.js:45)."""
+    gap = _snapshot_gap(snap.get("value_gap_rows"))
+    if gap:
+        gap["coveredBy"] = _covering(gap, snap.get("value_gap_alternatives"))
     return {
-        # Os períodos que a convenção ativa não alcança (v1.79.0/v1.80.0) — ver _snapshot_gap.
-        "valueGap": _snapshot_gap(snap.get("value_gap_rows")),
+        # Os períodos que a convenção ativa não alcança (v1.79.0/v1.80.0) — ver _snapshot_gap;
+        # e as correções que os alcançam (v1.81.0) — ver _covering.
+        "valueGap": gap,
         "products": _products(snap.get("products")),
         "productTS": _product_ts(snap.get("product_ts")),
         "overviewTS": _overview_ts(snap.get("overview_ts")),
