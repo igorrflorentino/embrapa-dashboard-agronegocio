@@ -211,6 +211,49 @@ def test_ingest_bcb_inflation_empty_returns_friendly_message(
     assert "nothing new" in result.output
 
 
+# ─── ingest foreign-inflation ────────────────────────────────────────────────
+def test_ingest_foreign_inflation_delta_by_default(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    run = MagicMock(return_value="proj.bronze_foreign.inflation_series_raw")
+    monkeypatch.setattr(cli, "get_settings", lambda: settings)
+    monkeypatch.setattr(cli.foreign_inflation, "run", run)
+
+    result = runner.invoke(cli.app, ["ingest", "foreign-inflation"])
+
+    assert result.exit_code == 0, result.output
+    assert "Foreign inflation bronze loaded" in result.output
+    run.assert_called_once_with(settings, full=False, from_raw=False)
+
+
+@pytest.mark.parametrize(("flag", "kwarg"), [("--full", "full"), ("--from-raw", "from_raw")])
+def test_ingest_foreign_inflation_flags_propagate(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, flag: str, kwarg: str
+) -> None:
+    run = MagicMock(return_value="dest")
+    monkeypatch.setattr(cli, "get_settings", lambda: settings)
+    monkeypatch.setattr(cli.foreign_inflation, "run", run)
+
+    result = runner.invoke(cli.app, ["ingest", "foreign-inflation", flag])
+
+    assert result.exit_code == 0, result.output
+    assert run.call_args.kwargs[kwarg] is True
+
+
+def test_ingest_foreign_inflation_reports_nothing_new(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    """An empty return is the benign delta case (no month published since the last run),
+    not a failure — say so instead of printing a destination that does not exist."""
+    monkeypatch.setattr(cli, "get_settings", lambda: settings)
+    monkeypatch.setattr(cli.foreign_inflation, "run", MagicMock(return_value=""))
+
+    result = runner.invoke(cli.app, ["ingest", "foreign-inflation"])
+
+    assert result.exit_code == 0, result.output
+    assert "nothing new" in result.output
+
+
 # ─── ingest bcb-currency ─────────────────────────────────────────────────────
 def test_ingest_bcb_currency_delta_by_default(
     monkeypatch: pytest.MonkeyPatch, settings: Settings
@@ -363,6 +406,7 @@ _SINGLE_SHOT_INGESTS = [
     ("ibge-ppm", "ppm_pipeline", "sidra"),
     ("bcb-inflation", "bcb_inflation", "bcb"),
     ("bcb-currency", "bcb_currency", "bcb"),
+    ("foreign-inflation", "foreign_inflation", "foreign"),
 ]
 
 
@@ -372,6 +416,10 @@ def _transient_error(kind: str) -> Exception:
         from embrapa_dashboard.ibge.client import SidraTransientError
 
         return SidraTransientError("HTTP 503 for SIDRA")
+    if kind == "foreign":
+        from embrapa_dashboard.foreign_inflation.client import ForeignInflationTransientError
+
+        return ForeignInflationTransientError("HTTP 503 for BLS")
     from embrapa_dashboard.bcb.client import BcbTransientError
 
     return BcbTransientError("HTTP 503 for BCB SGS")
@@ -626,13 +674,23 @@ def test_ingest_all_runs_every_pipeline_in_order(
         cli.bcb_currency, "run", lambda s, full: order.append(f"currency-{full}") or ""
     )
     monkeypatch.setattr(
+        cli.foreign_inflation, "run", lambda s, full: order.append(f"foreign-{full}") or ""
+    )
+    monkeypatch.setattr(
         cli.comex_pipeline, "run", lambda s, full: order.append(f"comex-{full}") or ""
     )
 
     result = runner.invoke(cli.app, ["ingest", "all"])
 
     assert result.exit_code == 0, result.output
-    assert order == ["ibge", "silvicultura", "inflation-False", "currency-False", "comex-False"]
+    assert order == [
+        "ibge",
+        "silvicultura",
+        "inflation-False",
+        "currency-False",
+        "foreign-False",
+        "comex-False",
+    ]
 
 
 def test_ingest_all_full_flag_propagates_to_delta_pipelines(
@@ -647,12 +705,13 @@ def test_ingest_all_full_flag_propagates_to_delta_pipelines(
     )
     monkeypatch.setattr(cli.bcb_inflation, "run", lambda s, full: seen_full.append(full) or "")
     monkeypatch.setattr(cli.bcb_currency, "run", lambda s, full: seen_full.append(full) or "")
+    monkeypatch.setattr(cli.foreign_inflation, "run", lambda s, full: seen_full.append(full) or "")
     monkeypatch.setattr(cli.comex_pipeline, "run", lambda s, full: seen_full.append(full) or "")
 
     result = runner.invoke(cli.app, ["ingest", "all", "--full"])
 
     assert result.exit_code == 0, result.output
-    assert seen_full == [True, True, True, True, True]
+    assert seen_full == [True, True, True, True, True, True]
 
 
 def test_ingest_all_wraps_each_pipeline_in_observability(
@@ -667,6 +726,7 @@ def test_ingest_all_wraps_each_pipeline_in_observability(
     monkeypatch.setattr(cli.silvicultura_pipeline, "run", lambda s, full: "")
     monkeypatch.setattr(cli.bcb_inflation, "run", lambda s, full: "")
     monkeypatch.setattr(cli.bcb_currency, "run", lambda s, full: "")
+    monkeypatch.setattr(cli.foreign_inflation, "run", lambda s, full: "")
     monkeypatch.setattr(cli.comex_pipeline, "run", lambda s, full: "")
     monkeypatch.setattr(
         cli.observability,
@@ -678,7 +738,14 @@ def test_ingest_all_wraps_each_pipeline_in_observability(
 
     assert result.exit_code == 0, result.output
     # One event log opened per registered pipeline, in INGESTS order.
-    assert init_calls == ["ibge", "ibge-silvicultura", "bcb-inflation", "bcb-currency", "comex"]
+    assert init_calls == [
+        "ibge",
+        "ibge-silvicultura",
+        "bcb-inflation",
+        "bcb-currency",
+        "foreign-inflation",
+        "comex",
+    ]
 
 
 def test_ingest_all_continues_after_a_source_fails(
@@ -699,12 +766,13 @@ def test_ingest_all_continues_after_a_source_fails(
 
     monkeypatch.setattr(cli.bcb_inflation, "run", boom)
     monkeypatch.setattr(cli.bcb_currency, "run", lambda s, full: ran.append("currency") or "")
+    monkeypatch.setattr(cli.foreign_inflation, "run", lambda s, full: ran.append("foreign") or "")
     monkeypatch.setattr(cli.comex_pipeline, "run", lambda s, full: ran.append("comex") or "")
 
     result = runner.invoke(cli.app, ["ingest", "all"])
 
     # Every source attempted despite the inflation failure.
-    assert ran == ["ibge", "silvicultura", "inflation", "currency", "comex"]
+    assert ran == ["ibge", "silvicultura", "inflation", "currency", "foreign", "comex"]
     assert result.exit_code == 1
     assert "1 source(s) failed" in result.output
     assert "BCB inflation" in result.output  # the failed source's label
@@ -722,6 +790,7 @@ def test_ingest_all_aborts_cleanly_listing_partial_chunk_failure(
     monkeypatch.setattr(cli.silvicultura_pipeline, "run", lambda s, full: "")
     monkeypatch.setattr(cli.bcb_inflation, "run", lambda s, full: "")
     monkeypatch.setattr(cli.bcb_currency, "run", lambda s, full: "")
+    monkeypatch.setattr(cli.foreign_inflation, "run", lambda s, full: "")
 
     def comex_partial(_s: Settings, full: bool) -> str:
         raise IngestPartialFailure([("EXP_2026", "HTTP 503")])
@@ -777,6 +846,9 @@ def test_ingest_reconcile_chunks_ibge_and_fulls_bcb_comex(
         cli.bcb_currency, "run", lambda s, full: full_seen.append(f"currency-{full}") or ""
     )
     monkeypatch.setattr(
+        cli.foreign_inflation, "run", lambda s, full: full_seen.append(f"foreign-{full}") or ""
+    )
+    monkeypatch.setattr(
         cli.comex_pipeline, "run", lambda s, full: full_seen.append(f"comex-{full}") or ""
     )
     comtrade = MagicMock()
@@ -795,6 +867,7 @@ def test_ingest_reconcile_chunks_ibge_and_fulls_bcb_comex(
         "ppm-True",
         "inflation-True",
         "currency-True",
+        "foreign-True",
         "comex-True",
     ]
     # COMTRADE is key-gated / out of `all` — reconcile never re-ingests it.
@@ -823,11 +896,21 @@ def test_ingest_reconcile_continues_after_a_source_fails(
 
     monkeypatch.setattr(cli.bcb_inflation, "run", boom)
     monkeypatch.setattr(cli.bcb_currency, "run", lambda s, full: ran.append("currency") or "")
+    monkeypatch.setattr(cli.foreign_inflation, "run", lambda s, full: ran.append("foreign") or "")
     monkeypatch.setattr(cli.comex_pipeline, "run", lambda s, full: ran.append("comex") or "")
 
     result = runner.invoke(cli.app, ["ingest", "reconcile"])
 
-    assert ran == ["ibge", "silvicultura", "pam", "ppm", "inflation", "currency", "comex"]
+    assert ran == [
+        "ibge",
+        "silvicultura",
+        "pam",
+        "ppm",
+        "inflation",
+        "currency",
+        "foreign",
+        "comex",
+    ]
     assert result.exit_code == 1
     assert "1 source(s) failed" in result.output
     assert "BCB inflation" in result.output
@@ -855,6 +938,9 @@ def test_ingest_reconcile_records_ibge_chunk_failure_but_runs_rest(
         cli.bcb_inflation, "run", lambda s, full: ran_other.append("inflation") or ""
     )
     monkeypatch.setattr(cli.bcb_currency, "run", lambda s, full: ran_other.append("currency") or "")
+    monkeypatch.setattr(
+        cli.foreign_inflation, "run", lambda s, full: ran_other.append("foreign") or ""
+    )
     monkeypatch.setattr(cli.comex_pipeline, "run", lambda s, full: ran_other.append("comex") or "")
 
     result = runner.invoke(cli.app, ["ingest", "reconcile"])
@@ -862,7 +948,7 @@ def test_ingest_reconcile_records_ibge_chunk_failure_but_runs_rest(
     assert result.exit_code == 1
     assert "IBGE PEVS" in result.output  # the failed leg is named in the summary
     # Continue-on-failure across sources: PAM/PPM + BCB + COMEX still ran.
-    assert ran_other == ["pam", "ppm", "inflation", "currency", "comex"]
+    assert ran_other == ["pam", "ppm", "inflation", "currency", "foreign", "comex"]
 
 
 def test_ingest_reconcile_raises_when_ibge_start_year_unset(

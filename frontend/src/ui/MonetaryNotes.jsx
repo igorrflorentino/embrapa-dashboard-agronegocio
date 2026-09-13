@@ -59,6 +59,12 @@ function _motivo({ inteiros, parciais, unit, correcao, valuedRange }) {
     return 'O euro só existe desde 1999, e a série sem correção não o converte para trás.';
   }
   if (!corrigida) return null;
+  // NENHUM ano tem valor: não é uma série que começa tarde nem um mês que falta no fim —
+  // é um índice que ainda não foi ingerido. Sem esta frase o aviso diz "sem valor em
+  // 1974–2026" e cala o motivo, que é justamente o único acionável (um `embrapa ingest`).
+  if (primeiro == null && ultimo == null) {
+    return `A série do ${correcao} ainda não entrou na base — nenhum ano tem valor nesta convenção.`;
+  }
   const antes = inteiros.filter((y) => primeiro != null && y < primeiro);
   const depois = parciais.length || inteiros.some((y) => ultimo != null && y > ultimo);
   if (antes.length && antes.length === inteiros.length && !parciais.length) {
@@ -133,6 +139,9 @@ window.valueGapMotivo = (gap, conv) => {
     if (!gap.years.includes(y)) return null;
     if (!corrigida) {
       return conv && conv.currency === 'EUR' && y < 1999 ? 'o euro só existe desde 1999' : null;
+    }
+    if (primeiro == null && ultimo == null) {
+      return `a série do ${correcao} ainda não entrou na base`;
     }
     if (primeiro != null && y < primeiro) {
       const outras = Array.isArray(gap.coveredBy) && gap.coveredBy.length ? gap.coveredBy : null;

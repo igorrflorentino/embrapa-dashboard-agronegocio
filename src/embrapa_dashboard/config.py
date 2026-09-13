@@ -103,6 +103,12 @@ class Settings(BaseSettings):
     bq_bronze_bcb_inflation_table: str = Field(default="inflation_series_raw")
     bq_bronze_bcb_currency_table: str = Field(default="currency_series_raw")
     bq_bronze_comex_flows_table: str = Field(default="comex_flows_raw")
+    # Foreign price indices (US CPI · euro-area HICP). Their own dataset: they are
+    # neither BCB nor a banco — reference series that feed the deflation, like
+    # bronze_bcb's inflation table, but from BLS/ECB. ONE table, two providers,
+    # told apart by the `provider` column (Silver never guesses from the code).
+    bq_bronze_foreign_dataset: str = Field(default="bronze_foreign")
+    bq_bronze_foreign_inflation_table: str = Field(default="inflation_series_raw")
     bq_silver_dataset: str = Field(default="silver")  # consumed by dbt, not Python runtime
     # Un-prefixed name. dbt's generate_schema_name macro adds the dev prefix
     # (dev → dbt_dev_gold, prod → gold), so this must stay "gold". Also what
@@ -305,6 +311,43 @@ class Settings(BaseSettings):
     # ingest never rewinds this far: lowering it takes one `ingest bcb-inflation --full`.
     bcb_start_year: int = Field(default=1974)
     bcb_end_year: int = Field(default_factory=_current_year)
+
+    # ─── Foreign inflation (US CPI · euro-area HICP) ───────────────────────────
+    # A value in US$ or € is corrected by the inflation of ITS OWN economy — never by a
+    # Brazilian index. The three BCB series above answer "what is this worth in R$ of
+    # today"; these two answer "what is this worth in US$/€ of today", which is a
+    # different question and, for the customs bancos (whose source value IS US$), the
+    # only one that never passes through an exchange rate at all.
+    #
+    # Providers are the PRIMARY publisher of each index, matching the project's rule of
+    # going to the source (IBGE, BCB, MDIC, UN):
+    #   • CPI-U  — US Bureau of Labor Statistics, series CUUR0000SA0 (all items, US city
+    #     average, NOT seasonally adjusted — the published index, monthly since 1913).
+    #   • HICP   — ECB Data Portal, series ICP.M.U2.N.000000.4.INX (euro area changing
+    #     composition, all items, index 2015=100, monthly since 1996-01).
+    # Both are INDEX LEVELS, not the monthly % change the SGS series carry, so Silver
+    # uses them directly instead of chain-linking them (see silver_foreign_inflation).
+    #
+    # ⚠ NAME coupling, same as BCB_INFLATION_SERIES_*_CODE above: these two env-var NAMES
+    # and their defaults are read INDEPENDENTLY here and in dbt/dbt_project.yml
+    # (`env_var('FOREIGN_INFLATION_CPI_CODE', …)`). Change both files together, or dbt
+    # silently pivots on the default while config.py reads the new value — the drift
+    # `embrapa doctor` (foreign-inflation-codes) exists to catch.
+    foreign_inflation_cpi_code: str = Field(default="CUUR0000SA0")
+    foreign_inflation_hicp_code: str = Field(default="ICP.M.U2.N.000000.4.INX")
+    # BLS public API. v1 needs NO key (10 years per request, 25 requests/day) — enough
+    # for the 1974→today backfill in 6 windows and for a one-window delta run. A key
+    # upgrades the call to v2 (20-year windows, 500 requests/day); it is optional on
+    # purpose, so a fresh clone can ingest without a secret.
+    bls_api_base_url: str = Field(default="https://api.bls.gov/publicAPI")
+    bls_api_key: str = Field(default="")
+    # ECB Data Portal (SDMX REST). Keyless. The series key's FIRST dot-segment is the
+    # dataflow (ICP) and the rest is the series within it — the client splits it.
+    ecb_api_base_url: str = Field(default="https://data-api.ecb.europa.eu/service/data")
+    # Same start year as the BCB series: the deflator window has to cover the data
+    # window, and a provider answers with whatever part of it exists (CPI reaches back
+    # to 1913, HICP only to 1996 — the client keeps the empty early windows silent).
+    foreign_inflation_start_year: int = Field(default=1974)
 
     # ─── COMEX (MDIC Comex Stat bulk CSV) ─────────────────────────────────────
     comex_csv_base_url: str = Field(
@@ -758,6 +801,20 @@ class Settings(BaseSettings):
             "IPCA": self.bcb_inflation_series_ipca_code,
             "IGPM": self.bcb_inflation_series_igpm_code,
             "IGPDI": self.bcb_inflation_series_igpdi_code,
+        }
+
+    @property
+    def foreign_inflation_pivot_codes(self) -> dict[str, str]:
+        """{label: provider series id} the Gold ``val_real_{cpi,hicp}_*`` pivot uses.
+
+        The BCB counterpart above checks membership in an ingested CODE:LABEL map; here
+        the ingested set IS this map (the two indices are declared in code, not in a
+        free-form string), so the only drift left to guard is an EMPTY code — which
+        would make dbt pivot on '' and silently NULL the column.
+        """
+        return {
+            "CPI": self.foreign_inflation_cpi_code,
+            "HICP": self.foreign_inflation_hicp_code,
         }
 
     @property

@@ -1,0 +1,206 @@
+"""HTTP clients for the two foreign price-index publishers (BLS · ECB).
+
+Both fetchers return the SAME two-column frame the BCB SGS client returns —
+``data`` (``dd/mm/yyyy``) and ``valor`` (the observation as a string) — so the
+Bronze natural key, the raw-zone archive and the Silver dedup are identical for
+every inflation series regardless of who published it. The per-provider quirks
+(pagination window, response format, the "no data this far back" answer) stop
+here; nothing downstream branches on the provider again.
+
+One difference from SGS matters downstream and is NOT hidden here: these series
+are INDEX LEVELS (CPI-U 1982-84=100, HICP 2015=100), while SGS 433/189/190 are
+monthly % changes. ``silver_foreign_inflation`` uses the value as the index
+directly instead of chain-linking it.
+"""
+
+from __future__ import annotations
+
+import io
+import logging
+
+import pandas as pd
+
+from embrapa_dashboard.core import SourceTransientError
+from embrapa_dashboard.core import http as core_http
+
+logger = logging.getLogger(__name__)
+
+# Hard wall-clock ceiling for one HTTP request, and for all retries of one window.
+# Mirrors the BCB client: the per-read timeout only fires on full byte-idle gaps, so a
+# server trickling a byte every ~29s could bypass it forever without the manual drain.
+REQUEST_TOTAL_DEADLINE_S: float = 90.0
+PER_WINDOW_DEADLINE_S: float = 180.0
+
+# BLS caps a single request's span: 10 years on the keyless v1 endpoint, 20 with a
+# registered key on v2. We chunk to the smaller of the two that applies.
+BLS_MAX_YEARS_V1 = 10
+BLS_MAX_YEARS_V2 = 20
+
+
+class ForeignInflationRequestError(Exception):
+    """Non-200 (or non-success) response from a foreign price-index API."""
+
+
+class ForeignInflationTransientError(ForeignInflationRequestError, SourceTransientError):
+    """Transient (retryable) response from a foreign price-index API."""
+
+
+def _emit_retry(retry_state):  # type: ignore[no-untyped-def]
+    exc = retry_state.outcome.exception() if retry_state.outcome else None
+    logger.warning(
+        "Retrying foreign-inflation fetch attempt=%d: %s",
+        retry_state.attempt_number,
+        str(exc)[:200] if exc else "?",
+    )
+
+
+@core_http.http_retry_policy(
+    transient_exc=ForeignInflationTransientError,
+    deadline_s=PER_WINDOW_DEADLINE_S,
+    before_sleep=_emit_retry,
+)
+def _get(url: str, *, context: str):
+    """One atomic GET, drained under the wall-clock deadline, status-checked."""
+    response = core_http.get_drained(
+        url,
+        total_deadline_s=REQUEST_TOTAL_DEADLINE_S,
+        transient_exc=ForeignInflationTransientError,
+        context=context,
+    )
+    try:
+        if response.status_code == 200:
+            return response
+        msg = f"HTTP {response.status_code} for {context}: {response.text[:200]}"
+        if response.status_code in core_http.RETRYABLE_STATUS_CODES:
+            raise ForeignInflationTransientError(msg)
+        raise ForeignInflationRequestError(msg)
+    except BaseException:
+        response.close()
+        raise
+
+
+def _empty() -> pd.DataFrame:
+    return pd.DataFrame(columns=["data", "valor"])
+
+
+# ── BLS (US CPI-U) ────────────────────────────────────────────────────────────
+
+
+def _bls_window(base_url: str, series_id: str, start: int, end: int, api_key: str) -> pd.DataFrame:
+    """One BLS timeseries window → the ``data``/``valor`` frame.
+
+    The keyless v1 endpoint answers the same JSON as v2 for a single series, so the
+    only thing the key changes is the path and the window width. A window entirely
+    before the series exists comes back with an empty ``data`` list and no error —
+    that is "no data", not a failure (same contract as SGS's 404).
+    """
+    version = "v2" if api_key else "v1"
+    url = f"{base_url}/{version}/timeseries/data/{series_id}?startyear={start}&endyear={end}"
+    if api_key:
+        url = f"{url}&registrationkey={api_key}"
+    response = _get(url, context=f"BLS {series_id} {start}-{end}")
+    payload = response.json()
+    status = payload.get("status", "")
+    if status != "REQUEST_SUCCEEDED":
+        # BLS reports a throttle/quota refusal with HTTP 200 and a status string, so
+        # the status check cannot live in _get. Daily-quota exhaustion is transient in
+        # the only sense that matters here: it clears on its own.
+        messages = "; ".join(payload.get("message", []))[:300]
+        msg = f"BLS {series_id} {start}-{end}: {status} {messages}"
+        if "threshold" in messages.lower() or "limit" in messages.lower():
+            raise ForeignInflationTransientError(msg)
+        raise ForeignInflationRequestError(msg)
+
+    series = payload.get("Results", {}).get("series", [])
+    rows = series[0].get("data", []) if series else []
+    records = []
+    for row in rows:
+        period = str(row.get("period", ""))
+        # M01..M12 are the monthly readings; M13 is the ANNUAL AVERAGE BLS ships in the
+        # same list. Keeping it would put a 13th "month" in the series and, worse, give
+        # December two candidate readings for the year-end index.
+        if not period.startswith("M") or period == "M13":
+            continue
+        month = int(period[1:])
+        records.append(
+            {"data": f"01/{month:02d}/{int(row['year'])}", "valor": str(row.get("value", ""))}
+        )
+    if not records:
+        logger.info("BLS %s: no observations for %d-%d — skipping window.", series_id, start, end)
+        return _empty()
+    return pd.DataFrame.from_records(records)
+
+
+def fetch_bls_series(
+    series_id: str, start_year: int, end_year: int, *, base_url: str, api_key: str = ""
+) -> pd.DataFrame:
+    """Fetch a BLS series across the whole window, chunked to the API's span cap."""
+    span = BLS_MAX_YEARS_V2 if api_key else BLS_MAX_YEARS_V1
+    frames = []
+    for chunk_start in range(start_year, end_year + 1, span):
+        chunk_end = min(chunk_start + span - 1, end_year)
+        df = _bls_window(base_url, series_id, chunk_start, chunk_end, api_key)
+        if not df.empty:
+            frames.append(df)
+    if not frames:
+        return _empty()
+    return pd.concat(frames, ignore_index=True)
+
+
+# ── ECB (euro-area HICP) ──────────────────────────────────────────────────────
+
+
+def fetch_ecb_series(
+    series_key: str, start_year: int, end_year: int, *, base_url: str
+) -> pd.DataFrame:
+    """Fetch an ECB Data Portal series in one call → the ``data``/``valor`` frame.
+
+    The SDMX REST path splits the series key at its FIRST dot: ``ICP`` is the dataflow
+    and ``M.U2.N.000000.4.INX`` the series within it. ``format=csvdata`` is asked for
+    because the CSV is a flat table (one row per observation) — the SDMX-JSON
+    alternative nests observations under positional indices that have to be re-joined
+    to a dimension list, which is a lot of parsing for the same two columns.
+
+    An HTTP 404 here means the query matched no observation (e.g. a window entirely
+    before 1996), which is "no data" rather than an error — same contract as SGS.
+    """
+    if "." not in series_key:
+        raise ForeignInflationRequestError(
+            f"ECB series key {series_key!r} has no dataflow prefix "
+            "(expected e.g. 'ICP.M.U2.N.000000.4.INX')"
+        )
+    dataflow, key = series_key.split(".", 1)
+    url = (
+        f"{base_url}/{dataflow}/{key}"
+        f"?format=csvdata&detail=dataonly"
+        f"&startPeriod={start_year}-01&endPeriod={end_year}-12"
+    )
+    try:
+        response = _get(url, context=f"ECB {series_key} {start_year}-{end_year}")
+    except ForeignInflationRequestError as exc:
+        if "HTTP 404" in str(exc):
+            logger.info(
+                "ECB %s: 404 (no data) for %d-%d — skipping.", series_key, start_year, end_year
+            )
+            return _empty()
+        raise
+
+    raw = pd.read_csv(io.StringIO(response.text), dtype=str)
+    if raw.empty or "TIME_PERIOD" not in raw or "OBS_VALUE" not in raw:
+        logger.warning("ECB %s returned no usable rows for %d-%d", series_key, start_year, end_year)
+        return _empty()
+
+    periods = raw["TIME_PERIOD"].astype(str)
+    # Monthly series only: 'YYYY-MM'. Anything else (an annual 'YYYY' row, a quarterly
+    # 'YYYY-Q1') is a different frequency that must not be mixed into a monthly index.
+    monthly = periods.str.fullmatch(r"\d{4}-\d{2}")
+    raw = raw[monthly.fillna(False)]
+    if raw.empty:
+        return _empty()
+    parts = raw["TIME_PERIOD"].astype(str).str.split("-", n=1, expand=True)
+    return pd.DataFrame(
+        {
+            "data": "01/" + parts[1] + "/" + parts[0],
+            "valor": raw["OBS_VALUE"].astype(str).values,
+        }
+    ).reset_index(drop=True)

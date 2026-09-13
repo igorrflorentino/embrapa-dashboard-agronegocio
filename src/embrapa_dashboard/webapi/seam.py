@@ -80,27 +80,40 @@ def effective_value_column(banco: Banco, conv: dict) -> tuple[str, str]:
     BRL·IPCA via :func:`embrapa_dashboard.webapi.format.monetary_column`; trade
     callers that want the US$-native default pass ``{"currency": "USD",
     "correction": "Nominal"}``.
+
+    Since v1.82.0 the matrix is not a full product: the own-currency deflators (CPI ·
+    HICP) exist for the money they measure and for no other, so (BRL, CPI) is not a
+    combo with a missing column but a question with no meaning. The fallback below
+    treats the two cases differently for that reason.
     """
-    requested = fmt.monetary_column(conv.get("currency", "BRL"), conv.get("correction", "IPCA"))
-    if banco.id in _TRADE:
-        note = _trade_valuation_note(banco)
-        if requested in sqlbuild.ALLOWED_VALUE_COLUMNS:
-            return requested, f"{fmt.convention_value_label(conv)} · {note}"
-        # Fallback chain (same as PEVS): same correction in BRL, then real IPCA BRL —
-        # all REAL columns, never a mock conversion.
-        brl = fmt.monetary_column("BRL", conv.get("correction", "IPCA"))
-        if brl in sqlbuild.ALLOWED_VALUE_COLUMNS:
-            label = fmt.convention_value_label({**conv, "currency": "BRL"})
-            return brl, f"{label} (moeda indisponível no mart → R$) · {note}"
-        return "val_real_ipca_brl", f"Valor real (IPCA) — R$ · {note}"
+    currency = conv.get("currency", "BRL")
+    correction = conv.get("correction", "IPCA")
+    requested = fmt.monetary_column(currency, correction)
+    note = f" · {_trade_valuation_note(banco)}" if banco.id in _TRADE else ""
     if requested in sqlbuild.ALLOWED_VALUE_COLUMNS:
-        return requested, fmt.convention_value_label(conv)
-    # Fallback chain: same correction in BRL, then real IPCA BRL.
-    brl = fmt.monetary_column("BRL", conv.get("correction", "IPCA"))
+        return requested, f"{fmt.convention_value_label(conv)}{note}"
+
+    # ── Fallbacks for a combo no mart carries ────────────────────────────────
+    # A foreign index asked for a currency it does not measure (CPI in R$ or €) has no
+    # near neighbour: swapping the CURRENCY would keep the correction and change what
+    # the researcher asked to see, and swapping to a BRAZILIAN index would answer the
+    # question they specifically declined. Drop to nominal in the requested currency —
+    # the symbol stays right, nothing is corrected, and the label says so. The UI and
+    # the deep-link decoder clamp this combo away, so only a hand-edited URL gets here.
+    if fmt.correction_economy(correction) not in (None, "BR"):
+        nominal = fmt.monetary_column(currency, "Nominal")
+        if nominal in sqlbuild.ALLOWED_VALUE_COLUMNS:
+            label = fmt.convention_value_label({**conv, "correction": "Nominal"})
+            return nominal, f"{label} ({correction} não corrige {currency}){note}"
+
+    # Same correction in BRL, then real IPCA BRL — all REAL columns, never a mock
+    # conversion. This is the IGP-M/IGP-DI × US$ path: the index is Brazilian either
+    # way, so serving it in R$ keeps the measurement and only changes the unit.
+    brl = fmt.monetary_column("BRL", correction)
     if brl in sqlbuild.ALLOWED_VALUE_COLUMNS:
         label = fmt.convention_value_label({**conv, "currency": "BRL"})
-        return brl, f"{label} (moeda indisponível no mart → R$)"
-    return "val_real_ipca_brl", "Valor real (IPCA) — R$"
+        return brl, f"{label} (moeda indisponível no mart → R$){note}"
+    return "val_real_ipca_brl", f"Valor real (IPCA) — R${note}"
 
 
 def _years_from_summary(summary: dict | None) -> tuple[int | None, int | None]:
@@ -468,7 +481,11 @@ def snapshot(banco_id: str, conv: dict, summary: dict | None = None) -> dict:
     }
 
 
-_CORRECTIONS = ("IPCA", "IGP-M", "IGP-DI")
+# Every correction a gap note may offer as an alternative. The own-currency deflators
+# are in the list and need no special case: `monetary_column` maps CPI × R$ to a column
+# the allowlist does not carry, so the loop below skips it — the pairing rule is
+# enforced once, in the allowlist, instead of being restated here.
+_CORRECTIONS = ("IPCA", "IGP-M", "IGP-DI", "CPI", "HICP")
 
 
 def _value_gap_alternatives(banco_id: str, value_col: str, gap_rows) -> dict:

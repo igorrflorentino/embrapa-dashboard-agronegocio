@@ -80,7 +80,30 @@ enriched as (
         -- Real BRL via each inflation chain (val_raw already nominal present-era R$).
         b.val_raw * safe_divide(il.ipca_current,  iy.ipca_year_end)  as val_real_ipca_brl,
         b.val_raw * safe_divide(il.igpm_current,  iy.igpm_year_end)  as val_real_igpm_brl,
-        b.val_raw * safe_divide(il.igpdi_current, iy.igpdi_year_end) as val_real_igpdi_brl
+        b.val_raw * safe_divide(il.igpdi_current, iy.igpdi_year_end) as val_real_igpdi_brl,
+        -- ── Correção no PRÓPRIO nível de preços da moeda ────────────────────────
+        -- The columns above answer "what is this worth in R$ of today" and then, in the
+        -- final select, divide by TODAY's exchange rate — so the dollar figure they
+        -- produce is a Brazilian purchasing-power measurement wearing a US$ symbol.
+        -- These two answer a different question: convert at the exchange rate of the
+        -- YEAR OF RECORD (what the transaction was actually worth in dollars/euros at
+        -- the time) and bring THAT forward by the inflation of the issuing economy.
+        --
+        -- The two numbers diverge by however much the real exchange rate moved, which
+        -- over this history is a lot — they are not two roundings of one answer, and
+        -- neither is a correction of the other. Which one a researcher wants depends on
+        -- whether the comparison is about Brazilian purchasing power or about dollars.
+        --
+        -- Same >= 1994 guard as val_yearfx_{usd,eur}, and for the same reason: before
+        -- the Plano Real the PTAX of the year is quoted in the currency OF the year, so
+        -- the year-FX conversion would mix scales. EUR is additionally NULL before 1999
+        -- through brl_per_eur_avg, which the macro already nulls at the source.
+        case when b.reference_year >= 1994
+            then safe_divide(b.val_raw, fy.brl_per_usd_avg)
+                 * safe_divide(il.cpi_current, iy.cpi_year_end) end     as val_real_cpi_usd,
+        case when b.reference_year >= 1994
+            then safe_divide(b.val_raw, fy.brl_per_eur_avg)
+                 * safe_divide(il.hicp_current, iy.hicp_year_end) end   as val_real_hicp_eur
 
     from base_ppm b
     left join fx_year            fy  on b.reference_year = fy.reference_year
@@ -138,6 +161,14 @@ select
     val_real_igpdi_brl                                       as val_real_igpdi_brl,
     safe_divide(val_real_igpdi_brl, brl_per_usd_current)     as val_real_igpdi_usd,
     safe_divide(val_real_igpdi_brl, brl_per_eur_current)     as val_real_igpdi_eur,
+
+    -- ── Real via CPI (EUA) — dólares de hoje, poder de compra americano ──────
+    -- Not "val_real_ipca_usd in another index": the FX moment differs too (câmbio do
+    -- ano, not câmbio de hoje). See the enriched CTE for why both exist.
+    val_real_cpi_usd                                         as val_real_cpi_usd,
+
+    -- ── Real via HICP (zona do euro) — euros de hoje ─────────────────────────
+    val_real_hicp_eur                                        as val_real_hicp_eur,
 
     -- ── Quality + provenance ─────────────────────────────────────────────────
     -- Stock rows (efetivo) have NO value by design, so completeness is the HEADCOUNT alone;

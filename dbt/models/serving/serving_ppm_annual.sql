@@ -63,6 +63,14 @@ with ppm as (
         sum(val_real_igpm_eur)          as val_real_igpm_eur,
         sum(val_real_igpdi_brl)         as val_real_igpdi_brl,
         sum(val_real_igpdi_eur)         as val_real_igpdi_eur,
+        -- The own-currency deflators (v1.82.0): US CPI corrects the dollar, euro-area
+        -- HICP the euro. Distinct columns, not variants of the ones above — the FX
+        -- moment differs too (câmbio do ano, not câmbio de hoje), so the numbers are
+        -- not two roundings of one answer. Served for their OWN currency only: a
+        -- val_real_cpi_brl would be 'the dollar's purchasing power, printed in reais',
+        -- which nothing on screen asks for.
+        sum(val_real_cpi_usd)           as val_real_cpi_usd,
+        sum(val_real_hicp_eur)          as val_real_hicp_eur,
         count(distinct city_code)       as n_cities,
         count(*)                        as source_rows,
         max(last_refresh)               as last_refresh
@@ -136,6 +144,8 @@ select
     p.val_real_igpm_eur,
     p.val_real_igpdi_brl,
     p.val_real_igpdi_eur,
+    p.val_real_cpi_usd,
+    p.val_real_hicp_eur,
     p.n_cities,
     p.source_rows,
     p.last_refresh

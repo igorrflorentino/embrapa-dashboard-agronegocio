@@ -1,4 +1,5 @@
 .PHONY: coverage-diff help setup sync auth ingest-all ingest-ibge ingest-bcb-inflation ingest-bcb-currency \
+	ingest-foreign-inflation \
         ingest-ibge-historical reconcile ingest-job-deploy ingest-job-schedule \
         ingest-job-reconcile-schedule ingest-job-comtrade-schedule ingest-job-currency-schedule ingest-job-pam-schedule \
         ingest-job-ppm-schedule ingest-job-alert iam-grant \
@@ -49,6 +50,9 @@ ingest-bcb-inflation:    ## Ingest BCB inflation series (IPCA/IGP-M/IGP-DI) → 
 
 ingest-bcb-currency:    ## Ingest BCB FX series (USD/EUR) → Bronze
 	$(PY) embrapa ingest bcb-currency
+
+ingest-foreign-inflation:    ## Ingest the foreign deflators (US CPI-U, euro-area HICP) → Bronze
+	$(PY) embrapa ingest foreign-inflation
 
 ingest-all:    ## Ingest every nightly source (IBGE + BCB + COMEX) → Bronze
 	$(PY) embrapa ingest all

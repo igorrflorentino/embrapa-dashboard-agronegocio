@@ -103,6 +103,28 @@ sources:
             warn_after: {count: 2, period: day}
             error_after: {count: 7, period: day}
 
+  - name: bronze_foreign
+    description: |
+      Raw foreign price indices ingested by `embrapa ingest foreign-inflation` —
+      the deflators for US$ (BLS CPI-U) and € (ECB HICP). Their own dataset: they are
+      neither BCB nor a banco, and one table holds both publishers, told apart by the
+      stored `provider` column rather than by pattern-matching the series id.
+    database: "{{ target.project }}"
+    schema: "{{ env_var('BQ_BRONZE_FOREIGN_DATASET', 'bronze_foreign') }}"
+    tables:
+      - name: inflation_raw
+        identifier: "{{ env_var('BQ_BRONZE_FOREIGN_INFLATION_TABLE', 'inflation_series_raw') }}"
+        description: "Monthly price-index LEVELS (not % change) — CPI-U and euro-area HICP."
+        config:
+          loaded_at_field: ingestion_timestamp
+          # WEEKLY delta ingest, riding the same batch as the BCB indices it pairs with.
+          # Both publish monthly, so the window matches bronze_bcb.inflation_raw exactly:
+          # a foreign deflator going stale while the Brazilian one stays fresh is how the
+          # two halves of one conventions strip drift apart.
+          freshness:
+            warn_after: {count: 10, period: day}
+            error_after: {count: 17, period: day}
+
   - name: bronze_comex
     description: "Raw MDIC Comex Stat foreign-trade flows ingested by `embrapa ingest comex`."
     database: "{{ target.project }}"

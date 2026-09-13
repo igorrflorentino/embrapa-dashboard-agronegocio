@@ -101,10 +101,17 @@ gcloud builds submit "$REPO_ROOT" --project "$PROJECT" \
 # Allowlist (anchored, prefix-based so new per-source knobs are auto-covered):
 #   GCP_PROJECT_ID, GCS_*                       — project + landing/raw bucket + prefixes
 #   BQ_LOCATION                                 — dataset region
-#   BQ_BRONZE_{IBGE,PAM,PPM,BCB,COMEX}_*        — Bronze dataset/table names for the
+#   BQ_BRONZE_{IBGE,PAM,PPM,BCB,COMEX,FOREIGN}_* — Bronze dataset/table names for the
 #                                                 sources `all` runs + PAM/PPM (their own
 #                                                 monthly triggers; NOT COMTRADE: key-gated)
 #   IBGE_* / PAM_* / PPM_* / BCB_* / COMEX_*    — per-source scope (codes, years, flows, delta)
+#   FOREIGN_INFLATION_* + {BLS,ECB}_API_BASE_URL — the foreign deflators (US CPI-U · euro-area
+#                                                 HICP), which ride `ingest all`. BLS_API_KEY is
+#                                                 deliberately NOT forwarded: it is optional, and
+#                                                 the keyless v1 endpoint covers this Job's load
+#                                                 (6 requests for a full backfill, 1 per delta
+#                                                 run, against a 25/day cap). Keeping it out
+#                                                 leaves the Job's secret surface unchanged.
 #   CATALOG_* + BQ_RESEARCH_INPUTS_DATASET/BQ_PRODUTO_CATALOG_LOG_TABLE — catalog-driven
 #                                                 ingestion: the CATALOG_AUTHORITATIVE_INGESTION
 #                                                 flag + safety cap, and the catalog log the
@@ -113,7 +120,7 @@ gcloud builds submit "$REPO_ROOT" --project "$PROJECT" \
 # PAM_*/PPM_* are forwarded even though PAM/PPM are out of `ingest all` (in_all=False):
 # their monthly schedulers override args to `ibge-pam`/`ibge-ppm`, and the Job must carry
 # their PRODUCT_CODES / START_YEAR / … for those runs to use your .env scope.
-INGEST_ALLOWLIST='^(GCP_PROJECT_ID|GCS_[A-Z0-9_]+|BQ_LOCATION|BQ_BRONZE_(IBGE|PAM|PPM|BCB|COMEX)_[A-Z0-9_]+|BQ_RESEARCH_INPUTS_DATASET|BQ_PRODUTO_CATALOG_LOG_TABLE|CATALOG_[A-Z0-9_]+|IBGE_[A-Z0-9_]+|PAM_[A-Z0-9_]+|PPM_[A-Z0-9_]+|BCB_[A-Z0-9_]+|COMEX_[A-Z0-9_]+)='
+INGEST_ALLOWLIST='^(GCP_PROJECT_ID|GCS_[A-Z0-9_]+|BQ_LOCATION|BQ_BRONZE_(IBGE|PAM|PPM|BCB|COMEX|FOREIGN)_[A-Z0-9_]+|BQ_RESEARCH_INPUTS_DATASET|BQ_PRODUTO_CATALOG_LOG_TABLE|CATALOG_[A-Z0-9_]+|IBGE_[A-Z0-9_]+|PAM_[A-Z0-9_]+|PPM_[A-Z0-9_]+|BCB_[A-Z0-9_]+|COMEX_[A-Z0-9_]+|FOREIGN_INFLATION_[A-Z0-9_]+|(BLS|ECB)_API_BASE_URL)='
 ENV_YAML="$(mktemp)"; trap 'rm -f "$ENV_YAML"' EXIT
 grep -E "$INGEST_ALLOWLIST" "$ENV_FILE" \
   | while IFS='=' read -r key val; do

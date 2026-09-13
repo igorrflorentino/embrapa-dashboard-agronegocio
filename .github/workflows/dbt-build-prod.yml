@@ -77,6 +77,17 @@
 #                                         gated SCD2 curation views keep being
 #                                         rebuilt + tested by every push-triggered
 #                                         and scheduled build.
+#       DBT_ENABLE_FOREIGN_INFLATION    = "true" AFTER the first
+#                                         `embrapa ingest foreign-inflation --full`
+#                                         (PLANS/correcao_inflacionaria_multimoeda.md);
+#                                         unset/anything else = off. Adds
+#                                         --vars 'enable_foreign_inflation: true' so the
+#                                         US CPI / euro-area HICP deflators reach Gold.
+#                                         It is a BUILD-ORDER gate: silver_foreign_inflation
+#                                         reads a Bronze table that 404s before that first
+#                                         ingest, and the failure would cascade into every
+#                                         Gold model — so it must stay off until the data
+#                                         is there.
 #
 # ─────────────────────────────────────────────────────────────────────────────
 # MATERIALIZING TABLES FOR A STILL-OPEN PR:
@@ -234,6 +245,12 @@ jobs:
       # one-time prod activation (docs/operations_runbook.md § Activating
       # curation in prod) so merged changes to that view — and its schema
       # tests — keep propagating on every automated build.
+      #
+      # DBT_ENABLE_FOREIGN_INFLATION does the same for silver_foreign_inflation (the US
+      # CPI / euro-area HICP deflators). Different reason, same mechanism: that one is a
+      # BUILD-ORDER gate, not a feature switch — its Bronze source 404s until the first
+      # `embrapa ingest foreign-inflation`, and that would fail every Gold model
+      # downstream. Off, the val_real_{cpi,hicp}_* columns still exist and come out NULL.
       - name: dbt build prod
         working-directory: dbt
         # dbt_project.yml resolves its datasets + BCB inflation/currency series
@@ -250,6 +267,8 @@ jobs:
           BCB_INFLATION_SERIES_IGPM_CODE: ${{ vars.BCB_INFLATION_SERIES_IGPM_CODE || '189' }}
           BCB_INFLATION_SERIES_IGPDI_CODE: ${{ vars.BCB_INFLATION_SERIES_IGPDI_CODE || '190' }}
           BCB_CURRENCY_SERIES: ${{ vars.BCB_CURRENCY_SERIES || '1:USD,21619:EUR' }}
+          FOREIGN_INFLATION_CPI_CODE: ${{ vars.FOREIGN_INFLATION_CPI_CODE || 'CUUR0000SA0' }}
+          FOREIGN_INFLATION_HICP_CODE: ${{ vars.FOREIGN_INFLATION_HICP_CODE || 'ICP.M.U2.N.000000.4.INX' }}
         run: |
           ARGS=(build --target prod)
           if [ "${{ github.event.inputs.full_refresh }}" = "true" ]; then
@@ -259,6 +278,10 @@ jobs:
           if [ "${{ vars.DBT_ENABLE_CURATION }}" = "true" ]; then
             echo "::notice::DBT_ENABLE_CURATION=true — building the gated SCD2 curation views"
             ARGS+=(--vars 'enable_curation: true')
+          fi
+          if [ "${{ vars.DBT_ENABLE_FOREIGN_INFLATION }}" = "true" ]; then
+            echo "::notice::DBT_ENABLE_FOREIGN_INFLATION=true — building the foreign deflators (CPI/HICP)"
+            ARGS+=(--vars 'enable_foreign_inflation: true')
           fi
           uv run dbt "${ARGS[@]}"
 

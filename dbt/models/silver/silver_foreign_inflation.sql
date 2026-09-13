@@ -1,0 +1,96 @@
+{#- `enabled` below is a BUILD-ORDER gate, not a feature switch: this model's Bronze
+    source answers 404 until `embrapa ingest foreign-inflation` has run once, and that
+    failure would cascade through silver_inflation into every Gold table. The var's
+    comment in dbt_project.yml has the four-step turn-on. -#}
+{{
+    config(
+        materialized='table',
+        partition_by={'field': 'reference_date', 'data_type': 'date', 'granularity': 'month'},
+        cluster_by=['series_code'],
+        enabled=var('enable_foreign_inflation', false)
+    )
+}}
+
+{#-
+    The foreign deflators: US CPI-U (BLS) and euro-area HICP (ECB). They answer, for the
+    dollar and the euro, the question the BCB series answer for the real — and they are
+    the ONLY honest answer for a value the source itself declared in US$, which is what
+    every customs row is.
+
+    ── Why this is NOT silver_bcb_inflation with a different filter ────────────────────
+    The SGS series are monthly PERCENT CHANGE, chain-linked there into a 100-base index.
+    CPI-U and HICP are published as INDEX LEVELS already (CPI-U 1982-84=100, HICP
+    2015=100), so chain-linking them would compound a level as if it were a rate and
+    produce numbers that look like an index and are not one. The value goes through as
+    `index_value` directly.
+
+    The BASE of each level differs (1982-84=100 vs 2015=100) and that is deliberately NOT
+    normalised here: every use downstream is a RATIO of two readings of the SAME series
+    (index_now / index_then), and a ratio is base-invariant. Rebasing would add an
+    arbitrary anchor year with no effect on any number and one more thing to keep in sync.
+
+    `monthly_pct_change` is computed for symmetry with the BCB model (and so an operator
+    can eyeball a series), NEVER consumed by the deflation. It is null for each series'
+    first month — there is no prior reading to compare against, which is a real absence
+    and not a zero.
+-#}
+
+{#- Configured provider series ids. Same env_var/config.py NAME coupling the BCB codes
+    have: `embrapa doctor` (foreign-inflation-codes) guards the parity. -#}
+{%- set _foreign_codes = [
+    "'" ~ var('inflation_series_cpi',  'CUUR0000SA0') ~ "'",
+    "'" ~ var('inflation_series_hicp', 'ICP.M.U2.N.000000.4.INX') ~ "'",
+] -%}
+
+with deduplicated as (
+
+    select *
+    from {{ source('bronze_foreign', 'inflation_raw') }}
+    -- Bronze is APPEND-ONLY, so a series id dropped from the config can still sit there.
+    -- Without this filter a retired series would keep feeding a deflator nobody selected.
+    where series_code in ({{ _foreign_codes | join(', ') }})
+    qualify row_number() over (
+        partition by series_code, reference_date_str
+        order by ingestion_timestamp desc
+    ) = 1
+
+),
+
+parsed as (
+
+    select
+        series_code,
+        series_name,
+        -- The publisher, as STORED by the ingest. Never inferred from the series id: a
+        -- second US or euro-area index (core CPI, HICP ex-energy) would break any
+        -- pattern the moment it arrived.
+        provider,
+        economy,
+        safe.parse_date('%d/%m/%Y', reference_date_str)   as reference_date,
+        {{ safe_numeric('value_str') }}                   as index_value,
+        ingestion_timestamp
+    from deduplicated
+    where safe.parse_date('%d/%m/%Y', reference_date_str) is not null
+
+)
+
+select
+    series_code,
+    series_name,
+    provider,
+    economy,
+    reference_date,
+    extract(year  from reference_date) as reference_year,
+    extract(month from reference_date) as reference_month,
+    -- Derived for symmetry/inspection only — the deflation reads index_value.
+    100.0 * safe_divide(
+        index_value - lag(index_value) over (partition by series_code order by reference_date),
+        lag(index_value) over (partition by series_code order by reference_date)
+    ) as monthly_pct_change,
+    index_value,
+    ingestion_timestamp
+from parsed
+where index_value is not null
+  -- A price index is strictly positive. A zero would divide the deflation by zero
+  -- (safe_divide saves the query, not the reading) and a negative one is a parse error.
+  and index_value > 0

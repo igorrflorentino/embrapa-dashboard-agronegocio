@@ -151,6 +151,8 @@ embrapa-dashboard-commodities/
 │   │   │   ├── silver_ibge_pam.sql   # Typed PAM + dedup (incremental)
 │   │   │   ├── silver_ibge_ppm.sql   # Typed PPM (herd 3939 + animal 74 union) + dedup
 │   │   │   ├── silver_bcb_inflation.sql  # IPCA chain index
+│   │   │   ├── silver_foreign_inflation.sql # US CPI-U + euro-area HICP (index levels)
+│   │   │   ├── silver_inflation.sql      # BCB + foreign deflators, unioned for Gold
 │   │   │   ├── silver_bcb_currency.sql   # BCB FX (daily USD/EUR PTAX)
 │   │   │   ├── silver_currency.sql       # BCB FX, normalized for Gold
 │   │   │   ├── silver_comex_flows.sql    # Typed COMEX + dedup (source grain)
@@ -336,6 +338,11 @@ as a per-run stamped object (append-only trail).
 - `silver_ibge_pevs`: **incremental** (`insert_overwrite` by `reference_year`). Dedup via `qualify row_number() ... order by ingestion_timestamp desc`.
 - `silver_comtrade_flows`: **incremental** (`insert_overwrite` by `reference_year`). Products at the **HS6** level; **4 regimes** (X/M/RX/RM → export/import/re-export/re-import). Keeps **only the fully aggregated record** (`motCode=0`/`customsCode=C00`/`partner2Code=0`/`mosCode=0`) — the breakdowns by transport mode/customs/2nd partner **sum into the aggregate**, so re-summing them would double-count (~2.5×). Drops the World partner (`0`); quantity sentinel `0.0` → NULL.
 - `silver_bcb_inflation`: **table** (needs the full window to compute the IPCA chain index).
+- `silver_foreign_inflation`: **table** (small; the published CPI-U / HICP index levels,
+  used as-is rather than chain-linked). Behind `enable_foreign_inflation` — a build-order
+  gate, since its Bronze source 404s until the first `embrapa ingest foreign-inflation`.
+- `silver_inflation`: **view** (a thin union of the two above, so the Gold deflation CTEs
+  read one source for every deflator — the counterpart of `silver_currency` for FX).
 - `silver_bcb_currency`: **table** (small table).
 - `silver_comex_flows`: **table** (dedup at the full source grain via `qualify`, incl. transport route `CO_VIA`; `safe_numeric` on VL_FOB/KG/QT/freight/insurance). A candidate for incremental if the chapter-44 volume grows over the decades.
 - **Seed `historical_currency_factors`**: a multiplier factor that absorbs Brazilian currency reforms (Cz$ → NCz$ → Cr$ → CR$ → R$). Without it, pre-1994 values are 10⁶–10⁹× inflated.
@@ -372,7 +379,7 @@ Two parallel paths, both reading the same Gold tables — they are not exclusive
 - **`SourceTransientError`** (in `core/exceptions.py`): a marker for transient upstream failures. `SidraTransientError` and `BcbTransientError` inherit via a mixin, and any new source does the same. This lets the shared decorator `core.http.http_retry_policy` catch all transients without having to list each class by name.
 - **`http_retry_policy` + `get_drained`** (in `core/http.py`): the tenacity retry policy (`stop_after_attempt(5) | stop_after_delay(deadline_s)` + `wait_exponential(1, 2, 30)`) and the manual body drain under a wall-clock deadline (a defense against slow-byte hangs that bypass `requests`' per-read timeout). Each source composes it with its own local deadlines and its transient exception. Adopted by `ibge/client._http_get` and `bcb/client._fetch_window`.
 - **Raw zone** (in `core/raw.py`): the two-phase ingestion contract — `land_raw(df)` / `land_raw_file(path)` archive the verbatim extract at `raw/<source>/<dataset>/<basename>.parquet` with provenance metadata; `read_raw` / `download_raw` read it back (`download_raw` + `iter_batches` keeps the large-file filter memory-bounded); `list_raw` enumerates a source's trail (for `--from-raw`); `raw_provenance` reads the metadata (the basis of the ETag freshness check). The BQ tail uses `gcp/bigquery.load_dataframe`. Adopted by all sources.
-- **`pipeline_run`** (in `core/observability_helpers.py`): a context manager that wraps the event sequence of a single-chunk ingest (`pipeline_start → chunk_start → chunk_end/chunk_error → pipeline_end`). The `ingest ibge`, `ingest bcb-inflation`, and `ingest bcb-currency` commands use the same path, so every single-shot source appears identically in `embrapa monitor`. Multi-chunk flows (`ingest ibge-batch`) emit the per-state/chunk sequence by hand and do **not** use this helper.
+- **`pipeline_run`** (in `core/observability_helpers.py`): a context manager that wraps the event sequence of a single-chunk ingest (`pipeline_start → chunk_start → chunk_end/chunk_error → pipeline_end`). The `ingest ibge`, `ingest bcb-inflation`, `ingest bcb-currency` and `ingest foreign-inflation` commands use the same path, so every single-shot source appears identically in `embrapa monitor`. Multi-chunk flows (`ingest ibge-batch`) emit the per-state/chunk sequence by hand and do **not** use this helper.
 
 Important point: **do not migrate** existing clients (IBGE/BCB) to shared abstractions just for the sake of DRY — the SIDRA slow-byte / period-halving is a hard-won defense that is fine right where it is. The `core/` primitives are adopted consciously, source by source, as appropriate. See the "Deferred items" section of the prep plan.
 

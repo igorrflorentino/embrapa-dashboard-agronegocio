@@ -1527,6 +1527,19 @@ _SILVER_DEFLATION: list[tuple[str, str, str, str, str]] = [
         "Cotações diárias de BRL por USD/EUR — base da conversão entre moedas.",
         "silver",
     ),
+    # A união que o Gold realmente lê. Aponta para a VIEW, não para
+    # silver_foreign_inflation: aquela tabela só existe depois da primeira ingestão dos
+    # deflatores estrangeiros (gate enable_foreign_inflation), e uma linha do explorador
+    # que leva a uma tabela ausente é um 404 na cara de quem clicou. A view existe sempre
+    # e mostra os índices que houver.
+    (
+        "silver_inflation",
+        "bq_silver_dataset",
+        "Deflatores (BR + estrangeiros) — apoio (compartilhada)",
+        "A união que o Gold lê: os índices brasileiros (IPCA, IGP-M, IGP-DI) e os "
+        "estrangeiros (CPI dos EUA, HICP da zona do euro), com a economia que cada um mede.",
+        "silver",
+    ),
 ]
 
 # Allowlist of inspectable tables per banco, now spanning ALL FOUR medallion layers
@@ -1985,6 +1998,15 @@ _REFERENCE_TABLE_CATALOG: list[tuple[str, str, bool, str]] = [
         "encadeado. É a base da correção monetária que converte valores nominais em "
         "valores reais, comparáveis entre anos.",
     ),
+    (
+        "silver_inflation",
+        "Deflatores, todos (BR + estrangeiros)",
+        False,
+        "A tabela que o Gold consulta para corrigir valores: os índices brasileiros do "
+        "BCB mais o CPI dos EUA (BLS) e o HICP da zona do euro (BCE). A coluna `economy` "
+        "diz de qual economia cada índice mede os preços — e, portanto, qual moeda ele "
+        "pode corrigir: um índice só corrige o dinheiro da economia que ele mede.",
+    ),
 ]
 _REFERENCE_BY_ID: dict[str, tuple[str, str, bool, str]] = {
     s[0]: s for s in _REFERENCE_TABLE_CATALOG
@@ -2001,7 +2023,11 @@ _CONSULTABLE_BY_ID: dict[str, tuple[str, str, bool, str]] = {
 # tables sit next to historical_currency_factors instead of trailing the source dimensions.
 # Only ids that need to be pulled forward are listed; everything else keeps catalog order.
 _REFERENCE_DISPLAY_AFTER: dict[str, tuple[str, ...]] = {
-    "historical_currency_factors": ("silver_bcb_currency", "silver_bcb_inflation"),
+    "historical_currency_factors": (
+        "silver_bcb_currency",
+        "silver_bcb_inflation",
+        "silver_inflation",
+    ),
 }
 
 

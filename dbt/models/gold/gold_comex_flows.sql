@@ -24,6 +24,8 @@
 --  • val_yearfx_*   = VL_FOB converted at the FX rate of THAT month. usd is the
 --                     source value itself; brl/eur triangulate through BRL.
 --                     Nominal — no inflation correction.
+--  • val_real_cpi_usd = VL_FOB (already US$) projected to today by US CPI — no FX
+--                     in it at all; val_real_hicp_eur is the euro counterpart.
 --  • val_real_{ipca,igpm,igpdi}_* = VL_FOB → BRL at the month FX → projected to
 --                     today via the respective BCB chain index → optionally
 --                     reconverted to USD/EUR at TODAY's FX. Use these for
@@ -121,8 +123,13 @@ inflation_month as (
         reference_month,
         max(case when series_code = '{{ var("inflation_series_ipca")  }}' then index_value end) as ipca_index,
         max(case when series_code = '{{ var("inflation_series_igpm")  }}' then index_value end) as igpm_index,
-        max(case when series_code = '{{ var("inflation_series_igpdi") }}' then index_value end) as igpdi_index
-    from {{ ref('silver_bcb_inflation') }}
+        max(case when series_code = '{{ var("inflation_series_igpdi") }}' then index_value end) as igpdi_index,
+        -- The FOREIGN deflators, at the SAME month grain: COMEX is monthly, and using a
+        -- year figure for all twelve months would flatten the within-year shape the
+        -- seasonality screen exists to show.
+        max(case when series_code = '{{ var("inflation_series_cpi")   }}' then index_value end) as cpi_index,
+        max(case when series_code = '{{ var("inflation_series_hicp")  }}' then index_value end) as hicp_index
+    from {{ ref('silver_inflation') }}
     where index_value is not null
     group by reference_year, reference_month
 
@@ -133,10 +140,12 @@ inflation_latest as (
     select
         max(case when series_code = '{{ var("inflation_series_ipca")  }}' then index_value end) as ipca_current,
         max(case when series_code = '{{ var("inflation_series_igpm")  }}' then index_value end) as igpm_current,
-        max(case when series_code = '{{ var("inflation_series_igpdi") }}' then index_value end) as igpdi_current
+        max(case when series_code = '{{ var("inflation_series_igpdi") }}' then index_value end) as igpdi_current,
+        max(case when series_code = '{{ var("inflation_series_cpi")   }}' then index_value end) as cpi_current,
+        max(case when series_code = '{{ var("inflation_series_hicp")  }}' then index_value end) as hicp_current
     from (
         select series_code, index_value
-        from {{ ref('silver_bcb_inflation') }}
+        from {{ ref('silver_inflation') }}
         where index_value is not null
         qualify row_number() over (
             partition by series_code
@@ -177,7 +186,21 @@ enriched as (
         -- Real BRL today: nominal BRL projected forward via each inflation chain.
         (b.val_fob_usd * fm.brl_per_usd_avg) * safe_divide(il.ipca_current,  im.ipca_index)  as val_real_ipca_brl,
         (b.val_fob_usd * fm.brl_per_usd_avg) * safe_divide(il.igpm_current,  im.igpm_index)  as val_real_igpm_brl,
-        (b.val_fob_usd * fm.brl_per_usd_avg) * safe_divide(il.igpdi_current, im.igpdi_index) as val_real_igpdi_brl
+        (b.val_fob_usd * fm.brl_per_usd_avg) * safe_divide(il.igpdi_current, im.igpdi_index) as val_real_igpdi_brl,
+
+        -- ── Correção no PRÓPRIO nível de preços da moeda ────────────────────────
+        -- VL_FOB is declared in US$, so this is the deflation that touches no exchange
+        -- rate: the customs value brought forward by US prices. The val_real_*_usd
+        -- columns above are the same value converted to R$ at the month's rate,
+        -- deflated by Brazilian prices, and converted back at TODAY's rate — a
+        -- Brazilian purchasing-power reading that happens to be printed in dollars.
+        -- Both are offered; what must never happen is one being presented as the other.
+        b.val_fob_usd * safe_divide(il.cpi_current, im.cpi_index)                      as val_real_cpi_usd,
+        -- € costs one conversion at the month's rate (triangulated through R$, as
+        -- val_yearfx_eur is) before the euro-area deflation, so it inherits the
+        -- pre-1999 NULL that fx_month already applies to brl_per_eur_avg.
+        safe_divide(b.val_fob_usd * fm.brl_per_usd_avg, fm.brl_per_eur_avg)
+            * safe_divide(il.hicp_current, im.hicp_index)                              as val_real_hicp_eur
 
     from base_flows b
     left join fx_month        fm  on b.reference_year = fm.reference_year and b.reference_month = fm.reference_month
@@ -260,6 +283,12 @@ select
     val_real_igpdi_brl                                      as val_real_igpdi_brl,
     safe_divide(val_real_igpdi_brl, brl_per_usd_current)    as val_real_igpdi_usd,
     safe_divide(val_real_igpdi_brl, brl_per_eur_current)    as val_real_igpdi_eur,
+
+    -- ── Real via CPI (EUA) — o US$ FOB declarado, em dólares de hoje ─────────
+    val_real_cpi_usd                                        as val_real_cpi_usd,
+
+    -- ── Real via HICP (zona do euro) ─────────────────────────────────────────
+    val_real_hicp_eur                                       as val_real_hicp_eur,
 
     -- ── Freight / insurance (nominal US$, import-only; NULL/0 on export) ─────
     freight_usd                                             as val_freight_usd,

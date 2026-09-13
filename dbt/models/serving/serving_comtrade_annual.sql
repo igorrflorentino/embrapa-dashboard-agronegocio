@@ -86,6 +86,14 @@ with comtrade as (
         sum(val_real_igpm_eur)      as val_real_igpm_eur,
         sum(val_real_igpdi_brl)     as val_real_igpdi_brl,
         sum(val_real_igpdi_eur)     as val_real_igpdi_eur,
+        -- The own-currency deflators (v1.82.0): US CPI corrects the dollar, euro-area
+        -- HICP the euro. Distinct columns, not variants of the ones above — the FX
+        -- moment differs too (câmbio do ano, not câmbio de hoje), so the numbers are
+        -- not two roundings of one answer. Served for their OWN currency only: a
+        -- val_real_cpi_brl would be 'the dollar's purchasing power, printed in reais',
+        -- which nothing on screen asks for.
+        sum(val_real_cpi_usd)       as val_real_cpi_usd,
+        sum(val_real_hicp_eur)      as val_real_hicp_eur,
         sum(net_weight_kg)          as net_weight_kg,
         count(*)                    as source_rows,
         max(last_refresh)           as last_refresh
@@ -138,6 +146,8 @@ select
     ct.val_real_igpm_eur,
     ct.val_real_igpdi_brl,
     ct.val_real_igpdi_eur,
+    ct.val_real_cpi_usd,
+    ct.val_real_hicp_eur,
     ct.net_weight_kg,
     ct.source_rows,
     ct.last_refresh

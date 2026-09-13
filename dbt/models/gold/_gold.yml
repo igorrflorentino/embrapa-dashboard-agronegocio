@@ -106,6 +106,20 @@ models:
         description: "val_real_igpdi_brl converted at today's FX."
       - name: val_real_igpdi_eur
         description: "val_real_igpdi_brl converted at today's FX."
+      - name: val_real_cpi_usd
+        description: |
+          The OTHER correction logic, and a different number from val_real_ipca_usd:
+          val_raw converted at the YEAR-of-record PTAX (the dollars the production was
+          worth at the time) and brought to today by US CPI-U. val_real_ipca_usd instead
+          deflates by Brazilian prices and converts at TODAY's rate — it measures
+          Brazilian purchasing power and merely prints it in dollars. The two diverge by
+          however much the real exchange rate moved. NULL before 1994 (the year-FX
+          guard), and NULL wherever the CPI series has not been ingested yet.
+      - name: val_real_hicp_eur
+        description: |
+          The euro counterpart of val_real_cpi_usd: converted at the year's PTAX, then
+          deflated by euro-area HICP. NULL before 1999 (the euro did not exist) and
+          before 1994 by the year-FX guard.
 
   - name: gold_pam_production
     description: |
@@ -225,6 +239,20 @@ models:
         description: "val_real_igpdi_brl converted at today's FX."
       - name: val_real_igpdi_eur
         description: "val_real_igpdi_brl converted at today's FX."
+      - name: val_real_cpi_usd
+        description: |
+          The OTHER correction logic, and a different number from val_real_ipca_usd:
+          val_raw converted at the YEAR-of-record PTAX (the dollars the production was
+          worth at the time) and brought to today by US CPI-U. val_real_ipca_usd instead
+          deflates by Brazilian prices and converts at TODAY's rate — it measures
+          Brazilian purchasing power and merely prints it in dollars. The two diverge by
+          however much the real exchange rate moved. NULL before 1994 (the year-FX
+          guard), and NULL wherever the CPI series has not been ingested yet.
+      - name: val_real_hicp_eur
+        description: |
+          The euro counterpart of val_real_cpi_usd: converted at the year's PTAX, then
+          deflated by euro-area HICP. NULL before 1999 (the euro did not exist) and
+          before 1994 by the year-FX guard.
 
   - name: gold_ppm_production
     description: |
@@ -330,6 +358,20 @@ models:
         description: "val_real_igpdi_brl converted at today's FX."
       - name: val_real_igpdi_eur
         description: "val_real_igpdi_brl converted at today's FX."
+      - name: val_real_cpi_usd
+        description: |
+          The OTHER correction logic, and a different number from val_real_ipca_usd:
+          val_raw converted at the YEAR-of-record PTAX (the dollars the production was
+          worth at the time) and brought to today by US CPI-U. val_real_ipca_usd instead
+          deflates by Brazilian prices and converts at TODAY's rate — it measures
+          Brazilian purchasing power and merely prints it in dollars. The two diverge by
+          however much the real exchange rate moved. NULL before 1994 (the year-FX
+          guard), and NULL wherever the CPI series has not been ingested yet.
+      - name: val_real_hicp_eur
+        description: |
+          The euro counterpart of val_real_cpi_usd: converted at the year's PTAX, then
+          deflated by euro-area HICP. NULL before 1999 (the euro did not exist) and
+          before 1994 by the year-FX guard.
 
   - name: gold_comex_flows
     description: |
@@ -465,6 +507,18 @@ models:
         description: "val_real_igpdi_brl converted at today's FX."
       - name: val_real_igpdi_eur
         description: "val_real_igpdi_brl converted at today's FX."
+      - name: val_real_cpi_usd
+        description: |
+          The declared US$ brought to today by US CPI-U — the only deflation here that
+          touches no exchange rate, which is why it has NO pre-1994 hole: every
+          val_real_*_usd above passes through the period's PTAX into R$ and today's
+          rate back out, measuring Brazilian purchasing power and printing it in
+          dollars. Both readings are legitimate; presenting one as the other is not.
+      - name: val_real_hicp_eur
+        description: |
+          The euro counterpart: one conversion at the period's PTAX (triangulated
+          through R$, as val_yearfx_eur is), then euro-area HICP. Inherits the pre-1994
+          / pre-1999 NULLs of the rates it passes through.
       - name: val_freight_usd
         description: "Freight component in USD, as published by the source."
       - name: val_insurance_usd
@@ -606,6 +660,18 @@ models:
         description: "val_real_igpdi_brl converted at today's FX."
       - name: val_real_igpdi_eur
         description: "val_real_igpdi_brl converted at today's FX."
+      - name: val_real_cpi_usd
+        description: |
+          The declared US$ brought to today by US CPI-U — the only deflation here that
+          touches no exchange rate, which is why it has NO pre-1994 hole: every
+          val_real_*_usd above passes through the period's PTAX into R$ and today's
+          rate back out, measuring Brazilian purchasing power and printing it in
+          dollars. Both readings are legitimate; presenting one as the other is not.
+      - name: val_real_hicp_eur
+        description: |
+          The euro counterpart: one conversion at the period's PTAX (triangulated
+          through R$, as val_yearfx_eur is), then euro-area HICP. Inherits the pre-1994
+          / pre-1999 NULLs of the rates it passes through.
       - name: val_cif_usd
         description: "CIF value in USD, as published by the source (cif_value_usd)."
       - name: val_fob_usd
@@ -707,6 +773,13 @@ unit_tests:
   #   FX USD: avg(2000)=2.0, latest=5.0
   #     → val_yearfx_usd    = 1000 / 2.0          = 500   (year >= 1994)
   #     → val_real_ipca_usd = 3000 / 5.0          = 600
+  # ── and the OTHER correction logic, on the same row ─────────────────────────
+  # val_real_cpi_usd converts at the YEAR's rate and deflates by US prices:
+  #     → (1000 / 2.0) * (450 / 150)              = 1500
+  # Both indices triple over the window, so 600 vs 1500 is entirely the FX moment
+  # (câmbio de hoje vs câmbio do ano) — which is exactly the distinction the
+  # conventions strip has to make visible. If these two ever came out equal, one of
+  # them would have silently become the other.
   # ── The `tabela` axis ───────────────────────────────────────────────
   # gold_pevs_production carries BOTH halves of the survey, told apart by the SIDRA
   # table each row came from. A row must be stamped by WHICH SILVER IT CAME FROM — if
@@ -728,8 +801,24 @@ unit_tests:
       - input: ref('silver_ibge_silvicultura')
         rows:
           - {reference_year: 2023, state_acronym: "SP", city_code: "3550308", city_name: "São Paulo", product_code: "3457", tabela: "291", product_description: "Madeira em tora", is_monetary_value: true, numeric_value: 900, qty_native: , qty_base: , family: , unit_native: , base_unit: , ingestion_timestamp: "2024-01-01 00:00:00"}
-      - input: ref('silver_bcb_inflation')
-        rows: []
+      - input: ref('silver_inflation')
+        # `format: sql`, not the usual row list, and not a style choice: dbt builds a
+        # dict fixture by reading the REAL table's column types
+        # (get_fixture_sql -> adapter.get_columns_in_relation), and the CI gate runs
+        # `dbt test --select test_type:unit --target prod` WITHOUT building. A model
+        # introduced by this very PR has no prod relation yet, so a dict input for it
+        # can only ever fail with "the relation doesn't exist" — the chicken-and-egg
+        # every first-PR-for-a-new-model hits. A literal SELECT needs no introspection.
+        # Revisit once silver_inflation exists in prod, or leave it: it costs nothing.
+        format: sql
+        rows: |
+          select
+              cast(null as int64)  as reference_year,
+              cast(null as string) as series_code,
+              cast(null as int64)  as reference_month,
+              cast(null as date)   as reference_date,
+              cast(null as float64) as index_value
+          limit 0
       - input: ref('silver_currency')
         rows: []
     expect:
@@ -751,11 +840,32 @@ unit_tests:
       # the tabela axis has its own case below.
       - input: ref('silver_ibge_silvicultura')
         rows: []
-      - input: ref('silver_bcb_inflation')
-        rows:
-          # IPCA (series 433): Dec-2000 = the record year-end; 2024 = the global latest.
-          - {reference_year: 2000, series_code: "433", index_value: 100, reference_month: 12, reference_date: "2000-12-01"}
-          - {reference_year: 2024, series_code: "433", index_value: 300, reference_month: 12, reference_date: "2024-12-01"}
+      # The deflation now reads the UNION view (BCB + foreign), so the fixture is given
+      # there. CPI-U rows are included to pin the second correction logic against the
+      # first on the same input: same record year, same val_raw, deliberately different
+      # answer.
+      - input: ref('silver_inflation')
+        # `format: sql`, not the usual row list, and not a style choice: dbt builds a
+        # dict fixture by reading the REAL table's column types
+        # (get_fixture_sql -> adapter.get_columns_in_relation), and the CI gate runs
+        # `dbt test --select test_type:unit --target prod` WITHOUT building. A model
+        # introduced by this very PR has no prod relation yet, so a dict input for it
+        # can only ever fail with "the relation doesn't exist" — the chicken-and-egg
+        # every first-PR-for-a-new-model hits. A literal SELECT needs no introspection.
+        # Revisit once silver_inflation exists in prod, or leave it: it costs nothing.
+        format: sql
+        rows: |
+          -- IPCA (series 433): Dec-2000 = the record year-end; 2024 = the global latest.
+          select 2000 as reference_year, '433' as series_code, 12 as reference_month,
+                 date '2000-12-01' as reference_date, cast(100 as float64) as index_value
+          union all
+          select 2024, '433', 12, date '2024-12-01', cast(300 as float64)
+          union all
+          -- CPI-U: year-end(2000)=150, current=450 -> ratio 3 as well, so any difference
+          -- in the output comes from the FX MOMENT, not from the index.
+          select 2000, 'CUUR0000SA0', 12, date '2000-12-01', cast(150 as float64)
+          union all
+          select 2024, 'CUUR0000SA0', 12, date '2024-12-01', cast(450 as float64)
       - input: ref('silver_currency')
         rows:
           - {currency: "USD", reference_year: 2000, reference_date: "2000-06-15", brl_per_foreign_unit: 2.0}
@@ -764,7 +874,7 @@ unit_tests:
       # Partial-column expect (like test_pevs_quantity_family_conversion): only the
       # monetary outputs are asserted; igpm/igpdi/eur columns are NULL here by design.
       rows:
-        - {reference_year: 2000, product_code: "0001", val_yearfx_brl: 1000, val_yearfx_usd: 500, val_real_ipca_brl: 3000, val_real_ipca_usd: 600}
+        - {reference_year: 2000, product_code: "0001", val_yearfx_brl: 1000, val_yearfx_usd: 500, val_real_ipca_brl: 3000, val_real_ipca_usd: 600, val_real_cpi_usd: 1500}
 
 
   # ── O gate de visibilidade casa a TABELA, não só o código ────────────────────

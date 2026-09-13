@@ -42,5 +42,6 @@ How to know the feature is done.
 | `geo_subregions.md` | Sub-UF geography cascade (meso/micro/intermediária/imediata + município) | Implemented |
 | `quality_outliers_and_visibility_gate.md` | Q1 data-quality taxonomy + F7 Ciclo de Vida visibility gate | Implemented |
 | `react_migration_contract_map.md` | Dash->React SPA + Flask webapi migration spec | Implemented |
+| `correcao_inflacionaria_multimoeda.md` | US CPI / euro-area HICP deflators + the conventions strip that tells the two correction logics apart | Implemented (code); the deflator data awaits the operator backfill + `DBT_ENABLE_FOREIGN_INFLATION` |
 
 > Create new plans with descriptive names: `scheduler-pipeline.md`, `api-rest-publica.md`, `novas-fontes-conab.md`, etc.

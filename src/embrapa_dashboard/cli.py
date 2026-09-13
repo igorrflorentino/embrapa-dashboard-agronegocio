@@ -43,6 +43,7 @@ from embrapa_dashboard.core import (
     chunked_run,
     pipeline_run,
 )
+from embrapa_dashboard.foreign_inflation import pipeline as foreign_inflation
 from embrapa_dashboard.gcp.clients import resolve_clients
 from embrapa_dashboard.ibge import pam_pipeline, ppm_pipeline, silvicultura_pipeline
 from embrapa_dashboard.ibge import pipeline as ibge_pipeline
@@ -141,6 +142,17 @@ INGESTS: list[IngestSpec] = [
         "bcb-inflation", bcb_inflation, accepts_full=True, label="BCB inflation", cadence_days=7
     ),
     IngestSpec("bcb-currency", bcb_currency, accepts_full=True, label="BCB FX", cadence_days=1),
+    # The foreign deflators (US CPI · euro-area HICP). In the weekly batch beside the
+    # BCB indices they mirror: a value in US$ corrected by a Brazilian index is the
+    # defect this pair exists to fix, so a stale foreign series and a fresh Brazilian
+    # one would put the two halves of the SAME conventions strip out of step.
+    IngestSpec(
+        "foreign-inflation",
+        foreign_inflation,
+        accepts_full=True,
+        label="Foreign inflation (CPI/HICP)",
+        cadence_days=7,
+    ),
     IngestSpec("comex", comex_pipeline, accepts_full=True, label="MDIC COMEX", cadence_days=7),
     # COMTRADE stays out of `ingest all`: it is key-gated (RuntimeError without a key) and
     # quota-gated/massive (252 reporters × years) — runs only via `ingest comtrade`.
@@ -517,6 +529,36 @@ def ingest_bcb_inflation(
         console.print(f"[green]✓[/green] BCB inflation bronze loaded → {destination}")
     else:
         console.print("[dim]BCB inflation: nothing new since last ingest.[/dim]")
+
+
+@ingest_app.command("foreign-inflation")
+def ingest_foreign_inflation(
+    full: bool = typer.Option(
+        False,
+        "--full",
+        help="Force a full refetch from FOREIGN_INFLATION_START_YEAR. Default is delta.",
+    ),
+    from_raw: bool = typer.Option(
+        False,
+        "--from-raw",
+        help="Rebuild Bronze from the archived raw trail, without re-fetching the APIs.",
+    ),
+) -> None:
+    """Ingest the foreign price indices that deflate US$ and € (BLS CPI-U, ECB HICP)."""
+    settings = get_settings()
+    with (
+        _transient_aware_exit("Foreign inflation"),
+        _tracked_run("foreign-inflation", params={"full": full, "from_raw": from_raw}) as (
+            _run_id,
+            log_path,
+        ),
+    ):
+        console.print(f"[dim]event log:[/dim] {log_path}")
+        destination = foreign_inflation.run(settings, full=full, from_raw=from_raw)
+    if destination:
+        console.print(f"[green]✓[/green] Foreign inflation bronze loaded → {destination}")
+    else:
+        console.print("[dim]Foreign inflation: nothing new since last ingest.[/dim]")
 
 
 @ingest_app.command("bcb-currency")

@@ -30,6 +30,25 @@ describe('ValueGapNote — o motivo', () => {
     expect(t).toContain('Esses anos ficam fora das somas.');
   });
 
+  it('NENHUM ano valorado: o índice inteiro ainda não foi ingerido', () => {
+    // O caso de um deflator recém-declarado cuja série ainda não existe na base — o CPI
+    // e o HICP, entre a v1.82.0 e o primeiro `embrapa ingest foreign-inflation`. Sem esta
+    // frase o aviso dizia "sem valor em 1997–2026" e calava o motivo, que aqui é o único
+    // acionável: não é um limite da fonte, é um passo de operação que falta.
+    const gap = { years: [1997, 1998, 1999], partial: [], months: {}, valuedRange: null, share: null };
+    const t = texto({ gap, unit: 'US$', correcao: 'CPI' });
+    expect(t).toContain('A série do CPI ainda não entrou na base');
+    expect(t).toContain('nenhum ano tem valor nesta convenção');
+    // E não deve ser confundida com "a série começa depois", que é outro fato.
+    expect(t).not.toContain('não alcança');
+  });
+
+  it('o mesmo motivo, por ano, na recusa da variação acumulada', () => {
+    const gap = { years: [1997, 1998], partial: [], months: {}, valuedRange: null, share: null };
+    const motivo = window.valueGapMotivo(gap, { currency: 'USD', correction: 'CPI' });
+    expect(motivo(1997)).toBe('a série do CPI ainda não entrou na base');
+  });
+
   it('lacuna no FIM numa correção: o índice ainda não entrou na base', () => {
     const gap = { years: [2026], partial: [2026], months: { 2026: [8] },
       valuedRange: [1997, 2026], share: null };
