@@ -8,8 +8,9 @@ without reading every `dbt/models/gold/*.sql`.
 Grains and columns below are the authoritative ones from `dbt/models/gold/_gold.yml`
 and `dbt/models/core/_core.yml`; the diagram shows **key columns + a representative
 few**, not every column (each fact carries the full
-`val_yearfx_{brl,usd,eur}` nominal + `val_real_{ipca,igpm,igpdi}_{brl,usd,eur}`
-deflated value matrix — see [§ Value columns](#value-columns)).
+`val_yearfx_{brl,usd,eur}` nominal + `val_real_{ipca,igpm,igpdi}_{brl,usd,eur}` +
+`val_real_cpi_usd` / `val_real_hicp_eur` deflated value matrix — see
+[§ Value columns](#value-columns)).
 
 ## ER diagram
 
@@ -185,17 +186,33 @@ dashboard scans MB not GB. They derive **from** Gold, they don't replace it.
 | `serving_comex_annual` | year × flow × NCM × UF × country | `gold_comex_flows` (month + via dropped) | overview / product / uf / partner / flow |
 | `serving_comex_seasonality` | year × **month** × flow × NCM × UF | `gold_comex_flows` (joins `dim_date`; country + via dropped) | seasonality (the only mart keeping month) |
 | `serving_comtrade_annual` | year × flow × cmd × reporter × partner | `gold_comtrade_flows` (column-pruned) | partner / flow / market-share |
-| `serving_quality_by_source` | source × data_quality_flag (+ share) | all four Gold facts | quality donut |
+| `serving_quality_by_source` | source × data_quality_flag (+ share) | all five Gold facts | quality donut |
 
 ## Value columns
 
 Every fact carries the same value matrix (chosen server-side by the BFF's
-currency × correction convention):
+currency × correction convention). It is **not** a Cartesian product: an inflation
+index measures the prices of ONE economy, so it can only say what something was
+worth in THAT economy's money.
 
 - `val_yearfx_{brl,usd,eur}` — **nominal**, at the FX of the record's period.
 - `val_real_ipca_{brl,usd,eur}` / `val_real_igpm_*` / `val_real_igpdi_*` —
-  **deflated to today** via the respective BCB chain index, optionally converted
-  to a foreign currency at today's FX. Use these for cross-year comparison.
+  **deflated to today** via the respective BCB chain index, then converted to a
+  foreign currency at **today's** FX. Under US$ or € this measures **Brazilian**
+  purchasing power printed in that currency — it is not US or euro-area inflation.
+- `val_real_cpi_usd` / `val_real_hicp_eur` — converted at the **record's** FX and
+  then deflated by **US CPI-U** / **euro-area HICP**. The dollar (or euro)
+  corrected by its own economy's prices. On the customs facts, whose source value
+  already IS US$, `val_real_cpi_usd` involves no FX at all and is therefore the one
+  real column with no pre-1994 gap. Each pairs with **one** currency only:
+  `val_real_cpi_brl` does not exist, and `serving.sql.ALLOWED_VALUE_COLUMNS` is what
+  makes it unbuildable.
+- The two deflated readings diverge by however much the REAL exchange rate moved
+  over the period, and neither corrects the other — which is why both are offered
+  and why the screen must say which is active.
+- The foreign pair rides the `enable_foreign_inflation` build-order gate: the
+  columns exist either way and read NULL until the first ingest. See
+  [`PLANS/correcao_inflacionaria_multimoeda.md`](../PLANS/correcao_inflacionaria_multimoeda.md).
 - Trade extras: `val_freight_usd` / `val_insurance_usd` (COMEX imports),
   `val_cif_usd` / `val_fob_usd` (COMTRADE).
 
