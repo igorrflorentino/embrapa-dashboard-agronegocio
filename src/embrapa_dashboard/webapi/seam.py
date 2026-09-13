@@ -903,20 +903,52 @@ def _productivity_crops(products: pd.DataFrame | None) -> list[dict]:
 # the perspective to "Não se aplica" before these are ever called).
 
 
+def _comex_gap_rows(
+    *,
+    y0: int | None,
+    y1: int | None,
+    codes: tuple,
+    uf_codes: tuple,
+    flow: str | None,
+    value_col: str,
+) -> pd.DataFrame | None:
+    """Coverage of ``value_col`` in a COMEX window, measured at the MONTHLY grain.
+
+    For the readers whose totals come from the annual mart (partner ranking, Sankey): its
+    build SUMs the months, and a SUM swallows a month without a deflator inside a non-null
+    year total — the frame's own coverage said 0,2% where the truth was 2,05% (Acre ×
+    castanha, US$ · IPCA, 2026-09-13). ``None`` — the serializer then reads the frame's
+    own coverage — when the column cannot have a gap (the declared US$) or when the monthly
+    mart does not carry it yet (it deploys in parallel with the app; see monthly_data).
+    """
+    if value_col == "val_yearfx_usd" or value_col not in gateway.fetch_comex_seasonality_columns():
+        return None
+    return gateway.fetch_comex_value_gap(
+        year_start=y0,
+        year_end=y1,
+        ncm_codes=codes,
+        flow=flow,
+        uf_codes=uf_codes,
+        value_column=value_col,
+    )
+
+
 def flow_data(banco_id: str, summary: dict | None = None, conv: dict | None = None) -> dict | None:
     """Origin→destination links for the Sankey (backs Fluxos territoriais).
 
     COMEX: UF de origem → país parceiro. COMTRADE: país reporter → país parceiro.
-    Returns {links, origin_label, dest_label, value_column, value_label} or None when
-    the banco lacks `flow`. The active UF (``states``) filter narrows the COMEX origin;
-    COMTRADE's origin is a reporter country (no UF column), so the UF selection does not
-    reach its reader — the frontend producer surfaces that as an honest "não se aplica"
-    note.
+    Returns {links, origin_label, dest_label, value_column, value_label, gap_rows} or None
+    when the banco lacks `flow`. The active UF (``states``) filter narrows the COMEX
+    origin; COMTRADE's origin is a reporter country (no UF column), so the UF selection
+    does not reach its reader — the frontend producer surfaces that as an honest "não se
+    aplica" note.
 
     ``conv`` (currency × correction) picks the summed column through
     :func:`effective_value_column`, exactly as in :func:`partner_data` — until v1.77.0
     the Sankey summed nominal US$ under any convention. ``None`` keeps the US$-native
-    nominal reading for direct callers.
+    nominal reading for direct callers. ``gap_rows`` is the COMEX coverage measured at the
+    monthly grain (:func:`_comex_gap_rows`); ``None`` for COMTRADE, whose Gold is annual
+    and whose own frame therefore sees every gap.
     """
     banco = banco_by_id(banco_id)
     if banco_id not in _LIVE_SOURCES or "flow" not in banco.provides:
@@ -924,6 +956,7 @@ def flow_data(banco_id: str, summary: dict | None = None, conv: dict | None = No
     y0, y1 = _years_from_summary(summary)
     codes = _apply_levels(banco_id, summary, _basket(summary))
     value_col, value_label = effective_value_column(banco, conv or _TRADE_NATIVE_CONV)
+    gap_rows = None
     if banco_id == "mdic_comex":
         # Exports only: SG_UF_NCM is the UF *of the product*, so on import rows
         # the real direction is country→UF — summing them into the directed
@@ -935,6 +968,14 @@ def flow_data(banco_id: str, summary: dict | None = None, conv: dict | None = No
             flow="export",
             uf_codes=_states(summary),
             value_column=value_col,
+        )
+        gap_rows = _comex_gap_rows(
+            y0=y0,
+            y1=y1,
+            codes=codes,
+            uf_codes=_states(summary),
+            flow="export",
+            value_col=value_col,
         )
     else:
         # The active flow / regime (customs) / tipo-de-mercado filters are server-side on
@@ -959,6 +1000,7 @@ def flow_data(banco_id: str, summary: dict | None = None, conv: dict | None = No
         "dest_label": dims.get("dest", {}).get("label", "Destino"),
         "value_column": value_col,
         "value_label": value_label,
+        "gap_rows": gap_rows,
     }
 
 
@@ -983,9 +1025,10 @@ def partner_data(
     the ranking always summed nominal US$ while the conventions strip claimed "IPCA",
     and a historical ranking is exactly where that matters: old flows get the largest
     correction, so the order itself can change. ``None`` keeps the US$-native nominal
-    reading for direct callers. Returns ``{rows, value_column, value_label}`` so the
-    serializer states the unit of the column ACTUALLY summed — a combo the mart lacks
-    (US$ × IGP-M) falls back to R$, and the unit has to follow it.
+    reading for direct callers. Returns ``{rows, value_column, value_label, gap_rows}`` so
+    the serializer states the unit of the column ACTUALLY summed — a combo the mart lacks
+    (US$ × IGP-M) falls back to R$, and the unit has to follow it — and, for COMEX, the
+    coverage measured at the monthly grain (:func:`_comex_gap_rows`; ``None`` for COMTRADE).
     """
     banco = banco_by_id(banco_id)
     if banco_id not in _LIVE_SOURCES or "partner" not in banco.provides:
@@ -993,6 +1036,7 @@ def partner_data(
     y0, y1 = _years_from_summary(summary)
     codes = _apply_levels(banco_id, summary, _basket(summary))
     value_col, value_label = effective_value_column(banco, conv or _TRADE_NATIVE_CONV)
+    gap_rows = None
     # The active flow / regime (customs) / tipo-de-mercado filters must reach the ranking:
     # the server-side ORDER BY sums the metric over the returned rows, so an unfiltered
     # ranking under an "Importação" (or a regime/market) selection ranks by the wrong,
@@ -1008,6 +1052,14 @@ def partner_data(
             rank_by=rank_by,
             value_column=value_col,
         )
+        gap_rows = _comex_gap_rows(
+            y0=y0,
+            y1=y1,
+            codes=codes,
+            uf_codes=_states(summary),
+            flow=_flow_from_summary(summary),
+            value_col=value_col,
+        )
     else:
         rows = gateway.fetch_comtrade_partners(
             year_start=y0,
@@ -1020,7 +1072,12 @@ def partner_data(
             value_column=value_col,
             **_country_reader_kwargs(summary),
         )
-    return {"rows": rows, "value_column": value_col, "value_label": value_label}
+    return {
+        "rows": rows,
+        "value_column": value_col,
+        "value_label": value_label,
+        "gap_rows": gap_rows,
+    }
 
 
 def products_by_uf(

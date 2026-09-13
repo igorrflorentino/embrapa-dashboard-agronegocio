@@ -854,11 +854,58 @@ def comex_seasonality(
             reference_month,
             any_value(month_abbr_pt) as month_abbr_pt,
             sum({value_column})      as total_value,
-            sum(net_weight_kg)       as total_weight_kg
+            sum(net_weight_kg)       as total_weight_kg,
+            -- The coverage pair (see trade_by_partner): a month the convention cannot value
+            -- sums to NULL, and the declared US$ says how much trade that leaves out.
+            sum(val_yearfx_usd)                                   as total_usd,
+            sum(if({value_column} is null, val_yearfx_usd, null)) as unvalued_usd
         from `{table}`
         {_where(conditions)}
         group by reference_year, reference_month
         order by reference_year, reference_month
+    """
+    return sql, params
+
+
+def comex_value_gap(
+    table: str,
+    *,
+    year_start: int | None = None,
+    year_end: int | None = None,
+    ncm_codes: Sequence[str] = (),
+    flow: str | None = None,
+    uf_codes: Sequence[str] = (),
+    value_column: str = "val_yearfx_usd",
+) -> tuple[str, list]:
+    """Where the convention's column is absent in a COMEX window, per year, measured at the
+    MONTHLY grain of ``serving_comex_seasonality``.
+
+    The annual mart cannot answer this: its build SUMs the months, and a SUM skips a missing
+    month in silence — the 2026 total of a group that traded Jan–Aug is non-null even when
+    August has no deflator index yet. Measured on prod 2026-09-13 (Acre × castanha, US$ ·
+    IPCA): the annual grain sees 0,2% of the trade without value, the monthly grain 2,05%.
+    The partner ranking and the Sankey take their totals from the annual mart and their
+    coverage from here, under the same filters (the monthly mart has no country, so the
+    sliver of self-trade those readers drop stays in this denominator).
+    """
+    value_column = _validate_column(value_column, ALLOWED_VALUE_COLUMNS, "value_column")
+    conditions: list[str] = []
+    params: list = []
+    _year_bounds(conditions, params, year_start, year_end)
+    _in_array(conditions, params, "ncm_code", "ncm_codes", ncm_codes)
+    _flow(conditions, params, flow)
+    _in_array(conditions, params, "state_acronym", "uf_codes", uf_codes)
+    sql = f"""
+        select
+            reference_year,
+            countif({value_column} is null)                        as rows_without_value,
+            countif({value_column} is not null)                    as rows_with_value,
+            sum(if({value_column} is null, val_yearfx_usd, null))  as unvalued_usd,
+            sum(val_yearfx_usd)                                    as total_usd
+        from `{table}`
+        {_where(conditions)}
+        group by reference_year
+        order by reference_year
     """
     return sql, params
 
@@ -1271,8 +1318,25 @@ def trade_by_partner(
             -- `priced_value` é quanto do valor SUSTENTA o preço; a razão entre ele e
             -- `total_value` é a cobertura que a tela precisa enunciar.
             sum(if(net_weight_kg is null, null, {value_column}))    as priced_value,
-            safe_divide(sum(if(net_weight_kg is null, null, {value_column})),
-                        sum(net_weight_kg))                        as price_per_kg
+            -- E o VALOR também pode faltar: o euro sem correção só existe desde 1999, e o
+            -- COMEX começa em 1997. Com a moeda escolhida pela faixa (v1.77.0) essa lacuna
+            -- ficou alcançável, e o denominador somaria o peso de 1997–1998 contra o valor
+            -- de 1999 em diante. As duas metades condicionam-se uma à outra.
+            safe_divide(sum(if(net_weight_kg is null or {value_column} is null,
+                               null, {value_column})),
+                        sum(if({value_column} is null, null, net_weight_kg))) as price_per_kg,
+            -- Onde a coluna da convenção falta dentro da janela, e quanto comércio isso
+            -- deixa fora da soma — medido no US$ declarado, que nunca falta. A soma pula o
+            -- NULL em silêncio; sem isto o total cobriria 1999–2026 sob um período que diz
+            -- 1997–2026, e a tela não teria como dizer.
+            sum(val_yearfx_usd)                                    as total_usd,
+            sum(if({value_column} is null, val_yearfx_usd, null))  as unvalued_usd,
+            array_agg(distinct if({value_column} is null, reference_year, null)
+                      ignore nulls)                                as years_without_value,
+            -- A year can be missing only IN PART — the latest COMEX month before its
+            -- deflator index is ingested — and the note must not call it a whole year.
+            array_agg(distinct if({value_column} is not null, reference_year, null)
+                      ignore nulls)                                as years_with_value
         from `{table}`
         {_where(conditions)}
         group by {partner_code_column}
@@ -1356,11 +1420,21 @@ def trade_flows(
             any_value({origin_name_column})  as origin_name,
             {dest_code_column}               as dest_code,
             any_value({dest_name_column})    as dest_name,
-            sum({value_column})              as total_value
+            sum({value_column})              as total_value,
+            -- Where the convention's column is absent inside the window, and the declared
+            -- US$ it leaves out of the sum — the same coverage pair as trade_by_partner.
+            sum(val_yearfx_usd)                                    as total_usd,
+            sum(if({value_column} is null, val_yearfx_usd, null))  as unvalued_usd,
+            array_agg(distinct if({value_column} is null, reference_year, null)
+                      ignore nulls)                                as years_without_value,
+            -- A year can be missing only IN PART — the latest COMEX month before its
+            -- deflator index is ingested — and the note must not call it a whole year.
+            array_agg(distinct if({value_column} is not null, reference_year, null)
+                      ignore nulls)                                as years_with_value
         from `{table}`
         {_where(conditions)}
         group by {origin_code_column}, {dest_code_column}
-        order by total_value desc
+        order by total_value desc nulls last
     """
     return sql, params
 

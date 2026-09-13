@@ -78,8 +78,14 @@ def test_o_extrator_recorta_um_campo_de_cada_vez():
     assert "exp_value" not in _linha_do("total_value")
 
 
-def test_o_denominador_do_preco_e_o_peso_somado():
-    assert "sum(net_weight_kg)" in _linha_do("price_per_kg")
+def test_o_denominador_do_preco_e_o_peso_de_quem_tem_valor():
+    """O peso somado — mas só onde há VALOR (v1.78.0).
+
+    O euro sem correção falta antes de 1999, e o COMEX começa em 1997: com o peso de
+    1997–1998 no denominador e o valor só de 1999 em diante, o preço de todo parceiro
+    antigo sairia barateado. As duas metades condicionam-se uma à outra.
+    """
+    assert "sum(if(val_yearfx_usd is null, null, net_weight_kg))" in _linha_do("price_per_kg")
 
 
 def test_o_numerador_do_preco_ignora_a_linha_sem_peso():
@@ -92,7 +98,7 @@ def test_o_numerador_do_preco_ignora_a_linha_sem_peso():
     numerador = _linha_do("price_per_kg")
     # Recorta o que está DENTRO do safe_divide, antes da vírgula que separa do peso.
     dentro = numerador.split("safe_divide(", 1)[1]
-    primeiro = dentro.split(", sum(net_weight_kg)", 1)[0]
+    primeiro = dentro.split(", sum(if(", 1)[0]
     assert "net_weight_kg is null" in primeiro, (
         f"o numerador do preço soma valor de linhas que não entram no denominador: {primeiro!r}"
     )

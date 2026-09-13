@@ -7,8 +7,12 @@
 // them. Until v1.77.0 they were not: US$ 3,09 mi rendered "US$ 3,09" on the cards, the
 // heatmap and the Capital axis alike (the same defect ViewFlows had). Weight stays in the
 // contract's `mil t`: its unit label already carries the magnitude.
+//
+// A `null` cell is a month the chosen convention cannot value (€ sem correção before
+// 1999): it stays null — a gap in the heatmap, out of the averages server-side — because
+// `Number(null) * 1e6` would draw it as a measured zero (v1.78.0).
 const _MI = 1e6;
-const _toRaw = (v) => (Number(v) || 0) * _MI;
+const _toRaw = (v) => (v == null ? null : (Number(v) || 0) * _MI);
 
 function ViewSeasonality({ summary, conventions, database }) {
   const data  = window.monthlyData(database, summary);
@@ -21,7 +25,7 @@ function ViewSeasonality({ summary, conventions, database }) {
   const avg = (Array.isArray(data.monthlyAvg) && data.monthlyAvg.length === 12
     ? data.monthlyAvg
     : Array.from({ length: 12 }, (_, m) => (data.monthlyAvg && data.monthlyAvg[m]) || 0)
-  ).map(_toRaw);
+  ).map((v) => _toRaw(v) || 0);
   const matrix = Object.fromEntries(
     Object.entries(data.matrix || {}).map(([y, row]) => [y, (row || []).map(_toRaw)]));
   // Volume (net weight) profile — the second seasonal metric, same 12-month shape.
@@ -39,6 +43,7 @@ function ViewSeasonality({ summary, conventions, database }) {
   // amplitude — ratioPresent devolve null e o card mostra '—'.
   const amplitude = window.ratioPresent(avg[peakIdx], avg[lowIdx]);
   const fmt = (v) => {
+    if (v == null) return 'sem valor nesta convenção';
     const n = Number(v) || 0;
     const { factor, suffix } = window.autoScaleNum(n);
     const scaled = n / factor;
@@ -89,6 +94,7 @@ function ViewSeasonality({ summary, conventions, database }) {
           title="Padrão sazonal ao longo dos anos"
           action={<span className="caption season-valuation">{data.valueLabel || data.unit}</span>}
         />
+        <window.ValueGapNote gap={data.valueGap} unit={data.unit} alvo="médias" />
         <window.MonthYearHeatmap matrix={matrix} years={years} unit={data.unit} formatValue={fmt} />
       </div>
 

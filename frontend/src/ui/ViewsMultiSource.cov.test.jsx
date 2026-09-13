@@ -18,6 +18,8 @@ import { cleanup, fireEvent, render } from '@testing-library/react';
 // no ranking, e a nota é a metade "nada some em silêncio" da regra. Stubá-los examinaria
 // o stub — e uma nota stubada deixaria a filtragem invisível passar verde.
 import './seriesUtils.js';
+// The REAL notes (window.NominalSeriesNote) the price-spread and mirror charts render.
+import './MonetaryNotes.jsx';
 import './MaterialityFloorNote.jsx';
 
 // pt-BR-ish stubs for the import-time-captured formatters.

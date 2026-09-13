@@ -705,6 +705,10 @@ def test_partner_data_sums_the_column_the_conventions_resolve(monkeypatch):
         recorded.update(k)
         return pd.DataFrame()
 
+    # A non-US$ column can have a gap: the seam measures it at the monthly grain (v1.78.0).
+    monkeypatch.setattr(seam.gateway, "fetch_comex_seasonality_columns", lambda: _SEAS_COLS)
+    monkeypatch.setattr(seam.gateway, "fetch_comex_value_gap", lambda **k: pd.DataFrame())
+
     monkeypatch.setattr(seam.gateway, "fetch_comex_partners", fake)
     monkeypatch.setattr(seam.gateway, "fetch_comtrade_partners", fake)
 
@@ -734,6 +738,10 @@ def test_flow_data_sums_the_column_the_conventions_resolve(monkeypatch):
     def fake(**k):
         recorded.update(k)
         return pd.DataFrame()
+
+    # A non-US$ column can have a gap: the seam measures it at the monthly grain (v1.78.0).
+    monkeypatch.setattr(seam.gateway, "fetch_comex_seasonality_columns", lambda: _SEAS_COLS)
+    monkeypatch.setattr(seam.gateway, "fetch_comex_value_gap", lambda **k: pd.DataFrame())
 
     monkeypatch.setattr(seam.gateway, "fetch_comex_flows", fake)
     monkeypatch.setattr(seam.gateway, "fetch_comtrade_flows", fake)

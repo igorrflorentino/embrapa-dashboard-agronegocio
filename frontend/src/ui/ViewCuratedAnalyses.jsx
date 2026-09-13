@@ -81,7 +81,7 @@ function ViewValueAdded() {
       </div>
 
       <div className="card">
-        <window.SectionHeader overline="Valor exportado por nível · US$ bi" title="Quanto sai em cada nível de industrialização"
+        <window.SectionHeader overline="Valor exportado por nível · US$ bi nominais" title="Quanto sai em cada nível de industrialização"
           action={<span className="caption">classificação da Curadoria</span>} />
         {data.nCodes < 1 ? (
           // Suppress the "nenhum código classificado" claim on a settled fetch failure — the
@@ -93,8 +93,9 @@ function ViewValueAdded() {
           )
         ) : (
           <>
-            <window.StackedArea series={areaSeries} valueKey="v" label="US$ bi" height={300} showLegend={false} />
+            <window.StackedArea series={areaSeries} valueKey="v" label="US$ bi nominais" height={300} showLegend={false} />
             <Legend series={areaSeries} />
+            <window.NominalSeriesNote />
           </>
         )}
       </div>
@@ -110,9 +111,9 @@ function ViewValueAdded() {
 
       {data.nCodes >= 1 && (
         <div className="card">
-          <window.SectionHeader overline="Preço médio por nível · US$/kg" title="Quanto vale o quilo em cada nível"
+          <window.SectionHeader overline="Preço médio por nível · US$/kg nominais" title="Quanto vale o quilo em cada nível"
             action={<span className="caption">{data.premium ? 'prêmio ×' + caNum(data.premium, 1) : '—'}</span>} />
-          <window.MultiLineChart series={priceSeries} valueKey="v" label="US$/kg" height={260} trend />
+          <window.MultiLineChart series={priceSeries} valueKey="v" label="US$/kg nominais" height={260} trend />
           <p className="caption" style={{ padding: '8px 4px 0' }}>
             O prêmio de processamento é o quociente entre o preço do nível <strong>mais processado</strong> e o do
             <strong> menos processado</strong> presentes — agregar valor é vender o quilo mais caro.

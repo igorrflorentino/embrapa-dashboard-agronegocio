@@ -333,14 +333,15 @@ function ViewPriceSpread() {
       </div>
 
       <div className="card">
-        <window.SectionHeader overline="Porteira vs. porto · US$/kg" title="Onde o valor é capturado"
+        <window.SectionHeader overline="Porteira vs. porto · US$/kg nominais" title="Onde o valor é capturado"
           action={<span className="caption">IBGE × MDIC</span>} />
-        <window.MultiLineChart series={lineSeries} valueKey="v" label="US$/kg" height={300} trend showLegend={false} />
+        <window.MultiLineChart series={lineSeries} valueKey="v" label="US$/kg nominais" height={300} trend showLegend={false} />
         <div className="pc-legend">
           {lineSeries.map(s => (
             <span key={s.name} className="pc-legend-item"><span className="pc-legend-dot" style={{ background: s.color }}></span>{s.name}</span>
           ))}
         </div>
+        <window.NominalSeriesNote />
       </div>
 
       <div className="card">
@@ -399,13 +400,14 @@ function ViewMirror() {
 
       <div className="card">
         <window.SectionHeader overline="A mesma exportação, três fontes" title="MDIC × Comtrade × parceiros"
-          action={<span className="caption">US$ bi · MDIC × UN Comtrade</span>} />
-        <window.MultiLineChart series={lineSeries} valueKey="v" label="US$ bi" height={300} showLegend={false} />
+          action={<span className="caption">US$ bi nominais · MDIC × UN Comtrade</span>} />
+        <window.MultiLineChart series={lineSeries} valueKey="v" label="US$ bi nominais" height={300} showLegend={false} />
         <div className="pc-legend">
           {lineSeries.map(s => (
             <span key={s.name} className="pc-legend-item"><span className="pc-legend-dot" style={{ background: s.color }}></span>{s.name}</span>
           ))}
         </div>
+        <window.NominalSeriesNote />
       </div>
 
       <div className="card">

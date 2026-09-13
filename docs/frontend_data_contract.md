@@ -209,6 +209,9 @@ município passes the cascade iff it clears every active facet (intersection).
 - `unit` = symbol of the column ACTUALLY summed (a US$ × IGP-M request falls back to R$);
   `valueLabel` = the convention as the view prints it.
 - `node.value` = Σ of the links touching it (pre-summed), in **`unit` mi**.
+- `valueGap` = `{ years, share }` or `null` — same meaning as in §4.2. A link with no value
+  in the convention (traded only in those years) is not drawn: it lies wholly inside the
+  gap the view names.
 
 ### 4.2 `partnerData` → partner ranking
 `{ preview, flowLabel, unit, valueLabel, partners: [{ name, exp, imp, value, weight, price,
@@ -229,6 +232,20 @@ oldest flows get the largest correction and the order itself can change.
 - `unit` = symbol of the column ACTUALLY summed (R$ / US$ / €) — not of the request: a
   combo the mart lacks (US$ × IGP-M) falls back to R$, and the unit follows it.
 - `valueLabel` = the convention as the view prints it, e.g. "Valor real (IPCA) — US$ · FOB".
+- `valueGap` = `{ years, partial, share }` or `null`: the years inside the window the
+  convention cannot value, which of them are missing only IN PART (`partial`), and the share
+  of the window's trade — measured in the declared US$, which never goes missing — they
+  leave out of the sum. A partial year is the latest COMEX month before its deflator index
+  is ingested (Gold deflates month by month; measured 2026-09-13, every August 2026 row had
+  no `val_real_ipca_*`): the view says "parte do comércio de 2026", never "2026". For
+  COMEX the coverage comes from the MONTHLY mart (`gateway.fetch_comex_value_gap`, same
+  filters): the annual mart's build SUMs the months, so a month without a deflator vanishes
+  inside a non-null year total — measured at the annual grain the gap was 0,2% of Acre ×
+  castanha, at the monthly grain 2,05%. COMTRADE's Gold is annual, so its own frame sees it. € sem correção only exists from 1999
+  and COMEX starts in 1997: a SUM skips the NULL in silence, so a "1997–2026" euro total
+  was a 1999–2026 total (v1.78.0). Computed over the whole window, before the top-N cut.
+  The view MUST name it. A partner traded only in those years gets `value: null`, never 0,
+  and the price divides value by the weight of the SAME rows (both halves conditioned).
 - `name` = `country_name` (COMEX) / `partner_name` (COMTRADE).
 - `exp` = `SUM(<value column> WHERE flow='export')`, `imp` = import; `value` = exp+imp,
   all in **`unit` mi**. `weight` = net weight in **mil t**.
@@ -256,6 +273,10 @@ COMEX Gold has `reference_month`. Build `matrix[year][1..12]`, `monthlyAvg[12]`,
 `series[{ym,y,m,v}]` from `SUM(<value column>)` by (year, month), in **`unit` mi**.
 - The column follows the conventions strip like §4.1/§4.2: `unit` = symbol of the column
   actually summed, `valueLabel` = the convention on screen.
+- `valueGap` = `{ years, share }` or `null` (§4.2). A month whose rows exist but the
+  convention cannot value (€ sem correção before 1999) is `null` in `matrix` and out of
+  `monthlyAvg`; a month with no ROW stays `0` — COMEX lists only what was traded. Until
+  v1.78.0 both were `0`, and the fake zeros pulled every monthly average down.
 - The mart only carries the full currency matrix since v1.77.0, and a merge deploys the
   app and rebuilds the marts IN PARALLEL (on 2026-09-09 the app was live 3m32s before the
   mart). So while `serving_comex_seasonality` lacks the requested column, the seam serves
