@@ -415,6 +415,23 @@ def test_flow_route_threads_the_convention(monkeypatch):
     assert client.get("/api/flow?banco=mdic_comex&currency=usd").status_code == 400
 
 
+def test_monthly_route_threads_the_convention(monkeypatch):
+    """Same as /api/flow and /api/partners (v1.77.0): currency+correction reach the seam,
+    and an invalid value 400s instead of silently deflating with a default."""
+    from embrapa_dashboard.webapi import seam, serializers
+
+    client = _client(monkeypatch)
+    captured = {}
+    monkeypatch.setattr(
+        seam, "monthly_data", lambda banco, summary=None, conv=None: captured.update(conv=conv)
+    )
+    monkeypatch.setattr(serializers, "serialize_monthly", lambda *a, **k: {})
+    ok = client.get("/api/monthly?banco=mdic_comex&currency=EUR&correction=IPCA")
+    assert ok.status_code == 200
+    assert captured["conv"] == {"currency": "EUR", "correction": "IPCA"}
+    assert client.get("/api/monthly?banco=mdic_comex&correction=IPCA-X").status_code == 400
+
+
 @pytest.mark.parametrize(
     ("endpoint", "seam_fn", "serialize_fn"),
     [
@@ -1091,7 +1108,7 @@ def test_trade_get_endpoints_shape_empty_seam_payload(monkeypatch):
     client = _client(monkeypatch)
     monkeypatch.setattr(seam, "flow_data", lambda banco, summary=None, **_k: None)
     monkeypatch.setattr(seam, "partner_data", lambda banco, summary=None, **_k: None)
-    monkeypatch.setattr(seam, "monthly_data", lambda banco, summary=None: None)
+    monkeypatch.setattr(seam, "monthly_data", lambda banco, summary=None, **_k: None)
 
     flow = client.get("/api/flow?banco=mdic_comex").get_json()
     assert flow["nodes"] == [] and flow["links"] == []

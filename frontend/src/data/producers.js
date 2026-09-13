@@ -557,15 +557,24 @@ window.monthlyData = function monthlyData(bancoId, summary) {
   // The seasonality mart now KEEPS state_acronym in its grain (P6), so the UF
   // (`states`) filter narrows the seasonal profile to one origin state — send it.
   const ax = activeAxisParams();
-  const key = `trade:monthly:${bancoId}:${filterSig(summary)}:${axisKey(ax)}`;
-  ensure(key, () => `${API}/monthly?${qs({ banco: bancoId, codes, states, y0, y1, ...ax })}`);
+  // currency × correction pick the summed column server-side (as in flowData and
+  // partnerData), so they belong in the request AND the cache key — until v1.77.0 the
+  // seasonality view was nominal US$ under any convention.
+  const conv = window.dataStore && window.dataStore.conv
+    ? window.dataStore.conv()
+    : { currency: 'BRL', correction: 'IPCA' };
+  const key = `trade:monthly:${bancoId}:${conv.currency}|${conv.correction}:${filterSig(summary)}:${axisKey(ax)}`;
+  ensure(key, () => `${API}/monthly?${qs({
+    banco: bancoId, codes, states, y0, y1,
+    currency: conv.currency, correction: conv.correction, ...ax,
+  })}`);
   const data = get(key);
   return data
     ? { ...data }
     : {
         preview: false,
         loadError: errorOf(key),
-        unit: 'US$',
+        unit: (window.CURRENCY_FX && window.CURRENCY_FX[conv.currency] || {}).symbol || conv.currency,
         weightUnit: 'mil t',
         years: [],
         months: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],

@@ -141,7 +141,12 @@ models:
       Monthly COMEX mart — the only serving mart that keeps reference_month.
       Backs the seasonality view (matrix[year][1..12], monthlyAvg). `state_acronym`
       is KEPT in the grain so the seasonal profile can be narrowed to one origin UF
-      (P6 per-UF scoping). Joined to dim_date for the pt-BR month label.
+      (P6 per-UF scoping). Joined to dim_date for the pt-BR month label. Monetary
+      measures: the same currency matrix as serving_comex_annual (val_yearfx_{brl,usd,eur}
+      + val_real_ipca_{brl,usd,eur} + val_real_{igpm,igpdi}_{brl,eur}) since v1.77.0 —
+      until then only val_yearfx_usd, so the seasonality view could not follow the
+      conventions strip. The BFF checks this table's schema before asking for a column,
+      because the app and this mart deploy in parallel on a merge.
     tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:

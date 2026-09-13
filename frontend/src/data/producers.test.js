@@ -172,6 +172,27 @@ describe('trade producers thread the active filter summary', () => {
     expect(urlOf(f, 1)).toContain('currency=USD');
   });
 
+  it('monthlyData sends the active currency × correction and keys the cache by it', async () => {
+    // The third view of the same defect: Sazonalidade was nominal US$ under any convention.
+    const f = vi.fn(() => jsonRes({}));
+    const w = await loadAll(f);
+    let conv = { currency: 'BRL', correction: 'IGP-M' };
+    w.dataStore = { ...(w.dataStore || {}), conv: () => conv };
+    w.CURRENCY_FX = { BRL: { symbol: 'R$' } };
+
+    const cold = w.monthlyData('mdic_comex', {});
+    expect(urlOf(f)).toContain('currency=BRL');
+    expect(urlOf(f)).toContain('correction=IGP-M');
+    expect(cold.unit).toBe('R$');
+
+    w.monthlyData('mdic_comex', {}); // same convention → cache hit
+    expect(f).toHaveBeenCalledTimes(1);
+    conv = { currency: 'BRL', correction: 'IPCA' };
+    w.monthlyData('mdic_comex', {}); // the strip changed → refetch
+    expect(f).toHaveBeenCalledTimes(2);
+    expect(urlOf(f, 1)).toContain('correction=IPCA');
+  });
+
   it('keys the resource by the filter signature so a changed window refetches', async () => {
     const f = vi.fn(() => jsonRes({}));
     const w = await loadAll(f);

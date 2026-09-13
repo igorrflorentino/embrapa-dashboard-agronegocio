@@ -77,15 +77,16 @@
 //
 // @typedef {Object} MonthlyData         window.monthlyData(bancoId, summary)
 // @property {boolean} preview
-// @property {string}  unit               Value (Capital) unit — 'US$'.
+// @property {string}  unit               Value (Capital) unit — symbol of the column the server ACTUALLY summed (R$/US$/€); follows the conventions strip.
+// @property {(string|null)} valueLabel   the convention on screen — and says so when the monthly mart cannot serve the chosen correction yet and the server fell back to nominal US$.
 // @property {string}  weightUnit         Volume unit — 'mil t' (net weight).
 // @property {number[]} years
 // @property {number[]} months           [1..12]
-// @property {Object.<number,number[]>} matrix         year → 12 monthly VALUE (US$ mi) values.
-// @property {number[]} monthlyAvg       12 value (US$ mi) values.
+// @property {Object.<number,number[]>} matrix         year → 12 monthly VALUE (`unit` mi) values.
+// @property {number[]} monthlyAvg       12 value (`unit` mi) values.
 // @property {Object.<number,number[]>} weightMatrix   year → 12 monthly WEIGHT (mil t) values.
 // @property {number[]} weightMonthlyAvg 12 weight (mil t) values.
-// @property {{ym:string,y:number,m:number,v:number,w:number}[]} series   v = value (US$ mi), w = weight (mil t).
+// @property {{ym:string,y:number,m:number,v:number,w:number}[]} series   v = value (`unit` mi), w = weight (mil t).
 //
 // @typedef {Object} ProductivityData    window.productivityData(bancoId, cropCode, summary)
 // @property {boolean} preview

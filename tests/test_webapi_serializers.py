@@ -1082,6 +1082,17 @@ def test_serialize_monthly_empty_emits_twelve_values():
     assert out_empty_df["weightMonthlyAvg"] == [0.0] * 12
 
 
+def test_serialize_monthly_unit_follows_the_column_actually_summed():
+    """Same rule as the ranking and the Sankey (v1.77.0): `unit` is the symbol of the
+    SUMMED column, and `valueLabel` carries the convention — including the fallback label
+    the seam sends while the monthly mart cannot serve the chosen correction yet."""
+    assert s.serialize_monthly(None)["unit"] == "US$"
+    out = s.serialize_monthly(
+        None, value_column="val_real_ipca_eur", value_label="Valor real (IPCA) — € · FOB"
+    )
+    assert out["unit"] == "€" and out["valueLabel"] == "Valor real (IPCA) — € · FOB"
+
+
 def test_serialize_monthly_populated_emits_value_and_weight():
     """A populated frame yields BOTH the Capital (US$ mi) and Volume (mil t)
     monthly matrices + 12-month averages, plus per-row v/w on the series."""
@@ -1090,19 +1101,19 @@ def test_serialize_monthly_populated_emits_value_and_weight():
             {
                 "reference_year": 2020,
                 "reference_month": 1,
-                "total_value_usd": 6_000_000,
+                "total_value": 6_000_000,
                 "total_weight_kg": 2_000_000,
             },
             {
                 "reference_year": 2021,
                 "reference_month": 1,
-                "total_value_usd": 12_000_000,
+                "total_value": 12_000_000,
                 "total_weight_kg": 4_000_000,
             },
             {
                 "reference_year": 2020,
                 "reference_month": 7,
-                "total_value_usd": 3_000_000,
+                "total_value": 3_000_000,
                 "total_weight_kg": 1_000_000,
             },
         ]

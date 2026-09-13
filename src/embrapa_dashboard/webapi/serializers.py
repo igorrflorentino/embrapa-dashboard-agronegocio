@@ -992,11 +992,27 @@ def _monthly_avg(matrix: dict[int, list[float | None]], years: list[int]) -> lis
     return out
 
 
-def serialize_monthly(df: pd.DataFrame | None) -> dict:
+def serialize_monthly(
+    df: pd.DataFrame | None,
+    *,
+    value_column: str | None = None,
+    value_label: str | None = None,
+) -> dict:
     """seam.monthly_data() → MonthlyData. year→12 monthly values + the 12-month avg,
-    for BOTH Capital (value, US$ mi) and Volume (net weight, mil t), so the seasonal
-    profile can overlay the two metrics on one month axis."""
-    base = {"preview": False, "unit": "US$", "weightUnit": "mil t", "months": list(range(1, 13))}
+    for BOTH Capital (value, millions of ``unit``) and Volume (net weight, mil t), so the
+    seasonal profile can overlay the two metrics on one month axis.
+
+    ``unit`` is the symbol of the column the seam ACTUALLY summed (``value_column``;
+    default the US$-native nominal one) and ``valueLabel`` names the convention — the
+    same rule as :func:`serialize_partner` / :func:`serialize_flow`."""
+    currency = fmt.column_currency(value_column or "val_yearfx_usd") or "USD"
+    base = {
+        "preview": False,
+        "unit": fmt.CURRENCY_SYMBOL[currency],
+        "valueLabel": value_label,
+        "weightUnit": "mil t",
+        "months": list(range(1, 13)),
+    }
     if _empty(df):
         # Always 12 values, even with no data: ViewSeasonality computes peak/low/
         # amplitude over monthlyAvg and would crash on an empty list (indexOf max of
@@ -1019,7 +1035,7 @@ def serialize_monthly(df: pd.DataFrame | None) -> dict:
     series: list[dict] = []
     for r in df.itertuples():
         y, m = int(r.reference_year), int(r.reference_month)
-        v = _num(r.total_value_usd) / 1e6  # US$ mi
+        v = _num(r.total_value) / 1e6  # unit mi
         w = _num(getattr(r, "total_weight_kg", 0)) / 1e6  # kg → mil t
         v_matrix.setdefault(y, [None] * 12)[m - 1] = v
         w_matrix.setdefault(y, [None] * 12)[m - 1] = w

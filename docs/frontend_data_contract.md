@@ -253,11 +253,15 @@ oldest flows get the largest correction and the order itself can change.
 
 ### 4.3 `monthlyData` → seasonality (**COMEX only**)
 COMEX Gold has `reference_month`. Build `matrix[year][1..12]`, `monthlyAvg[12]`,
-`series[{ym,y,m,v}]` from `SUM(val_yearfx_usd)` by (year, month).
-> **Always nominal US$.** The only monetary column `serving_comex_seasonality` carries is
-> `val_yearfx_usd`, so this view does NOT follow the conventions strip — unlike §4.1 and
-> §4.2 since v1.77.0. Honouring it needs the mart to carry the `val_real_*` columns first:
-> a dbt change plus a prod rebuild that must land BEFORE the reader asks for them.
+`series[{ym,y,m,v}]` from `SUM(<value column>)` by (year, month), in **`unit` mi**.
+- The column follows the conventions strip like §4.1/§4.2: `unit` = symbol of the column
+  actually summed, `valueLabel` = the convention on screen.
+- The mart only carries the full currency matrix since v1.77.0, and a merge deploys the
+  app and rebuilds the marts IN PARALLEL (on 2026-09-09 the app was live 3m32s before the
+  mart). So while `serving_comex_seasonality` lacks the requested column, the seam serves
+  the nominal US$ it always had and `valueLabel` says so — instead of the query failing
+  for everyone on the default BRL·IPCA. The schema check is table metadata (free), cached
+  at the mart TTL.
 > COMTRADE is annual → never call this for `un_comtrade` (Sazonalidade = "Não se aplica").
 
 ---

@@ -397,11 +397,13 @@ def fetch_comex_seasonality(
     ncm_codes: Sequence[str] = (),
     flow: str | None = None,
     uf_codes: Sequence[str] = (),
+    value_column: str = "val_yearfx_usd",
 ):
     """Monthly COMEX value for the seasonality view (backs monthlyData).
 
     ``uf_codes`` optionally narrows to the origin UFs (the mart now keeps
-    ``state_acronym`` in its grain — P6 per-UF scoping)."""
+    ``state_acronym`` in its grain — P6 per-UF scoping). ``value_column`` is the
+    currency × correction column the seam resolved from the conventions strip."""
     settings = get_settings()
     table = sqlbuild.table_ref(settings, "bq_serving_dataset", "serving_comex_seasonality")
     sql, params = sqlbuild.comex_seasonality(
@@ -411,8 +413,23 @@ def fetch_comex_seasonality(
         ncm_codes=tuple(ncm_codes),
         flow=flow,
         uf_codes=tuple(uf_codes),
+        value_column=value_column,
     )
     return run_query(sql, params)
+
+
+@cache.memoize()
+def fetch_comex_seasonality_columns() -> frozenset[str]:
+    """Column names of ``serving_comex_seasonality`` (FREE — table metadata, no query).
+
+    The seam asks this before requesting a currency × correction column: the mart only
+    carries the full currency matrix since v1.77.0, and a merge to main deploys the app
+    and rebuilds the marts IN PARALLEL (webapi-deploy and dbt-build-prod both fire on the
+    push — on 2026-09-09 the app was live 3m32s before the mart). Memoized at the mart
+    TTL, so a rebuild is picked up within ``cache_default_timeout``."""
+    settings = get_settings()
+    ref = sqlbuild.table_ref(settings, "bq_serving_dataset", "serving_comex_seasonality")
+    return frozenset(f.name for f in _client().get_table(ref).schema)
 
 
 @cache.memoize()

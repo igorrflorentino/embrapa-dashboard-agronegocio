@@ -1112,12 +1112,23 @@ def partners():
 def monthly():
     """Monthly seasonality, COMEX only (basket + year window via
     ``codes``/``y0``/``y1``). The seasonality mart collapses UF away, so the UF
-    (``states``) filter does not apply here — the frontend surfaces that honestly."""
+    (``states``) filter does not apply here — the frontend surfaces that honestly.
+    currency+correction pick the value column server-side, same as /snapshot."""
     banco = request.args.get("banco", "")
+    conv, err = _conversion_or_400()
+    if err:
+        return err
     summary, err = _with_filter_axes(_filter_summary())
     if err:
         return err
-    return jsonify(serializers.serialize_monthly(seam.monthly_data(banco, summary)))
+    payload = seam.monthly_data(banco, summary, conv=conv) or {}
+    return jsonify(
+        serializers.serialize_monthly(
+            payload.get("rows"),
+            value_column=payload.get("value_column"),
+            value_label=payload.get("value_label"),
+        )
+    )
 
 
 # ── cross-source comparable series ─────────────────────────────────────────────

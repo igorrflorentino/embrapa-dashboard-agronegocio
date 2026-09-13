@@ -827,14 +827,21 @@ def comex_seasonality(
     ncm_codes: Sequence[str] = (),
     flow: str | None = None,
     uf_codes: Sequence[str] = (),
+    value_column: str = "val_yearfx_usd",
 ) -> tuple[str, list]:
     """Monthly COMEX value + net weight from ``serving_comex_seasonality`` (backs
     monthlyData). Both metrics are carried so the seasonal profile can overlay
-    Volume (peso) and Capital (US$) on the same month axis.
+    Volume (peso) and Capital on the same month axis.
+
+    ``value_column`` (allowlist-validated) is the currency × correction column the seam
+    resolved from the conventions strip. Until v1.77.0 the mart carried only nominal US$
+    and this builder had it written in, so the view stayed nominal under any convention;
+    the alias is currency-neutral (``total_value``) for the same reason.
 
     ``uf_codes`` optionally narrows to the origin UFs (``state_acronym``) — the mart
     now keeps it in the grain (P6), so the seasonal profile can be scoped to one
     state; empty/absent = national."""
+    value_column = _validate_column(value_column, ALLOWED_VALUE_COLUMNS, "value_column")
     conditions: list[str] = []
     params: list = []
     _year_bounds(conditions, params, year_start, year_end)
@@ -846,7 +853,7 @@ def comex_seasonality(
             reference_year,
             reference_month,
             any_value(month_abbr_pt) as month_abbr_pt,
-            sum(val_yearfx_usd)      as total_value_usd,
+            sum({value_column})      as total_value,
             sum(net_weight_kg)       as total_weight_kg
         from `{table}`
         {_where(conditions)}

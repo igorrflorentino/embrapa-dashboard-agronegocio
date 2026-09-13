@@ -46,9 +46,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
   agora converte de volta antes de escalar, e o teste usa a unidade do contrato, com
   Acre → Peru medido em produção como âncora.
 
-- Os aliases do SQL de parceiros e do Sankey deixaram de afirmar a moeda: `value_usd` →
-  `total_value`, `price_usd_per_kg` → `price_per_kg`, e `exp_value`/`imp_value`/
-  `priced_value`. A coluna não é mais sempre dólar.
+- **"Sazonalidade" também ignorava a convenção — e também rotulava milhões como
+  unidades.** Mesma correção das outras duas, com uma diferença: a mart mensal
+  (`serving_comex_seasonality`) guardava só `val_yearfx_usd`, então passou a carregar a
+  mesma matriz de moedas da anual. Conferido em produção antes do build: para Acre ×
+  castanha, a base do Gold dá 147,26 mi US$ nominal, 162,53 mi US$·IPCA e 828,55 mi
+  R$·IPCA, idênticos à `serving_comex_annual`.
+
+  Um merge publica a aplicação e reconstrói as marts **em paralelo** — em 2026-09-09 a
+  aplicação ficou no ar 3m32s antes da mart. Por isso o seam consulta o esquema da mart
+  (metadado da tabela, grátis, em cache pelo TTL das marts) antes de pedir a coluna:
+  enquanto ela não existe, serve o US$ nominal de sempre e o rótulo diz "a série mensal
+  ainda não tem a correção escolhida", em vez de a consulta falhar para todo mundo no
+  padrão R$·IPCA. A tela convertia milhões como se fossem unidades em três lugares —
+  cartões, mapa de calor e eixo de Capital — e agora converte uma vez, na entrada.
+
+- Os aliases do SQL de parceiros, do Sankey e da Sazonalidade deixaram de afirmar a moeda:
+  `value_usd`/`total_value_usd` → `total_value`, `price_usd_per_kg` → `price_per_kg`, e
+  `exp_value`/`imp_value`/`priced_value`. A coluna não é mais sempre dólar.
 
 ### Observado, fora deste escopo
 
@@ -57,12 +72,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
   2005 sai 3,07× o de hoje (1,56× pelo método do Gold); como as vendas do Acre à Bolívia se
   concentram em 2004–2015 e as ao Peru a partir de 2016, a planilha inverte o ranking
   (Bolívia 106,8 mi × Peru 93,9 mi). Os dados das duas são idênticos, ano a ano, ao dólar.
-- **Sazonalidade** continua em US$ nominal, e tem o mesmo erro de escala do Sankey (a tela
-  escala como dólar cru o valor que o servidor já manda em milhões). O nominal não se
-  resolve só na aplicação: `serving_comex_seasonality` guarda apenas `val_yearfx_usd`, então
-  o mart precisa carregar as colunas `val_real_*` antes — mudança no dbt + rebuild em
-  produção, que tem de chegar ANTES do leitor que as pede.
-
 ## [1.76.2] - 2026-09-09
 
 ### Adicionado

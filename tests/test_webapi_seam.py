@@ -2133,20 +2133,61 @@ def test_products_by_uf_none_without_geo_capability():
     assert seam.products_by_uf("un_comtrade", {"states": ["AC"]}) is None
 
 
+# The monthly mart's monetary columns once dbt has rebuilt it with the v1.77.0 matrix.
+_SEAS_COLS = frozenset(
+    {"val_yearfx_usd", "val_yearfx_brl", "val_real_ipca_brl", "val_real_ipca_usd"}
+)
+
+
 def test_monthly_data_comex_only(monkeypatch):
     seam = _seam()
     recorded = {}
+    monkeypatch.setattr(seam.gateway, "fetch_comex_seasonality_columns", lambda: _SEAS_COLS)
     monkeypatch.setattr(
         seam.gateway,
         "fetch_comex_seasonality",
-        lambda **k: recorded.update(k) or pd.DataFrame([{"month": 1, "value_usd": 5.0}]),
+        lambda **k: recorded.update(k) or pd.DataFrame([{"month": 1, "total_value": 5.0}]),
     )
     out = seam.monthly_data("mdic_comex", {"basket": ["0801"]})
     assert recorded["ncm_codes"] == ("0801",)
-    assert not out.empty
+    assert not out["rows"].empty
     # COMTRADE has no monthly grain capability.
     assert seam.monthly_data("un_comtrade") is None
     assert seam.monthly_data("ibge_pevs") is None
+
+
+def test_monthly_data_sums_the_column_the_conventions_resolve(monkeypatch):
+    """Sazonalidade follows the strip like the Sankey and the ranking (v1.77.0)."""
+    seam = _seam()
+    recorded = {}
+    monkeypatch.setattr(seam.gateway, "fetch_comex_seasonality_columns", lambda: _SEAS_COLS)
+    monkeypatch.setattr(
+        seam.gateway, "fetch_comex_seasonality", lambda **k: recorded.update(k) or pd.DataFrame()
+    )
+    out = seam.monthly_data("mdic_comex", {}, conv={"currency": "BRL", "correction": "IPCA"})
+    assert recorded["value_column"] == out["value_column"] == "val_real_ipca_brl"
+    assert "IPCA" in out["value_label"] and "R$" in out["value_label"]
+    # No convention → the customs-native reading, for direct callers.
+    assert seam.monthly_data("mdic_comex", {})["value_column"] == "val_yearfx_usd"
+
+
+def test_monthly_data_degrades_to_nominal_while_the_mart_lacks_the_column(monkeypatch):
+    """A merge deploys the app and rebuilds the marts IN PARALLEL — on 2026-09-09 the app
+    was live 3m32s before the mart. Asking the old mart for `val_real_ipca_brl` would fail
+    for everyone on the default convention; the seam serves the nominal US$ it always had
+    and the label says so, instead of claiming a correction that did not happen."""
+    seam = _seam()
+    recorded = {}
+    monkeypatch.setattr(
+        seam.gateway, "fetch_comex_seasonality_columns", lambda: frozenset({"val_yearfx_usd"})
+    )
+    monkeypatch.setattr(
+        seam.gateway, "fetch_comex_seasonality", lambda **k: recorded.update(k) or pd.DataFrame()
+    )
+    out = seam.monthly_data("mdic_comex", {}, conv={"currency": "BRL", "correction": "IPCA"})
+    assert recorded["value_column"] == out["value_column"] == "val_yearfx_usd"
+    assert out["value_label"].startswith("Valor nominal — US$")
+    assert "ainda não tem a correção" in out["value_label"]
 
 
 # ── cross_metric_refs / cross_series ───────────────────────────────────────────
@@ -2871,6 +2912,7 @@ def test_monthly_data_threads_uf_to_seasonality_reader(monkeypatch):
     (the mart keeps state_acronym in its grain — P6)."""
     seam = _seam()
     rec = {}
+    monkeypatch.setattr(seam.gateway, "fetch_comex_seasonality_columns", lambda: _SEAS_COLS)
     monkeypatch.setattr(
         seam.gateway,
         "fetch_comex_seasonality",
@@ -2889,6 +2931,7 @@ def test_trade_adapters_thread_flow_filter(monkeypatch):
     numbers (COMEX exports ~40x imports) while the filter chips claim the view is scoped."""
     seam = _seam()
     rec = {}
+    monkeypatch.setattr(seam.gateway, "fetch_comex_seasonality_columns", lambda: _SEAS_COLS)
     monkeypatch.setattr(
         seam.gateway,
         "fetch_comex_seasonality",

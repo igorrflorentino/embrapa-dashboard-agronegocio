@@ -480,6 +480,16 @@ def test_comex_seasonality_filters_flow_and_ncm():
     assert by_name["ncm_codes"].values == ["08012100"]
 
 
+def test_comex_seasonality_sums_the_convention_column():
+    """The seasonality reads the column the conventions strip resolved (v1.77.0) — before
+    it the mart carried only nominal US$ and the builder had it written in."""
+    query, _ = sql.comex_seasonality("p.s.seas", value_column="val_real_igpm_brl")
+    assert "sum(val_real_igpm_brl)" in query and "val_yearfx_usd" not in query
+    assert "as total_value" in query
+    with pytest.raises(ValueError):
+        sql.comex_seasonality("p.s.seas", value_column="val_yearfx_usd) --")
+
+
 @pytest.mark.parametrize(
     "builder, table, code_col, name_col, escopo",
     [

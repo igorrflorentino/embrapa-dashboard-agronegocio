@@ -104,7 +104,9 @@ describe('ViewSeasonality — smoke + main branches', () => {
     expect(barChartProps).toBeTruthy();
     expect(dualAxisProps).toBeUndefined();
     expect(barChartProps.data).toHaveLength(12);
-    expect(barChartProps.data[2]).toEqual({ name: 'Mar', value: 30 });
+    // O contrato manda milhões (30 = 30 mi); o gráfico recebe o valor cru, que é o que a
+    // régua de magnitude dele sabe ler.
+    expect(barChartProps.data[2]).toEqual({ name: 'Mar', value: 30e6 });
   });
 
   it('renders the honest empty state when the monthly series is all-zero', () => {
@@ -147,5 +149,34 @@ describe('ViewSeasonality — smoke + main branches', () => {
     // Single-year coverage span renders the year alone (no en-dash range collapse).
     const cov = container.querySelector('.kpi[data-label="Cobertura"] .kpi-value');
     expect(cov.textContent).toBe('1 anos');
+  });
+});
+
+describe('ViewSeasonality — escala e convenção', () => {
+  it('lê o contrato em milhões: o cartão diz "mi", não um número solto', () => {
+    // O contrato manda 3,09 para US$ 3,09 mi. Até a v1.77.0 a tela mostrava "US$ 3,09".
+    stubGlobals({
+      ...FULL_FIXTURE,
+      monthlyAvg: [3.09, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+      notApplicable: null,
+    });
+    const { container } = render(
+      <ViewSeasonality summary={{}} conventions={{}} database="mdic_comex" />
+    );
+    const pico = container.querySelector('.kpi[data-label="Mês de pico"] .kpi-sub');
+    expect(pico.textContent).toBe('US$ 3,09 mi (média)');
+    // O eixo de Capital recebe o valor cru, e a régua pt-BR dele escreve "mi".
+    expect(dualAxisProps.series[1].data[0].v).toBeCloseTo(3.09e6);
+  });
+
+  it('mostra a convenção que o número carrega, na moeda do servidor', () => {
+    stubGlobals({ ...FULL_FIXTURE, unit: 'R$', valueLabel: 'Valor real (IPCA) — R$ · FOB' });
+    const { container } = render(
+      <ViewSeasonality summary={{}} conventions={{}} database="mdic_comex" />
+    );
+    expect(container.querySelector('.season-valuation').textContent)
+      .toBe('Valor real (IPCA) — R$ · FOB');
+    const pico = container.querySelector('.kpi[data-label="Mês de pico"] .kpi-sub');
+    expect(pico.textContent).toBe('R$ 30 mi (média)');
   });
 });

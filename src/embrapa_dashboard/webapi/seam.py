@@ -1073,12 +1073,22 @@ def products_by_uf(
     return None
 
 
-def monthly_data(banco_id: str, summary: dict | None = None) -> pd.DataFrame | None:
+def monthly_data(
+    banco_id: str, summary: dict | None = None, conv: dict | None = None
+) -> dict | None:
     """Monthly seasonality value (backs Sazonalidade). COMEX only (monthly grain).
 
     The seasonality mart (``serving_comex_seasonality``) now KEEPS ``state_acronym``
     in its grain (P6), so the active UF (``states``) selection narrows the seasonal
     profile to one origin state; empty = national. The basket + year window apply too.
+
+    ``conv`` (currency × correction) picks the summed column through
+    :func:`effective_value_column`, as in :func:`flow_data` / :func:`partner_data`, and
+    the result is ``{rows, value_column, value_label}``. The mart only carries the full
+    currency matrix since v1.77.0, and a merge deploys the app and rebuilds the marts IN
+    PARALLEL — so a column the mart does not carry YET degrades to the nominal US$ it
+    always had, with a label saying so, instead of the query failing for everyone on the
+    default BRL·IPCA. ``None`` keeps the US$-native nominal reading for direct callers.
     """
     banco = banco_by_id(banco_id)
     if banco_id not in _LIVE_SOURCES or "monthly" not in banco.provides:
@@ -1086,17 +1096,26 @@ def monthly_data(banco_id: str, summary: dict | None = None) -> pd.DataFrame | N
     y0, y1 = _years_from_summary(summary)
     codes = _apply_levels(banco_id, summary, _basket(summary))
     if banco_id == "mdic_comex":
+        value_col, value_label = effective_value_column(banco, conv or _TRADE_NATIVE_CONV)
+        if value_col not in gateway.fetch_comex_seasonality_columns():
+            value_col = "val_yearfx_usd"
+            value_label = (
+                f"{fmt.convention_value_label(_TRADE_NATIVE_CONV)} · FOB "
+                "(a série mensal ainda não tem a correção escolhida)"
+            )
         # The active flow filter (export/import) is server-side on the seasonality mart
         # (which keeps ``flow`` in its grain) and must narrow the seasonal profile — COMEX
         # exports are ~40x imports, so an unfiltered heatmap under an "Importação" selection
         # renders essentially the EXPORT profile while the chips say otherwise.
-        return gateway.fetch_comex_seasonality(
+        rows = gateway.fetch_comex_seasonality(
             year_start=y0,
             year_end=y1,
             ncm_codes=codes,
             uf_codes=_states(summary),
             flow=_flow_from_summary(summary),
+            value_column=value_col,
         )
+        return {"rows": rows, "value_column": value_col, "value_label": value_label}
     return None
 
 
