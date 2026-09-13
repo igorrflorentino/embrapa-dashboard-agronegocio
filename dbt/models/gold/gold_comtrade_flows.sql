@@ -35,6 +35,9 @@
 --   • val_yearfx_*   = primary_value_usd converted at THAT year's avg FX. usd is
 --                      the source value; brl/eur triangulate through BRL.
 --                      Nominal — no inflation correction.
+--   • val_real_cpi_usd = the declared US$ projected to today by US CPI — no FX at
+--                     all, so it has no pre-1994 hole; val_real_hicp_eur is the
+--                     euro counterpart (one year-FX conversion, then HICP).
 --   • val_real_{ipca,igpm,igpdi}_* = USD → BRL at the year FX → projected to today
 --                      via the BCB chain index → optionally reconverted to
 --                      USD/EUR at TODAY's FX. Use these for cross-year comparison.
@@ -132,7 +135,27 @@ enriched as (
                 * safe_divide(il.igpm_current, iy.igpm_year_end) end                          as val_real_igpm_brl,
         case when b.reference_year >= 1994
             then (b.primary_value_usd * fy.brl_per_usd_avg)
-                * safe_divide(il.igpdi_current, iy.igpdi_year_end) end                        as val_real_igpdi_brl
+                * safe_divide(il.igpdi_current, iy.igpdi_year_end) end                        as val_real_igpdi_brl,
+
+        -- ── Correção no PRÓPRIO nível de preços da moeda ────────────────────────
+        -- The source value here IS US$ — a customs declaration, not a conversion — so
+        -- correcting it by US inflation is the one reading of "real dollars" that never
+        -- touches an exchange rate at all. Every val_real_*_usd above is the same value
+        -- pushed through TWO FX rates (the year's, into R$; today's, back out) and
+        -- deflated by Brazilian prices in between; it answers what the trade was worth
+        -- in Brazilian purchasing power, which is a legitimate question and a different
+        -- one. Note what that costs them and this one does not: they are NULL before
+        -- 1994 because the PTAX of the year is in the currency of the year, while this
+        -- column has no such hole — there is no FX in it to go wrong.
+        b.primary_value_usd
+            * safe_divide(il.cpi_current, iy.cpi_year_end)                                    as val_real_cpi_usd,
+        -- € has no such shortcut: the source is US$, so reaching euros costs one
+        -- conversion at the year's rate (triangulated through R$, as val_yearfx_eur is),
+        -- and only then the euro-area deflation. Inherits the pre-1994 / pre-1999 NULLs
+        -- of the rates it passes through.
+        case when b.reference_year >= 1994
+            then safe_divide(b.primary_value_usd * fy.brl_per_usd_avg, fy.brl_per_eur_avg)
+                * safe_divide(il.hicp_current, iy.hicp_year_end) end                          as val_real_hicp_eur
 
     from base_flows b
     left join fx_year            fy  on b.reference_year = fy.reference_year
@@ -213,6 +236,12 @@ select
     val_real_igpdi_brl                                     as val_real_igpdi_brl,
     safe_divide(val_real_igpdi_brl, brl_per_usd_current)   as val_real_igpdi_usd,
     safe_divide(val_real_igpdi_brl, brl_per_eur_current)   as val_real_igpdi_eur,
+
+    -- ── Real via CPI (EUA) — o US$ declarado, em dólares de hoje ─────────────
+    val_real_cpi_usd                                       as val_real_cpi_usd,
+
+    -- ── Real via HICP (zona do euro) ─────────────────────────────────────────
+    val_real_hicp_eur                                      as val_real_hicp_eur,
 
     -- ── CIF / FOB split (nominal US$, where the reporter provides it) ────────
     cif_value_usd                                          as val_cif_usd,

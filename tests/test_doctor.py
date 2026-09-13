@@ -514,6 +514,7 @@ def test_run_all_executes_every_probe(settings: Settings) -> None:
         ".env parsed",
         "Inflation pivot codes",
         "Currency series codes",
+        "Foreign inflation codes",
         "PAM variable codes",
         "IBGE PEVS variable codes",
         "IBGE silvicultura variable codes",
@@ -525,6 +526,7 @@ def test_run_all_executes_every_probe(settings: Settings) -> None:
         "IBGE PAM reachable",
         "IBGE PPM reachable",
         "BCB SGS reachable",
+        "Foreign inflation reachable",
         "COMEX reachable",
         "COMTRADE reachable",
         "Bronze tables",
@@ -556,6 +558,10 @@ _INGEST_TO_DOCTOR_CHECK = {
     "ibge-ppm": "ppm",
     "bcb-inflation": "bcb",
     "bcb-currency": "bcb",
+    # The foreign deflators (BLS CPI-U · ECB HICP) that correct US$ and €. One ingest,
+    # one probe — but the probe reports BOTH publishers, because a green line hiding a
+    # dead half would leave one currency silently un-deflatable.
+    "foreign-inflation": "foreign-inflation",
     "comex": "comex",
     "comtrade": "comtrade",
 }

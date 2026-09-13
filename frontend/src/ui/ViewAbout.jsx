@@ -73,7 +73,7 @@ function ViewAbout() {
     },
     {
       title: 'Valor nominal × valor real',
-      desc: 'Para comparar anos diferentes de forma justa, prefira o valor corrigido pela inflação (real). O valor nominal está em moeda da época e só deve ser usado para conferência pontual — somar ou comparar valores nominais de anos distintos induz a erro. A correção (IPCA, IGP-M ou IGP-DI) é escolhida nas convenções métricas.',
+      desc: 'Para comparar anos diferentes de forma justa, prefira o valor corrigido pela inflação (real). O valor nominal está em moeda da época e só deve ser usado para conferência pontual — somar ou comparar valores nominais de anos distintos induz a erro. A correção é escolhida nas convenções métricas, e lá a escolha tem DOIS eixos: qual índice e em qual economia. Um valor em dólares pode ser corrigido pela inflação brasileira e convertido ao câmbio de hoje, ou convertido ao câmbio do ano e corrigido pelo CPI americano — as duas leituras são legítimas, dão números diferentes e a faixa diz qual está ativa.',
     },
     {
       title: 'Famílias de unidades nunca se misturam',

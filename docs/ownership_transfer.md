@@ -14,7 +14,7 @@ This project was designed to be portable: nothing in the code hardcodes the `GCP
    BQ_LOCATION=southamerica-east1   # or US, depending on company policy
    ```
 5. **Company `profiles.yml`** — copy `dbt/profiles.yml.example` to `~/.dbt/profiles.yml` and swap `project:` for the new project.
-6. **First load** — `uv run embrapa ingest all` automatically creates the bucket and the `bronze_ibge` / `bronze_bcb` / `bronze_comex` / `bronze_pam` / `bronze_ppm` / `bronze_comtrade` datasets in the new project (PAM and PPM are excluded from `all` — run `uv run embrapa ingest ibge-pam` and `ingest ibge-ppm` separately; COMTRADE is also left out of `all` — it is key-gated; run `uv run embrapa ingest comtrade` separately).
+6. **First load** — `uv run embrapa ingest all` automatically creates the bucket and the `bronze_ibge` / `bronze_bcb` / `bronze_foreign` / `bronze_comex` / `bronze_pam` / `bronze_ppm` / `bronze_comtrade` datasets in the new project (PAM and PPM are excluded from `all` — run `uv run embrapa ingest ibge-pam` and `ingest ibge-ppm` separately; COMTRADE is also left out of `all` — it is key-gated; run `uv run embrapa ingest comtrade` separately).
 7. **First transformation** — `make dbt-build` materializes Silver and Gold.
 8. **Looker Studio** — duplicate the existing report and repoint the data source to `embrapa-produtos-agricolas-prod.gold.gold_pevs_production`.
 

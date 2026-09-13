@@ -22,6 +22,74 @@
 
 import { magnitudeParts } from '../charts/magnitude.js';
 
+// ── Qual economia cada correção mede ────────────────────────────────────────────
+//
+// Um índice de inflação mede os preços de UMA economia, então só sabe dizer quanto uma
+// coisa valia NAQUELA moeda. Daí saem duas operações diferentes, e a faixa precisa
+// mostrar as duas em vez de fundi-las num eixo só de "correção":
+//
+//   • índice da MESMA moeda exibida → converte pelo câmbio do ANO DE REGISTRO e só então
+//     deflaciona. "Dólares da época, trazidos a dólares de hoje." Num banco de aduana,
+//     cujo valor de origem JÁ É US$, não entra câmbio nenhum.
+//   • índice de OUTRA economia → deflaciona na moeda do índice e converte pelo câmbio de
+//     HOJE. O número mede poder de compra brasileiro e só está impresso com um símbolo
+//     estrangeiro — leitura legítima, e que NÃO é "o dólar corrigido pela inflação".
+//
+// Até a v1.82.0 só a segunda existia, rotulada como se fosse a primeira: "US$ · IPCA" se
+// lê como dólares corrigidos pela inflação brasileira, que não é uma coisa que exista.
+// Espelha webapi/format.py (CORRECTION_ECONOMY / ECONOMY_CURRENCY) — os dois lados têm
+// de concordar, porque é o servidor que escolhe a coluna e esta tela que a nomeia.
+window.CORRECTION_ECONOMY = { 'IPCA': 'BR', 'IGP-M': 'BR', 'IGP-DI': 'BR', CPI: 'US', HICP: 'EA' };
+window.ECONOMY_CURRENCY = { BR: 'BRL', US: 'USD', EA: 'EUR' };
+window.ECONOMY_LABEL = { BR: 'Brasil', US: 'EUA', EA: 'zona do euro' };
+window.ECONOMY_DA = { BR: 'do Brasil', US: 'dos EUA', EA: 'da zona do euro' };
+
+// A correção mede os preços da moeda que está sendo exibida?
+window.deflatesOwnCurrency = (currency, correction) => {
+  const eco = window.CORRECTION_ECONOMY[correction];
+  return !!eco && window.ECONOMY_CURRENCY[eco] === currency;
+};
+
+// O catálogo de correções, na ordem em que a faixa as apresenta. `sub` é o publicador
+// (o que o pesquisador precisa para citar), `economy` é o que decide tudo o mais.
+window.CORRECTIONS = [
+  { id: 'Nominal', sub: 'sem corr.', economy: null },
+  { id: 'IPCA',    sub: 'IBGE',      economy: 'BR' },
+  { id: 'IGP-M',   sub: 'FGV',       economy: 'BR' },
+  { id: 'IGP-DI',  sub: 'FGV',       economy: 'BR' },
+  { id: 'CPI',     sub: 'BLS',       economy: 'US' },
+  { id: 'HICP',    sub: 'BCE',       economy: 'EA' },
+];
+
+// Uma combinação (moeda × correção) que o servidor consegue servir de verdade.
+// Espelha serving/sql.ALLOWED_VALUE_COLUMNS, que é quem manda:
+//   • os índices brasileiros existem em R$ e €, e em US$ só o IPCA (não há
+//     val_real_{igpm,igpdi}_usd);
+//   • os índices estrangeiros existem SÓ na moeda que medem — "R$ corrigido pelo CPI"
+//     seria o poder de compra do dólar impresso em reais, que não responde pergunta
+//     nenhuma que o painel faça.
+window.servableConvention = (currency, correction) => {
+  const eco = window.CORRECTION_ECONOMY[correction];
+  if (!eco) return true;                                   // Nominal: sempre
+  if (eco !== 'BR') return window.ECONOMY_CURRENCY[eco] === currency;
+  return !(currency === 'USD' && (correction === 'IGP-M' || correction === 'IGP-DI'));
+};
+
+// Por que esta combinação não está disponível — a frase muda conforme o motivo, porque
+// os motivos são diferentes: um é uma coluna que o mart não materializa, o outro é uma
+// pergunta que não tem sentido.
+window.unservableReason = (currency, correction) => {
+  const eco = window.CORRECTION_ECONOMY[correction];
+  if (!eco || window.servableConvention(currency, correction)) return undefined;
+  if (eco === 'BR') {
+    return `Indisponível para US$ — não há coluna deflacionada por este índice em dólar `
+      + `(use R$/€, ou o IPCA, ou o CPI para corrigir o próprio dólar).`;
+  }
+  const moeda = (window.CURRENCY_FX[window.ECONOMY_CURRENCY[eco]] || {}).symbol;
+  return `O ${correction} mede os preços ${window.ECONOMY_DA[eco]} — ele corrige ${moeda}, `
+    + `não ${(window.CURRENCY_FX[currency] || {}).symbol}. Troque a moeda para usá-lo.`;
+};
+
 // Hoisted to module scope: it closes over nothing (everything arrives via props).
 // Defined inside the render body it was a NEW component type on every render, so
 // React unmounted and remounted the whole segmented control each time instead of
@@ -49,6 +117,63 @@ function Group({ label, options, active, onPick, mono }) {
   );
 }
 
+// As faixas em que a correção é apresentada. O eixo NÃO é "qual índice" — é EM QUE
+// ECONOMIA a correção acontece, porque é isso que muda a operação (e o número). Um
+// índice brasileiro sob um símbolo estrangeiro deflaciona em reais e converte pelo
+// câmbio de HOJE; o índice da própria moeda converte pelo câmbio do ANO e deflaciona
+// lá. Com as duas numa lista só, a escolha parecia ser entre fontes de índice.
+function correctionBands(currency) {
+  const eco = window.CORRECTION_ECONOMY;
+  const opcao = (c) => ({
+    id: c.id,
+    sub: c.sub,
+    disabled: !window.servableConvention(currency, c.id),
+    disabledReason: window.unservableReason(currency, c.id),
+  });
+  const doBrasil = window.CORRECTIONS.filter(c => eco[c.id] === 'BR').map(opcao);
+  const daPropria = window.CORRECTIONS.filter(c => eco[c.id] && eco[c.id] !== 'BR').map(opcao);
+  return [
+    { id: 'nominal', label: 'Sem correção', options: window.CORRECTIONS.filter(c => !eco[c.id]).map(opcao) },
+    {
+      id: 'br',
+      // O sufixo só aparece quando há conversão: em R$ não há câmbio nenhum no caminho,
+      // e anunciar um que não existe seria o mesmo defeito na direção oposta.
+      label: currency === 'BRL' ? 'Inflação do Brasil' : 'Inflação do Brasil · câmbio de hoje',
+      options: doBrasil,
+    },
+    { id: 'own', label: 'Inflação da própria moeda · câmbio do ano', options: daPropria },
+  ];
+}
+
+function CorrectionGroup({ currency, active, onPick, explain }) {
+  return (
+    <div className="mc-group mc-group-corr">
+      <span className="mc-label">Correção monetária</span>
+      {correctionBands(currency).map(band => (
+        <div key={band.id} className="mc-corr-band">
+          <span className="mc-corr-band-label">{band.label}</span>
+          <div className="seg">
+            {band.options.map(o => (
+              <button key={o.id}
+                      type="button"
+                      disabled={o.disabled}
+                      title={o.disabled ? o.disabledReason : undefined}
+                      className={'seg-opt ' + (active === o.id ? 'on' : '') + (o.disabled ? ' disabled' : '')}
+                      onClick={() => !o.disabled && onPick(o.id)}>
+                <span>{o.id}</span>
+                {o.sub && <small>{o.sub}</small>}
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+      {/* O que o número É, em uma frase. A faixa inteira existe para que esta linha
+          possa ser dita — sem ela, "US$ · IPCA" continua parecendo inflação americana. */}
+      <p className="mc-corr-explain">{explain}</p>
+    </div>
+  );
+}
+
 function MetricConventions({ value, onChange, families, banco, expanded, onToggleExpanded }) {
   const set = (patch) => onChange({ ...value, ...patch });
 
@@ -68,19 +193,11 @@ function MetricConventions({ value, onChange, families, banco, expanded, onToggl
   const setUnitFor = (fid, id) => set({ units: { ...(value.units || {}), [fid]: id } });
 
 
-  // The Gold/serving marts carry the full currency × correction matrix EXCEPT the
-  // IGP-M/IGP-DI × USD combos (no val_real_{igpm,igpdi}_usd is reachable through the
-  // serving allowlist — only BRL and EUR). Disable exactly those so the strip can
-  // never request a US$ figure the BFF would silently serve as a real R$ value under
-  // a US$ symbol (wrong-symbol display). EUR keeps both — its deflated columns exist.
-  const isUnservedCombo = (currency, corr) =>
-    currency === 'USD' && (corr === 'IGP-M' || corr === 'IGP-DI');
-  const UNSERVED_REASON =
-    'Indisponível para US$ — não há coluna deflacionada por este índice em dólar (use R$/€ ou IPCA).';
-  // Picking a currency must not leave an unservable correction active: switching to
-  // US$ while IGP-M/IGP-DI is selected snaps the correction back to IPCA in the SAME
-  // update, so the request never carries the wrong-symbol combo (no render-time set).
-  // Reuses window.clampConvention so the strip and the deep-link decoder share one rule.
+  // Picking a currency must not leave an unservable correction active: switching to US$
+  // while IGP-M/IGP-DI (or HICP) is selected fixes the correction in the SAME update, so
+  // the request never carries a combo the BFF would have to substitute behind the user's
+  // back. Reuses window.clampConvention — the strip, the deep-link decoder and the
+  // banco-switch default share one rule.
   const setCurrency = (id) => onChange(window.clampConvention({ ...value, currency: id }));
 
   // Collapsed-state summary chips — read-only, mirror FilterTriggerBar's
@@ -90,7 +207,13 @@ function MetricConventions({ value, onChange, families, banco, expanded, onToggl
   // omit here — moeda/correção/unit/escala always have a value.
   const chips = [
     monetary && { k: 'Moeda', v: (window.CURRENCY_FX[value.currency] || {}).symbol || value.currency },
-    monetary && { k: 'Correção', v: value.correction === 'Nominal' ? 'Sem correção' : value.correction },
+    // O chip recolhido carrega a ECONOMIA junto com o índice: "IPCA · Brasil" sob um
+    // símbolo de dólar já diz, sem abrir a faixa, que a correção não é americana.
+    monetary && {
+      k: 'Correção',
+      v: window.correctionChip(value),
+      t: window.conventionExplain(value, banco),
+    },
     ...physFams.map((fid) => ({ k: window.UNIT_FAMILIES[fid].label, v: unitFor(fid) })),
     { k: 'Escala', v: value.autoScale ? 'Automática' : 'Fixa' },
   ].filter(Boolean);
@@ -106,7 +229,7 @@ function MetricConventions({ value, onChange, families, banco, expanded, onToggl
           <div className="fm-tb-chips">
             <span className="mc-overline">Convenções métricas</span>
             {chips.map((c, i) => (
-              <span key={i} className="fm-chip-filter">
+              <span key={i} className="fm-chip-filter" title={c.t}>
                 <span className="fm-chip-k">{c.k}</span>{c.v}
               </span>
             ))}
@@ -166,16 +289,11 @@ function MetricConventions({ value, onChange, families, banco, expanded, onToggl
             )}
 
             {monetary && (
-              <Group
-                label="Correção monetária"
-                options={[
-                  { id: 'Nominal', sub: 'sem corr.' },
-                  { id: 'IPCA',    sub: 'IBGE' },
-                  { id: 'IGP-M',   sub: 'FGV', disabled: isUnservedCombo(value.currency, 'IGP-M'), disabledReason: UNSERVED_REASON },
-                  { id: 'IGP-DI',  sub: 'FGV', disabled: isUnservedCombo(value.currency, 'IGP-DI'), disabledReason: UNSERVED_REASON },
-                ]}
+              <CorrectionGroup
+                currency={value.currency}
                 active={value.correction}
                 onPick={(id) => set({ correction: id })}
+                explain={window.conventionExplain(value, banco)}
               />
             )}
 
@@ -207,16 +325,72 @@ window.DEFAULT_CONVENTIONS = {
   autoScale:  false,
 };
 
-// The single source of truth for the unservable currency × correction combos:
-// IGP-M / IGP-DI deflation has no US$ column in the serving marts (only BRL/EUR), so
-// requesting it would surface a real R$ figure under a US$ symbol. The strip disables
-// these, and the deep-link decoder (main.jsx) clamps them — a bookmarked
-// ?cur=USD&corr=IGP-M must not slip past the UI gate. Returns a SERVABLE convention.
+// A fonte única das combinações servíveis (window.servableConvention, no topo). A faixa
+// desabilita as demais e o decodificador de deep link (main.jsx) as corrige — um
+// ?cur=USD&corr=IGP-M guardado nos favoritos não pode passar por baixo da tela. Devolve
+// SEMPRE uma convenção servível, e a MESMA REFERÊNCIA quando nada muda (main.jsx conta
+// com isso para não re-renderizar as convenções à toa).
+//
+// Qual correção substitui a impossível depende do que a pessoa estava pedindo:
+//   • um índice ESTRANGEIRO numa moeda que ele não mede (US$ · HICP) → o índice da nova
+//     moeda, se existir. A intenção era "corrigir pela inflação da própria moeda", e
+//     trocar para o IPCA responderia justamente o que ela escolheu não perguntar.
+//   • um índice BRASILEIRO sem coluna naquela moeda (US$ · IGP-M) → IPCA, o índice
+//     brasileiro que tem coluna em dólar. A medição continua sendo a mesma.
 window.clampConvention = (conv) => {
-  if (conv && conv.currency === 'USD' && (conv.correction === 'IGP-M' || conv.correction === 'IGP-DI')) {
-    return { ...conv, correction: 'IPCA' };
+  if (!conv) return conv;
+  const { currency, correction } = conv;
+  if (window.servableConvention(currency, correction)) return conv;
+  const eco = window.CORRECTION_ECONOMY[correction];
+  if (eco && eco !== 'BR') {
+    const propria = window.CORRECTIONS.find(
+      c => c.economy && c.economy !== 'BR' && window.ECONOMY_CURRENCY[c.economy] === currency
+    );
+    return { ...conv, correction: propria ? propria.id : 'IPCA' };
   }
-  return conv;
+  return { ...conv, correction: 'IPCA' };
+};
+
+// O que o número É, em uma frase — a linha que a faixa inteira existe para poder dizer.
+// `banco` é opcional: num banco cuja moeda de origem já é a exibida (aduana em US$), a
+// correção pela própria moeda não passa por câmbio NENHUM, e vale dizer isso.
+window.conventionExplain = (conv, banco) => {
+  if (!conv) return '';
+  const { currency, correction } = conv;
+  const sym = (window.CURRENCY_FX[currency] || {}).symbol || currency;
+  const moeda = { BRL: 'reais', USD: 'dólares', EUR: 'euros' }[currency] || sym;
+  if (correction === 'Nominal') {
+    return `Valores em ${moeda} de cada ano, sem correção: servem para auditar um ano ou `
+      + `comparar séries dentro do mesmo ano — não para comparar anos distantes.`;
+  }
+  const eco = window.CORRECTION_ECONOMY[correction];
+  if (!eco) return '';
+  if (eco === 'BR' && currency === 'BRL') {
+    return `Deflacionado pelo ${correction}: reais de hoje.`;
+  }
+  if (eco === 'BR') {
+    // A negativa explícita é o ponto: sem ela, o leitor completa a frase sozinho — e
+    // completa errado. Nomeia a inflação que este número NÃO é, pela moeda na tela.
+    const outra = window.ECONOMY_DA[{ USD: 'US', EUR: 'EA' }[currency]] || 'de fora';
+    return `Deflacionado pelo ${correction} — a inflação do BRASIL — e convertido ao câmbio `
+      + `de hoje. Mede poder de compra brasileiro, apresentado em ${moeda}: não é a inflação `
+      + `${outra}.`;
+  }
+  const base = window.canonCurrencyFor ? window.canonCurrencyFor(banco) : 'BRL';
+  const semCambio = base === currency;
+  return semCambio
+    ? `Deflacionado pelo ${correction} (inflação ${window.ECONOMY_DA[eco]}): ${moeda} de hoje. `
+      + `O valor já é declarado em ${sym} na fonte, então não passa por câmbio nenhum.`
+    : `Convertido ao câmbio do ano de registro e deflacionado pelo ${correction} (inflação `
+      + `${window.ECONOMY_DA[eco]}): ${moeda} de hoje, pelo poder de compra ${window.ECONOMY_DA[eco]}.`;
+};
+
+// O valor do chip recolhido: o índice mais a economia que ele mede, porque é a economia
+// que o símbolo da moeda ao lado não revela.
+window.correctionChip = (conv) => {
+  if (!conv || conv.correction === 'Nominal') return 'Sem correção';
+  const eco = window.CORRECTION_ECONOMY[conv.correction];
+  return eco ? `${conv.correction} · ${window.ECONOMY_LABEL[eco]}` : conv.correction;
 };
 // Display unit chosen for a family (falls back to the registry default).
 window.unitOf = (conv, fam) => (conv && conv.units && conv.units[fam]) || window.defaultUnitOf(fam);
@@ -357,9 +531,16 @@ window.massAxisLabel   = (conv) => window.unitOf(conv, 'mass');
 window.volumeAxisLabel = (conv) => window.unitOf(conv, 'volume');
 window.countAxisLabel  = (conv) => window.unitOf(conv, 'count');
 
-// Human label for the active monetary convention (e.g. "USD · IPCA").
-window.conventionMonetaryLabel = (conv) =>
-  conv.currency + (conv.correction === 'Nominal' ? ' · nominal' : ' · ' + conv.correction);
+// Human label for the active monetary convention (e.g. "USD · IPCA (Brasil)").
+// A economia entra entre parênteses quando o índice NÃO é o da moeda exibida — é aí que
+// o rótulo curto engana: "USD · IPCA" se lê como dólar corrigido por inflação americana.
+window.conventionMonetaryLabel = (conv) => {
+  if (conv.correction === 'Nominal') return conv.currency + ' · nominal';
+  const eco = window.CORRECTION_ECONOMY[conv.correction];
+  const propria = window.deflatesOwnCurrency(conv.currency, conv.correction);
+  const onde = eco && !propria ? ` (${window.ECONOMY_LABEL[eco]})` : '';
+  return `${conv.currency} · ${conv.correction}${onde}`;
+};
 
 // scaleLabel — axis/series label grammar for a magnitude-scaled unit: a currency symbol
 // sits BEFORE the magnitude suffix ("R$ bi"), a physical unit AFTER ("bi t"). Single

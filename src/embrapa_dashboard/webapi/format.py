@@ -19,14 +19,60 @@ from __future__ import annotations
 CURRENCY_SYMBOL = {"BRL": "R$", "USD": "US$", "EUR": "€"}
 
 # Correction id → the Gold/serving column infix. 'Nominal' uses the year-FX
-# (un-deflated) value; the others use the IPCA/IGP-M/IGP-DI real columns.
+# (un-deflated) value; the others use the real columns.
 _CORRECTION_INFIX = {
     "Nominal": "yearfx",
     "IPCA": "real_ipca",
     "IGP-M": "real_igpm",
     "IGP-DI": "real_igpdi",
+    "CPI": "real_cpi",
+    "HICP": "real_hicp",
 }
 _CURRENCY_SUFFIX = {"BRL": "brl", "USD": "usd", "EUR": "eur"}
+
+# ── Which economy each correction measures — the fact this whole model turns on ──
+#
+# An inflation index measures ONE economy's prices, so it can only say what something
+# was worth in THAT economy's money. Two things follow, and the dashboard has to show
+# both rather than blend them into a single "correção" axis:
+#
+#   • index economy == display currency → the value is converted at the exchange rate
+#     of the YEAR OF RECORD and then deflated. "Dollars of the time, brought to dollars
+#     of today." For a customs banco, whose source value already IS US$, no exchange
+#     rate is involved at all.
+#   • index economy != display currency → the value is deflated in the INDEX's money
+#     and converted at TODAY's rate. The number measures Brazilian purchasing power and
+#     is merely printed with a foreign symbol; it is a legitimate reading and it is not
+#     "the dollar corrected for inflation".
+#
+# Until v1.82.0 only the second existed and was labelled as if it were the first —
+# "US$ · IPCA" reads as dollars corrected by Brazilian inflation, which is not a thing.
+CORRECTION_ECONOMY = {
+    "IPCA": "BR",
+    "IGP-M": "BR",
+    "IGP-DI": "BR",
+    "CPI": "US",
+    "HICP": "EA",
+}
+ECONOMY_CURRENCY = {"BR": "BRL", "US": "USD", "EA": "EUR"}
+# pt-BR — it reaches the screen (see convention_value_label).
+ECONOMY_LABEL = {"BR": "Brasil", "US": "EUA", "EA": "zona do euro"}
+
+
+def correction_economy(correction: str) -> str | None:
+    """The economy whose price level ``correction`` measures; ``None`` for 'Nominal'."""
+    return CORRECTION_ECONOMY.get(correction)
+
+
+def deflates_own_currency(currency: str, correction: str) -> bool:
+    """True when the index measures the prices of the money being displayed.
+
+    The two sides of the distinction the conventions strip must make visible: True is
+    "US$ corrigidos pela inflação americana", False is "reais corrigidos e convertidos".
+    'Nominal' is neither — nothing is corrected — so it answers False.
+    """
+    economy = CORRECTION_ECONOMY.get(correction)
+    return economy is not None and ECONOMY_CURRENCY.get(economy) == currency
 
 
 def monetary_column(currency: str, correction: str) -> str:
@@ -54,12 +100,37 @@ def column_currency(column: str) -> str | None:
 
 
 def convention_value_label(conv: dict) -> str:
-    """Human label for the active monetary convention, e.g. 'Valor real (IPCA) — R$'."""
-    sym = CURRENCY_SYMBOL.get(conv.get("currency", "BRL"), "R$")
+    """Human label for the active monetary convention.
+
+    The label has to carry WHICH ECONOMY corrected the number whenever that is not
+    obvious, because the same currency symbol can head two different measurements:
+
+      (BRL, IPCA)  → 'Valor real (IPCA) — R$'
+      (USD, CPI)   → 'Valor real (CPI · inflação dos EUA) — US$'
+      (USD, IPCA)  → 'Valor real (IPCA · inflação do Brasil, ao câmbio de hoje) — US$'
+
+    The third is the one that used to read simply 'Valor real (IPCA) — US$', which
+    states something that does not exist: dollars corrected by Brazilian inflation.
+    R$ × a Brazilian index keeps the short form — there is nothing to disambiguate.
+    """
+    currency = conv.get("currency", "BRL")
+    sym = CURRENCY_SYMBOL.get(currency, "R$")
     corr = conv.get("correction", "IPCA")
     if corr == "Nominal":
         return f"Valor nominal — {sym}"
-    return f"Valor real ({corr}) — {sym}"
+    economy = CORRECTION_ECONOMY.get(corr)
+    if economy is None:
+        return f"Valor real ({corr}) — {sym}"
+    if ECONOMY_CURRENCY.get(economy) == currency:
+        if economy == "BR":
+            return f"Valor real ({corr}) — {sym}"
+        return f"Valor real ({corr} · inflação {_DA_ECONOMIA[economy]}) — {sym}"
+    return f"Valor real ({corr} · inflação {_DA_ECONOMIA[economy]}, ao câmbio de hoje) — {sym}"
+
+
+# pt-BR contraction per economy ("do Brasil" · "dos EUA" · "da zona do euro"), so the
+# label reads as a sentence instead of gluing a bare noun onto "inflação".
+_DA_ECONOMIA = {"BR": "do Brasil", "US": "dos EUA", "EA": "da zona do euro"}
 
 
 # pt-BR month abbreviations (index 0 → January), for seasonality axes/labels.

@@ -1566,6 +1566,83 @@ def test_effective_value_column_pevs_falls_back_to_brl_when_combo_absent():
     assert "R$" in label and "moeda indisponível" in label
 
 
+def test_effective_value_column_serves_the_own_currency_deflator():
+    """US$ × CPI is a DIFFERENT column from US$ × IPCA, not a relabelling of it.
+
+    Both are 'real dollars'; they differ in which economy's prices corrected them and
+    at which moment the exchange rate was applied. If these two ever resolved to one
+    column, the strip would offer a choice the data does not make."""
+    seam = _seam()
+    from embrapa_dashboard.webapi.registries import banco_by_id
+
+    pevs = banco_by_id("ibge_pevs")
+    col, label = seam.effective_value_column(pevs, {"currency": "USD", "correction": "CPI"})
+    assert col == "val_real_cpi_usd"
+    assert label == "Valor real (CPI · inflação dos EUA) — US$"
+
+    via_brasil, _ = seam.effective_value_column(pevs, {"currency": "USD", "correction": "IPCA"})
+    assert via_brasil == "val_real_ipca_usd" != col
+
+    col, label = seam.effective_value_column(pevs, {"currency": "EUR", "correction": "HICP"})
+    assert col == "val_real_hicp_eur"
+    assert "zona do euro" in label
+
+
+def test_effective_value_column_own_currency_deflator_on_a_trade_banco():
+    """The customs value IS US$, so CPI deflates it with no exchange rate at all — and
+    the FOB/CIF basis note still has to travel with the label."""
+    seam = _seam()
+    from embrapa_dashboard.webapi.registries import banco_by_id
+
+    col, label = seam.effective_value_column(
+        banco_by_id("un_comtrade"), {"currency": "USD", "correction": "CPI"}
+    )
+    assert col == "val_real_cpi_usd"
+    assert "EUA" in label and "FOB" in label and "CIF" in label
+
+
+def test_a_foreign_index_asked_for_another_currency_drops_to_nominal_not_to_brl():
+    """R$ × CPI is not a missing column — it is a question with no meaning.
+
+    The IGP-M × US$ fallback swaps the CURRENCY because the measurement (Brazilian
+    prices) survives the swap. Here it would not: answering with a Brazilian index
+    would give back exactly what the researcher declined by choosing CPI. Nominal in
+    the requested currency keeps the symbol honest and corrects nothing, and the label
+    says which."""
+    seam = _seam()
+    from embrapa_dashboard.webapi.registries import banco_by_id
+
+    pevs = banco_by_id("ibge_pevs")
+    col, label = seam.effective_value_column(pevs, {"currency": "BRL", "correction": "CPI"})
+    assert col == "val_yearfx_brl"
+    assert "nominal" in label.lower() and "CPI não corrige BRL" in label
+    # …and it must NOT have quietly become a Brazilian correction.
+    assert "IPCA" not in label
+
+    col, _ = seam.effective_value_column(pevs, {"currency": "USD", "correction": "HICP"})
+    assert col == "val_yearfx_usd"
+
+
+def test_value_gap_alternatives_can_offer_the_own_currency_deflator(monkeypatch):
+    """The gap note offers alternatives IN THE SAME CURRENCY. For a US$ convention that
+    set now includes CPI — and must still exclude the Brazilian indices with no US$
+    column, which the allowlist filter (not a second hardcoded list) takes care of."""
+    import pandas as pd
+
+    seam = _seam()
+    gap_rows = pd.DataFrame({"reference_year": [1990], "rows_without_value": [5]})
+    asked: list[str] = []
+
+    def fake_gap(source, *, value_column):
+        asked.append(value_column)
+        return pd.DataFrame()
+
+    monkeypatch.setattr(seam.gateway, "fetch_annual_value_gap", fake_gap)
+    out = seam._value_gap_alternatives("ibge_pevs", "val_real_ipca_usd", gap_rows)
+    assert set(out) == {"CPI"}
+    assert asked == ["val_real_cpi_usd"]
+
+
 def test_effective_value_column_final_fallback_to_real_ipca_brl(monkeypatch):
     """When neither the requested combo NOR its BRL sibling is in the mart, the
     fallback chain bottoms out at val_real_ipca_brl."""

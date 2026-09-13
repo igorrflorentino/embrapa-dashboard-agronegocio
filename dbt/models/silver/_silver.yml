@@ -190,6 +190,72 @@ models:
                 # rejecting legitimate hyperinflation-era spikes.
                 expression: "is null or monthly_pct_change between -100 and 100"
 
+  - name: silver_foreign_inflation
+    description: |
+      The foreign deflators: US CPI-U (BLS) and euro-area HICP (ECB Data Portal).
+      Published as INDEX LEVELS, so — unlike the BCB series — they are NOT chain-linked;
+      the value is the index. Their bases differ (1982-84=100 · 2015=100) and are
+      deliberately not normalised: every downstream use is a ratio within one series,
+      which is base-invariant.
+    tests:
+      # One row per (series, month). A duplicate would make the year-end pivot's
+      # "last month of the year" ambiguous, and max() would pick by value rather than
+      # by date — a wrong deflator that still looks like an index.
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - series_code
+              - reference_date
+    columns:
+      - name: reference_date
+        tests: [not_null]
+      - name: series_code
+        tests: [not_null]
+      - name: provider
+        description: "Who published the row — stored by the ingest, never inferred from the series id."
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [bls, ecb]
+      - name: economy
+        description: |
+          Whose prices the index measures, and therefore which money it may deflate.
+          US → US$ · EA → €. The pairing is enforced by the Gold column names and the
+          BFF's convention model; this column is what lets an audit ask the question.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [US, EA]
+      - name: index_value
+        description: "The published price level. Strictly positive — the model drops anything else."
+        tests:
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: "> 0"
+
+  - name: silver_inflation
+    description: |
+      Unified deflator source for Gold: the Brazilian indices (BCB SGS) and the foreign
+      ones (BLS · ECB), one row shape, so the deflation CTEs are index-agnostic. Mirrors
+      what silver_currency does for FX.
+    columns:
+      - name: series_code
+        tests: [not_null]
+      - name: economy
+        description: "BR · US · EA — the economy whose price level this index measures."
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [BR, US, EA]
+      - name: index_value
+        tests:
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: "is null or index_value > 0"
+
   - name: silver_bcb_currency
     description: "Daily FX rates: BRL per foreign currency unit (BCB SGS: USD, EUR)."
     tests:

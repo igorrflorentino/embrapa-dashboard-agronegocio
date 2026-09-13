@@ -151,6 +151,32 @@ def _check_inflation_pivot_codes(settings: Settings) -> CheckResult:
         return CheckResult("Inflation pivot codes", False, str(exc)[:120])
 
 
+def _check_foreign_inflation_codes(settings: Settings) -> CheckResult:
+    """Each foreign deflator must have a series id, and a plausible one for its API.
+
+    The BCB counterpart checks membership in an ingested CODE:LABEL map. Here the
+    ingested set IS the declared pair, so the drift worth catching is different: an
+    EMPTY id (dbt would pivot on '' and NULL the column in silence), or an ECB key with
+    no dataflow prefix (the REST path is built by splitting at the first dot, so a
+    prefix-less key would request a dataflow that does not exist and 404 forever).
+    """
+    try:
+        codes = settings.foreign_inflation_pivot_codes
+        problems = [f"{label}: empty" for label, code in codes.items() if not code]
+        hicp = codes.get("HICP", "")
+        if hicp and "." not in hicp:
+            problems.append(f"HICP: {hicp!r} has no ECB dataflow prefix (expected 'ICP.…')")
+        if problems:
+            return CheckResult(
+                "Foreign inflation codes",
+                False,
+                "; ".join(problems) + " → Gold val_real_{cpi,hicp}_* would be NULL",
+            )
+        return CheckResult("Foreign inflation codes", True, f"{codes} all set")
+    except Exception as exc:
+        return CheckResult("Foreign inflation codes", False, str(exc)[:120])
+
+
 # The canonical daily PTAX "venda" series (BRL per foreign unit): SGS 1 = USD,
 # 21619 = EUR. The Gold FX/deflation math keys off these EXACT codes. The earlier
 # 3694/4393(/20542) were wrong (3694 is annual, 4393 is not a BRL-per-unit rate),
@@ -570,6 +596,43 @@ def _check_bcb(settings: Settings) -> CheckResult:
         return CheckResult("BCB SGS reachable", True, f"sgs.{code} 200 OK")
     except Exception as exc:
         return CheckResult("BCB SGS reachable", False, str(exc)[:120])
+
+
+def _check_foreign_inflation(settings: Settings) -> CheckResult:
+    """BLS and the ECB Data Portal each answer for their configured series.
+
+    Two publishers, so the probe reports BOTH: a green line that hides one dead half
+    would leave US$ or € silently un-deflatable — the failure this feature exists to
+    remove. A one-year window is enough for reachability; correctness is the ingest's
+    job. Note: both hosts are blocked on Claude Code on the web.
+    """
+    year = settings.bcb_end_year - 1
+    results: list[str] = []
+    ok = True
+    cpi = settings.foreign_inflation_cpi_code
+    url = f"{settings.bls_api_base_url}/v1/timeseries/data/{cpi}?startyear={year}&endyear={year}"
+    try:
+        response = requests.get(url, timeout=PROBE_TIMEOUT_S)
+        response.raise_for_status()
+        results.append(f"bls.{cpi} 200 OK")
+    except Exception as exc:
+        ok = False
+        results.append(f"bls.{cpi} {str(exc)[:60]}")
+
+    hicp = settings.foreign_inflation_hicp_code
+    dataflow, _, key = hicp.partition(".")
+    url = (
+        f"{settings.ecb_api_base_url}/{dataflow}/{key}"
+        f"?format=csvdata&detail=dataonly&startPeriod={year}-01&endPeriod={year}-12"
+    )
+    try:
+        response = requests.get(url, timeout=PROBE_TIMEOUT_S)
+        response.raise_for_status()
+        results.append(f"ecb.{hicp} 200 OK")
+    except Exception as exc:
+        ok = False
+        results.append(f"ecb.{hicp} {str(exc)[:60]}")
+    return CheckResult("Foreign inflation reachable", ok, "; ".join(results))
 
 
 def _check_comex(settings: Settings) -> CheckResult:
@@ -1116,6 +1179,7 @@ _INFRA_CHECKS: list[tuple[str, Callable[[Settings], CheckResult]]] = [
     ("env", _check_env),
     ("inflation-codes", _check_inflation_pivot_codes),
     ("currency-codes", _check_currency_series_codes),
+    ("foreign-inflation-codes", _check_foreign_inflation_codes),
     ("pam-variable-codes", _check_pam_variable_codes),
     ("ibge-variable-codes", _check_ibge_variable_codes),
     ("silvicultura-variable-codes", _check_silvicultura_variable_codes),
@@ -1135,6 +1199,7 @@ SOURCE_CHECKS: list[tuple[str, Callable[[Settings], CheckResult]]] = [
     ("pam", _check_pam),
     ("ppm", _check_ppm),
     ("bcb", _check_bcb),
+    ("foreign-inflation", _check_foreign_inflation),
     ("comex", _check_comex),
     ("comtrade", _check_comtrade),
 ]
@@ -1150,6 +1215,7 @@ BRONZE_TARGETS: list[tuple[str, str]] = [
     ("bq_bronze_ppm_dataset", "bq_bronze_ppm_animal_table"),
     ("bq_bronze_bcb_dataset", "bq_bronze_bcb_inflation_table"),
     ("bq_bronze_bcb_dataset", "bq_bronze_bcb_currency_table"),
+    ("bq_bronze_foreign_dataset", "bq_bronze_foreign_inflation_table"),
     ("bq_bronze_comex_dataset", "bq_bronze_comex_flows_table"),
     ("bq_bronze_comtrade_dataset", "bq_bronze_comtrade_flows_table"),
 ]

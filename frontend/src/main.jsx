@@ -121,9 +121,16 @@ function readStateFromURL() {
   // the default instead.
   const cur = q.get('cur');
   if (cur && window.CURRENCY_FX && window.CURRENCY_FX[cur]) conv.currency = cur;
-  if (q.get('corr')) conv.correction = q.get('corr');
-  // Clamp an unservable currency × correction combo (USD × IGP-M/IGP-DI has no US$
-  // deflated column, so it would render a real R$ value under a US$ symbol). The
+  // Same guard as the currency above, and for the same reason: an unknown correction
+  // would travel to the BFF, which answers 400 for anything outside its vocabulary, so
+  // a hand-edited or stale link would blank the screen instead of degrading.
+  const corr = q.get('corr');
+  if (corr && window.CORRECTION_ECONOMY && (corr === 'Nominal' || window.CORRECTION_ECONOMY[corr])) {
+    conv.correction = corr;
+  }
+  // Clamp an unservable currency × correction combo — US$ × IGP-M/IGP-DI (no US$
+  // deflated column, so it would render a real R$ value under a US$ symbol), and since
+  // v1.82.0 also an index paired with a currency it does not measure (R$ × CPI). The
   // strip disables these; a bookmarked deep link must not bypass that gate.
   if (window.clampConvention) Object.assign(conv, window.clampConvention(conv));
   if (q.get('mu') || q.get('vu')) {
@@ -511,8 +518,8 @@ function Dashboard() {
     setSummary({}); // F1.3: drop the previous banco's basket/period/value/geo
     const base = window.canonCurrencyFor ? window.canonCurrencyFor(nextId) : 'BRL';
     // Default to the banco's base currency, then clamp: a USD-base banco inherits the
-    // unservable USD × IGP-M/IGP-DI combo if the previous banco left that correction
-    // active, so snap the correction back to IPCA in the same update.
+    // unservable US$ × IGP-M/IGP-DI combo — or a € × HICP left over from the previous
+    // banco — if that correction is still active, so fix it in the same update.
     setConventions((c) => {
       const next = c && c.currency === base ? c : { ...c, currency: base };
       return window.clampConvention ? window.clampConvention(next) : next;

@@ -112,6 +112,36 @@ vars:
   inflation_series_igpm:  "{{ env_var('BCB_INFLATION_SERIES_IGPM_CODE',  '189') }}"
   inflation_series_igpdi: "{{ env_var('BCB_INFLATION_SERIES_IGPDI_CODE', '190') }}"
 
+  # The FOREIGN deflators, feeding val_real_cpi_usd / val_real_hicp_eur. Same env_var
+  # NAME + default coupling as the three above (config.py declares the identical keys;
+  # `embrapa doctor` validates the parity). These are the PUBLISHER's series ids, not
+  # SGS codes: BLS CPI-U and the ECB HICP series key, whose first dot-segment is the
+  # SDMX dataflow. A value here that is not ingested makes the column silently NULL.
+  inflation_series_cpi:   "{{ env_var('FOREIGN_INFLATION_CPI_CODE',  'CUUR0000SA0') }}"
+  inflation_series_hicp:  "{{ env_var('FOREIGN_INFLATION_HICP_CODE', 'ICP.M.U2.N.000000.4.INX') }}"
+
+  # Gate for the foreign deflators, OFF until their Bronze table exists.
+  #
+  # This is a BUILD-ORDER gate, not a feature switch: silver_foreign_inflation reads
+  # bronze_foreign.inflation_raw, and a source table that has never been ingested
+  # answers 404 — which would fail that model, then silver_inflation, then every Gold
+  # table downstream. Since the dashboard's whole prod build hangs off that chain, the
+  # default has to be the one that cannot break it.
+  #
+  # Turning it on, in this order:
+  #   1. redeploy the ingestion Job so it carries the new source
+  #      (`make ingest-job-deploy` — deploy/ingestion/deploy.sh rebuilds the image)
+  #   2. `uv run embrapa ingest foreign-inflation --full`  (one 1974→today backfill)
+  #   3. set DBT_ENABLE_FOREIGN_INFLATION=true (repo var, as DBT_ENABLE_CURATION is)
+  #   4. `dbt build --full-refresh` so Gold re-materializes the columns with data
+  #
+  # While it is off nothing breaks and nothing lies: the Gold val_real_{cpi,hicp}_*
+  # columns still EXIST (the pivot simply finds no rows and yields NULL), so the mart
+  # schema and the BFF allowlist are identical either way, and the screens report the
+  # absence through the value-gap note that already handles "this index does not reach
+  # that period" for IGP-M before 1989.
+  enable_foreign_inflation: "{{ env_var('DBT_ENABLE_FOREIGN_INFLATION', 'false') | lower == 'true' }}"
+
   # CODE:LABEL pairs of the BCB FX series to surface in Silver (mirror
   # BCB_CURRENCY_SERIES in .env / config.py). silver_bcb_currency filters
   # series_code to these so a series removed from the config but still lingering

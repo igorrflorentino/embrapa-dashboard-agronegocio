@@ -27,6 +27,12 @@ from google.cloud import bigquery
 # EUR columns are served (the PEVS/PAM marts carry them — real BCB BRL/EUR
 # series), so effective_value_column() resolves EUR server-side instead of
 # falling back to BRL.
+#
+# The own-currency deflators (v1.82.0) are listed for their OWN currency only:
+# val_real_cpi_usd and val_real_hicp_eur exist, val_real_cpi_brl and friends do not.
+# That is the pairing rule made unforgeable at the only place that matters — an index
+# may correct the money of the economy it measures and no other, so a convention that
+# would ask for "the dollar's purchasing power, printed in reais" cannot be built.
 ALLOWED_VALUE_COLUMNS = frozenset(
     {
         "val_yearfx_brl",
@@ -39,6 +45,8 @@ ALLOWED_VALUE_COLUMNS = frozenset(
         "val_real_igpm_eur",
         "val_real_igpdi_brl",
         "val_real_igpdi_eur",
+        "val_real_cpi_usd",
+        "val_real_hicp_eur",
         "net_weight_kg",
         "qty_base",
     }

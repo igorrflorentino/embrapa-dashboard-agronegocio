@@ -9,10 +9,11 @@
    copies that could silently drift into inconsistent val_real_* / val_yearfx_* NUMBERS
    (DEDUP-1).
 
-   Reads only silver_bcb_inflation + silver_currency. The downstream `enriched` real_*
-   expressions that CONSUME these stay PER-MODEL — they genuinely differ (val_raw for the
-   IBGE production marts vs primary_value_usd * brl_per_usd_avg for the COMTRADE flow
-   mart), so they are intentionally NOT part of this macro.
+   Reads only silver_inflation (the BCB indices and the foreign ones, unioned) +
+   silver_currency. The downstream `enriched` real_* expressions that CONSUME these stay
+   PER-MODEL — they genuinely differ (val_raw for the IBGE production marts vs
+   primary_value_usd * brl_per_usd_avg for the COMTRADE flow mart), so they are
+   intentionally NOT part of this macro.
 
    Emits the four CTE definitions WITHOUT a trailing comma; the caller adds the `,` before
    its own `enriched as (...)` CTE. #}
@@ -23,10 +24,17 @@ inflation_year_end as (
         reference_year,
         max(case when series_code = '{{ var("inflation_series_ipca")  }}' then index_value end) as ipca_year_end,
         max(case when series_code = '{{ var("inflation_series_igpm")  }}' then index_value end) as igpm_year_end,
-        max(case when series_code = '{{ var("inflation_series_igpdi") }}' then index_value end) as igpdi_year_end
+        max(case when series_code = '{{ var("inflation_series_igpdi") }}' then index_value end) as igpdi_year_end,
+        -- The FOREIGN deflators. Same pivot, same year-end rule, different question:
+        -- these correct a dollar by US prices and a euro by euro-area prices, which is
+        -- what a value denominated in those currencies actually needs. A Brazilian
+        -- index can only ever say what something is worth in R$ — expressing that in
+        -- US$ afterwards changes the symbol, not the price level it was measured at.
+        max(case when series_code = '{{ var("inflation_series_cpi")   }}' then index_value end) as cpi_year_end,
+        max(case when series_code = '{{ var("inflation_series_hicp")  }}' then index_value end) as hicp_year_end
     from (
         select reference_year, series_code, index_value
-        from {{ ref('silver_bcb_inflation') }}
+        from {{ ref('silver_inflation') }}
         where index_value is not null
         qualify row_number() over (
             partition by reference_year, series_code
@@ -42,10 +50,16 @@ inflation_latest as (
     select
         max(case when series_code = '{{ var("inflation_series_ipca")  }}' then index_value end) as ipca_current,
         max(case when series_code = '{{ var("inflation_series_igpm")  }}' then index_value end) as igpm_current,
-        max(case when series_code = '{{ var("inflation_series_igpdi") }}' then index_value end) as igpdi_current
+        max(case when series_code = '{{ var("inflation_series_igpdi") }}' then index_value end) as igpdi_current,
+        -- Each series' OWN latest reading, not a shared cut-off date: CPI-U, HICP and
+        -- the SGS indices publish on different calendars, so forcing one common month
+        -- would throw away a month of whichever published first — and, worse, make the
+        -- "today" of one convention differ from its own latest ingested data.
+        max(case when series_code = '{{ var("inflation_series_cpi")   }}' then index_value end) as cpi_current,
+        max(case when series_code = '{{ var("inflation_series_hicp")  }}' then index_value end) as hicp_current
     from (
         select series_code, index_value
-        from {{ ref('silver_bcb_inflation') }}
+        from {{ ref('silver_inflation') }}
         where index_value is not null
         qualify row_number() over (
             partition by series_code

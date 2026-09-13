@@ -64,6 +64,13 @@ parsed as (
 select
     series_code,
     series_name,
+    -- Who published it, and whose prices it measures. Constants here (every row in this
+    -- model is a BCB SGS series about Brazilian prices), but PRESENT so this model and
+    -- silver_foreign_inflation are column-identical and `silver_inflation` can union
+    -- them. The economy is what makes an index usable as a DEFLATOR rather than just a
+    -- series: it says which money this index corrects.
+    'bcb-sgs'                          as provider,
+    'BR'                               as economy,
     reference_date,
     extract(year  from reference_date) as reference_year,
     extract(month from reference_date) as reference_month,

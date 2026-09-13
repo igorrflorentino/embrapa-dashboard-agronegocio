@@ -113,6 +113,12 @@ models:
       real column instead of the frontend cross-converting USD via a frozen mock
       rate. The IGP-M/IGP-DI × USD combos are deliberately NOT materialized (the
       serving allowlist omits them, so the BFF can never SELECT them).
+      Since v1.82.0 it also carries the OWN-CURRENCY deflators — val_real_cpi_usd
+      (US CPI-U) and val_real_hicp_eur (euro-area HICP) — which correct a foreign
+      value by the inflation of the economy that issues it instead of by a Brazilian
+      index. They are not variants of the columns above: the FX moment differs too
+      (câmbio do ano, not câmbio de hoje), so they answer a different question and
+      produce a different number. Served for their own currency only.
     tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
@@ -147,6 +153,12 @@ models:
       until then only val_yearfx_usd, so the seasonality view could not follow the
       conventions strip. The BFF checks this table's schema before asking for a column,
       because the app and this mart deploy in parallel on a merge.
+      Since v1.82.0 it also carries the OWN-CURRENCY deflators — val_real_cpi_usd
+      (US CPI-U) and val_real_hicp_eur (euro-area HICP) — which correct a foreign
+      value by the inflation of the economy that issues it instead of by a Brazilian
+      index. They are not variants of the columns above: the FX moment differs too
+      (câmbio do ano, not câmbio de hoje), so they answer a different question and
+      produce a different number. Served for their own currency only.
     tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
@@ -183,6 +195,12 @@ models:
       cross-converting USD via a frozen mock rate. The IGP-M/IGP-DI × USD combos
       are deliberately NOT materialized (the serving allowlist omits them, so the
       BFF can never SELECT them).
+      Since v1.82.0 it also carries the OWN-CURRENCY deflators — val_real_cpi_usd
+      (US CPI-U) and val_real_hicp_eur (euro-area HICP) — which correct a foreign
+      value by the inflation of the economy that issues it instead of by a Brazilian
+      index. They are not variants of the columns above: the FX moment differs too
+      (câmbio do ano, not câmbio de hoje), so they answer a different question and
+      produce a different number. Served for their own currency only.
     tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:

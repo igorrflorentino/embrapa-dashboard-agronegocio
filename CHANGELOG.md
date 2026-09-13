@@ -7,6 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.82.0] - 2026-09-13
+
+### Adicionado
+
+- **Dólares e euros passam a ter inflação própria.** Até aqui os únicos deflatores do
+  projeto eram brasileiros, e a faixa de convenções oferecia moeda e correção como dois
+  eixos independentes — então "US$ · IPCA" era uma escolha possível e se lia como dólares
+  corrigidos pela inflação brasileira, que não é uma operação que exista. O número por trás
+  do rótulo estava certo (`val_real_ipca_usd` = real deflacionado pelo IPCA e convertido ao
+  câmbio de HOJE, ou seja, poder de compra brasileiro apresentado em dólares); o que faltava
+  era a outra leitura, e faltava dizer qual das duas estava na tela.
+  - Nova fonte de referência `foreign-inflation`: **CPI-U** (`CUUR0000SA0`, BLS — todos os
+    itens, média das cidades dos EUA, sem ajuste sazonal) e **HICP** da zona do euro
+    (`ICP.M.U2.N.000000.4.INX`, portal de dados do BCE). Ambas são NÍVEIS de índice, não a
+    variação mensal das séries do SGS, então o Silver as usa direto em vez de encadeá-las.
+  - Novas colunas `val_real_cpi_usd` e `val_real_hicp_eur` nos cinco Gold e nos seis marts.
+    Elas convertem pelo câmbio do ANO DE REGISTRO e só então deflacionam — ordem inversa à
+    das colunas em índice brasileiro, que deflacionam em reais e convertem pelo câmbio de
+    hoje. As duas divergem tanto quanto o câmbio real variou no período. Nos bancos de
+    aduana, cujo valor de origem já É US$, a correção pelo CPI não passa por câmbio nenhum,
+    e por isso é a única coluna real em dólar sem a lacuna pré-1994.
+  - Um índice só corrige a moeda da economia que ele mede: `val_real_cpi_brl` e afins não
+    existem, e é a allowlist do serving que torna a combinação inconstruível.
+
+### Alterado
+
+- **A faixa de convenções passa a separar as correções por ECONOMIA.** Em vez de uma lista
+  única de índices, três bandas — *Sem correção* · *Inflação do Brasil · câmbio de hoje* ·
+  *Inflação da própria moeda · câmbio do ano* — e, abaixo delas, uma frase dizendo o que o
+  número é, com a negativa explícita quando cabe ("mede poder de compra brasileiro,
+  apresentado em dólares: não é a inflação dos EUA"). O sufixo `· câmbio de hoje` some sob
+  R$, onde conversão nenhuma acontece. O chip recolhido carrega a economia junto do índice
+  (`IPCA · Brasil`), então a distinção sobrevive à faixa fechada.
+- Os rótulos de valor do servidor passam a nomear a economia quando o símbolo não basta:
+  `Valor real (IPCA · inflação do Brasil, ao câmbio de hoje) — US$` contra
+  `Valor real (CPI · inflação dos EUA) — US$`.
+- `clampConvention` substitui pela INTENÇÃO: quem estava em US$ · CPI e troca para o euro
+  vai para o HICP, não para o IPCA — pedir "a inflação da própria moeda" e receber a
+  brasileira devolveria justamente a leitura que a pessoa escolheu não usar. Um índice
+  brasileiro sem coluna na moeda pedida (US$ × IGP-M) continua caindo no IPCA, porque ali a
+  medição sobrevive à troca.
+- O aviso de lacuna ganha o caso em que NENHUM ano tem valor: "a série do CPI ainda não
+  entrou na base" — o único motivo acionável, e o que o aviso calava.
+
+### Operação
+
+- O gate `enable_foreign_inflation` começa **desligado**, e é um gate de ORDEM DE BUILD, não
+  um interruptor de funcionalidade: `silver_foreign_inflation` lê uma tabela de Bronze que
+  responde 404 antes da primeira ingestão, e essa falha cascatearia por `silver_inflation`
+  até todo o Gold. Desligado, nada quebra e nada mente — as colunas continuam existindo
+  (o pivô não acha linhas e devolve NULL) e as telas relatam a ausência pela mesma nota que
+  já trata o IGP-M antes de 1989. Para ligar, nesta ordem: `make ingest-job-deploy` →
+  `embrapa ingest foreign-inflation --full` → `DBT_ENABLE_FOREIGN_INFLATION=true` →
+  `dbt build --full-refresh`.
+- As duas APIs foram implementadas a partir dos contratos publicados, mas **não puderam ser
+  exercitadas** no ambiente de build (saída HTTPS para `api.bls.gov` e
+  `data-api.ecb.europa.eu` bloqueada). Um id de série errado falha ALTO por desenho — o
+  `extract` levanta nomeando a série vazia em vez de reportar sucesso com o deflator vazio —
+  então a primeira execução do passo 2 é a verificação.
+
 ## [1.81.1] - 2026-09-13
 
 ### Documentação
