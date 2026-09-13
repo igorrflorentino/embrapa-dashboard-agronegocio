@@ -1294,11 +1294,15 @@ def trade_flows(
     reporter_value: str | None = None,
     reporters: Sequence[str] = (),
     partners: Sequence[str] = (),
+    value_column: str = "val_yearfx_usd",
 ) -> tuple[str, list]:
     """Origin->destination links for the Sankey (backs flowData).
 
     COMEX: origin = UF (state), dest = country. COMTRADE: origin = reporter,
-    dest = partner. ``value_usd`` is raw ``val_yearfx_usd``.
+    dest = partner. ``value_column`` (allowlist-validated) is the currency × correction
+    column the seam resolved from the conventions strip; until v1.77.0 this builder had
+    ``val_yearfx_usd`` written into it, so the Sankey stayed nominal US$ under any
+    convention. The alias is currency-neutral (``total_value``) for the same reason.
 
     ``flow`` narrows to one direction; ``None`` + ``sum_flows`` sums only the primary
     totals (:data:`COMTRADE_TOTAL_FLOWS`) so the Sankey links never double-count the
@@ -1338,17 +1342,18 @@ def trade_flows(
     _reporter(conditions, params, reporter_column, reporter_value)
     _in_array(conditions, params, "reporter_iso_a3", "reporters", reporters)
     _in_array(conditions, params, "partner_iso_a3", "partners", partners)
+    value_column = _validate_column(value_column, ALLOWED_VALUE_COLUMNS, "value_column")
     sql = f"""
         select
             {origin_code_column}             as origin_code,
             any_value({origin_name_column})  as origin_name,
             {dest_code_column}               as dest_code,
             any_value({dest_name_column})    as dest_name,
-            sum(val_yearfx_usd)              as value_usd
+            sum({value_column})              as total_value
         from `{table}`
         {_where(conditions)}
         group by {origin_code_column}, {dest_code_column}
-        order by value_usd desc
+        order by total_value desc
     """
     return sql, params
 

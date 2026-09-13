@@ -100,7 +100,7 @@ def test_trade_route_unfiltered_passes_summary_none(monkeypatch):
     captured = {}
 
     monkeypatch.setattr(
-        seam, "flow_data", lambda banco, summary=None: captured.update(summary=summary)
+        seam, "flow_data", lambda banco, summary=None, **_k: captured.update(summary=summary)
     )
     monkeypatch.setattr(serializers, "serialize_flow", lambda *a, **k: {})
     resp = client.get("/api/flow?banco=mdic_comex")
@@ -398,6 +398,23 @@ def test_partners_route_threads_the_convention(monkeypatch):
     assert client.get("/api/partners?banco=mdic_comex&correction=ipca").status_code == 400
 
 
+def test_flow_route_threads_the_convention(monkeypatch):
+    """Same as /api/partners: currency+correction reach the seam, and an invalid value
+    400s instead of silently deflating with a default (v1.77.0)."""
+    from embrapa_dashboard.webapi import seam, serializers
+
+    client = _client(monkeypatch)
+    captured = {}
+    monkeypatch.setattr(
+        seam, "flow_data", lambda banco, summary=None, conv=None: captured.update(conv=conv)
+    )
+    monkeypatch.setattr(serializers, "serialize_flow", lambda *a, **k: {})
+    ok = client.get("/api/flow?banco=mdic_comex&currency=BRL&correction=IGP-DI")
+    assert ok.status_code == 200
+    assert captured["conv"] == {"currency": "BRL", "correction": "IGP-DI"}
+    assert client.get("/api/flow?banco=mdic_comex&currency=usd").status_code == 400
+
+
 @pytest.mark.parametrize(
     ("endpoint", "seam_fn", "serialize_fn"),
     [
@@ -429,7 +446,7 @@ def test_trade_route_no_states_param_omits_states_key(monkeypatch):
     client = _client(monkeypatch)
     captured = {}
     monkeypatch.setattr(
-        seam, "flow_data", lambda banco, summary=None: captured.update(summary=summary)
+        seam, "flow_data", lambda banco, summary=None, **_k: captured.update(summary=summary)
     )
     monkeypatch.setattr(serializers, "serialize_flow", lambda *a, **k: {})
     resp = client.get("/api/flow?banco=mdic_comex&codes=0801")
@@ -1072,7 +1089,7 @@ def test_trade_get_endpoints_shape_empty_seam_payload(monkeypatch):
     from embrapa_dashboard.webapi import seam
 
     client = _client(monkeypatch)
-    monkeypatch.setattr(seam, "flow_data", lambda banco, summary=None: None)
+    monkeypatch.setattr(seam, "flow_data", lambda banco, summary=None, **_k: None)
     monkeypatch.setattr(seam, "partner_data", lambda banco, summary=None, **_k: None)
     monkeypatch.setattr(seam, "monthly_data", lambda banco, summary=None: None)
 

@@ -1062,12 +1062,16 @@ def flow():
     ``codes``/``states``/``y0``/``y1`` scope the basket + origin-UF + year window to
     match the view's active filters (the seam threads them into the gateway flow
     reader; ``states`` narrows the COMEX origin only — COMTRADE's origin is a
-    reporter country, so the frontend surfaces it as not-applicable there)."""
+    reporter country, so the frontend surfaces it as not-applicable there).
+    currency+correction pick the value column server-side, same as /snapshot."""
     banco = request.args.get("banco", "")
+    conv, err = _conversion_or_400()
+    if err:
+        return err
     summary, err = _with_filter_axes(_filter_summary())
     if err:
         return err
-    return jsonify(serializers.serialize_flow(seam.flow_data(banco, summary)))
+    return jsonify(serializers.serialize_flow(seam.flow_data(banco, summary, conv=conv)))
 
 
 _ALLOWED_PARTNER_METRICS = frozenset({"value", "weight", "price"})

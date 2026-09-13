@@ -1,15 +1,16 @@
-// ViewFlows.test.jsx — the flow KPI magnitude formatter (M9). ViewFlows.fmt used
-// to hardcode a ÷1000 + " mi"/" bi" heuristic that ASSUMED the value already came
-// in millions; against a real API magnitude (raw US$) that mislabels everything.
-// The fix drives magnitude + pt-BR suffix off the shared window.autoScaleNum
-// helper keyed on the REAL value. We render ViewFlows with stubbed window.*
-// dependencies and read the formatted KPI text.
+// ViewFlows.test.jsx — the flow KPI magnitude formatter. The CONTRACT (serialize_flow)
+// ships link/node values already in MILLIONS of `unit` — Acre → Peru arrives as 77,65.
+// The earlier fix (M9) replaced a ÷1000 heuristic with window.autoScaleNum but fed it that
+// millions figure as if it were raw US$, so 77,65 mi rendered "US$ 77,6" and a national
+// 50.000 mi total "US$ 50 mil". Its fixtures were raw US$, which is why it passed. The
+// view now converts back (× 1e6) before scaling; the fixtures below are in the contract's
+// unit, as the API really sends them.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { cleanup, render } from '@testing-library/react';
 
-// The ui-side shared magnitude helper the migrated views use (same words as
-// the charts' ptBrMagnitude). The real implementation under test.
+// The ui-side shared magnitude helper the migrated views use (same thresholds as
+// charts/magnitude.js magnitudeParts, which window.autoScaleNum is bound to).
 function autoScaleNum(v) {
   const a = Math.abs(v);
   if (a >= 1e9) return { factor: 1e9, suffix: 'bi' };
@@ -45,56 +46,77 @@ beforeEach(async () => {
 
 afterEach(() => cleanup());
 
-describe('ViewFlows fmt — magnitude from the real value, not a ÷1000 heuristic (M9)', () => {
-  it('labels a billions-scale US$ flow as "bi" (not the old "mi")', () => {
-    // Two origins → one dest; total = 3.4e9 US$ (a realistic raw API magnitude).
+const total = (container) =>
+  container.querySelector('.kpi[data-label="Fluxo total"] .kpi-value').textContent;
+
+describe('ViewFlows fmt — the contract ships millions, and the label must say so', () => {
+  it('labels a billions-scale flow as "bi"', () => {
+    // Two origins → one dest; total = 3.400 mi = US$ 3,4 bi.
     stubProtoGlobals({
       unit: 'US$',
       originLabel: 'UF de origem',
       destLabel: 'País de destino',
       nodes: [
-        { id: 'o0', label: 'PA', side: 'origin', value: 2.4e9 },
-        { id: 'o1', label: 'SP', side: 'origin', value: 1e9 },
-        { id: 'd0', label: 'China', side: 'dest', value: 3.4e9 },
+        { id: 'o0', label: 'PA', side: 'origin', value: 2400 },
+        { id: 'o1', label: 'SP', side: 'origin', value: 1000 },
+        { id: 'd0', label: 'China', side: 'dest', value: 3400 },
       ],
       links: [
-        { source: 'o0', target: 'd0', value: 2.4e9 },
-        { source: 'o1', target: 'd0', value: 1e9 },
+        { source: 'o0', target: 'd0', value: 2400 },
+        { source: 'o1', target: 'd0', value: 1000 },
       ],
     });
     const { container } = render(<ViewFlows summary={{}} conventions={{}} database="mdic_comex" />);
-    const total = container.querySelector('.kpi[data-label="Fluxo total"] .kpi-value');
-    // 3.4e9 → "US$ 3,4 bi" (pt-BR), NOT the old "US$ 3400000.0 bi" or "… mi".
-    expect(total.textContent).toBe('US$ 3,4 bi');
-    expect(total.textContent).toContain('bi');
-    expect(total.textContent).not.toMatch(/mi$/);
+    expect(total(container)).toBe('US$ 3,4 bi');
   });
 
-  it('labels a millions-scale flow as "mi" driven by the real value', () => {
+  it('labels a millions-scale flow as "mi" — the Acre → Peru case', () => {
+    // ÂNCORA EXTERNA, medida em produção 2026-09-12: serialize_flow entrega 77,6481 para
+    // Acre → Peru (castanha-do-pará, US$ nominal, 1997–2026). A tela mostrava "US$ 77,6".
     stubProtoGlobals({
       unit: 'US$',
       originLabel: 'UF',
       destLabel: 'País',
-      nodes: [{ id: 'o0', label: 'BA', side: 'origin', value: 5e6 },
-        { id: 'd0', label: 'EUA', side: 'dest', value: 5e6 }],
-      links: [{ source: 'o0', target: 'd0', value: 5e6 }],
+      nodes: [{ id: 'o0', label: 'Acre', side: 'origin', value: 77.6481 },
+        { id: 'd0', label: 'Peru', side: 'dest', value: 77.6481 }],
+      links: [{ source: 'o0', target: 'd0', value: 77.6481 }],
     });
     const { container } = render(<ViewFlows summary={{}} conventions={{}} database="mdic_comex" />);
-    const total = container.querySelector('.kpi[data-label="Fluxo total"] .kpi-value');
-    expect(total.textContent).toBe('US$ 5 mi');
+    expect(total(container)).toBe('US$ 77,6 mi');
   });
 
-  it('a small value carries no magnitude suffix (no fabricated " mi")', () => {
+  it('a sub-thousand-dollar flow carries no magnitude suffix (no fabricated " mi")', () => {
+    // 0,000042 mi = US$ 42.
     stubProtoGlobals({
       unit: 'US$',
       originLabel: 'UF',
       destLabel: 'País',
-      nodes: [{ id: 'o0', label: 'AC', side: 'origin', value: 42 },
-        { id: 'd0', label: 'Peru', side: 'dest', value: 42 }],
-      links: [{ source: 'o0', target: 'd0', value: 42 }],
+      nodes: [{ id: 'o0', label: 'AC', side: 'origin', value: 0.000042 },
+        { id: 'd0', label: 'Peru', side: 'dest', value: 0.000042 }],
+      links: [{ source: 'o0', target: 'd0', value: 0.000042 }],
     });
     const { container } = render(<ViewFlows summary={{}} conventions={{}} database="mdic_comex" />);
-    const total = container.querySelector('.kpi[data-label="Fluxo total"] .kpi-value');
-    expect(total.textContent).toBe('US$ 42'); // no " mi" / " bi" tacked on
+    expect(total(container)).toBe('US$ 42');
+  });
+});
+
+describe('ViewFlows — a convenção que o número carrega', () => {
+  // Até a v1.77.0 o Sankey somava US$ nominal sob qualquer escolha da faixa de
+  // convenções, e o canto do diagrama dizia só "US$".
+  it('mostra valueLabel no diagrama e formata na moeda do servidor', () => {
+    stubProtoGlobals({
+      unit: 'R$',
+      valueLabel: 'Valor real (IPCA) — R$ · FOB',
+      originLabel: 'UF',
+      destLabel: 'País',
+      nodes: [{ id: 'o0', label: 'AC', side: 'origin', value: 5 },
+        { id: 'd0', label: 'Peru', side: 'dest', value: 5 }],
+      links: [{ source: 'o0', target: 'd0', value: 5 }],
+    });
+    window.SectionHeader = ({ action }) => <div className="sh-action">{action}</div>;
+    const { container } = render(<ViewFlows summary={{}} conventions={{}} database="mdic_comex" />);
+    expect(container.querySelector('.flow-valuation').textContent)
+      .toBe('Valor real (IPCA) — R$ · FOB');
+    expect(total(container)).toBe('R$ 5 mi');
   });
 });

@@ -736,11 +736,13 @@ def fetch_comex_flows(
     ncm_codes: Sequence[str] = (),
     flow: str | None = None,
     uf_codes: Sequence[str] = (),
+    value_column: str = "val_yearfx_usd",
 ):
     """COMEX origin(UF)->destination(country) links (backs flowData for COMEX).
 
     ``uf_codes`` optionally narrows the Sankey to those origin UFs
-    (``state_acronym``); empty = no UF filter.
+    (``state_acronym``); empty = no UF filter. ``value_column`` is the currency ×
+    correction column the seam resolved from the conventions strip.
     """
     settings = get_settings()
     table = sqlbuild.table_ref(settings, "bq_serving_dataset", "serving_comex_annual")
@@ -756,6 +758,7 @@ def fetch_comex_flows(
         codes=tuple(ncm_codes),
         flow=flow,
         uf_codes=tuple(uf_codes),
+        value_column=value_column,
     )
     return run_query(sql, params)
 
@@ -771,6 +774,7 @@ def fetch_comtrade_flows(
     reporters: Sequence[str] = (),
     partners: Sequence[str] = (),
     pin_reporter: str | None = _REPORTER_PIN_DEFAULT,
+    value_column: str = "val_yearfx_usd",
 ):
     """COMTRADE reporter->partner links (backs flowData for COMTRADE).
 
@@ -779,6 +783,7 @@ def fetch_comtrade_flows(
     / ``market`` (tipo de mercado) narrow to one procedure / purpose (None = every one).
     ``reporters``/``partners`` (ISO-A3) narrow the Sankey by country; ``pin_reporter``
     keeps Brazil's own links by default (see :func:`_resolve_reporter_pin`).
+    ``value_column`` is the currency × correction column the seam resolved.
     """
     settings = get_settings()
     table = sqlbuild.table_ref(settings, "bq_serving_dataset", "serving_comtrade_annual")
@@ -801,6 +806,7 @@ def fetch_comtrade_flows(
         reporter_value=_resolve_reporter_pin(settings, pin_reporter, reporters),
         reporters=tuple(reporters),
         partners=tuple(partners),
+        value_column=value_column,
     )
     return run_query(sql, params)
 

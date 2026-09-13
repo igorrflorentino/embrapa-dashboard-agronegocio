@@ -200,9 +200,15 @@ município passes the cascade iff it clears every active facet (intersection).
 ## 4. Generic adapters (brief §3)
 
 ### 4.1 `flowData` → Sankey origin→destination
-- COMEX: origin = `state_acronym` (UF), dest = `country_name`. unit `'US$'`.
-- COMTRADE: origin = `reporter_name`, dest = `partner_name`. unit `'US$'`.
-- `node.value` = Σ of the links touching it (pre-summed). value = `SUM(val_yearfx_usd)`.
+`{ preview, unit, valueLabel, originLabel, destLabel, nodes, links }`.
+- COMEX: origin = `state_acronym` (UF), dest = `country_name` — exports only.
+- COMTRADE: origin = `reporter_name`, dest = `partner_name`.
+- value = `SUM(<value column>)`, the column `currency` + `correction` resolve through
+  `seam.effective_value_column` — the same rule as §4.2. Until v1.77.0 it was fixed at
+  `val_yearfx_usd`, so the Sankey was nominal US$ under any convention.
+- `unit` = symbol of the column ACTUALLY summed (a US$ × IGP-M request falls back to R$);
+  `valueLabel` = the convention as the view prints it.
+- `node.value` = Σ of the links touching it (pre-summed), in **`unit` mi**.
 
 ### 4.2 `partnerData` → partner ranking
 `{ preview, flowLabel, unit, valueLabel, partners: [{ name, exp, imp, value, weight, price,
@@ -248,6 +254,10 @@ oldest flows get the largest correction and the order itself can change.
 ### 4.3 `monthlyData` → seasonality (**COMEX only**)
 COMEX Gold has `reference_month`. Build `matrix[year][1..12]`, `monthlyAvg[12]`,
 `series[{ym,y,m,v}]` from `SUM(val_yearfx_usd)` by (year, month).
+> **Always nominal US$.** The only monetary column `serving_comex_seasonality` carries is
+> `val_yearfx_usd`, so this view does NOT follow the conventions strip — unlike §4.1 and
+> §4.2 since v1.77.0. Honouring it needs the mart to carry the `val_real_*` columns first:
+> a dbt change plus a prod rebuild that must land BEFORE the reader asks for them.
 > COMTRADE is annual → never call this for `un_comtrade` (Sazonalidade = "Não se aplica").
 
 ---

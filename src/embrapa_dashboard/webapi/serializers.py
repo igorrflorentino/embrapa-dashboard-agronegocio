@@ -811,16 +811,24 @@ def serialize_trade_mirror(d: dict) -> dict:
 
 def serialize_flow(d: dict | None, max_links: int = 40) -> dict:
     """seam.flow_data() → FlowData. Builds the Sankey nodes/links from the
-    origin→dest link frame (top ``max_links`` by value for a readable diagram)."""
-    shell = {"preview": False, "unit": "US$", "originLabel": "Origem", "destLabel": "Destino"}
-    if d is None:
-        return {**shell, "nodes": [], "links": []}
+    origin→dest link frame (top ``max_links`` by value for a readable diagram).
+
+    ``unit`` is the symbol of the column the seam ACTUALLY summed (``value_column``;
+    default the US$-native nominal one) and ``valueLabel`` names the convention — the
+    same rule as :func:`serialize_partner`, so a US$ × IGP-M request that fell back to
+    R$ is labelled R$."""
+    d = d or {}
+    currency = fmt.column_currency(d.get("value_column") or "val_yearfx_usd") or "USD"
+    shell = {
+        "preview": False,
+        "unit": fmt.CURRENCY_SYMBOL[currency],
+        "valueLabel": d.get("value_label"),
+        "originLabel": d.get("origin_label", "Origem"),
+        "destLabel": d.get("dest_label", "Destino"),
+    }
     links_df = d.get("links")
-    origin_label = d.get("origin_label", "Origem")
-    dest_label = d.get("dest_label", "Destino")
-    labels = {"originLabel": origin_label, "destLabel": dest_label}
     if _empty(links_df):
-        return {**shell, **labels, "nodes": [], "links": []}
+        return {**shell, "nodes": [], "links": []}
     df = links_df.head(max_links)
     origins: dict[str, str] = {}
     dests: dict[str, str] = {}
@@ -834,20 +842,13 @@ def serialize_flow(d: dict | None, max_links: int = 40) -> dict:
         if dc not in dests:
             dests[dc] = f"d{len(dests)}"
             nodes.append({"id": dests[dc], "label": r.dest_name, "side": "dest", "value": 0.0})
-        v = _num(r.value_usd) / 1e6  # → US$ mi
+        v = _num(r.total_value) / 1e6  # → unit mi
         links.append({"source": origins[oc], "target": dests[dc], "value": v})
     by_id = {n["id"]: n for n in nodes}
     for link in links:
         by_id[link["source"]]["value"] += link["value"]
         by_id[link["target"]]["value"] += link["value"]
-    return {
-        "preview": False,
-        "unit": "US$",
-        "originLabel": origin_label,
-        "destLabel": dest_label,
-        "nodes": nodes,
-        "links": links,
-    }
+    return {**shell, "nodes": nodes, "links": links}
 
 
 # Piso de materialidade do ranking de PREÇO médio (US$/kg = valor ÷ peso). Aplica-se

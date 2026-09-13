@@ -1129,21 +1129,21 @@ def test_serialize_flow_builds_sankey_nodes_links_and_node_value_totals():
                 "origin_name": "São Paulo",
                 "dest_code": "USA",
                 "dest_name": "Estados Unidos",
-                "value_usd": 2_000_000,
+                "total_value": 2_000_000,
             },
             {
                 "origin_code": "SP",
                 "origin_name": "São Paulo",
                 "dest_code": "CHN",
                 "dest_name": "China",
-                "value_usd": 3_000_000,
+                "total_value": 3_000_000,
             },
             {
                 "origin_code": "MG",
                 "origin_name": "Minas Gerais",
                 "dest_code": "USA",
                 "dest_name": "Estados Unidos",
-                "value_usd": 1_000_000,
+                "total_value": 1_000_000,
             },
         ]
     )
@@ -1184,14 +1184,14 @@ def test_serialize_flow_truncates_to_max_links():
                 "origin_name": "São Paulo",
                 "dest_code": "USA",
                 "dest_name": "EUA",
-                "value_usd": 9_000_000,
+                "total_value": 9_000_000,
             },
             {
                 "origin_code": "MG",
                 "origin_name": "Minas",
                 "dest_code": "CHN",
                 "dest_name": "China",
-                "value_usd": 8_000_000,
+                "total_value": 8_000_000,
             },
         ]
     )
@@ -1207,6 +1207,33 @@ def test_serialize_flow_none_and_empty_are_safe():
     empty_out = s.serialize_flow({"links": pd.DataFrame(), "origin_label": "A", "dest_label": "B"})
     assert empty_out["nodes"] == [] and empty_out["links"] == []
     assert empty_out["originLabel"] == "A"  # provided labels survive the empty path
+
+
+def test_serialize_flow_unit_follows_the_column_actually_summed():
+    """Same rule as the partner ranking (v1.77.0): `unit` is the symbol of the SUMMED
+    column, and `valueLabel` says which convention the diagram carries."""
+    links = pd.DataFrame(
+        [
+            {
+                "origin_code": "AC",
+                "origin_name": "Acre",
+                "dest_code": "589",
+                "dest_name": "Peru",
+                "total_value": 432_510_600,
+            }
+        ]
+    )
+    out = s.serialize_flow(
+        {
+            "links": links,
+            "value_column": "val_real_ipca_brl",
+            "value_label": "Valor real (IPCA) — R$ · FOB",
+        }
+    )
+    assert out["unit"] == "R$" and out["valueLabel"] == "Valor real (IPCA) — R$ · FOB"
+    assert out["links"][0]["value"] == pytest.approx(432.5106)
+    assert s.serialize_flow(None)["unit"] == "US$"  # no convention → customs-native
+    assert s.serialize_flow({"value_column": "val_yearfx_eur"})["unit"] == "€"
 
 
 def test_serialize_product_uf_valor_deflacionado_ausente_nao_e_zero():

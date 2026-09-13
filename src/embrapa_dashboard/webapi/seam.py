@@ -903,26 +903,38 @@ def _productivity_crops(products: pd.DataFrame | None) -> list[dict]:
 # the perspective to "Não se aplica" before these are ever called).
 
 
-def flow_data(banco_id: str, summary: dict | None = None) -> dict | None:
+def flow_data(banco_id: str, summary: dict | None = None, conv: dict | None = None) -> dict | None:
     """Origin→destination links for the Sankey (backs Fluxos territoriais).
 
     COMEX: UF de origem → país parceiro. COMTRADE: país reporter → país parceiro.
-    Returns {links, origin_label, dest_label} or None when the banco lacks `flow`.
-    The active UF (``states``) filter narrows the COMEX origin; COMTRADE's origin is
-    a reporter country (no UF column), so the UF selection does not reach its reader
-    — the frontend producer surfaces that as an honest "não se aplica" note.
+    Returns {links, origin_label, dest_label, value_column, value_label} or None when
+    the banco lacks `flow`. The active UF (``states``) filter narrows the COMEX origin;
+    COMTRADE's origin is a reporter country (no UF column), so the UF selection does not
+    reach its reader — the frontend producer surfaces that as an honest "não se aplica"
+    note.
+
+    ``conv`` (currency × correction) picks the summed column through
+    :func:`effective_value_column`, exactly as in :func:`partner_data` — until v1.77.0
+    the Sankey summed nominal US$ under any convention. ``None`` keeps the US$-native
+    nominal reading for direct callers.
     """
     banco = banco_by_id(banco_id)
     if banco_id not in _LIVE_SOURCES or "flow" not in banco.provides:
         return None
     y0, y1 = _years_from_summary(summary)
     codes = _apply_levels(banco_id, summary, _basket(summary))
+    value_col, value_label = effective_value_column(banco, conv or _TRADE_NATIVE_CONV)
     if banco_id == "mdic_comex":
         # Exports only: SG_UF_NCM is the UF *of the product*, so on import rows
         # the real direction is country→UF — summing them into the directed
         # 'UF de origem → país parceiro' links would inflate and mislabel them.
         links = gateway.fetch_comex_flows(
-            year_start=y0, year_end=y1, ncm_codes=codes, flow="export", uf_codes=_states(summary)
+            year_start=y0,
+            year_end=y1,
+            ncm_codes=codes,
+            flow="export",
+            uf_codes=_states(summary),
+            value_column=value_col,
         )
     else:
         # The active flow / regime (customs) / tipo-de-mercado filters are server-side on
@@ -937,6 +949,7 @@ def flow_data(banco_id: str, summary: dict | None = None) -> dict | None:
             flow=_flow_from_summary(summary),
             customs=_customs_from_summary(summary),
             market=_market_from_summary(summary),
+            value_column=value_col,
             **_country_reader_kwargs(summary),
         )
     dims = banco.dimensions
@@ -944,6 +957,8 @@ def flow_data(banco_id: str, summary: dict | None = None) -> dict | None:
         "links": links,
         "origin_label": dims.get("origin", {}).get("label", "Origem"),
         "dest_label": dims.get("dest", {}).get("label", "Destino"),
+        "value_column": value_col,
+        "value_label": value_label,
     }
 
 

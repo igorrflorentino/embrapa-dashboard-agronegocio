@@ -30,7 +30,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
   novo `valueLabel` põe a convenção na tela, logo acima do ranking. O preço médio e a
   faixa de preço tinham "US$" escrito à mão e passaram a usar a unidade do servidor.
 
-- Os aliases do SQL de parceiros deixaram de afirmar a moeda: `value_usd` →
+- **"Fluxos territoriais" (Sankey) tinha o mesmo defeito, e recebeu a mesma correção.**
+  `trade_flows` somava `val_yearfx_usd` fixo e `/api/flow` não lia a convenção. Agora segue
+  a faixa como o ranking, com `unit` e `valueLabel` pelo mesmo critério — o `valueLabel`
+  aparece no canto do diagrama, onde antes estava só "US$". Medido em produção, Acre →
+  Peru: US$ 77,65 mi nominal, US$ 84,84 mi em US$·IPCA, R$ 432,51 mi em R$·IPCA — os mesmos
+  números do ranking, como tem de ser.
+
+- **O Sankey rotulava milhões como unidades.** O servidor manda os valores já em milhões
+  (`serialize_flow` divide por 1e6 — Acre → Peru chega como `77,65`), e a tela passava esse
+  número ao `autoScaleNum` como se fosse dólar cru: saía "US$ 77,6" para US$ 77,6 milhões, e
+  um total de 50 mil milhões virava "US$ 50 mil". O comentário da tela registrava a
+  intenção ao contrário — dizia ter trocado uma heurística que "assumia que o valor já
+  vinha em milhões", e ele vinha —, e o teste passava porque alimentava dólar cru. A tela
+  agora converte de volta antes de escalar, e o teste usa a unidade do contrato, com
+  Acre → Peru medido em produção como âncora.
+
+- Os aliases do SQL de parceiros e do Sankey deixaram de afirmar a moeda: `value_usd` →
   `total_value`, `price_usd_per_kg` → `price_per_kg`, e `exp_value`/`imp_value`/
   `priced_value`. A coluna não é mais sempre dólar.
 
@@ -41,8 +57,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
   2005 sai 3,07× o de hoje (1,56× pelo método do Gold); como as vendas do Acre à Bolívia se
   concentram em 2004–2015 e as ao Peru a partir de 2016, a planilha inverte o ranking
   (Bolívia 106,8 mi × Peru 93,9 mi). Os dados das duas são idênticos, ano a ano, ao dólar.
-- **Fluxos territoriais** (Sankey) tem o mesmo defeito: `trade_flows` também soma
-  `val_yearfx_usd` sem ler as convenções. Fica para uma versão própria.
+- **Sazonalidade** continua em US$ nominal, e tem o mesmo erro de escala do Sankey (a tela
+  escala como dólar cru o valor que o servidor já manda em milhões). O nominal não se
+  resolve só na aplicação: `serving_comex_seasonality` guarda apenas `val_yearfx_usd`, então
+  o mart precisa carregar as colunas `val_real_*` antes — mudança no dbt + rebuild em
+  produção, que tem de chegar ANTES do leitor que as pede.
 
 ## [1.76.2] - 2026-09-09
 

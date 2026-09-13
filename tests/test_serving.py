@@ -776,6 +776,23 @@ def test_trade_flows_groups_by_origin_and_dest():
     assert "reporter_iso_a3 = @reporter" not in query
 
 
+def test_trade_flows_sums_the_convention_column():
+    """The Sankey reads the column the conventions strip resolved (v1.77.0) — before it,
+    `val_yearfx_usd` was written into the builder and the diagram stayed nominal US$."""
+    base = dict(
+        origin_code_column="state_acronym",
+        origin_name_column="state_name",
+        dest_code_column="country_code",
+        dest_name_column="country_name",
+        code_column="ncm_code",
+    )
+    query, _ = sql.trade_flows("p.s.t", value_column="val_real_ipca_brl", **base)
+    assert "sum(val_real_ipca_brl)" in query and "val_yearfx_usd" not in query
+    assert "order by total_value desc" in query
+    with pytest.raises(ValueError):
+        sql.trade_flows("p.s.t", value_column="val_yearfx_usd) --", **base)
+
+
 def test_trade_builders_pin_reporter_when_given():
     """Both trade builders accept an optional reporter pin (Brazil for the
     multi-reporter COMTRADE mart): the identifier is allowlist-validated and the

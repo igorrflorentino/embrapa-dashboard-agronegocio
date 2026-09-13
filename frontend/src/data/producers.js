@@ -448,10 +448,17 @@ window.flowData = function flowData(bancoId, summary) {
   const states = applies ? filterStates(summary) : undefined;
   const notApplicable = ufNote(bancoId, summary, applies);
   const ax = activeAxisParams();
-  const key = `trade:flow:${bancoId}:${filterSig(summary)}:${countrySig(summary)}:${axisKey(ax)}`;
+  // currency × correction pick the summed column server-side (as in partnerData below),
+  // so they belong in the request AND the cache key — until v1.77.0 the Sankey was
+  // nominal US$ under any convention.
+  const conv = window.dataStore && window.dataStore.conv
+    ? window.dataStore.conv()
+    : { currency: 'BRL', correction: 'IPCA' };
+  const key = `trade:flow:${bancoId}:${conv.currency}|${conv.correction}:${filterSig(summary)}:${countrySig(summary)}:${axisKey(ax)}`;
   ensure(key, () =>
     `${API}/flow?${qs({
       banco: bancoId, codes, states, y0, y1,
+      currency: conv.currency, correction: conv.correction,
       reporters: filterReporters(summary), partners: filterPartners(summary), ...ax,
     })}`);
   const data = get(key);
@@ -460,9 +467,10 @@ window.flowData = function flowData(bancoId, summary) {
     originLabel: dim('origin').label || 'Origem',
     destLabel: dim('dest').label || 'Destino',
   };
+  const unit = (window.CURRENCY_FX && window.CURRENCY_FX[conv.currency] || {}).symbol || conv.currency;
   return data
     ? { ...data, ...labels, notApplicable }
-    : { preview: false, unit: 'US$', ...labels, notApplicable, nodes: [], links: [], loadError: errorOf(key) };
+    : { preview: false, unit, ...labels, notApplicable, nodes: [], links: [], loadError: errorOf(key) };
 };
 window.partnerData = function partnerData(bancoId, summary, metric) {
   const codes = filterCodes(summary);

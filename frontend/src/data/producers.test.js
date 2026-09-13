@@ -151,6 +151,27 @@ describe('trade producers thread the active filter summary', () => {
     expect(urlOf(f, 1)).toContain('correction=Nominal');
   });
 
+  it('flowData sends the active currency × correction and keys the cache by it', async () => {
+    // Same defect as partnerData, same fix: the Sankey was nominal US$ under any convention.
+    const f = vi.fn(() => jsonRes({}));
+    const w = await loadAll(f);
+    let conv = { currency: 'EUR', correction: 'IPCA' };
+    w.dataStore = { ...(w.dataStore || {}), conv: () => conv };
+    w.CURRENCY_FX = { EUR: { symbol: '€' }, USD: { symbol: 'US$' } };
+
+    const cold = w.flowData('mdic_comex', {});
+    expect(urlOf(f)).toContain('currency=EUR');
+    expect(urlOf(f)).toContain('correction=IPCA');
+    expect(cold.unit).toBe('€');
+
+    w.flowData('mdic_comex', {}); // same convention → cache hit
+    expect(f).toHaveBeenCalledTimes(1);
+    conv = { currency: 'USD', correction: 'Nominal' };
+    w.flowData('mdic_comex', {}); // the strip changed → refetch
+    expect(f).toHaveBeenCalledTimes(2);
+    expect(urlOf(f, 1)).toContain('currency=USD');
+  });
+
   it('keys the resource by the filter signature so a changed window refetches', async () => {
     const f = vi.fn(() => jsonRes({}));
     const w = await loadAll(f);

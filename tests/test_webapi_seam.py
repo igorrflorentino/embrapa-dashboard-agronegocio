@@ -566,7 +566,7 @@ def test_flow_data_comex_filters_to_exports(monkeypatch):
     seam = _seam()
     recorded = {}
 
-    def fake_flows(year_start=None, year_end=None, ncm_codes=(), flow=None, uf_codes=()):
+    def fake_flows(year_start=None, year_end=None, ncm_codes=(), flow=None, uf_codes=(), **_k):
         recorded["flow"] = flow
         return pd.DataFrame(
             [
@@ -595,7 +595,7 @@ def test_flow_data_threads_basket_and_year_window(monkeypatch):
 
     cols = ["origin_code", "origin_name", "dest_code", "dest_name", "value_usd"]
 
-    def fake_flows(year_start=None, year_end=None, ncm_codes=(), flow=None, uf_codes=()):
+    def fake_flows(year_start=None, year_end=None, ncm_codes=(), flow=None, uf_codes=(), **_k):
         recorded.update(year_start=year_start, year_end=year_end, ncm_codes=ncm_codes)
         return pd.DataFrame(columns=cols)
 
@@ -617,7 +617,7 @@ def test_flow_data_comex_threads_uf_filter(monkeypatch):
     recorded = {}
     cols = ["origin_code", "origin_name", "dest_code", "dest_name", "value_usd"]
 
-    def fake_flows(year_start=None, year_end=None, ncm_codes=(), flow=None, uf_codes=()):
+    def fake_flows(year_start=None, year_end=None, ncm_codes=(), flow=None, uf_codes=(), **_k):
         recorded.update(uf_codes=uf_codes)
         return pd.DataFrame(columns=cols)
 
@@ -633,7 +633,7 @@ def test_flow_data_comex_no_uf_filter_passes_empty(monkeypatch):
     recorded = {}
     cols = ["origin_code", "origin_name", "dest_code", "dest_name", "value_usd"]
 
-    def fake_flows(year_start=None, year_end=None, ncm_codes=(), flow=None, uf_codes=()):
+    def fake_flows(year_start=None, year_end=None, ncm_codes=(), flow=None, uf_codes=(), **_k):
         recorded.update(uf_codes=uf_codes)
         return pd.DataFrame(columns=cols)
 
@@ -723,6 +723,30 @@ def test_partner_data_sums_the_column_the_conventions_resolve(monkeypatch):
 
     # No convention → the customs-native reading, for direct callers.
     assert seam.partner_data("mdic_comex", {})["value_column"] == "val_yearfx_usd"
+
+
+def test_flow_data_sums_the_column_the_conventions_resolve(monkeypatch):
+    """The Sankey reads the currency × correction the strip shows (v1.77.0) — before it,
+    both flow readers summed nominal US$ under any convention."""
+    seam = _seam()
+    recorded = {}
+
+    def fake(**k):
+        recorded.update(k)
+        return pd.DataFrame()
+
+    monkeypatch.setattr(seam.gateway, "fetch_comex_flows", fake)
+    monkeypatch.setattr(seam.gateway, "fetch_comtrade_flows", fake)
+
+    out = seam.flow_data("mdic_comex", {}, conv={"currency": "BRL", "correction": "IPCA"})
+    assert recorded["value_column"] == out["value_column"] == "val_real_ipca_brl"
+    assert recorded["flow"] == "export"  # the COMEX Sankey stays exports-only
+    assert "IPCA" in out["value_label"] and "R$" in out["value_label"]
+
+    seam.flow_data("un_comtrade", {}, conv={"currency": "USD", "correction": "IPCA"})
+    assert recorded["value_column"] == "val_real_ipca_usd"
+
+    assert seam.flow_data("mdic_comex", {})["value_column"] == "val_yearfx_usd"
 
 
 def test_partner_data_comtrade_ignores_uf_filter(monkeypatch):

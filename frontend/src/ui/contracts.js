@@ -61,7 +61,8 @@
 //
 // @typedef {Object} FlowData            window.flowData(bancoId, summary)
 // @property {boolean} preview
-// @property {string}  unit
+// @property {string}  unit        currency symbol of the column the server ACTUALLY summed (R$/US$/€) — follows the conventions strip; a combo the mart lacks (US$ × IGP-M) falls back to R$
+// @property {(string|null)} valueLabel  the convention on screen, e.g. "Valor real (IPCA) — US$ · FOB"
 // @property {string}  originLabel        Dimension label for the origin side.
 // @property {string}  destLabel          Dimension label for the destination side.
 // @property {{id:string,label:string,side:'origin'|'dest',value:number}[]} nodes
