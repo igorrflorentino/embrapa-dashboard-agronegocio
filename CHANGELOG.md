@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.82.1] - 2026-09-13
+
+### Corrigido
+
+- **`embrapa doctor` dizia "Foreign inflation reachable: 200 OK" para uma recusa do BLS.**
+  O check nasceu junto com os deflatores estrangeiros da v1.82.0 e é exatamente o passo que
+  se pede para confirmar que as duas APIs respondem antes de ligar o
+  `enable_foreign_inflation` — mas ele só chamava `raise_for_status()`, e o BLS responde a
+  recusa por quota com **HTTP 200** e a má notícia no CORPO
+  (`status: REQUEST_NOT_PROCESSED`). A cota da v1 sem chave é de 25 requisições/dia **por IP
+  de saída**, então um endereço compartilhado a esgota sem que este projeto faça uma única
+  chamada. O resultado era a pior forma de falha possível para um health check: uma linha
+  verde atestando um deflator que não veio. O cliente de ingestão já sabia disso desde a
+  v1.82.0 — `_bls_window` comenta que "o BLS reporta a recusa com 200 e uma string de
+  status, então a checagem não pode viver no `_get`" —, mas a sonda do doctor nunca recebeu a
+  lição. Agora ela lê o `status` do corpo e leva o motivo junto do veredito, porque "quota
+  estourada" e "BLS fora do ar" pedem respostas diferentes do operador.
+- **A contraparte no lado do BCE.** Um id de série inválido já vinha como 404 limpo (e o
+  `raise_for_status()` pegava), mas uma janela que a série não cobre volta **200 com corpo
+  vazio** — host alcançável, nenhuma observação. A sonda passa a exigir uma linha de dado,
+  não só o cabeçalho.
+
+---
+
 ## [1.82.0] - 2026-09-13
 
 ### Adicionado

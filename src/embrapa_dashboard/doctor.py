@@ -614,10 +614,20 @@ def _check_foreign_inflation(settings: Settings) -> CheckResult:
     try:
         response = requests.get(url, timeout=PROBE_TIMEOUT_S)
         response.raise_for_status()
+        # BLS answers a throttle/quota refusal with HTTP 200 and a status string in the
+        # BODY (the keyless v1 quota is 25 requests/day per calling IP), so
+        # raise_for_status() alone paints an empty answer green — the single failure this
+        # probe exists to catch. The ingest client learned this in _bls_window; the probe
+        # has to know it too, or "Foreign inflation reachable" vouches for a refusal.
+        payload = response.json()
+        status = str(payload.get("status", "")) or "no status"
+        if status != "REQUEST_SUCCEEDED":
+            message = "; ".join(payload.get("message", []) or [])
+            raise ValueError(f"{status}: {message}" if message else status)
         results.append(f"bls.{cpi} 200 OK")
     except Exception as exc:
         ok = False
-        results.append(f"bls.{cpi} {str(exc)[:60]}")
+        results.append(f"bls.{cpi} {str(exc)[:160]}")
 
     hicp = settings.foreign_inflation_hicp_code
     dataflow, _, key = hicp.partition(".")
@@ -628,10 +638,15 @@ def _check_foreign_inflation(settings: Settings) -> CheckResult:
     try:
         response = requests.get(url, timeout=PROBE_TIMEOUT_S)
         response.raise_for_status()
+        # Same class of lie on the other publisher: a bogus series id is a clean 404
+        # (raise_for_status catches it), but a window the series does not cover comes
+        # back 200 with an EMPTY body. Require an observation row, not just a header.
+        if not [line for line in response.text.splitlines()[1:] if line.strip()]:
+            raise ValueError("200 with no observations")
         results.append(f"ecb.{hicp} 200 OK")
     except Exception as exc:
         ok = False
-        results.append(f"ecb.{hicp} {str(exc)[:60]}")
+        results.append(f"ecb.{hicp} {str(exc)[:160]}")
     return CheckResult("Foreign inflation reachable", ok, "; ".join(results))
 
 
