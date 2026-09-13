@@ -210,6 +210,14 @@ gap. `valuedRange` (first and last year with value) lets the note say WHY: a hol
 START is an index series that begins later ("A série do IPCA não alcança esses anos"), one
 at the END an index not ingested yet. COMEX (below) is read month by month.
 
+`coveredBy` (v1.81.0) lists the OTHER corrections, in the same currency, that value every
+whole year of the gap — asked of the data (`seam._value_gap_alternatives` fetches their gaps
+only when the active convention has one; `serializers._covering` keeps a correction only if
+each year has valued rows and no valueless one). PAM/PPM in R$ · IPCA get `["IGP-DI"]` once
+the inflation is ingested from `BCB_START_YEAR=1974`, and the note adds "IGP-DI alcança
+esses anos". `[]` when none — before that backfill IGP-DI has the same hole, so nothing is
+offered. Annual bancos with a corrected convention only.
+
 The COMEX snapshot readers all sit on annual marts, whose build SUMs the months — and a
 SUM swallows the month a convention cannot value. Two such holes exist: the **latest
 month before its deflator index is ingested** (measured 2026-09-13: all 2.275 rows of

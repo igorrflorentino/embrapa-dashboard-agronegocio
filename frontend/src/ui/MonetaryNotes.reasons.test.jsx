@@ -59,6 +59,41 @@ describe('ValueGapNote — o motivo', () => {
   });
 });
 
+describe('ValueGapNote — a correção que alcança (v1.81.0)', () => {
+  const PAM_IPCA_COM_IGPDI = { years: [1974, 1975, 1976, 1977, 1978, 1979], partial: [], months: {},
+    valuedRange: [1980, 2024], coveredBy: ['IGP-DI'], share: null };
+
+  it('nomeia a correção que o servidor viu alcançar os anos', () => {
+    const t = texto({ gap: PAM_IPCA_COM_IGPDI, unit: 'R$', correcao: 'IPCA' });
+    expect(t).toContain('A série do IPCA não alcança esses anos.');
+    expect(t).toContain('Esses anos ficam fora das somas. IGP-DI alcança esses anos.');
+  });
+
+  it('sem alternativa (antes do backfill), a nota fica como na v1.80.0', () => {
+    const t = texto({ gap: { ...PAM_IPCA_COM_IGPDI, coveredBy: [] }, unit: 'R$', correcao: 'IPCA' });
+    expect(t).toBe(
+      'Sem valor nesta convenção em 1974–1979. A série do IPCA não alcança esses anos. '
+      + 'Esses anos ficam fora das somas.',
+    );
+    expect(t).not.toContain('IGP-DI');
+  });
+
+  it('a variação acumulada também aponta a alternativa', () => {
+    const motivo = window.valueGapMotivo(PAM_IPCA_COM_IGPDI, { currency: 'BRL', correction: 'IPCA' });
+    expect(motivo(1974)).toBe('a série do IPCA não alcança esse ano (o IGP-DI alcança)');
+  });
+
+  it('duas alternativas concordam no plural, na nota e na variação', () => {
+    // ÂNCORA EXTERNA, medida no preview contra produção 2026-09-13: PEVS em R$ · IGP-M não
+    // tem 1986–1988 (o IGP-M começa em 1989); o IPCA e o IGP-DI têm.
+    const gap = { years: [1986, 1987, 1988], partial: [], months: {}, valuedRange: [1989, 2024],
+      coveredBy: ['IPCA', 'IGP-DI'], share: null };
+    expect(texto({ gap, unit: 'R$', correcao: 'IGP-M' })).toContain('IPCA e IGP-DI alcançam esses anos.');
+    const motivo = window.valueGapMotivo(gap, { currency: 'BRL', correction: 'IGP-M' });
+    expect(motivo(1986)).toBe('a série do IGP-M não alcança esse ano (o IPCA e o IGP-DI alcançam)');
+  });
+});
+
 describe('Variação acumulada — o motivo da recusa', () => {
   // ÂNCORA EXTERNA: abacaxi na PAM, R$ · IPCA, serving_pam_annual (R$ bi) — 1974 sem valor.
   const p1974 = { y: 1974, v: null };

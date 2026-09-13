@@ -191,6 +191,40 @@ def test_o_ano_anual_so_e_lacuna_quando_nenhuma_linha_tem_valor():
     }
 
 
+def test_a_correcao_que_alcanca_os_anos_da_lacuna_e_nomeada():
+    """v1.81.0: PAM em R$ · IPCA não tem 1974–1979; o IGP-DI, ingerido desde 1974, tem."""
+    lacuna = s._snapshot_gap(_anual(*[(a, 900, 0) for a in range(1974, 1980)], (1980, 0, 950)))
+    igpdi = _anual(*[(a, 0, 900) for a in range(1974, 1981)])
+    igpm = _anual(*[(a, 900, 0) for a in range(1974, 1981)])  # IGP-M só existe desde 1989
+    assert s._covering(lacuna, {"IGP-M": igpm, "IGP-DI": igpdi}) == ["IGP-DI"]
+
+
+def test_uma_correcao_que_falta_um_ano_ou_nao_respondeu_nao_alcanca():
+    lacuna = s._snapshot_gap(_anual((1978, 9, 0), (1979, 9, 0), (1980, 0, 9)))
+    # Antes do backfill do IGP-DI: a mesma lacuna — nada é oferecido.
+    assert s._covering(lacuna, {"IGP-DI": _anual((1978, 9, 0), (1979, 0, 9))}) == []
+    # Um ano com linhas sem valor não conta como alcançado.
+    assert s._covering(lacuna, {"IGP-DI": _anual((1978, 1, 8), (1979, 0, 9))}) == []
+    # Quadro vazio é falta de informação, nunca "alcança".
+    assert s._covering(lacuna, {"IGP-DI": pd.DataFrame()}) == []
+    assert s._covering(lacuna, None) == []
+    assert s._covering(None, {"IGP-DI": _anual((1978, 0, 9))}) == []
+    # Só anos parciais (o mês do COMEX): não há ano inteiro a alcançar.
+    parcial = {"years": [2026], "partial": [2026], "months": {"2026": [8]}}
+    assert s._covering(parcial, {"IGP-M": _anual((2026, 0, 9))}) == []
+
+
+def test_o_snapshot_leva_as_alternativas_para_a_nota():
+    out = s.serialize_snapshot(
+        {
+            "value_gap_rows": _anual((1979, 9, 0), (1980, 0, 9)),
+            "value_gap_alternatives": {"IGP-DI": _anual((1979, 0, 9), (1980, 0, 9))},
+        }
+    )
+    assert out["valueGap"]["years"] == [1979]
+    assert out["valueGap"]["coveredBy"] == ["IGP-DI"]
+
+
 def test_sem_nenhum_ano_com_valor_o_intervalo_e_ausente():
     assert s._snapshot_gap(_anual((1990, 5, 0)))["valuedRange"] is None
 

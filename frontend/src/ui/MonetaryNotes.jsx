@@ -73,6 +73,11 @@ function ValueGapNote({ gap, unit, correcao, alvo = 'soma' }) {
   const parciais = (gap.partial || []).filter((y) => gap.years.includes(y));
   const inteiros = gap.years.filter((y) => !parciais.includes(y));
   const motivo = _motivo({ inteiros, parciais, unit, correcao, valuedRange: gap.valuedRange });
+  // Outra correção, na mesma moeda, que alcança esses anos — o servidor PERGUNTOU aos dados
+  // (v1.81.0): PAM/PPM em IPCA não têm 1974–1979, o IGP-DI tem.
+  const alternativa = Array.isArray(gap.coveredBy) && gap.coveredBy.length && inteiros.length
+    ? `${_lista(gap.coveredBy)} ${gap.coveredBy.length > 1 ? 'alcançam' : 'alcança'} ${inteiros.length === 1 ? 'esse ano' : 'esses anos'}. `
+    : '';
   const destino = _DESTINO[alvo] || _DESTINO.soma;
   // Uma fração pequena com zero casas vira "0%", que se lê como "não ficou nada de fora".
   const parte = typeof gap.share === 'number'
@@ -96,6 +101,7 @@ function ValueGapNote({ gap, unit, correcao, alvo = 'soma' }) {
       </strong>{' '}
       {motivo && `${motivo} `}
       {sujeito} fora {destino}{parte}.
+      {alternativa && ` ${alternativa.trim()}`}
     </p>
   );
 }
@@ -128,7 +134,12 @@ window.valueGapMotivo = (gap, conv) => {
     if (!corrigida) {
       return conv && conv.currency === 'EUR' && y < 1999 ? 'o euro só existe desde 1999' : null;
     }
-    if (primeiro != null && y < primeiro) return `a série do ${correcao} não alcança esse ano`;
+    if (primeiro != null && y < primeiro) {
+      const outras = Array.isArray(gap.coveredBy) && gap.coveredBy.length ? gap.coveredBy : null;
+      return outras
+        ? `a série do ${correcao} não alcança esse ano (${_lista(outras.map((c) => `o ${c}`))} ${outras.length > 1 ? 'alcançam' : 'alcança'})`
+        : `a série do ${correcao} não alcança esse ano`;
+    }
     if (parciais.includes(y) || (ultimo != null && y > ultimo)) {
       return `o ${correcao} desse período ainda não entrou na base`;
     }
