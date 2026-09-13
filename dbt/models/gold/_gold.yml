@@ -802,7 +802,23 @@ unit_tests:
         rows:
           - {reference_year: 2023, state_acronym: "SP", city_code: "3550308", city_name: "São Paulo", product_code: "3457", tabela: "291", product_description: "Madeira em tora", is_monetary_value: true, numeric_value: 900, qty_native: , qty_base: , family: , unit_native: , base_unit: , ingestion_timestamp: "2024-01-01 00:00:00"}
       - input: ref('silver_inflation')
-        rows: []
+        # `format: sql`, not the usual row list, and not a style choice: dbt builds a
+        # dict fixture by reading the REAL table's column types
+        # (get_fixture_sql -> adapter.get_columns_in_relation), and the CI gate runs
+        # `dbt test --select test_type:unit --target prod` WITHOUT building. A model
+        # introduced by this very PR has no prod relation yet, so a dict input for it
+        # can only ever fail with "the relation doesn't exist" — the chicken-and-egg
+        # every first-PR-for-a-new-model hits. A literal SELECT needs no introspection.
+        # Revisit once silver_inflation exists in prod, or leave it: it costs nothing.
+        format: sql
+        rows: |
+          select
+              cast(null as int64)  as reference_year,
+              cast(null as string) as series_code,
+              cast(null as int64)  as reference_month,
+              cast(null as date)   as reference_date,
+              cast(null as float64) as index_value
+          limit 0
       - input: ref('silver_currency')
         rows: []
     expect:
@@ -829,14 +845,27 @@ unit_tests:
       # first on the same input: same record year, same val_raw, deliberately different
       # answer.
       - input: ref('silver_inflation')
-        rows:
-          # IPCA (series 433): Dec-2000 = the record year-end; 2024 = the global latest.
-          - {reference_year: 2000, series_code: "433", index_value: 100, reference_month: 12, reference_date: "2000-12-01"}
-          - {reference_year: 2024, series_code: "433", index_value: 300, reference_month: 12, reference_date: "2024-12-01"}
-          # CPI-U: year-end(2000)=150, current=450 → ratio 3 as well, so any difference
-          # in the output comes from the FX MOMENT, not from the index.
-          - {reference_year: 2000, series_code: "CUUR0000SA0", index_value: 150, reference_month: 12, reference_date: "2000-12-01"}
-          - {reference_year: 2024, series_code: "CUUR0000SA0", index_value: 450, reference_month: 12, reference_date: "2024-12-01"}
+        # `format: sql`, not the usual row list, and not a style choice: dbt builds a
+        # dict fixture by reading the REAL table's column types
+        # (get_fixture_sql -> adapter.get_columns_in_relation), and the CI gate runs
+        # `dbt test --select test_type:unit --target prod` WITHOUT building. A model
+        # introduced by this very PR has no prod relation yet, so a dict input for it
+        # can only ever fail with "the relation doesn't exist" — the chicken-and-egg
+        # every first-PR-for-a-new-model hits. A literal SELECT needs no introspection.
+        # Revisit once silver_inflation exists in prod, or leave it: it costs nothing.
+        format: sql
+        rows: |
+          -- IPCA (series 433): Dec-2000 = the record year-end; 2024 = the global latest.
+          select 2000 as reference_year, '433' as series_code, 12 as reference_month,
+                 date '2000-12-01' as reference_date, cast(100 as float64) as index_value
+          union all
+          select 2024, '433', 12, date '2024-12-01', cast(300 as float64)
+          union all
+          -- CPI-U: year-end(2000)=150, current=450 -> ratio 3 as well, so any difference
+          -- in the output comes from the FX MOMENT, not from the index.
+          select 2000, 'CUUR0000SA0', 12, date '2000-12-01', cast(150 as float64)
+          union all
+          select 2024, 'CUUR0000SA0', 12, date '2024-12-01', cast(450 as float64)
       - input: ref('silver_currency')
         rows:
           - {currency: "USD", reference_year: 2000, reference_date: "2000-06-15", brl_per_foreign_unit: 2.0}
