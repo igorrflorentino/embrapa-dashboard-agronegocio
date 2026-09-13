@@ -44,8 +44,13 @@ select
     index_value,
     ingestion_timestamp
 from {{ ref('silver_bcb_inflation') }}
+{#- Whitespace control on BOTH tags, and not for tidiness. What SQLFluff lints is the
+    COMPILED output, not this file, and a bare `{% if %}` leaves the removed block's
+    newlines behind: with the gate off the compiled SQL would end in a blank line, unlike
+    every other model here, which is what LT12 (exactly one trailing newline) measures.
+    `{%- if %}` … `{%- endif %}` makes both branches end exactly as silver_currency does. -#}
+{%- if var('enable_foreign_inflation', false) %}
 
-{% if var('enable_foreign_inflation', false) %}
 union all
 
 select
@@ -60,4 +65,4 @@ select
     index_value,
     ingestion_timestamp
 from {{ ref('silver_foreign_inflation') }}
-{% endif %}
+{%- endif %}
