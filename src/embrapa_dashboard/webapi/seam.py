@@ -450,20 +450,6 @@ def snapshot(banco_id: str, conv: dict, summary: dict | None = None) -> dict:
             tabela=tabela,
         )
 
-    # COMEX: the months the active convention cannot value — the latest month before its
-    # deflator index is ingested, € sem correção before 1999. The annual marts behind every
-    # view here SUM the months, so without this the latest year's corrected total silently
-    # covered Jan–Jul under a "2026" label (measured 2026-09-13). Month-level and global: a
-    # missing index nulls every row of its month, so the list holds for any selection the
-    # browser makes. Skipped for the declared US$ (it never goes missing) and while the
-    # monthly mart lacks the column (it deploys in parallel with the app; see monthly_data).
-    value_gap_months = (
-        gateway.fetch_comex_value_gap_by_month(value_column=value_col)
-        if banco_id == "mdic_comex"
-        and value_col != "val_yearfx_usd"
-        and value_col in gateway.fetch_comex_seasonality_columns()
-        else None
-    )
     return {
         "products": products,
         "product_ts": product_ts,
@@ -476,8 +462,38 @@ def snapshot(banco_id: str, conv: dict, summary: dict | None = None) -> dict:
         "value_column": value_col,
         "value_label": value_label,
         "value_era_breaks": value_era_breaks(value_col),
-        "value_gap_months": value_gap_months,
+        "value_gap_rows": _value_gap_rows(banco_id, value_col),
     }
+
+
+# The column each banco's value is DECLARED in — it never goes missing, so asking which
+# periods it cannot value would be a query that always answers "none".
+_NATIVE_VALUE_COLUMN = {"mdic_comex": "val_yearfx_usd", "un_comtrade": "val_yearfx_usd"}
+
+
+def _value_gap_rows(banco_id: str, value_col: str):
+    """Where the active convention cannot value the banco's history (the snapshot's
+    ``valueGap``), per period, unfiltered — or None when there is nothing to ask.
+
+    COMEX month by month: its Gold deflates per month and the annual marts behind every
+    view SUM the months, so the latest month before its index is ingested vanished inside
+    a "2026" total (measured 2026-09-13; v1.79.0). Skipped while the monthly mart lacks the
+    column (it deploys in parallel with the app; see monthly_data).
+
+    The annual bancos year by year: IBGE and COMTRADE deflate by the YEAR-END index, so
+    where the index series does not reach, the whole year has no corrected value — PAM
+    and PPM have no R$ · IPCA, the dashboard's DEFAULT convention, in 1974–1979 (v1.80.0).
+
+    Global in both cases: a missing index nulls every row of its period, so the list holds
+    for any product/UF/flow the browser selects.
+    """
+    if value_col == _NATIVE_VALUE_COLUMN.get(banco_id, "val_yearfx_brl"):
+        return None
+    if banco_id == "mdic_comex":
+        if value_col not in gateway.fetch_comex_seasonality_columns():
+            return None
+        return gateway.fetch_comex_value_gap_by_month(value_column=value_col)
+    return gateway.fetch_annual_value_gap(banco_id, value_column=value_col)
 
 
 # The ONLY value column whose two ends can be in DIFFERENT currencies: nominal BRL.

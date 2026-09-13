@@ -354,16 +354,41 @@ def test_snapshot_comex_names_the_months_the_convention_cannot_value(monkeypatch
         lambda **k: pedidos.update(k) or "meses",
     )
     out = seam.snapshot("mdic_comex", {"currency": "BRL", "correction": "IPCA"})
-    assert out["value_gap_months"] == "meses"
+    assert out["value_gap_rows"] == "meses"
     assert pedidos == {"value_column": "val_real_ipca_brl"}
 
     # O US$ declarado nunca falta; e sem a coluna no mart mensal não há o que perguntar.
     pedidos.clear()
     usd = seam.snapshot("mdic_comex", {"currency": "USD", "correction": "Nominal"})
-    assert usd["value_gap_months"] is None
+    assert usd["value_gap_rows"] is None
     euro_ipca = seam.snapshot("mdic_comex", {"currency": "EUR", "correction": "IPCA"})
-    assert euro_ipca["value_gap_months"] is None
+    assert euro_ipca["value_gap_rows"] is None
     assert pedidos == {}
+
+
+def test_snapshot_ibge_names_the_years_the_convention_cannot_value(monkeypatch):
+    """v1.80.0: the IBGE Gold deflates by the year-end index, so where the index series does
+    not reach, the whole year is valueless — PAM/PPM have no R$ · IPCA, the DEFAULT
+    convention, in 1974–1979 (measured 2026-09-13). The snapshot asks the annual mart."""
+    seam = _seam()
+    _stub_snapshot_readers(seam, monkeypatch, uf_yearly=pd.DataFrame(), source="ibge_pevs")
+    pedidos: list = []
+    monkeypatch.setattr(
+        seam.gateway,
+        "fetch_annual_value_gap",
+        lambda source, **k: pedidos.append((source, k)) or "anos",
+    )
+    out = seam.snapshot("ibge_pevs", {"currency": "BRL", "correction": "IPCA"})
+    assert out["value_gap_rows"] == "anos"
+    assert pedidos == [("ibge_pevs", {"value_column": "val_real_ipca_brl"})]
+
+    # O R$ sem correção é a moeda em que o IBGE declara — nunca falta, não há o que perguntar.
+    pedidos.clear()
+    assert (
+        seam.snapshot("ibge_pevs", {"currency": "BRL", "correction": "Nominal"})["value_gap_rows"]
+        is None
+    )
+    assert pedidos == []
 
 
 # ── snapshot: the server-side flow (export/import) filter ──────────────────────

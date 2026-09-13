@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.80.0] - 2026-09-13
+
+### Corrigido
+
+- **Os bancos do IBGE também somavam em silêncio os anos que a convenção não alcança — e
+  na convenção padrão.** O Gold do IBGE corrige pelo índice de dezembro de cada ano; onde a
+  série do índice não chega, o ano inteiro fica sem valor corrigido. Medido nos marts de
+  serving em 2026-09-13: **PAM e PPM não têm valor em R$ · IPCA** — a convenção com que o
+  painel abre — **em 1974–1979**, nem em IGP-M em 1974–1988; o PEVS não tem IGP-M em
+  1986–1988; e os três não têm € sem correção antes de 1999. As telas abrem com a história
+  inteira, então a Visão geral do PAM abria somando 1980–2024 sob o período 1974–2024.
+
+  Os gráficos já desenhavam esses anos como vazios, e a variação acumulada já se recusava
+  dizendo o motivo ("sem valor em 1974 nesta convenção"). O que faltava era a nota: nos
+  rankings que o servidor soma no período (os produtos de um estado, as UFs de um produto)
+  a soma seguia calada. Agora o snapshot de todo banco traz `valueGap`, e a nota da v1.79.0
+  aparece abaixo das convenções com o motivo: "Sem valor nesta convenção em 1974–1979. A
+  série do IPCA não alcança esses anos. Esses anos ficam fora das somas."
+
+  O COMEX continua lendo o mart mensal; os demais leem o anual (`annual_value_gap`). Uma
+  linha só conta como lacuna se tiver valor na moeda do próprio banco — o rebanho do PPM,
+  sem preço em convenção nenhuma, não é lacuna desta.
+
+- **A nota passa a dizer POR QUÊ, quando sabe**: o euro antes de 1999; uma série de índice
+  que começa depois do começo da história (lacuna no INÍCIO); um índice que ainda não entrou
+  na base (lacuna no FIM — o mês mais recente do COMEX, e o ano incompleto do COMTRADE quando
+  ele chegar: o COMTRADE também corrige pelo índice de dezembro, e hoje, com dados até 2025,
+  não tem lacuna nenhuma).
+
 ## [1.79.0] - 2026-09-13
 
 ### Corrigido

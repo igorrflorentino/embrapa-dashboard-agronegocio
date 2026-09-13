@@ -65,6 +65,13 @@ def _no_live_comex_gap_lookup(monkeypatch):
     except ImportError:  # the webapi extra (flask-caching) is not installed
         return
     monkeypatch.setattr(gateway, "fetch_comex_seasonality_columns", lambda: frozenset())
+    # v1.80.0: the annual bancos ask the same question of their annual mart, on every IBGE/
+    # COMTRADE snapshot under a corrected convention. An empty frame means "no gap". The
+    # reader's own test holds the real function, captured when its module is imported
+    # (collection runs before any fixture).
+    import pandas as pd
+
+    monkeypatch.setattr(gateway, "fetch_annual_value_gap", lambda *a, **k: pd.DataFrame())
 
 
 @pytest.fixture(autouse=True)

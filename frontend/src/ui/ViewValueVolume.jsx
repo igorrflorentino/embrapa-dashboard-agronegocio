@@ -169,7 +169,10 @@ function ViewValueVolume({ families, conventions, summary, database }) {
           overline={`Série histórica · ${ccyLabel}`}
           title={`Valor total · ${valueScaled.label} · ${yearStart}–${yearEnd}`}
           action={
-            <span className="caption">{window.deltaTitle('Variação acumulada', first, last, { breaks: window.valueEraBreaksFor(database) })}</span>
+            <span className="caption">{window.deltaTitle('Variação acumulada', first, last, {
+              breaks: window.valueEraBreaksFor(database),
+              motivo: window.valueGapMotivo && window.valueGapMotivo(window.valueGapFor(database), conv),
+            })}</span>
           }
         />
         <window.LineChart data={valueScaled.data} label={valueScaled.label} valueKey="v" color={ccyColor} height={260} />

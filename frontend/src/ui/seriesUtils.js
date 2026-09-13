@@ -195,16 +195,23 @@ window.deltaPctIn = (p0, pT, breaks) => {
 // site não precisa de condicional. Um traço sozinho ("Variação acumulada: —") deixa o
 // pesquisador sem saber se o dado falta, se a base é zero ou se a tela quebrou; o
 // motivo é a diferença entre uma recusa honesta e um silêncio.
-window.deltaWhyNot = (p0, pT, breaks) => {
+// `motivo` (opcional) diz POR QUE um ano não tem valor na convenção — (ano) → frase ou
+// null, montado por window.valueGapMotivo a partir do valueGap do snapshot (v1.80.0):
+// "sem valor em 1974 nesta convenção — a série do IPCA não alcança esse ano".
+window.deltaWhyNot = (p0, pT, breaks, motivo = null) => {
   if (!p0 || !pT) return 'série sem extremos';
   // A moeda vem ANTES da ausência: quando os dois extremos existem mas em moedas
   // diferentes, o motivo verdadeiro é a reforma, não a falta de dado.
   const moeda = window.spanComparable(p0.y, pT.y, breaks);
   if (moeda) return moeda;
   if (window.deltaPct(p0.v, pT.v) != null) return null;
-  if (!Number.isFinite(p0.v)) return `sem valor em ${p0.y} nesta convenção`;
+  const semValor = (y) => {
+    const porque = typeof motivo === 'function' ? motivo(y) : null;
+    return porque ? `sem valor em ${y} nesta convenção — ${porque}` : `sem valor em ${y} nesta convenção`;
+  };
+  if (!Number.isFinite(p0.v)) return semValor(p0.y);
   if (p0.v <= 0) return `valor nulo em ${p0.y}`;
-  if (!Number.isFinite(pT.v)) return `sem valor em ${pT.y} nesta convenção`;
+  if (!Number.isFinite(pT.v)) return semValor(pT.y);
   return 'extremos não comparáveis';
 };
 
@@ -212,8 +219,8 @@ window.deltaWhyNot = (p0, pT, breaks) => {
 // motivo quando não existe. Centralizado para que as quatro perspectivas que mostram
 // "Variação acumulada" não divirjam na forma de recusar.
 window.deltaTitle = (rotulo, p0, pT, opts = {}) => {
-  const { digits = 0, breaks = null } = opts;
-  const why = window.deltaWhyNot(p0, pT, breaks);
+  const { digits = 0, breaks = null, motivo = null } = opts;
+  const why = window.deltaWhyNot(p0, pT, breaks, motivo);
   const valor = window.fmtSigned(window.deltaPctIn(p0, pT, breaks), digits);
   return why ? `${rotulo}: ${valor} · ${why}` : `${rotulo}: ${valor}`;
 };

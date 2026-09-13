@@ -154,41 +154,59 @@ def _empty(df: pd.DataFrame | None) -> bool:
 # ── snapshot ──────────────────────────────────────────────────────────────────
 
 
-def _month_gap(df: pd.DataFrame | None) -> dict | None:
-    """The snapshot's ``valueGap``: which months of the COMEX history the active convention
-    cannot value, from the monthly mart (``rows_without_value`` / ``rows_with_value`` per
-    year × month). ``None`` when nothing is missing.
+def _snapshot_gap(df: pd.DataFrame | None) -> dict | None:
+    """The snapshot's ``valueGap``: which periods of the banco's history the active
+    convention cannot value (``rows_without_value`` / ``rows_with_value`` per year, and per
+    month for COMEX). ``None`` when nothing is missing.
 
-    Month-level on purpose: Gold joins the deflator and the FX by year + month, so a
-    missing index nulls EVERY row of its month whatever product, UF or flow the browser
-    selects — the list is exact for any client-side filter. No ``share``: that depends on
-    the selection, which lives in the browser; the named month tells the reader what the
-    corrected totals leave out. A year with some valued month is ``partial``, and
-    ``months`` names its missing ones (2026 → [8]) so the note says "parte de 2026
-    (agosto)", never "2026".
+    Global on purpose: a missing index nulls EVERY row of its period whatever product, UF
+    or flow the browser selects — the list is exact for any client-side filter. No
+    ``share``: that depends on the selection, which lives in the browser.
+
+    COMEX (the frame has ``reference_month``): a year with some valued month is ``partial``,
+    and ``months`` names its missing ones (2026 → [8]) so the note says "parte de 2026
+    (agosto)", never "2026" (v1.79.0).
+
+    The annual bancos (v1.80.0): a year counts only when NONE of its rows has a value. Their
+    Gold deflates by the year-end index, so the convention's reach is all-or-nothing per
+    year; a year with some valued rows is a row-level absence, which the quality flag
+    covers, not a hole in the convention.
+
+    ``valuedRange`` — the first and last year WITH value — lets the note say why: a hole
+    before it is an index series that starts later, one after it an index not ingested yet.
     """
     if _empty(df):
         return None
+    anos = pd.to_numeric(df["reference_year"], errors="coerce")
     sem = pd.to_numeric(df["rows_without_value"], errors="coerce").fillna(0) > 0
     com = pd.to_numeric(df["rows_with_value"], errors="coerce").fillna(0) > 0
-    years = sorted({int(y) for y in df.loc[sem, "reference_year"]})
+    valued = sorted({int(y) for y in anos[com].dropna()})
+    mensal = "reference_month" in df.columns
+    if mensal:
+        years = sorted({int(y) for y in anos[sem].dropna()})
+    else:
+        years = sorted({int(y) for y in anos[sem & ~com].dropna()})
     if not years:
         return None
-    valued = {int(y) for y in df.loc[com, "reference_year"]}
-    partial = [y for y in years if y in valued]
-    anos = pd.to_numeric(df["reference_year"], errors="coerce")
+    partial = [y for y in years if y in set(valued)] if mensal else []
     months = {
         str(y): sorted(int(m) for m in df.loc[sem & (anos == y), "reference_month"])
         for y in partial
     }
-    return {"years": years, "partial": partial, "months": months, "share": None}
+    return {
+        "years": years,
+        "partial": partial,
+        "months": months,
+        "valuedRange": [valued[0], valued[-1]] if valued else None,
+        "share": None,
+    }
 
 
 def serialize_snapshot(snap: dict) -> dict:
     """seam.snapshot() (DataFrames) → BancoSnapshot (contracts.js:45)."""
     return {
-        # Os meses que a convenção ativa não alcança (v1.79.0) — ver _month_gap.
-        "valueGap": _month_gap(snap.get("value_gap_months")),
+        # Os períodos que a convenção ativa não alcança (v1.79.0/v1.80.0) — ver _snapshot_gap.
+        "valueGap": _snapshot_gap(snap.get("value_gap_rows")),
         "products": _products(snap.get("products")),
         "productTS": _product_ts(snap.get("product_ts")),
         "overviewTS": _overview_ts(snap.get("overview_ts")),

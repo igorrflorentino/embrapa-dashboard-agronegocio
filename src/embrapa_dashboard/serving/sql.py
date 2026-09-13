@@ -936,6 +936,34 @@ def comex_value_gap_by_month(
     return sql, []
 
 
+def annual_value_gap(
+    table: str, *, value_column: str = "val_yearfx_brl", native_column: str = "val_yearfx_brl"
+) -> tuple[str, list]:
+    """Which years of an annual banco's history ``value_column`` cannot value (backs the
+    snapshot's ``valueGap`` for IBGE PEVS/PAM/PPM and COMTRADE).
+
+    Their Gold deflates by the YEAR-END index, so where the index series does not reach, a
+    whole year has no corrected value — measured on the serving marts 2026-09-13: PAM and
+    PPM have no R$ · IPCA (the dashboard's DEFAULT convention) in 1974–1979, no IGP-M in
+    1974–1988, and no € sem correção before 1999. A row only counts when it has a value in
+    the banco's own currency (``native_column``): PPM's herd has no price in ANY
+    convention, and that is not a gap in this one. Unfiltered: the index is per year for
+    every row, so the list holds for any product/UF the browser selects.
+    """
+    value_column = _validate_column(value_column, ALLOWED_VALUE_COLUMNS, "value_column")
+    native_column = _validate_column(native_column, ALLOWED_VALUE_COLUMNS, "native_column")
+    sql = f"""
+        select
+            reference_year,
+            countif({value_column} is null and {native_column} is not null) as rows_without_value,
+            countif({value_column} is not null)                              as rows_with_value
+        from `{table}`
+        group by reference_year
+        order by reference_year
+    """
+    return sql, []
+
+
 def months_present_per_year(table: str) -> tuple[str, list]:
     """Distinct ``reference_month`` count per ``reference_year`` from a monthly mart
     (``serving_comex_seasonality``; backs the partial-latest-year signal).

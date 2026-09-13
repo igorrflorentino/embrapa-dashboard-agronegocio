@@ -470,6 +470,19 @@ def fetch_comex_value_gap_by_month(value_column: str = "val_yearfx_usd"):
 
 
 @cache.memoize()
+def fetch_annual_value_gap(source: str, value_column: str = "val_yearfx_brl"):
+    """Years of an annual banco's history ``value_column`` cannot value (backs the snapshot's
+    ``valueGap`` for IBGE PEVS/PAM/PPM and COMTRADE; see :func:`sqlbuild.annual_value_gap`).
+    COMEX is monthly and has its own reader (:func:`fetch_comex_value_gap_by_month`)."""
+    settings = get_settings()
+    table_name = _product_source(source)[0]
+    table = sqlbuild.table_ref(settings, "bq_serving_dataset", table_name)
+    native = "val_yearfx_usd" if source == "un_comtrade" else "val_yearfx_brl"
+    sql, params = sqlbuild.annual_value_gap(table, value_column=value_column, native_column=native)
+    return run_query(sql, params)
+
+
+@cache.memoize()
 def fetch_comex_months_per_year():
     """Distinct months present per year from the COMEX seasonality mart (backs the
     partial-latest-year signal in source-meta). Cheap year×month aggregate, cached."""
