@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.81.1] - 2026-09-13
+
+### Documentação
+
+- **O build de produção do dbt não é diário.** CLAUDE.md, ARCHITECTURE.md, o runbook de
+  operações e as notas de custo do backfill do COMTRADE diziam "diário"; o
+  `dbt-build-prod.yml` roda às segundas e quintas (gatilho 11:30 UTC, que o GitHub dispara
+  horas depois) desde 2026-08-26, quando o build respondia por 98,9% do BigQuery faturado.
+  A diferença importa: um dado ingerido no domingo esperava até segunda, não até o dia
+  seguinte. Documentado o disparo manual (`gh workflow run dbt-build-prod.yml --ref main`),
+  que basta sem `--full-refresh` porque todo modelo de Silver/Gold é `table` exceto o
+  incremental por ano de ingestão `silver_ibge_pevs`.
+- **O IGP-DI desde 1974, registrado.** O CLAUDE.md passa a dizer até onde cada deflator
+  alcança, que a inflação é ingerida desde `BCB_START_YEAR=1974`, e que o ano inicial vive
+  em DOIS lugares — o padrão do config e o ambiente do Cloud Run Job de ingestão, que o
+  `deploy.sh` reconstrói a partir do `.env` de quem faz o deploy. O backfill rodou em
+  produção em 2026-09-13 (execução `embrapa-ingest-all-lqmxq`) e o build manual levou ao
+  Gold: PAM 1974–1979 em R$ · IGP-DI entre R$ 194,8 e 253,8 bi, contínuo com os R$ 202,1 bi
+  de 1980 (previsto antes do merge: 196,3–253,7). O Job passou a ter `BCB_START_YEAR=1974`.
+  De quebra, a mesma ingestão trouxe o IPCA e o IGP-DI de agosto de 2026, e o COMEX deixou
+  de ter o mês sem correção que a nota da v1.79.0 anunciava.
+
 ## [1.81.0] - 2026-09-13
 
 ### Corrigido

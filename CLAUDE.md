@@ -73,7 +73,7 @@ make ingest-all                               # IBGE PEVS (extração + silvicul
 # Each source declares its expected `cadence_days`, which doctor's heartbeat check reads.
 make ingest-ibge-historical                   # auto-chunked for large year windows
 uv run embrapa ingest {ibge|ibge-silvicultura|ibge-pam|ibge-ppm|bcb-inflation|bcb-currency|comex|comtrade|all}
-uv run embrapa ingest bcb-inflation --full    # force refetch from BCB_START_YEAR
+uv run embrapa ingest bcb-inflation --full    # force refetch from BCB_START_YEAR (1974 since v1.81.0)
 uv run embrapa ingest ibge-batch --chunk-years 5
 ```
 
@@ -110,9 +110,13 @@ check already catches old-year revisions on every scheduled run. The **monthly r
 (`.github/workflows/reconcile-reminder.yml`) now leads with `reconcile-check`
 instead of asking for a guess. (Re-enable a monthly Cloud Run trigger any time with
 `make ingest-job-reconcile-schedule` — the same Job with args overridden to
-`reconcile`.) `reconcile` refreshes only **Bronze**; the **daily scheduled
+`reconcile`.) `reconcile` refreshes only **Bronze**; the **scheduled prod
 `dbt build`** (`.github/workflows/dbt-build-prod.yml`) propagates it to
-Silver/Gold. No `--full-refresh` is needed: `silver_ibge_pevs` is incremental but
+Silver/Gold. That build is **twice weekly, NOT daily** — Mondays and Thursdays, 11:30 UTC
+trigger, which GitHub starts hours later (measured 3h35–9h58); it was daily until
+2026-08-26, when it was 98,9% of the billed BigQuery bytes. Bronze ingested on a Sunday
+waits until Monday. To publish a backfill or one-off ingest now, dispatch it:
+`gh workflow run dbt-build-prod.yml --ref main`. No `--full-refresh` is needed: `silver_ibge_pevs` is incremental but
 **year-agnostic** (it re-scans whatever Bronze years got a newer
 `ingestion_timestamp`), so a revised old year flows all the way to Gold on a
 plain build.
@@ -180,6 +184,7 @@ Key facts for AI context:
 - All Bronze columns are `STRING` except `ingestion_timestamp`.
 - The seed `historical_currency_factors` absorbs currency reforms; without it, pre-1994 values are 10⁶–10⁹× too large.
 - `val_real_{ipca,igpm,igpdi}_*` columns are for cross-year comparison; `val_yearfx_*` are nominal.
+- **Each deflator reaches back only as far as its own series — and IGP-DI is the one that covers everything.** IPCA starts in 1980, IGP-M in 1989, IGP-DI (SGS 190) in 1944; the inflation is ingested from `BCB_START_YEAR=1974`, the first PAM/PPM year. It was 1980 until v1.81.0, which cut IGP-DI at the year IPCA starts and left PAM/PPM 1974–1979 with no corrected value in ANY index — a pipeline limit that looked like a source one. Backfilled in prod 2026-09-13 (PAM 1974–1979 in R$ · IGP-DI: R$ 194,8–253,8 bi, continuous with 1980's 202,1). IPCA — the default convention — still has no value there, and the screens say so and point to IGP-DI (`valueGap.coveredBy`). **Two places carry the start year and both must say 1974**: the config default, and the ingestion Cloud Run Job's env (`embrapa-ingest-all`), which `deploy/ingestion/deploy.sh` REBUILDS from the operator's `.env` on every deploy — a `.env` still holding `BCB_START_YEAR=1980` silently reverts the Job (an absent key falls back to the image default, 1974). Lowering the start year never backfills by itself: the delta ingest does not rewind, so it takes one `ingest bcb-inflation --full`.
 - Config flows through `src/embrapa_dashboard/config.py` (pydantic-settings + `.env`). `BCB_INFLATION_SERIES` uses `CODE:LABEL,CODE:LABEL` format — keep `BCB_INFLATION_SERIES_IPCA_CODE` / `BCB_INFLATION_SERIES_IGPM_CODE` / `BCB_INFLATION_SERIES_IGPDI_CODE` in sync (dbt reads each via `env_var()` to wire the right series into the Gold pivot).
 - `target=dev` → `dbt_dev_silver` / `dbt_dev_gold` (auto-expire 7 days). `target=prod` → `silver` / `gold`.
 - **F7 Ciclo de Vida visibility gate**: `core/dim_produto_visibility` (a view of `(source, code, tabela)` — the EXACT commodity code, no prefixes — for produtos a researcher marked *indisponível*) + the `hidden_code_predicate` macro + `serving/sql.visibility_clause` (the Python builder) exclude those produtos from **every** researcher-facing Gold read (the 6 serving marts, `serving_quality_by_source`, the cross-source picker, and the gateway direct readers — município cube, quality timeseries, quality-by-product); kept SEPARATE from `dim_produto_catalog` so the admin editor + crosswalk still see hidden rows. **NOT a no-op:** 3 comex codes are hidden in prod, filtering 6,688 Gold rows (measured 2026-08-30) — the gate was a no-op only in its first releases, and the docs said so long after it stopped being true. Since v1.46.5 the predicate matches the TABLE too on multi-table bancos (`pevs`/`ppm`, the set in the `bancos_multi_tabela()` macro ↔ `serving.curation._BANCOS_MULTI_TABELA`): hiding the extração half (289) leaves silvicultura (291) visible, and a gate row with NO table is a WILDCARD that hides both — the pre-existing behaviour, preserved for untagged entries. Both sides expose the gate column as `_vis_tabela` **by necessity**: inside the `NOT EXISTS`, an unqualified `tabela` resolves to the INNER scope and the comparison becomes a tautology that hides both halves again while looking right. Spec: `PLANS/quality_outliers_and_visibility_gate.md`.
