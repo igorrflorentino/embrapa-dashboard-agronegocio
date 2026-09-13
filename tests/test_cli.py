@@ -211,6 +211,49 @@ def test_ingest_bcb_inflation_empty_returns_friendly_message(
     assert "nothing new" in result.output
 
 
+# ─── ingest foreign-inflation ────────────────────────────────────────────────
+def test_ingest_foreign_inflation_delta_by_default(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    run = MagicMock(return_value="proj.bronze_foreign.inflation_series_raw")
+    monkeypatch.setattr(cli, "get_settings", lambda: settings)
+    monkeypatch.setattr(cli.foreign_inflation, "run", run)
+
+    result = runner.invoke(cli.app, ["ingest", "foreign-inflation"])
+
+    assert result.exit_code == 0, result.output
+    assert "Foreign inflation bronze loaded" in result.output
+    run.assert_called_once_with(settings, full=False, from_raw=False)
+
+
+@pytest.mark.parametrize(("flag", "kwarg"), [("--full", "full"), ("--from-raw", "from_raw")])
+def test_ingest_foreign_inflation_flags_propagate(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, flag: str, kwarg: str
+) -> None:
+    run = MagicMock(return_value="dest")
+    monkeypatch.setattr(cli, "get_settings", lambda: settings)
+    monkeypatch.setattr(cli.foreign_inflation, "run", run)
+
+    result = runner.invoke(cli.app, ["ingest", "foreign-inflation", flag])
+
+    assert result.exit_code == 0, result.output
+    assert run.call_args.kwargs[kwarg] is True
+
+
+def test_ingest_foreign_inflation_reports_nothing_new(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings
+) -> None:
+    """An empty return is the benign delta case (no month published since the last run),
+    not a failure — say so instead of printing a destination that does not exist."""
+    monkeypatch.setattr(cli, "get_settings", lambda: settings)
+    monkeypatch.setattr(cli.foreign_inflation, "run", MagicMock(return_value=""))
+
+    result = runner.invoke(cli.app, ["ingest", "foreign-inflation"])
+
+    assert result.exit_code == 0, result.output
+    assert "nothing new" in result.output
+
+
 # ─── ingest bcb-currency ─────────────────────────────────────────────────────
 def test_ingest_bcb_currency_delta_by_default(
     monkeypatch: pytest.MonkeyPatch, settings: Settings

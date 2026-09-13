@@ -92,6 +92,81 @@ def test_check_inflation_pivot_codes_fails_when_code_not_ingested(settings: Sett
     assert "189" in result.detail or "190" in result.detail
 
 
+def test_check_foreign_inflation_codes_pass(settings: Settings) -> None:
+    """Both deflators declared, the ECB key carrying its dataflow prefix → ok."""
+    result = doctor._check_foreign_inflation_codes(settings)
+    assert result.ok is True
+    assert "CPI" in result.detail and "HICP" in result.detail
+
+
+def test_check_foreign_inflation_codes_fails_on_an_empty_series_id(settings: Settings) -> None:
+    """An empty id makes dbt pivot on '' — the column comes out NULL and nothing else
+    anywhere says why, which is the failure this whole feature exists to end."""
+    settings.foreign_inflation_cpi_code = ""
+    result = doctor._check_foreign_inflation_codes(settings)
+    assert result.ok is False
+    assert "CPI: empty" in result.detail
+
+
+def test_check_foreign_inflation_codes_fails_on_a_prefixless_ecb_key(settings: Settings) -> None:
+    """The ECB REST path is built by splitting the key at its FIRST dot, so a key with no
+    dataflow prefix would request a dataflow that does not exist and 404 forever."""
+    settings.foreign_inflation_hicp_code = "M-U2-N-000000-4-INX"
+    result = doctor._check_foreign_inflation_codes(settings)
+    assert result.ok is False
+    assert "dataflow prefix" in result.detail
+
+
+def test_check_foreign_inflation_codes_handles_an_unexpected_exception(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        type(settings),
+        "foreign_inflation_pivot_codes",
+        property(lambda self: (_ for _ in ()).throw(RuntimeError("boom"))),
+    )
+    result = doctor._check_foreign_inflation_codes(settings)
+    assert result.ok is False and "boom" in result.detail
+
+
+def test_check_foreign_inflation_probes_both_publishers(settings: Settings) -> None:
+    """Two publishers, one line — so the line has to report BOTH. A green check hiding a
+    dead half would leave one currency silently un-deflatable."""
+    with patch("embrapa_dashboard.doctor.requests.get") as get:
+        get.return_value.raise_for_status.return_value = None
+        result = doctor._check_foreign_inflation(settings)
+    assert result.ok is True
+    assert "bls." in result.detail and "ecb." in result.detail
+    urls = [c.args[0] for c in get.call_args_list]
+    assert any("/v1/timeseries/data/" in u for u in urls)
+    assert any("/ICP/M.U2.N.000000.4.INX" in u for u in urls)
+
+
+@pytest.mark.parametrize(
+    ("caida", "marca", "erro"),
+    [("data-api", "ECB 503", "ECB 503"), ("api.bls.gov", "BLS 503", "BLS 503")],
+)
+def test_check_foreign_inflation_fails_when_either_publisher_is_down(
+    settings: Settings, caida: str, marca: str, erro: str
+) -> None:
+    """Both directions, because the two halves fail independently: US$ loses its deflator
+    when BLS is down, € when the ECB is, and a check that only noticed one of them would
+    be green while a currency silently had no correction."""
+
+    def one_side_down(url, **_kw):
+        response = MagicMock()
+        if caida in url:
+            response.raise_for_status.side_effect = RuntimeError(erro)
+        return response
+
+    with patch("embrapa_dashboard.doctor.requests.get", side_effect=one_side_down):
+        result = doctor._check_foreign_inflation(settings)
+    assert result.ok is False
+    # The half that DID answer is still reported — "one of the two is down" is the
+    # actionable statement, not "foreign inflation is broken".
+    assert "200 OK" in result.detail and marca in result.detail
+
+
 def test_check_currency_series_codes_pass(settings: Settings) -> None:
     """The canonical daily PTAX codes (USD=1, EUR=21619) → ok."""
     settings.bcb_currency_series = "1:USD,21619:EUR"

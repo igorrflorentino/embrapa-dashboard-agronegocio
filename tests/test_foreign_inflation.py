@@ -16,8 +16,10 @@ on, because both were the shape of a real defect elsewhere in this pipeline:
 from __future__ import annotations
 
 import re
+from contextlib import contextmanager
 from datetime import date
-from unittest.mock import MagicMock
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
@@ -315,3 +317,185 @@ def test_every_declared_index_names_the_currency_it_deflates() -> None:
         "HICP": "EUR",
     }
     assert {s.label: s.economy for s in pipeline.FOREIGN_INDICES} == {"CPI": "US", "HICP": "EA"}
+
+
+# ── pipeline: the two phases, end to end ──────────────────────────────────────
+
+
+def _raw_roundtrip():
+    """land_raw captures the verbatim frame; read_raw replays it (Phase 1 → Phase 2)."""
+    holder: dict = {}
+
+    def land(df, **_kw):
+        holder["df"] = df
+        return "gs://test/raw"
+
+    def read(*_a, **_kw):
+        return holder["df"].copy()
+
+    return land, read
+
+
+@contextmanager
+def _offline_gcp(monkeypatch: pytest.MonkeyPatch, *, land=None, read=None):
+    """Every GCP touchpoint stubbed, so run() exercises its own two phases only."""
+    land_fn, read_fn = _raw_roundtrip()
+    with (
+        patch("embrapa_dashboard.gcp.clients.bigquery.Client"),
+        patch("embrapa_dashboard.gcp.clients.storage.Client"),
+        patch.object(pipeline, "ensure_dataset"),
+        patch.object(pipeline, "land_raw", side_effect=land or land_fn) as land_mock,
+        patch.object(pipeline, "read_raw", side_effect=read or read_fn),
+        patch.object(pipeline, "load_dataframe") as load_mock,
+    ):
+        yield land_mock, load_mock
+
+
+def test_fetch_routes_each_index_to_its_own_publisher(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The provider is data on the spec, not a branch anyone has to remember: CPI goes to
+    BLS with the optional key, HICP to the ECB with none."""
+    seen: list[tuple[str, str, str]] = []
+    monkeypatch.setattr(
+        client,
+        "fetch_bls_series",
+        lambda code, s, e, *, base_url, api_key="": (
+            seen.append(("bls", code, api_key)) or _frame("01/01/2021")
+        ),
+    )
+    monkeypatch.setattr(
+        client,
+        "fetch_ecb_series",
+        lambda code, s, e, *, base_url: seen.append(("ecb", code, "")) or _frame("01/01/2021"),
+    )
+    settings = _settings(bls_api_key="k")
+    for spec in pipeline.FOREIGN_INDICES:
+        pipeline._fetch(spec, settings, 2020, 2021)
+    assert seen == [("bls", "CUUR0000SA0", "k"), ("ecb", "ICP.M.U2.N.000000.4.INX", "")]
+
+
+def test_fetch_refuses_an_unknown_provider() -> None:
+    bogus = pipeline.ForeignIndexSpec(
+        label="X",
+        provider="nope",
+        economy="US",
+        currency="USD",
+        code_attr="foreign_inflation_cpi_code",
+        description="",
+    )
+    with pytest.raises(ValueError, match="nope"):
+        pipeline._fetch(bogus, _settings(), 2020, 2021)
+
+
+def test_run_lands_the_raw_object_then_loads_bronze(monkeypatch: pytest.MonkeyPatch) -> None:
+    _stub_fetch(monkeypatch, {"CPI": _frame("01/01/2021"), "HICP": _frame("01/02/2021")})
+    with _offline_gcp(monkeypatch) as (land, load):
+        destination = pipeline.run(_settings(), full=True)
+
+    assert destination.endswith(".bronze_foreign.inflation_series_raw")
+    # Phase 1 archives under raw/foreign/inflation/, run-stamped by the window ACTUALLY
+    # fetched — not the configured one, which HICP does not reach.
+    kw = land.call_args.kwargs
+    assert (kw["source"], kw["dataset"]) == ("foreign", "inflation")
+    assert kw["basename"].endswith("_2021_2021")
+    assert kw["provenance"]["mode"] == "full"
+    assert "bls:CUUR0000SA0" in kw["provenance"]["series"]
+    # Phase 2 stamps the Bronze-only column and keeps the natural key clustered.
+    loaded = load.call_args.args[1]
+    assert "ingestion_timestamp" in loaded.columns
+    assert load.call_args.kwargs["time_partitioning_field"] == "ingestion_timestamp"
+    assert load.call_args.kwargs["clustering_fields"] == ["series_code", "reference_date_str"]
+
+
+def test_run_delta_short_circuits_when_nothing_is_new(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Nothing new must not archive an empty raw object — the trail is an audit record,
+    and an empty entry in it reads as 'the publisher had nothing', which is different."""
+    _stub_fetch(monkeypatch, {"CPI": pd.DataFrame(), "HICP": pd.DataFrame()})
+    monkeypatch.setattr(pipeline, "latest_reference_date", lambda *a, **k: date(2026, 8, 1))
+    with _offline_gcp(monkeypatch) as (land, load):
+        assert pipeline.run(_settings(), full=False) == ""
+    land.assert_not_called()
+    load.assert_not_called()
+
+
+def test_run_from_raw_replays_the_trail_without_touching_the_publishers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def boom(*_a, **_k):
+        raise AssertionError("--from-raw must not call the APIs")
+
+    monkeypatch.setattr(pipeline, "_fetch", boom)
+    monkeypatch.setattr(pipeline, "list_raw", lambda *a, **k: ["run1", "run2"])
+    with _offline_gcp(monkeypatch, read=lambda *a, **k: _frame("01/01/2021")) as (land, load):
+        destination = pipeline.run(_settings(), from_raw=True)
+    assert destination.endswith("inflation_series_raw")
+    land.assert_not_called()
+    assert load.call_count == 2  # both archived runs appended, in order
+
+
+def test_run_from_raw_with_an_empty_trail_is_a_no_op(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(pipeline, "list_raw", lambda *a, **k: [])
+    with _offline_gcp(monkeypatch) as (_land, load):
+        assert pipeline.run(_settings(), from_raw=True) == ""
+    load.assert_not_called()
+
+
+# ── client: the paths that only fire when something goes wrong ────────────────
+
+
+def test_retry_hook_survives_an_outcome_with_no_exception() -> None:
+    """The tenacity hook runs on the way to a retry; it must never be the thing that
+    raises, or a transient blip turns into a crash inside the retry machinery."""
+    state = SimpleNamespace(
+        outcome=SimpleNamespace(exception=lambda: ValueError("x")), attempt_number=2
+    )
+    client._emit_retry(state)
+    client._emit_retry(SimpleNamespace(outcome=None, attempt_number=1))
+
+
+@responses.activate
+def test_a_retryable_status_is_classified_transient() -> None:
+    responses.add(responses.GET, _BLS_URL, body="upstream down", status=503)
+    with pytest.raises(client.ForeignInflationTransientError):
+        client.fetch_bls_series("CUUR0000SA0", 2021, 2021, base_url="https://api.bls.gov/publicAPI")
+
+
+@responses.activate
+def test_a_non_retryable_status_is_permanent() -> None:
+    responses.add(responses.GET, _ECB_URL, body="nope", status=400)
+    with pytest.raises(client.ForeignInflationRequestError) as exc:
+        client.fetch_ecb_series(
+            "ICP.M.U2.N.000000.4.INX",
+            2021,
+            2021,
+            base_url="https://data-api.ecb.europa.eu/service/data",
+        )
+    assert not isinstance(exc.value, client.ForeignInflationTransientError)
+
+
+@responses.activate
+def test_ecb_csv_without_the_expected_columns_is_empty_not_a_crash() -> None:
+    """A portal that answers 200 with a different shape (an error page, a changed
+    column set) must degrade to 'no data' — the cold-series guard upstream is what
+    turns a persistent version of that into a loud failure."""
+    responses.add(responses.GET, _ECB_URL, body="KEY,FREQ\nx,M\n", status=200)
+    df = client.fetch_ecb_series(
+        "ICP.M.U2.N.000000.4.INX",
+        2021,
+        2021,
+        base_url="https://data-api.ecb.europa.eu/service/data",
+    )
+    assert df.empty
+
+
+@responses.activate
+def test_ecb_response_with_no_monthly_rows_is_empty() -> None:
+    responses.add(
+        responses.GET, _ECB_URL, body="KEY,FREQ,TIME_PERIOD,OBS_VALUE\nx,A,2021,104.0\n", status=200
+    )
+    df = client.fetch_ecb_series(
+        "ICP.M.U2.N.000000.4.INX",
+        2021,
+        2021,
+        base_url="https://data-api.ecb.europa.eu/service/data",
+    )
+    assert df.empty

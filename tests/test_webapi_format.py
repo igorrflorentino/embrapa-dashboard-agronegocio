@@ -170,6 +170,15 @@ def test_convention_value_label(conv, expected):
     assert fmt.convention_value_label(conv) == expected
 
 
+def test_convention_value_label_unknown_correction_names_no_economy():
+    """An index the model does not know has no economy to attribute the correction to, so
+    the label says only what it can. Inventing one ('inflação do Brasil') for a correction
+    nobody registered would be the same over-claim this feature removed."""
+    label = fmt.convention_value_label({"currency": "USD", "correction": "Bogus"})
+    assert label == "Valor real (Bogus) — US$"
+    assert "inflação" not in label
+
+
 def test_convention_value_label_unknown_currency_falls_back_to_brl_symbol():
     assert fmt.convention_value_label({"currency": "JPY", "correction": "Nominal"}).endswith("R$")
 
