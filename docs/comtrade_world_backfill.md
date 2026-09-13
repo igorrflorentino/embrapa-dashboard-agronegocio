@@ -247,10 +247,10 @@ prereq table; the job currently lacks the all-reporters scope):
 
 | Risk | Mitigation |
 |---|---|
-| Daily dbt build query cost (Silver scanning a growing Bronze) | **Mitigated** — `silver_comtrade_flows` is incremental; the daily build scans only the partitions for years with new ingestions. Note: on the LOCAL path many years can land in one quota window, so the next build's `affected_years` may span several years (scan ≈ years-landed × bronze/year) — still bounded and very likely < 1 TB/month, but monitor `INFORMATION_SCHEMA.JOBS`. |
+| Scheduled dbt build query cost (Silver scanning a growing Bronze) | **Mitigated** — `silver_comtrade_flows` is incremental; each build (twice weekly since 2026-08-26, daily before) scans only the partitions for years with new ingestions. Note: on the LOCAL path many years can land in one quota window, so the next build's `affected_years` may span several years (scan ≈ years-landed × bronze/year) — still bounded and very likely < 1 TB/month, but monitor `INFORMATION_SCHEMA.JOBS`. |
 | Quota exhaustion "looks like failure" | Expected; resumable. Read the summary banner, not the exit code (see Path A). |
 | Job deployed without all-reporters scope | Only matters for a FUTURE re-run — the history is already at all-reporters. Since v1.13.0 the config defaults are `reporters=all` / `start_year=2000`, so a Job carrying no `COMTRADE_*` env already pulls that scope; to pin it explicitly, set `COMTRADE_REPORTERS=all` + `COMTRADE_KEY_SECRET` in `.env`, then `make ingest-job-deploy` (scope is baked at deploy). |
-| `gold`/`serving` are `materialized=table` (full daily rebuild) | Bounded by Silver size (~1–2 GB), not Bronze — cheap today; if Silver grows past several GB, consider making them incremental too. |
+| `gold`/`serving` are `materialized=table` (full rebuild on every build) | Bounded by Silver size (~1–2 GB), not Bronze — cheap today; if Silver grows past several GB, consider making them incremental too. |
 
 ## Source references
 

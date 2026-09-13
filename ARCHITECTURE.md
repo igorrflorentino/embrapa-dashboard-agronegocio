@@ -277,7 +277,7 @@ embrapa-dashboard-commodities/
 │
 ├── .github/workflows/                # CI/CD
 │   ├── ci.yml                        # PR gate: lint + pytest + dbt parse + Vitest + SQLFluff
-│   ├── dbt-build-prod.yml            # Prod build: push to main + daily schedule + manual
+│   ├── dbt-build-prod.yml            # Prod build: push to main + Mon/Thu schedule + manual
 │   ├── dbt-source-freshness.yml      # Daily Bronze staleness check
 │   ├── gitleaks.yml                  # Server-side secret scanning on every push/PR
 │   ├── reconcile-reminder.yml        # Monthly issue: nudge an operator-run reconcile
@@ -616,7 +616,7 @@ Runs on every PR to `main` (three parallel jobs):
 
 ### dbt build prod (`dbt-build-prod.yml`)
 
-A push to `main` that touches `dbt/**` or `config.py` triggers a prod Silver/Gold build via Workload Identity Federation; a **daily schedule** (11:30 UTC) also rebuilds prod so ingested Bronze reaches Silver/Gold/serving without a code push. Once curation is activated in prod, the repo variable `DBT_ENABLE_CURATION=true` makes every automated build carry `--vars 'enable_curation: true'` (see [docs/operations_runbook.md](docs/operations_runbook.md)). Gold snapshots remain manual (`make dbt-build-prod-with-backup` locally, before release boundaries).
+A push to `main` that touches `dbt/**` or `config.py` triggers a prod Silver/Gold build via Workload Identity Federation; a **twice-weekly schedule** (Mondays and Thursdays, 11:30 UTC trigger — GitHub starts it hours later, measured 3h35–9h58) also rebuilds prod so ingested Bronze reaches Silver/Gold/serving without a code push. It was daily until 2026-08-26: the build was 98.9% of the billed BigQuery bytes, mostly rebuilding identical inputs. For data that should not wait for the next slot (a backfill, a one-off ingest), dispatch it by hand: `gh workflow run dbt-build-prod.yml --ref main` — a plain build is enough, since every Silver/Gold model is `materialized='table'` except the year-agnostic incremental `silver_ibge_pevs`. Once curation is activated in prod, the repo variable `DBT_ENABLE_CURATION=true` makes every automated build carry `--vars 'enable_curation: true'` (see [docs/operations_runbook.md](docs/operations_runbook.md)). Gold snapshots remain manual (`make dbt-build-prod-with-backup` locally, before release boundaries).
 
 ### Other workflows
 
