@@ -6,10 +6,16 @@
 // (v1.78.0). The server reports WHERE (`gap.years`), which of those years are missing
 // only IN PART (`gap.partial` — the latest COMEX month, before its deflator index is
 // ingested: measured 2026-09-13, every August 2026 row had no IPCA value), which MONTHS
-// those are when it knows (`gap.months`, the snapshot's month-level list — v1.79.0), and
-// how much trade that leaves out, measured in the declared US$ that never goes missing
-// (`gap.share`, only where the reader can measure the selection). A value computed over
-// a subset must say which — and must not call a missing month a missing year.
+// those are when it knows (`gap.months`, COMEX's month-level list — v1.79.0), the first
+// and last year WITH value (`gap.valuedRange`, so the note can say WHY — v1.80.0), and how
+// much trade that leaves out, measured in the declared US$ that never goes missing
+// (`gap.share`, only where the reader can measure the selection). A value computed over a
+// subset must say which — and must not call a missing month a missing year.
+//
+// The WHY, from what the note knows (and only then): € sem correção before 1999 is the
+// euro's own birth; a corrected convention missing at the START of the history is an
+// index series that does not reach that far (PAM/PPM have no IPCA in 1974–1979 — and
+// R$ · IPCA is the dashboard's default); missing at the END, an index not ingested yet.
 //
 // NominalSeriesNote says what a nominal series over many years is good for. The
 // Multi-fonte and curated views have no conventions strip (they compare sources, not
@@ -45,11 +51,28 @@ function _anoParcial(y, months) {
 
 const _DESTINO = { soma: 'da soma', somas: 'das somas', 'médias': 'das médias' };
 
-function ValueGapNote({ gap, unit, alvo = 'soma' }) {
+// Why the convention has no value there — only what can be said from the facts at hand.
+function _motivo({ inteiros, parciais, unit, correcao, valuedRange }) {
+  const corrigida = correcao && correcao !== 'Nominal';
+  const [primeiro, ultimo] = Array.isArray(valuedRange) ? valuedRange : [];
+  if (!corrigida && unit === '€' && inteiros.length && inteiros.every((y) => y < 1999)) {
+    return 'O euro só existe desde 1999, e a série sem correção não o converte para trás.';
+  }
+  if (!corrigida) return null;
+  const antes = inteiros.filter((y) => primeiro != null && y < primeiro);
+  const depois = parciais.length || inteiros.some((y) => ultimo != null && y > ultimo);
+  if (antes.length && antes.length === inteiros.length && !parciais.length) {
+    return `A série do ${correcao} não alcança ${antes.length === 1 ? 'esse ano' : 'esses anos'}.`;
+  }
+  if (depois && !antes.length) return `O ${correcao} desse período ainda não entrou na base.`;
+  return null;
+}
+
+function ValueGapNote({ gap, unit, correcao, alvo = 'soma' }) {
   if (!gap || !Array.isArray(gap.years) || !gap.years.length) return null;
   const parciais = (gap.partial || []).filter((y) => gap.years.includes(y));
   const inteiros = gap.years.filter((y) => !parciais.includes(y));
-  const euro = unit === '€' && inteiros.length > 0 && inteiros.every((y) => y < 1999);
+  const motivo = _motivo({ inteiros, parciais, unit, correcao, valuedRange: gap.valuedRange });
   const destino = _DESTINO[alvo] || _DESTINO.soma;
   // Uma fração pequena com zero casas vira "0%", que se lê como "não ficou nada de fora".
   const parte = typeof gap.share === 'number'
@@ -71,7 +94,7 @@ function ValueGapNote({ gap, unit, alvo = 'soma' }) {
         {parciais.length > 0 &&
           `${inteiros.length ? 'E parte' : 'Parte'} do comércio de ${parcialTexto} não tem valor nesta convenção.`}
       </strong>{' '}
-      {euro && 'O euro só existe desde 1999, e a série sem correção não o converte para trás. '}
+      {motivo && `${motivo} `}
       {sujeito} fora {destino}{parte}.
     </p>
   );
@@ -89,6 +112,28 @@ window.windowValueGap = (gap, start, end) => {
   const years = gap.years.filter(dentro);
   if (!years.length) return null;
   return { ...gap, years, partial: (gap.partial || []).filter(dentro) };
+};
+
+// The same WHY, per year, for the "Variação acumulada" refusal (window.deltaTitle's
+// `motivo`): (year) → a lowercase phrase, or null when the gap does not name that year or
+// the facts do not settle the cause. `conv` is the active {currency, correction}.
+window.valueGapMotivo = (gap, conv) => {
+  if (!gap || !Array.isArray(gap.years) || !gap.years.length) return null;
+  const correcao = conv && conv.correction;
+  const corrigida = correcao && correcao !== 'Nominal';
+  const [primeiro, ultimo] = Array.isArray(gap.valuedRange) ? gap.valuedRange : [];
+  const parciais = gap.partial || [];
+  return (y) => {
+    if (!gap.years.includes(y)) return null;
+    if (!corrigida) {
+      return conv && conv.currency === 'EUR' && y < 1999 ? 'o euro só existe desde 1999' : null;
+    }
+    if (primeiro != null && y < primeiro) return `a série do ${correcao} não alcança esse ano`;
+    if (parciais.includes(y) || (ultimo != null && y > ultimo)) {
+      return `o ${correcao} desse período ainda não entrou na base`;
+    }
+    return null;
+  };
 };
 
 function NominalSeriesNote() {

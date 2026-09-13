@@ -195,8 +195,20 @@ município passes the cascade iff it clears every active facet (intersection).
   `{ municipioYearly: [] }` for a banco with no município grain (COMEX/COMTRADE) or a
   not-built table.
 
-### 3.7 `valueGap` — the months the active convention cannot value (COMEX only)
-`{ years, partial, months, share: null }` or `null`.
+### 3.7 `valueGap` — the periods the active convention cannot value (every banco)
+`{ years, partial, months, valuedRange, share: null }` or `null`.
+
+Since v1.80.0 every banco carries it, not only COMEX. The annual bancos (IBGE PEVS/PAM/PPM,
+COMTRADE) deflate by the YEAR-END index, so where the index series does not reach, a whole
+year has no corrected value — measured on the serving marts 2026-09-13: **PAM and PPM have
+no R$ · IPCA in 1974–1979** (the convention the dashboard opens with, over the whole
+history), no IGP-M in 1974–1988; PEVS has no IGP-M in 1986–1988; all three have no € sem
+correção before 1999. They are read by `gateway.fetch_annual_value_gap` from their annual
+mart; a row only counts when it has a value in the banco's own currency (`val_yearfx_brl`,
+or `val_yearfx_usd` for COMTRADE), so PPM's herd — valueless in every convention — is not a
+gap. `valuedRange` (first and last year with value) lets the note say WHY: a hole at the
+START is an index series that begins later ("A série do IPCA não alcança esses anos"), one
+at the END an index not ingested yet. COMEX (below) is read month by month.
 
 The COMEX snapshot readers all sit on annual marts, whose build SUMs the months — and a
 SUM swallows the month a convention cannot value. Two such holes exist: the **latest

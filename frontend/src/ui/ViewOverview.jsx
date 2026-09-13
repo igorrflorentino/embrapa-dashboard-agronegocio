@@ -246,7 +246,10 @@ function ViewOverview({ families, summary, database, conventions }) {
               <>
                 <window.SectionHeader
                   overline={`Série histórica · ${filtered.yearStart}–${yTag(filtered.yearEnd)} · ${monLabel}`}
-                  title={comboPending ? 'Variação acumulada: …' : window.deltaTitle('Variação acumulada', first, last, { breaks: eraBreaks })}
+                  title={comboPending ? 'Variação acumulada: …' : window.deltaTitle('Variação acumulada', first, last, {
+                    breaks: eraBreaks,
+                    motivo: window.valueGapMotivo && window.valueGapMotivo(window.valueGapFor(database), conv),
+                  })}
                 />
                 {comboPending ? (
                   <p className="caption" style={{ padding: '24px 4px', textAlign: 'center' }}>

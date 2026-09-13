@@ -504,13 +504,14 @@ function MainScreen({ filters, view = 'overview', database = 'ibge_pevs', infoPa
 
       {controls}
 
-      {/* Os meses que a convenção ativa não alcança (v1.79.0), cortados ao período da tela.
-          As telas por banco do COMEX leem marts anuais, e a soma dos meses engolia o mês
-          mais recente sem índice de correção dentro de um total "2026". As três telas de
-          comércio têm a sua própria nota, com a fração do recorte; Qualidade e Dados não
-          mostram valor em moeda. */}
+      {/* Os períodos que a convenção ativa não alcança, cortados ao período da tela: o mês
+          mais recente do COMEX sem índice de correção (v1.79.0) e os anos do IBGE que a série
+          do índice não alcança — PAM e PPM não têm IPCA em 1974–1979, e R$ · IPCA é a
+          convenção com que o painel abre (v1.80.0). As três telas de comércio têm a sua
+          própria nota, com a fração do recorte; Qualidade, Dados, Rebanho e Produtividade
+          não mostram valor em moeda. */}
       {window.ValueGapNote && window.windowValueGap
-        && !['flows_partners', 'flows_territorial', 'seasonality', 'quality', 'dados'].includes(view) && (
+        && !['flows_partners', 'flows_territorial', 'seasonality', 'quality', 'dados', 'rebanho', 'productivity'].includes(view) && (
         <window.ValueGapNote
           gap={window.windowValueGap(
             window.valueGapFor ? window.valueGapFor(database) : null,
@@ -518,6 +519,7 @@ function MainScreen({ filters, view = 'overview', database = 'ibge_pevs', infoPa
             filters && filters.endDate,
           )}
           unit={((window.CURRENCY_FX || {})[(conventions || window.DEFAULT_CONVENTIONS || {}).currency] || {}).symbol}
+          correcao={(conventions || window.DEFAULT_CONVENTIONS || {}).correction}
           alvo="somas" />
       )}
 
