@@ -7,6 +7,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.83.2] - 2026-09-13
+
+### Corrigido
+
+- **A sequência de ligar os deflatores estrangeiros voltou a descrever a sequência real.**
+  O `PLANS/correcao_inflacionaria_multimoeda.md` § *Turning it on* é a página que o operador
+  abre com o ambiente na frente, e ela ficou em quatro passos enquanto a v1.83.0 tornava a
+  chave do BLS um pré-requisito de fato — documentado no `deploy.sh` e no `.env.example`,
+  em todo lugar menos onde se lê na hora de executar. Três correções:
+  - **A chave virou o passo 1**, e por um motivo mecânico e não estilístico: o `deploy.sh` lê
+    `BLS_KEY_SECRET` enquanto constrói o Job, então registrar a chave depois significa fazer
+    deploy duas vezes.
+  - **A linha de risco da cota estava desmentida pela medição.** Ela dizia que 6 janelas
+    contra um teto de 25/dia bastavam e que uma recusa seria "retentada" — mas o teto keyless
+    é contado **por IP de saída** e compartilhado, então aritmética de janelas não o limita, e
+    retentar não ajuda contra uma cota que já chegou gasta (medido em 2026-09-13). A mitigação
+    verdadeira é a chave: v2, janelas de 20 anos, 500/dia que são **da chave**.
+  - **O passo da ingestão passou a ser o do Cloud Run Job**, não o `uv run` local, e o `doctor`
+    ganhou lugar explícito antes dele — com a observação que justifica esse lugar: sondando da
+    máquina do operador, que tem outro IP de saída, uma passagem local não prova nada sobre o
+    que o Job vai encontrar *enquanto a cota for por IP*. Com a chave, os dois disputam o mesmo
+    teto e a sonda passa a ser preditiva.
+  - Ficou dito onde o passo está o que antes se esperava que o leitor deduzisse da existência
+    do gate: ligar `DBT_ENABLE_FOREIGN_INFLATION` antes de o Bronze ter linhas aponta o
+    `silver_foreign_inflation` para um dataset que responde 404, e isso cascateia por
+    `silver_inflation` até todo o Gold.
+- `tests/test_turn_on_runbook.py` fixa o vocabulário do runbook contra renomeação silenciosa:
+  que ele começa pela chave, que cada identificador que ele cita (`BLS_KEY_SECRET`,
+  `make ingest-job-deploy`, `embrapa-ingest-all`, `DBT_ENABLE_FOREIGN_INFLATION`, o comando da
+  CLI, o check do `doctor`) ainda existe onde ele diz, e que o aviso da ordem perigosa
+  continua lá. A ORDEM em si não dá para testar — mora na prosa; o que se testa é o
+  vocabulário de que a prosa é feita. Verificado que os três reprovam contra o runbook antigo.
+
+---
+
+## [1.83.1] - 2026-09-13
+
+### Corrigido
+
+- **O monitor de obsolescência do Bronze voltou a poder passar.** A v1.82.0 declarou a
+  fonte `bronze_foreign` com bloco de `freshness`, mas o dataset só existe depois da
+  primeira ingestão dos deflatores estrangeiros — então o `dbt source freshness` diário
+  passou a reprovar com `Dataset bronze_foreign was not found`, todo dia, desde o merge
+  daquela versão (runs 91–93 verdes em `e2c2c5a`; run 94, o primeiro em `320e2dce`,
+  vermelho).
+  - A causa é um gate que cobriu metade do problema. O `enable_foreign_inflation` foi
+    pensado como gate de ORDEM DE BUILD e aplicado ao MODELO (`silver_foreign_inflation`),
+    onde de fato evitava a cascata até o Gold. Mas `dbt source freshness` é outro comando,
+    em outro workflow, e lê a declaração da FONTE — que ficou sem gate.
+  - O custo não é um quadrado vermelho. Esse workflow é o monitor de obsolescência de TODO
+    o Bronze e o cabeçalho dele diz que uma violação de nível error avisa o operador por
+    e-mail; um run que sempre falha enterra o sinal que ele existe para carregar. Monitor
+    que não consegue passar é monitor desligado — a mesma forma do defeito da sonda que
+    não conseguia reprovar, corrigido na v1.82.1.
+  - A fonte passa a andar no MESMO gate do modelo, via `config: enabled:` da própria fonte
+    (o `{% if %}` estruturado não serve: o dbt parseia o schema YAML ANTES de renderizar o
+    Jinja, que só roda dentro de valores string). Com o gate desligado o dbt simplesmente
+    não tem freshness para essa fonte e a pula; as outras nove seguem medidas. Ligado, ela
+    volta com `loaded_at_field` e a mesma janela 10d/17d das séries do BCB com que divide
+    o lote semanal. Os dois estados verificados com `dbt parse`.
+  - `tests/test_foreign_inflation_gate.py` fixa o invariante que faltava: fonte e modelo
+    andam no mesmo gate, porque as duas direções quebram — fonte ligada sem modelo derruba
+    o monitor, modelo ligado sem fonte derruba o `dbt build` com "source is disabled".
+
 ## [1.83.0] - 2026-09-13
 
 ### Adicionado
