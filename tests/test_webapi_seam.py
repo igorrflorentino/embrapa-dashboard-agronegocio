@@ -339,6 +339,33 @@ def test_snapshot_renames_comex_uf_yearly_value_column(monkeypatch):
     assert float(uy.loc[0, "total_value"]) == 9e6
 
 
+def test_snapshot_comex_names_the_months_the_convention_cannot_value(monkeypatch):
+    """v1.79.0: every COMEX screen but the three trade views sits on annual marts, whose
+    build SUMs the months — the latest month without a deflator index vanished inside a
+    "2026" total. The snapshot asks the monthly mart which months the convention cannot
+    value (measured 2026-09-13: all 2.275 rows of August 2026 in IPCA)."""
+    seam = _seam()
+    _stub_snapshot_readers(seam, monkeypatch, uf_yearly=pd.DataFrame(), source="mdic_comex")
+    pedidos: dict = {}
+    monkeypatch.setattr(seam.gateway, "fetch_comex_seasonality_columns", lambda: _SEAS_COLS)
+    monkeypatch.setattr(
+        seam.gateway,
+        "fetch_comex_value_gap_by_month",
+        lambda **k: pedidos.update(k) or "meses",
+    )
+    out = seam.snapshot("mdic_comex", {"currency": "BRL", "correction": "IPCA"})
+    assert out["value_gap_months"] == "meses"
+    assert pedidos == {"value_column": "val_real_ipca_brl"}
+
+    # O US$ declarado nunca falta; e sem a coluna no mart mensal não há o que perguntar.
+    pedidos.clear()
+    usd = seam.snapshot("mdic_comex", {"currency": "USD", "correction": "Nominal"})
+    assert usd["value_gap_months"] is None
+    euro_ipca = seam.snapshot("mdic_comex", {"currency": "EUR", "correction": "IPCA"})
+    assert euro_ipca["value_gap_months"] is None
+    assert pedidos == {}
+
+
 # ── snapshot: the server-side flow (export/import) filter ──────────────────────
 
 

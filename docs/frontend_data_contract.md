@@ -195,6 +195,26 @@ município passes the cascade iff it clears every active facet (intersection).
   `{ municipioYearly: [] }` for a banco with no município grain (COMEX/COMTRADE) or a
   not-built table.
 
+### 3.7 `valueGap` — the months the active convention cannot value (COMEX only)
+`{ years, partial, months, share: null }` or `null`.
+
+The COMEX snapshot readers all sit on annual marts, whose build SUMs the months — and a
+SUM swallows the month a convention cannot value. Two such holes exist: the **latest
+month before its deflator index is ingested** (measured 2026-09-13: all 2.275 rows of
+2026-08 without IPCA/IGP-DI; IGP-M was already in) and **€ sem correção before 1999**.
+Until v1.79.0 the corrected 2026 total covered Jan–Jul under a "2026" label while the
+nominal one covered through August, on every COMEX screen but the three trade views.
+
+- Read by `gateway.fetch_comex_value_gap_by_month` from the MONTHLY mart, unfiltered: Gold
+  joins the deflator and the FX by year + month, so a missing index nulls EVERY row of its
+  month — exact for any product/UF/flow the browser selects.
+- `partial` = years with some valued month; `months` names their missing ones
+  (`{"2026": [8]}`) so the note says "parte do comércio de 2026 (agosto)", never "2026".
+- No `share`: it depends on the client-side selection.
+- The screens cut it to the selected period (`window.windowValueGap`) and MUST name it;
+  `MainScreen` renders one `ValueGapNote` under the conventions strip for every COMEX
+  view except the three trade views, which carry their own (with the share — §4).
+
 ---
 
 ## 4. Generic adapters (brief §3)

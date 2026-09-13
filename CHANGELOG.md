@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.79.0] - 2026-09-13
+
+### Corrigido
+
+- **As outras telas do COMEX somavam em silêncio o mês que a correção não alcança.** Visão
+  geral, Valor × Volume, Geografia, Perfil e Comparação de produtos, Perfil do território e
+  Concentração leem os marts anuais, cuja construção soma os meses — e a soma engole o mês
+  mais recente, que fica sem valor corrigido até o índice daquele mês entrar. Em 2026-09-13,
+  as 2.275 linhas de agosto de 2026 estavam sem IPCA e sem IGP-DI (o IGP-M já tinha entrado):
+  o total corrigido de 2026 cobria janeiro–julho sob o rótulo "2026", enquanto o nominal ia
+  até agosto. A v1.78.0 fez as três telas de comércio dizerem isso; agora todas as do COMEX
+  dizem, numa nota logo abaixo das convenções: "Parte do comércio de 2026 (agosto) não tem
+  valor nesta convenção". O mesmo vale para € sem correção antes de 1999.
+
+  A lista vem do mart mensal, por mês e sem filtro: o Gold junta deflator e câmbio por ano +
+  mês, então um índice que falta anula TODAS as linhas daquele mês, qualquer que seja o
+  produto, a UF ou o fluxo. Ela vale para qualquer recorte que as telas façam no navegador, e
+  uma consulta por convenção serve todas as telas (`valueGap` no snapshot). Sem fração do
+  recorte, porque ela depende da seleção; o mês nomeado basta para o leitor saber o que ficou
+  de fora. A nota é cortada ao período da tela: quem olha 2010–2025 não vê aviso de 2026.
+
+- Conferido em produção que o problema é só do COMEX: COMTRADE, PEVS e PAM não têm valor
+  corrigido faltando desde 1999, e os ~44 mil registros anuais sem valor do PPM são o rebanho
+  (estoque), que não tem preço em convenção nenhuma, por construção.
+
 ## [1.78.0] - 2026-09-13
 
 ### Corrigido

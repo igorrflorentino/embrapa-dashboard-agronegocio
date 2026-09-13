@@ -504,6 +504,23 @@ function MainScreen({ filters, view = 'overview', database = 'ibge_pevs', infoPa
 
       {controls}
 
+      {/* Os meses que a convenção ativa não alcança (v1.79.0), cortados ao período da tela.
+          As telas por banco do COMEX leem marts anuais, e a soma dos meses engolia o mês
+          mais recente sem índice de correção dentro de um total "2026". As três telas de
+          comércio têm a sua própria nota, com a fração do recorte; Qualidade e Dados não
+          mostram valor em moeda. */}
+      {window.ValueGapNote && window.windowValueGap
+        && !['flows_partners', 'flows_territorial', 'seasonality', 'quality', 'dados'].includes(view) && (
+        <window.ValueGapNote
+          gap={window.windowValueGap(
+            window.valueGapFor ? window.valueGapFor(database) : null,
+            filters && filters.startDate,
+            filters && filters.endDate,
+          )}
+          unit={((window.CURRENCY_FX || {})[(conventions || window.DEFAULT_CONVENTIONS || {}).currency] || {}).symbol}
+          alvo="somas" />
+      )}
+
       {/* Registry lookup, not a component created during render — see the note on the
           cross-source branch above. Identity changes only when `view` changes, and that
           remount is intended. */}

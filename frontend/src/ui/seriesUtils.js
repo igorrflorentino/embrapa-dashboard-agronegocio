@@ -174,6 +174,14 @@ window.valueEraBreaksFor = (bancoId) => {
   return (snap && snap.valueEraBreaks) || [];
 };
 
+// Os meses que a convenção ativa não alcança (COMEX: o último mês antes de o índice de
+// correção entrar; € sem correção antes de 1999), lidos do snapshot já carregado
+// (v1.79.0). Sem snapshot, sem lacuna conhecida: null — nunca uma nota inventada.
+window.valueGapFor = (bancoId) => {
+  const snap = window.dataStore && window.dataStore.get ? window.dataStore.get(bancoId) : null;
+  return (snap && snap.valueGap) || null;
+};
+
 // A variação entre dois PONTOS, ciente das duas razões de recusa (ausência e moeda).
 // É o que as views chamam; window.deltaPct continua sendo o primitivo numérico puro.
 window.deltaPctIn = (p0, pT, breaks) => {

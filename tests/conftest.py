@@ -51,6 +51,23 @@ def _no_real_heartbeat_writes(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_live_comex_gap_lookup(monkeypatch):
+    """No test may reach BigQuery through the COMEX value-gap lookup.
+
+    Since v1.78/v1.79 every COMEX read under a non-US$ convention first asks the monthly
+    mart's SCHEMA whether it carries the column, then which months it cannot value — and
+    `seam.snapshot` does it on EVERY COMEX call, where a dozen seam tests stub only the
+    readers they know. An empty schema means "no column, no gap", so no query follows. A
+    test that exercises the gap stubs `fetch_comex_seasonality_columns` itself.
+    """
+    try:
+        from embrapa_dashboard.serving import gateway
+    except ImportError:  # the webapi extra (flask-caching) is not installed
+        return
+    monkeypatch.setattr(gateway, "fetch_comex_seasonality_columns", lambda: frozenset())
+
+
+@pytest.fixture(autouse=True)
 def _no_live_currency_eras(monkeypatch, request):
     """`seam.snapshot` must not reach BigQuery for the currency-reform boundaries.
 
