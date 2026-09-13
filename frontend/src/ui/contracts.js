@@ -61,7 +61,8 @@
 //
 // @typedef {Object} FlowData            window.flowData(bancoId, summary)
 // @property {boolean} preview
-// @property {string}  unit
+// @property {string}  unit        currency symbol of the column the server ACTUALLY summed (R$/US$/€) — follows the conventions strip; a combo the mart lacks (US$ × IGP-M) falls back to R$
+// @property {(string|null)} valueLabel  the convention on screen, e.g. "Valor real (IPCA) — US$ · FOB"
 // @property {string}  originLabel        Dimension label for the origin side.
 // @property {string}  destLabel          Dimension label for the destination side.
 // @property {{id:string,label:string,side:'origin'|'dest',value:number}[]} nodes
@@ -70,20 +71,22 @@
 // @typedef {Object} PartnerData         window.partnerData(bancoId, summary, metric)
 // @property {boolean} preview
 // @property {string}  flowLabel
-// @property {string}  unit
-// @property {{name:string,exp:number,imp:number,value:number,weight:number,price:(number|null),pricedShare:(number|null)}[]} partners  value/exp/imp = US$ mi · weight = mil t (net) · price = US$/kg, null when no weight. The price divides ONLY the value of rows that have a weight: COMTRADE publishes 79.528 rows (3,87% of the mart, measured 2026-09-07) with a value and no net weight, and dividing the WHOLE value by the weight of part of it inflated the number — Guam ranked 6th at US$ 1,251/kg and belongs 41st at US$ 0,567 (+121%). `pricedShare` is how much of that partner's trade backs the price (null when there is no base); below 0,9 the view names the partner, because the number then describes a part of what they trade. Row order = the server-side ranking metric (Capital/Volume/Preço médio).
+// @property {string}  unit        currency symbol of the column the server ACTUALLY summed (R$/US$/€) — it follows the conventions strip, and a combo the mart lacks (US$ × IGP-M) falls back to R$
+// @property {(string|null)} valueLabel  the convention on screen, e.g. "Valor real (IPCA) — US$ · FOB"
+// @property {{name:string,exp:number,imp:number,value:number,weight:number,price:(number|null),pricedShare:(number|null)}[]} partners  value/exp/imp = `unit` mi · weight = mil t (net) · price = `unit`/kg, null when no weight. The price divides ONLY the value of rows that have a weight: COMTRADE publishes 79.528 rows (3,87% of the mart, measured 2026-09-07) with a value and no net weight, and dividing the WHOLE value by the weight of part of it inflated the number — Guam ranked 6th at US$ 1,251/kg and belongs 41st at US$ 0,567 (+121%). `pricedShare` is how much of that partner's trade backs the price (null when there is no base); below 0,9 the view names the partner, because the number then describes a part of what they trade. Row order = the server-side ranking metric (Capital/Volume/Preço médio).
 //
 // @typedef {Object} MonthlyData         window.monthlyData(bancoId, summary)
 // @property {boolean} preview
-// @property {string}  unit               Value (Capital) unit — 'US$'.
+// @property {string}  unit               Value (Capital) unit — symbol of the column the server ACTUALLY summed (R$/US$/€); follows the conventions strip.
+// @property {(string|null)} valueLabel   the convention on screen — and says so when the monthly mart cannot serve the chosen correction yet and the server fell back to nominal US$.
 // @property {string}  weightUnit         Volume unit — 'mil t' (net weight).
 // @property {number[]} years
 // @property {number[]} months           [1..12]
-// @property {Object.<number,number[]>} matrix         year → 12 monthly VALUE (US$ mi) values.
-// @property {number[]} monthlyAvg       12 value (US$ mi) values.
+// @property {Object.<number,number[]>} matrix         year → 12 monthly VALUE (`unit` mi) values.
+// @property {number[]} monthlyAvg       12 value (`unit` mi) values.
 // @property {Object.<number,number[]>} weightMatrix   year → 12 monthly WEIGHT (mil t) values.
 // @property {number[]} weightMonthlyAvg 12 weight (mil t) values.
-// @property {{ym:string,y:number,m:number,v:number,w:number}[]} series   v = value (US$ mi), w = weight (mil t).
+// @property {{ym:string,y:number,m:number,v:number,w:number}[]} series   v = value (`unit` mi), w = weight (mil t).
 //
 // @typedef {Object} ProductivityData    window.productivityData(bancoId, cropCode, summary)
 // @property {boolean} preview

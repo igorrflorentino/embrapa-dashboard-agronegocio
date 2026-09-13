@@ -7,6 +7,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.77.0] - 2026-09-12
+
+### Corrigido
+
+- **"Parceiros comerciais" ignorava a moeda e a correção escolhidas.** A faixa de
+  convenções dizia "Correção IPCA" e o ranking somava **US$ nominal** para qualquer
+  escolha: `val_yearfx_usd` estava escrito no SQL de `trade_by_partner`, e nem a rota nem o
+  produtor liam `currency`/`correction`. Achado conferindo a planilha de uma pesquisadora
+  contra o painel — Acre × castanha-do-pará, 1997–2026: o painel mostrava Peru US$ 78 mi e
+  Bolívia US$ 48 mi sob "IPCA", e isso é, ao dólar, a soma **nominal** de exportação +
+  importação (77,65 + 0,56 e 47,12 + 0,69, medido em `serving_comex_annual`). Corrigida
+  pelo método do Gold (US$ → R$ no câmbio do ano → IPCA → US$ no câmbio atual), a
+  exportação fica Peru **84,84 mi** e Bolívia **51,77 mi**. Aqui a ordem não mudou; num
+  ranking histórico ela pode mudar, porque a correção pesa mais nos fluxos antigos.
+
+  `/api/partners` agora recebe `currency` + `correction` como o `/snapshot` e resolve a
+  coluna por `seam.effective_value_column`. Exportação, importação, total, a parte com
+  peso e o numerador do preço leem a **mesma** coluna — um total deflacionado ao lado de um
+  preço nominal seria o mesmo defeito em outra linha. O `unit` do payload vem da coluna
+  **realmente somada**, não do pedido (US$ × IGP-M cai para R$, e a unidade acompanha), e o
+  novo `valueLabel` põe a convenção na tela, logo acima do ranking. O preço médio e a
+  faixa de preço tinham "US$" escrito à mão e passaram a usar a unidade do servidor.
+
+- **"Fluxos territoriais" (Sankey) tinha o mesmo defeito, e recebeu a mesma correção.**
+  `trade_flows` somava `val_yearfx_usd` fixo e `/api/flow` não lia a convenção. Agora segue
+  a faixa como o ranking, com `unit` e `valueLabel` pelo mesmo critério — o `valueLabel`
+  aparece no canto do diagrama, onde antes estava só "US$". Medido em produção, Acre →
+  Peru: US$ 77,65 mi nominal, US$ 84,84 mi em US$·IPCA, R$ 432,51 mi em R$·IPCA — os mesmos
+  números do ranking, como tem de ser.
+
+- **O Sankey rotulava milhões como unidades.** O servidor manda os valores já em milhões
+  (`serialize_flow` divide por 1e6 — Acre → Peru chega como `77,65`), e a tela passava esse
+  número ao `autoScaleNum` como se fosse dólar cru: saía "US$ 77,6" para US$ 77,6 milhões, e
+  um total de 50 mil milhões virava "US$ 50 mil". O comentário da tela registrava a
+  intenção ao contrário — dizia ter trocado uma heurística que "assumia que o valor já
+  vinha em milhões", e ele vinha —, e o teste passava porque alimentava dólar cru. A tela
+  agora converte de volta antes de escalar, e o teste usa a unidade do contrato, com
+  Acre → Peru medido em produção como âncora.
+
+- **"Sazonalidade" também ignorava a convenção — e também rotulava milhões como
+  unidades.** Mesma correção das outras duas, com uma diferença: a mart mensal
+  (`serving_comex_seasonality`) guardava só `val_yearfx_usd`, então passou a carregar a
+  mesma matriz de moedas da anual. Conferido em produção antes do build: para Acre ×
+  castanha, a base do Gold dá 147,26 mi US$ nominal, 162,53 mi US$·IPCA e 828,55 mi
+  R$·IPCA, idênticos à `serving_comex_annual`.
+
+  Um merge publica a aplicação e reconstrói as marts **em paralelo** — em 2026-09-09 a
+  aplicação ficou no ar 3m32s antes da mart. Por isso o seam consulta o esquema da mart
+  (metadado da tabela, grátis, em cache pelo TTL das marts) antes de pedir a coluna:
+  enquanto ela não existe, serve o US$ nominal de sempre e o rótulo diz "a série mensal
+  ainda não tem a correção escolhida", em vez de a consulta falhar para todo mundo no
+  padrão R$·IPCA. A tela convertia milhões como se fossem unidades em três lugares —
+  cartões, mapa de calor e eixo de Capital — e agora converte uma vez, na entrada.
+
+- Os aliases do SQL de parceiros, do Sankey e da Sazonalidade deixaram de afirmar a moeda:
+  `value_usd`/`total_value_usd` → `total_value`, `price_usd_per_kg` → `price_per_kg`, e
+  `exp_value`/`imp_value`/`priced_value`. A coluna não é mais sempre dólar.
+
+### Observado, fora deste escopo
+
+- A planilha que motivou a conferência corrige US$ multiplicando direto pela razão do
+  IPCA — a inflação do **real** aplicada ao **dólar**, sem a variação cambial. Um dólar de
+  2005 sai 3,07× o de hoje (1,56× pelo método do Gold); como as vendas do Acre à Bolívia se
+  concentram em 2004–2015 e as ao Peru a partir de 2016, a planilha inverte o ranking
+  (Bolívia 106,8 mi × Peru 93,9 mi). Os dados das duas são idênticos, ano a ano, ao dólar.
 ## [1.76.2] - 2026-09-09
 
 ### Adicionado

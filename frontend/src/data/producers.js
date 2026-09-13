@@ -448,10 +448,17 @@ window.flowData = function flowData(bancoId, summary) {
   const states = applies ? filterStates(summary) : undefined;
   const notApplicable = ufNote(bancoId, summary, applies);
   const ax = activeAxisParams();
-  const key = `trade:flow:${bancoId}:${filterSig(summary)}:${countrySig(summary)}:${axisKey(ax)}`;
+  // currency × correction pick the summed column server-side (as in partnerData below),
+  // so they belong in the request AND the cache key — until v1.77.0 the Sankey was
+  // nominal US$ under any convention.
+  const conv = window.dataStore && window.dataStore.conv
+    ? window.dataStore.conv()
+    : { currency: 'BRL', correction: 'IPCA' };
+  const key = `trade:flow:${bancoId}:${conv.currency}|${conv.correction}:${filterSig(summary)}:${countrySig(summary)}:${axisKey(ax)}`;
   ensure(key, () =>
     `${API}/flow?${qs({
       banco: bancoId, codes, states, y0, y1,
+      currency: conv.currency, correction: conv.correction,
       reporters: filterReporters(summary), partners: filterPartners(summary), ...ax,
     })}`);
   const data = get(key);
@@ -460,9 +467,10 @@ window.flowData = function flowData(bancoId, summary) {
     originLabel: dim('origin').label || 'Origem',
     destLabel: dim('dest').label || 'Destino',
   };
+  const unit = (window.CURRENCY_FX && window.CURRENCY_FX[conv.currency] || {}).symbol || conv.currency;
   return data
     ? { ...data, ...labels, notApplicable }
-    : { preview: false, unit: 'US$', ...labels, notApplicable, nodes: [], links: [], loadError: errorOf(key) };
+    : { preview: false, unit, ...labels, notApplicable, nodes: [], links: [], loadError: errorOf(key) };
 };
 window.partnerData = function partnerData(bancoId, summary, metric) {
   const codes = filterCodes(summary);
@@ -477,17 +485,26 @@ window.partnerData = function partnerData(bancoId, summary, metric) {
   // drop niche high-price buyers — see serving/sql.trade_by_partner).
   const m = metric || 'value';
   const ax = activeAxisParams();
-  const key = `trade:partners:${bancoId}:${m}:${filterSig(summary)}:${countrySig(summary)}:${axisKey(ax)}`;
+  // currency × correction pick the value column server-side (the same resolver as
+  // /snapshot), so they belong in the request AND the cache key. Until v1.77.0 this
+  // producer sent neither: the ranking was always nominal US$ while the conventions strip
+  // claimed "IPCA" — and in a historical ranking the correction can reorder the countries.
+  const conv = window.dataStore && window.dataStore.conv
+    ? window.dataStore.conv()
+    : { currency: 'BRL', correction: 'IPCA' };
+  const key = `trade:partners:${bancoId}:${m}:${conv.currency}|${conv.correction}:${filterSig(summary)}:${countrySig(summary)}:${axisKey(ax)}`;
   ensure(key, () =>
     `${API}/partners?${qs({
       banco: bancoId, codes, states, y0, y1, metric: m,
+      currency: conv.currency, correction: conv.correction,
       reporters: filterReporters(summary), partners: filterPartners(summary), ...ax,
     })}`);
   const data = get(key);
   const flowLabel = (window.bancoDim && window.bancoDim(bancoId, 'partner').label) || 'Parceiro';
+  const unit = (window.CURRENCY_FX && window.CURRENCY_FX[conv.currency] || {}).symbol || conv.currency;
   return data
     ? { ...data, flowLabel, notApplicable }
-    : { preview: false, flowLabel, unit: 'US$', notApplicable, partners: [], loadError: errorOf(key) };
+    : { preview: false, flowLabel, unit, notApplicable, partners: [], loadError: errorOf(key) };
 };
 // Per-product ranking WITHIN the selected UF(s) — the "Base de dados" per-UF
 // product breakdown (inverse of ViewProductProfile's "onde X é produzido"). The
@@ -540,15 +557,24 @@ window.monthlyData = function monthlyData(bancoId, summary) {
   // The seasonality mart now KEEPS state_acronym in its grain (P6), so the UF
   // (`states`) filter narrows the seasonal profile to one origin state — send it.
   const ax = activeAxisParams();
-  const key = `trade:monthly:${bancoId}:${filterSig(summary)}:${axisKey(ax)}`;
-  ensure(key, () => `${API}/monthly?${qs({ banco: bancoId, codes, states, y0, y1, ...ax })}`);
+  // currency × correction pick the summed column server-side (as in flowData and
+  // partnerData), so they belong in the request AND the cache key — until v1.77.0 the
+  // seasonality view was nominal US$ under any convention.
+  const conv = window.dataStore && window.dataStore.conv
+    ? window.dataStore.conv()
+    : { currency: 'BRL', correction: 'IPCA' };
+  const key = `trade:monthly:${bancoId}:${conv.currency}|${conv.correction}:${filterSig(summary)}:${axisKey(ax)}`;
+  ensure(key, () => `${API}/monthly?${qs({
+    banco: bancoId, codes, states, y0, y1,
+    currency: conv.currency, correction: conv.correction, ...ax,
+  })}`);
   const data = get(key);
   return data
     ? { ...data }
     : {
         preview: false,
         loadError: errorOf(key),
-        unit: 'US$',
+        unit: (window.CURRENCY_FX && window.CURRENCY_FX[conv.currency] || {}).symbol || conv.currency,
         weightUnit: 'mil t',
         years: [],
         months: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],

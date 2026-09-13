@@ -200,23 +200,39 @@ município passes the cascade iff it clears every active facet (intersection).
 ## 4. Generic adapters (brief §3)
 
 ### 4.1 `flowData` → Sankey origin→destination
-- COMEX: origin = `state_acronym` (UF), dest = `country_name`. unit `'US$'`.
-- COMTRADE: origin = `reporter_name`, dest = `partner_name`. unit `'US$'`.
-- `node.value` = Σ of the links touching it (pre-summed). value = `SUM(val_yearfx_usd)`.
+`{ preview, unit, valueLabel, originLabel, destLabel, nodes, links }`.
+- COMEX: origin = `state_acronym` (UF), dest = `country_name` — exports only.
+- COMTRADE: origin = `reporter_name`, dest = `partner_name`.
+- value = `SUM(<value column>)`, the column `currency` + `correction` resolve through
+  `seam.effective_value_column` — the same rule as §4.2. Until v1.77.0 it was fixed at
+  `val_yearfx_usd`, so the Sankey was nominal US$ under any convention.
+- `unit` = symbol of the column ACTUALLY summed (a US$ × IGP-M request falls back to R$);
+  `valueLabel` = the convention as the view prints it.
+- `node.value` = Σ of the links touching it (pre-summed), in **`unit` mi**.
 
 ### 4.2 `partnerData` → partner ranking
-`{ preview, flowLabel, unit, partners: [{ name, exp, imp, value, weight, price, pricedShare }],
-belowFloor: [...] }`.
+`{ preview, flowLabel, unit, valueLabel, partners: [{ name, exp, imp, value, weight, price,
+pricedShare }], belowFloor: [...] }`.
 
 The ranking DIMENSION is chosen server-side (`/api/partners?metric=value|weight|price` →
 `rank_by`), because the row order IS the top-N cut: the SQL has no `LIMIT` and the
 serializer's `head(max_rows)` does the cutting, so re-sorting a value-ranked page in the
 client would drop the niche high-price buyer the price ranking exists to find.
 
+The VALUATION follows the conventions strip: `currency` + `correction` (default BRL·IPCA,
+same as `/snapshot`) resolve the summed column through `seam.effective_value_column`, and
+every monetary measure — exp, imp, value, the priced share and the price numerator — reads
+that ONE column. Until v1.77.0 the endpoint took neither and always summed nominal US$
+while the strip claimed "IPCA"; a historical ranking is where that hurts most, because the
+oldest flows get the largest correction and the order itself can change.
+
+- `unit` = symbol of the column ACTUALLY summed (R$ / US$ / €) — not of the request: a
+  combo the mart lacks (US$ × IGP-M) falls back to R$, and the unit follows it.
+- `valueLabel` = the convention as the view prints it, e.g. "Valor real (IPCA) — US$ · FOB".
 - `name` = `country_name` (COMEX) / `partner_name` (COMTRADE).
-- `exp` = `SUM(val_yearfx_usd WHERE flow='export')`, `imp` = import; `value` = exp+imp,
-  all in **US$ mi**. `weight` = net weight in **mil t**.
-- `price` = **US$/kg**, `null` when the partner has no weight (never 0 — see §2).
+- `exp` = `SUM(<value column> WHERE flow='export')`, `imp` = import; `value` = exp+imp,
+  all in **`unit` mi**. `weight` = net weight in **mil t**.
+- `price` = **`unit`/kg**, `null` when the partner has no weight (never 0 — see §2).
 - `pricedShare` (0–1, nullable) = how much of that partner's trade BACKS the price. The
   price divides only the value of rows that HAVE a weight, because the two halves of a
   ratio must cover the same rows: COMTRADE publishes 79.528 rows (3,87% of the mart,
@@ -237,7 +253,15 @@ client would drop the niche high-price buyer the price ranking exists to find.
 
 ### 4.3 `monthlyData` → seasonality (**COMEX only**)
 COMEX Gold has `reference_month`. Build `matrix[year][1..12]`, `monthlyAvg[12]`,
-`series[{ym,y,m,v}]` from `SUM(val_yearfx_usd)` by (year, month).
+`series[{ym,y,m,v}]` from `SUM(<value column>)` by (year, month), in **`unit` mi**.
+- The column follows the conventions strip like §4.1/§4.2: `unit` = symbol of the column
+  actually summed, `valueLabel` = the convention on screen.
+- The mart only carries the full currency matrix since v1.77.0, and a merge deploys the
+  app and rebuilds the marts IN PARALLEL (on 2026-09-09 the app was live 3m32s before the
+  mart). So while `serving_comex_seasonality` lacks the requested column, the seam serves
+  the nominal US$ it always had and `valueLabel` says so — instead of the query failing
+  for everyone on the default BRL·IPCA. The schema check is table metadata (free), cached
+  at the mart TTL.
 > COMTRADE is annual → never call this for `un_comtrade` (Sazonalidade = "Não se aplica").
 
 ---

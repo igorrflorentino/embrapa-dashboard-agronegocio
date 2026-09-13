@@ -1062,12 +1062,16 @@ def flow():
     ``codes``/``states``/``y0``/``y1`` scope the basket + origin-UF + year window to
     match the view's active filters (the seam threads them into the gateway flow
     reader; ``states`` narrows the COMEX origin only — COMTRADE's origin is a
-    reporter country, so the frontend surfaces it as not-applicable there)."""
+    reporter country, so the frontend surfaces it as not-applicable there).
+    currency+correction pick the value column server-side, same as /snapshot."""
     banco = request.args.get("banco", "")
+    conv, err = _conversion_or_400()
+    if err:
+        return err
     summary, err = _with_filter_axes(_filter_summary())
     if err:
         return err
-    return jsonify(serializers.serialize_flow(seam.flow_data(banco, summary)))
+    return jsonify(serializers.serialize_flow(seam.flow_data(banco, summary, conv=conv)))
 
 
 _ALLOWED_PARTNER_METRICS = frozenset({"value", "weight", "price"})
@@ -1079,19 +1083,27 @@ def partners():
     via ``codes``/``states``/``y0``/``y1``; ``states`` applies to COMEX only).
 
     ``metric`` ∈ {value, weight, price} (default ``value``) ranks by Capital /
-    Volume / Preço médio server-side, so the top-N is by the chosen dimension."""
+    Volume / Preço médio server-side, so the top-N is by the chosen dimension.
+    currency+correction pick the value column server-side, same as /snapshot."""
     banco = request.args.get("banco", "")
     metric = request.args.get("metric", "value")
     if metric not in _ALLOWED_PARTNER_METRICS:
         return jsonify(error=f"métrica inválida: {metric!r}"), 400
+    conv, err = _conversion_or_400()
+    if err:
+        return err
     summary, err = _with_filter_axes(_filter_summary())
     if err:
         return err
+    payload = seam.partner_data(banco, summary, rank_by=metric, conv=conv) or {}
     return jsonify(
         # O `metric` viaja para o serializer também: o piso de materialidade do preço
         # médio vale só para esse ranking, e tem de ser aplicado ANTES do corte top-N.
         serializers.serialize_partner(
-            seam.partner_data(banco, summary, rank_by=metric), rank_by=metric
+            payload.get("rows"),
+            rank_by=metric,
+            value_column=payload.get("value_column"),
+            value_label=payload.get("value_label"),
         )
     )
 
@@ -1100,12 +1112,23 @@ def partners():
 def monthly():
     """Monthly seasonality, COMEX only (basket + year window via
     ``codes``/``y0``/``y1``). The seasonality mart collapses UF away, so the UF
-    (``states``) filter does not apply here — the frontend surfaces that honestly."""
+    (``states``) filter does not apply here — the frontend surfaces that honestly.
+    currency+correction pick the value column server-side, same as /snapshot."""
     banco = request.args.get("banco", "")
+    conv, err = _conversion_or_400()
+    if err:
+        return err
     summary, err = _with_filter_axes(_filter_summary())
     if err:
         return err
-    return jsonify(serializers.serialize_monthly(seam.monthly_data(banco, summary)))
+    payload = seam.monthly_data(banco, summary, conv=conv) or {}
+    return jsonify(
+        serializers.serialize_monthly(
+            payload.get("rows"),
+            value_column=payload.get("value_column"),
+            value_label=payload.get("value_label"),
+        )
+    )
 
 
 # ── cross-source comparable series ─────────────────────────────────────────────

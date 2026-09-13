@@ -566,7 +566,7 @@ def test_flow_data_comex_filters_to_exports(monkeypatch):
     seam = _seam()
     recorded = {}
 
-    def fake_flows(year_start=None, year_end=None, ncm_codes=(), flow=None, uf_codes=()):
+    def fake_flows(year_start=None, year_end=None, ncm_codes=(), flow=None, uf_codes=(), **_k):
         recorded["flow"] = flow
         return pd.DataFrame(
             [
@@ -595,7 +595,7 @@ def test_flow_data_threads_basket_and_year_window(monkeypatch):
 
     cols = ["origin_code", "origin_name", "dest_code", "dest_name", "value_usd"]
 
-    def fake_flows(year_start=None, year_end=None, ncm_codes=(), flow=None, uf_codes=()):
+    def fake_flows(year_start=None, year_end=None, ncm_codes=(), flow=None, uf_codes=(), **_k):
         recorded.update(year_start=year_start, year_end=year_end, ncm_codes=ncm_codes)
         return pd.DataFrame(columns=cols)
 
@@ -617,7 +617,7 @@ def test_flow_data_comex_threads_uf_filter(monkeypatch):
     recorded = {}
     cols = ["origin_code", "origin_name", "dest_code", "dest_name", "value_usd"]
 
-    def fake_flows(year_start=None, year_end=None, ncm_codes=(), flow=None, uf_codes=()):
+    def fake_flows(year_start=None, year_end=None, ncm_codes=(), flow=None, uf_codes=(), **_k):
         recorded.update(uf_codes=uf_codes)
         return pd.DataFrame(columns=cols)
 
@@ -633,7 +633,7 @@ def test_flow_data_comex_no_uf_filter_passes_empty(monkeypatch):
     recorded = {}
     cols = ["origin_code", "origin_name", "dest_code", "dest_name", "value_usd"]
 
-    def fake_flows(year_start=None, year_end=None, ncm_codes=(), flow=None, uf_codes=()):
+    def fake_flows(year_start=None, year_end=None, ncm_codes=(), flow=None, uf_codes=(), **_k):
         recorded.update(uf_codes=uf_codes)
         return pd.DataFrame(columns=cols)
 
@@ -669,10 +669,16 @@ def test_partner_data_comex_threads_uf_filter(monkeypatch):
     recorded = {}
 
     def fake_partners(
-        year_start=None, year_end=None, ncm_codes=(), uf_codes=(), flow=None, rank_by="value"
+        year_start=None,
+        year_end=None,
+        ncm_codes=(),
+        uf_codes=(),
+        flow=None,
+        rank_by="value",
+        value_column="val_yearfx_usd",
     ):
         recorded.update(uf_codes=uf_codes, rank_by=rank_by, flow=flow)
-        return pd.DataFrame(columns=["partner_code", "partner_name", "value_usd"])
+        return pd.DataFrame(columns=["partner_code", "partner_name", "total_value"])
 
     monkeypatch.setattr(seam.gateway, "fetch_comex_partners", fake_partners)
     seam.partner_data("mdic_comex", {"states": ["PA"]})
@@ -684,6 +690,63 @@ def test_partner_data_comex_threads_uf_filter(monkeypatch):
     recorded.clear()
     seam.partner_data("mdic_comex", {}, rank_by="price")
     assert recorded["rank_by"] == "price"
+
+
+def test_partner_data_sums_the_column_the_conventions_resolve(monkeypatch):
+    """The ranking reads the currency × correction the strip shows (v1.77.0).
+
+    Before it both readers always summed nominal US$: Acre × castanha-do-pará showed Peru
+    at US$ 78 mi under "Correção IPCA", which is to the dollar the nominal export+import
+    sum (77,65 + 0,56, measured in serving_comex_annual 2026-09-12)."""
+    seam = _seam()
+    recorded = {}
+
+    def fake(**k):
+        recorded.update(k)
+        return pd.DataFrame()
+
+    monkeypatch.setattr(seam.gateway, "fetch_comex_partners", fake)
+    monkeypatch.setattr(seam.gateway, "fetch_comtrade_partners", fake)
+
+    out = seam.partner_data("mdic_comex", {}, conv={"currency": "USD", "correction": "IPCA"})
+    assert recorded["value_column"] == "val_real_ipca_usd"
+    assert out["value_column"] == "val_real_ipca_usd"
+    assert "IPCA" in out["value_label"] and "US$" in out["value_label"]
+
+    # A combo the mart lacks falls back to R$ — and the payload says which column it
+    # summed, so the serializer's unit follows the fallback instead of the request.
+    out = seam.partner_data("mdic_comex", {}, conv={"currency": "USD", "correction": "IGP-M"})
+    assert out["value_column"] == recorded["value_column"] == "val_real_igpm_brl"
+
+    seam.partner_data("un_comtrade", {}, conv={"currency": "EUR", "correction": "Nominal"})
+    assert recorded["value_column"] == "val_yearfx_eur"
+
+    # No convention → the customs-native reading, for direct callers.
+    assert seam.partner_data("mdic_comex", {})["value_column"] == "val_yearfx_usd"
+
+
+def test_flow_data_sums_the_column_the_conventions_resolve(monkeypatch):
+    """The Sankey reads the currency × correction the strip shows (v1.77.0) — before it,
+    both flow readers summed nominal US$ under any convention."""
+    seam = _seam()
+    recorded = {}
+
+    def fake(**k):
+        recorded.update(k)
+        return pd.DataFrame()
+
+    monkeypatch.setattr(seam.gateway, "fetch_comex_flows", fake)
+    monkeypatch.setattr(seam.gateway, "fetch_comtrade_flows", fake)
+
+    out = seam.flow_data("mdic_comex", {}, conv={"currency": "BRL", "correction": "IPCA"})
+    assert recorded["value_column"] == out["value_column"] == "val_real_ipca_brl"
+    assert recorded["flow"] == "export"  # the COMEX Sankey stays exports-only
+    assert "IPCA" in out["value_label"] and "R$" in out["value_label"]
+
+    seam.flow_data("un_comtrade", {}, conv={"currency": "USD", "correction": "IPCA"})
+    assert recorded["value_column"] == "val_real_ipca_usd"
+
+    assert seam.flow_data("mdic_comex", {})["value_column"] == "val_yearfx_usd"
 
 
 def test_partner_data_comtrade_ignores_uf_filter(monkeypatch):
@@ -2070,20 +2133,61 @@ def test_products_by_uf_none_without_geo_capability():
     assert seam.products_by_uf("un_comtrade", {"states": ["AC"]}) is None
 
 
+# The monthly mart's monetary columns once dbt has rebuilt it with the v1.77.0 matrix.
+_SEAS_COLS = frozenset(
+    {"val_yearfx_usd", "val_yearfx_brl", "val_real_ipca_brl", "val_real_ipca_usd"}
+)
+
+
 def test_monthly_data_comex_only(monkeypatch):
     seam = _seam()
     recorded = {}
+    monkeypatch.setattr(seam.gateway, "fetch_comex_seasonality_columns", lambda: _SEAS_COLS)
     monkeypatch.setattr(
         seam.gateway,
         "fetch_comex_seasonality",
-        lambda **k: recorded.update(k) or pd.DataFrame([{"month": 1, "value_usd": 5.0}]),
+        lambda **k: recorded.update(k) or pd.DataFrame([{"month": 1, "total_value": 5.0}]),
     )
     out = seam.monthly_data("mdic_comex", {"basket": ["0801"]})
     assert recorded["ncm_codes"] == ("0801",)
-    assert not out.empty
+    assert not out["rows"].empty
     # COMTRADE has no monthly grain capability.
     assert seam.monthly_data("un_comtrade") is None
     assert seam.monthly_data("ibge_pevs") is None
+
+
+def test_monthly_data_sums_the_column_the_conventions_resolve(monkeypatch):
+    """Sazonalidade follows the strip like the Sankey and the ranking (v1.77.0)."""
+    seam = _seam()
+    recorded = {}
+    monkeypatch.setattr(seam.gateway, "fetch_comex_seasonality_columns", lambda: _SEAS_COLS)
+    monkeypatch.setattr(
+        seam.gateway, "fetch_comex_seasonality", lambda **k: recorded.update(k) or pd.DataFrame()
+    )
+    out = seam.monthly_data("mdic_comex", {}, conv={"currency": "BRL", "correction": "IPCA"})
+    assert recorded["value_column"] == out["value_column"] == "val_real_ipca_brl"
+    assert "IPCA" in out["value_label"] and "R$" in out["value_label"]
+    # No convention → the customs-native reading, for direct callers.
+    assert seam.monthly_data("mdic_comex", {})["value_column"] == "val_yearfx_usd"
+
+
+def test_monthly_data_degrades_to_nominal_while_the_mart_lacks_the_column(monkeypatch):
+    """A merge deploys the app and rebuilds the marts IN PARALLEL — on 2026-09-09 the app
+    was live 3m32s before the mart. Asking the old mart for `val_real_ipca_brl` would fail
+    for everyone on the default convention; the seam serves the nominal US$ it always had
+    and the label says so, instead of claiming a correction that did not happen."""
+    seam = _seam()
+    recorded = {}
+    monkeypatch.setattr(
+        seam.gateway, "fetch_comex_seasonality_columns", lambda: frozenset({"val_yearfx_usd"})
+    )
+    monkeypatch.setattr(
+        seam.gateway, "fetch_comex_seasonality", lambda **k: recorded.update(k) or pd.DataFrame()
+    )
+    out = seam.monthly_data("mdic_comex", {}, conv={"currency": "BRL", "correction": "IPCA"})
+    assert recorded["value_column"] == out["value_column"] == "val_yearfx_usd"
+    assert out["value_label"].startswith("Valor nominal — US$")
+    assert "ainda não tem a correção" in out["value_label"]
 
 
 # ── cross_metric_refs / cross_series ───────────────────────────────────────────
@@ -2808,6 +2912,7 @@ def test_monthly_data_threads_uf_to_seasonality_reader(monkeypatch):
     (the mart keeps state_acronym in its grain — P6)."""
     seam = _seam()
     rec = {}
+    monkeypatch.setattr(seam.gateway, "fetch_comex_seasonality_columns", lambda: _SEAS_COLS)
     monkeypatch.setattr(
         seam.gateway,
         "fetch_comex_seasonality",
@@ -2826,6 +2931,7 @@ def test_trade_adapters_thread_flow_filter(monkeypatch):
     numbers (COMEX exports ~40x imports) while the filter chips claim the view is scoped."""
     seam = _seam()
     rec = {}
+    monkeypatch.setattr(seam.gateway, "fetch_comex_seasonality_columns", lambda: _SEAS_COLS)
     monkeypatch.setattr(
         seam.gateway,
         "fetch_comex_seasonality",

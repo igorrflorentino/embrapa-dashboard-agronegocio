@@ -397,11 +397,13 @@ def fetch_comex_seasonality(
     ncm_codes: Sequence[str] = (),
     flow: str | None = None,
     uf_codes: Sequence[str] = (),
+    value_column: str = "val_yearfx_usd",
 ):
     """Monthly COMEX value for the seasonality view (backs monthlyData).
 
     ``uf_codes`` optionally narrows to the origin UFs (the mart now keeps
-    ``state_acronym`` in its grain — P6 per-UF scoping)."""
+    ``state_acronym`` in its grain — P6 per-UF scoping). ``value_column`` is the
+    currency × correction column the seam resolved from the conventions strip."""
     settings = get_settings()
     table = sqlbuild.table_ref(settings, "bq_serving_dataset", "serving_comex_seasonality")
     sql, params = sqlbuild.comex_seasonality(
@@ -411,8 +413,23 @@ def fetch_comex_seasonality(
         ncm_codes=tuple(ncm_codes),
         flow=flow,
         uf_codes=tuple(uf_codes),
+        value_column=value_column,
     )
     return run_query(sql, params)
+
+
+@cache.memoize()
+def fetch_comex_seasonality_columns() -> frozenset[str]:
+    """Column names of ``serving_comex_seasonality`` (FREE — table metadata, no query).
+
+    The seam asks this before requesting a currency × correction column: the mart only
+    carries the full currency matrix since v1.77.0, and a merge to main deploys the app
+    and rebuilds the marts IN PARALLEL (webapi-deploy and dbt-build-prod both fire on the
+    push — on 2026-09-09 the app was live 3m32s before the mart). Memoized at the mart
+    TTL, so a rebuild is picked up within ``cache_default_timeout``."""
+    settings = get_settings()
+    ref = sqlbuild.table_ref(settings, "bq_serving_dataset", "serving_comex_seasonality")
+    return frozenset(f.name for f in _client().get_table(ref).schema)
 
 
 @cache.memoize()
@@ -606,6 +623,7 @@ def fetch_comex_partners(
     uf_codes: Sequence[str] = (),
     flow: str | None = None,
     rank_by: str = "value",
+    value_column: str = "val_yearfx_usd",
 ):
     """COMEX partner (country) ranking with export/import split (backs partnerData).
 
@@ -613,7 +631,8 @@ def fetch_comex_partners(
     no UF filter. COMTRADE has no origin-UF column, so its partner reader omits it.
     ``flow`` narrows the ranking to one direction (export/import); ``None`` sums both
     (COMEX has no overlapping sub-flow, so no ``sum_flows`` guard is needed). ``rank_by``
-    ∈ {value, weight, price} picks the server-side ORDER BY dimension.
+    ∈ {value, weight, price} picks the server-side ORDER BY dimension. ``value_column``
+    is the currency × correction column the seam resolved from the conventions strip.
     """
     settings = get_settings()
     table = sqlbuild.table_ref(settings, "bq_serving_dataset", "serving_comex_annual")
@@ -632,6 +651,7 @@ def fetch_comex_partners(
         uf_codes=tuple(uf_codes),
         flow=flow,
         rank_by=rank_by,
+        value_column=value_column,
     )
     return run_query(sql, params)
 
@@ -648,6 +668,7 @@ def fetch_comtrade_partners(
     reporters: Sequence[str] = (),
     partners: Sequence[str] = (),
     pin_reporter: str | None = _REPORTER_PIN_DEFAULT,
+    value_column: str = "val_yearfx_usd",
 ):
     """COMTRADE partner ranking with export/import split (backs partnerData).
 
@@ -657,7 +678,8 @@ def fetch_comtrade_partners(
     mercado) narrow to one procedure / purpose (None = every one). ``rank_by`` ∈
     {value, weight, price} picks the server-side ORDER BY dimension. ``reporters``/
     ``partners`` (ISO-A3) narrow the ranking by country; ``pin_reporter`` keeps the
-    Brazil pin by default (see :func:`_resolve_reporter_pin`).
+    Brazil pin by default (see :func:`_resolve_reporter_pin`). ``value_column`` is the
+    currency × correction column the seam resolved from the conventions strip.
     """
     settings = get_settings()
     table = sqlbuild.table_ref(settings, "bq_serving_dataset", "serving_comtrade_annual")
@@ -678,6 +700,7 @@ def fetch_comtrade_partners(
         reporters=tuple(reporters),
         partners=tuple(partners),
         rank_by=rank_by,
+        value_column=value_column,
         # Aqui o declarante VARIA por linha (o backfill cobre todos os reporters), então
         # o autocomércio é a comparação entre as duas colunas, não um ISO fixo.
         partner_iso_column="partner_iso_a3",
@@ -730,11 +753,13 @@ def fetch_comex_flows(
     ncm_codes: Sequence[str] = (),
     flow: str | None = None,
     uf_codes: Sequence[str] = (),
+    value_column: str = "val_yearfx_usd",
 ):
     """COMEX origin(UF)->destination(country) links (backs flowData for COMEX).
 
     ``uf_codes`` optionally narrows the Sankey to those origin UFs
-    (``state_acronym``); empty = no UF filter.
+    (``state_acronym``); empty = no UF filter. ``value_column`` is the currency ×
+    correction column the seam resolved from the conventions strip.
     """
     settings = get_settings()
     table = sqlbuild.table_ref(settings, "bq_serving_dataset", "serving_comex_annual")
@@ -750,6 +775,7 @@ def fetch_comex_flows(
         codes=tuple(ncm_codes),
         flow=flow,
         uf_codes=tuple(uf_codes),
+        value_column=value_column,
     )
     return run_query(sql, params)
 
@@ -765,6 +791,7 @@ def fetch_comtrade_flows(
     reporters: Sequence[str] = (),
     partners: Sequence[str] = (),
     pin_reporter: str | None = _REPORTER_PIN_DEFAULT,
+    value_column: str = "val_yearfx_usd",
 ):
     """COMTRADE reporter->partner links (backs flowData for COMTRADE).
 
@@ -773,6 +800,7 @@ def fetch_comtrade_flows(
     / ``market`` (tipo de mercado) narrow to one procedure / purpose (None = every one).
     ``reporters``/``partners`` (ISO-A3) narrow the Sankey by country; ``pin_reporter``
     keeps Brazil's own links by default (see :func:`_resolve_reporter_pin`).
+    ``value_column`` is the currency × correction column the seam resolved.
     """
     settings = get_settings()
     table = sqlbuild.table_ref(settings, "bq_serving_dataset", "serving_comtrade_annual")
@@ -795,6 +823,7 @@ def fetch_comtrade_flows(
         reporter_value=_resolve_reporter_pin(settings, pin_reporter, reporters),
         reporters=tuple(reporters),
         partners=tuple(partners),
+        value_column=value_column,
     )
     return run_query(sql, params)
 

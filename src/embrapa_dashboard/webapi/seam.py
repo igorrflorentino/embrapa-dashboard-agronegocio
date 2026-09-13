@@ -48,6 +48,10 @@ _REGISTERED_BANCO_IDS = frozenset(b.id for b in BANCOS)
 # the real column instead of the frontend cross-converting USD via a mock FX rate.
 _TRADE = {"mdic_comex", "un_comtrade"}
 
+# The customs-native reading of a trade value: the declared US$, un-deflated. What a
+# trade reader sums when its caller passed no convention (see effective_value_column).
+_TRADE_NATIVE_CONV = {"currency": "USD", "correction": "Nominal"}
+
 
 def _trade_valuation_note(banco: Banco) -> str:
     """The US$-source valuation basis a trade banco's value label must state.
@@ -899,26 +903,38 @@ def _productivity_crops(products: pd.DataFrame | None) -> list[dict]:
 # the perspective to "Não se aplica" before these are ever called).
 
 
-def flow_data(banco_id: str, summary: dict | None = None) -> dict | None:
+def flow_data(banco_id: str, summary: dict | None = None, conv: dict | None = None) -> dict | None:
     """Origin→destination links for the Sankey (backs Fluxos territoriais).
 
     COMEX: UF de origem → país parceiro. COMTRADE: país reporter → país parceiro.
-    Returns {links, origin_label, dest_label} or None when the banco lacks `flow`.
-    The active UF (``states``) filter narrows the COMEX origin; COMTRADE's origin is
-    a reporter country (no UF column), so the UF selection does not reach its reader
-    — the frontend producer surfaces that as an honest "não se aplica" note.
+    Returns {links, origin_label, dest_label, value_column, value_label} or None when
+    the banco lacks `flow`. The active UF (``states``) filter narrows the COMEX origin;
+    COMTRADE's origin is a reporter country (no UF column), so the UF selection does not
+    reach its reader — the frontend producer surfaces that as an honest "não se aplica"
+    note.
+
+    ``conv`` (currency × correction) picks the summed column through
+    :func:`effective_value_column`, exactly as in :func:`partner_data` — until v1.77.0
+    the Sankey summed nominal US$ under any convention. ``None`` keeps the US$-native
+    nominal reading for direct callers.
     """
     banco = banco_by_id(banco_id)
     if banco_id not in _LIVE_SOURCES or "flow" not in banco.provides:
         return None
     y0, y1 = _years_from_summary(summary)
     codes = _apply_levels(banco_id, summary, _basket(summary))
+    value_col, value_label = effective_value_column(banco, conv or _TRADE_NATIVE_CONV)
     if banco_id == "mdic_comex":
         # Exports only: SG_UF_NCM is the UF *of the product*, so on import rows
         # the real direction is country→UF — summing them into the directed
         # 'UF de origem → país parceiro' links would inflate and mislabel them.
         links = gateway.fetch_comex_flows(
-            year_start=y0, year_end=y1, ncm_codes=codes, flow="export", uf_codes=_states(summary)
+            year_start=y0,
+            year_end=y1,
+            ncm_codes=codes,
+            flow="export",
+            uf_codes=_states(summary),
+            value_column=value_col,
         )
     else:
         # The active flow / regime (customs) / tipo-de-mercado filters are server-side on
@@ -933,6 +949,7 @@ def flow_data(banco_id: str, summary: dict | None = None) -> dict | None:
             flow=_flow_from_summary(summary),
             customs=_customs_from_summary(summary),
             market=_market_from_summary(summary),
+            value_column=value_col,
             **_country_reader_kwargs(summary),
         )
     dims = banco.dimensions
@@ -940,12 +957,17 @@ def flow_data(banco_id: str, summary: dict | None = None) -> dict | None:
         "links": links,
         "origin_label": dims.get("origin", {}).get("label", "Origem"),
         "dest_label": dims.get("dest", {}).get("label", "Destino"),
+        "value_column": value_col,
+        "value_label": value_label,
     }
 
 
 def partner_data(
-    banco_id: str, summary: dict | None = None, rank_by: str = "value"
-) -> pd.DataFrame | None:
+    banco_id: str,
+    summary: dict | None = None,
+    rank_by: str = "value",
+    conv: dict | None = None,
+) -> dict | None:
     """Partner ranking with export/import split (backs Parceiros comerciais).
 
     The active UF (``states``) filter narrows the COMEX partner ranking to those
@@ -955,36 +977,50 @@ def partner_data(
 
     ``rank_by`` ∈ {value, weight, price} chooses the ranking dimension (Capital /
     Volume / Preço médio), applied server-side so the top-N is by that metric.
+
+    ``conv`` (currency × correction) picks the summed value column through
+    :func:`effective_value_column` — the same resolver the snapshot uses. Until v1.77.0
+    the ranking always summed nominal US$ while the conventions strip claimed "IPCA",
+    and a historical ranking is exactly where that matters: old flows get the largest
+    correction, so the order itself can change. ``None`` keeps the US$-native nominal
+    reading for direct callers. Returns ``{rows, value_column, value_label}`` so the
+    serializer states the unit of the column ACTUALLY summed — a combo the mart lacks
+    (US$ × IGP-M) falls back to R$, and the unit has to follow it.
     """
     banco = banco_by_id(banco_id)
     if banco_id not in _LIVE_SOURCES or "partner" not in banco.provides:
         return None
     y0, y1 = _years_from_summary(summary)
     codes = _apply_levels(banco_id, summary, _basket(summary))
+    value_col, value_label = effective_value_column(banco, conv or _TRADE_NATIVE_CONV)
     # The active flow / regime (customs) / tipo-de-mercado filters must reach the ranking:
     # the server-side ORDER BY sums the metric over the returned rows, so an unfiltered
     # ranking under an "Importação" (or a regime/market) selection ranks by the wrong,
     # broader population while the chips claim it is scoped. COMEX has only ``flow`` (no
     # regime/market column); COMTRADE carries all three.
     if banco_id == "mdic_comex":
-        return gateway.fetch_comex_partners(
+        rows = gateway.fetch_comex_partners(
             year_start=y0,
             year_end=y1,
             ncm_codes=codes,
             uf_codes=_states(summary),
             flow=_flow_from_summary(summary),
             rank_by=rank_by,
+            value_column=value_col,
         )
-    return gateway.fetch_comtrade_partners(
-        year_start=y0,
-        year_end=y1,
-        cmd_codes=codes,
-        flow=_flow_from_summary(summary),
-        customs=_customs_from_summary(summary),
-        market=_market_from_summary(summary),
-        rank_by=rank_by,
-        **_country_reader_kwargs(summary),
-    )
+    else:
+        rows = gateway.fetch_comtrade_partners(
+            year_start=y0,
+            year_end=y1,
+            cmd_codes=codes,
+            flow=_flow_from_summary(summary),
+            customs=_customs_from_summary(summary),
+            market=_market_from_summary(summary),
+            rank_by=rank_by,
+            value_column=value_col,
+            **_country_reader_kwargs(summary),
+        )
+    return {"rows": rows, "value_column": value_col, "value_label": value_label}
 
 
 def products_by_uf(
@@ -1037,12 +1073,22 @@ def products_by_uf(
     return None
 
 
-def monthly_data(banco_id: str, summary: dict | None = None) -> pd.DataFrame | None:
+def monthly_data(
+    banco_id: str, summary: dict | None = None, conv: dict | None = None
+) -> dict | None:
     """Monthly seasonality value (backs Sazonalidade). COMEX only (monthly grain).
 
     The seasonality mart (``serving_comex_seasonality``) now KEEPS ``state_acronym``
     in its grain (P6), so the active UF (``states``) selection narrows the seasonal
     profile to one origin state; empty = national. The basket + year window apply too.
+
+    ``conv`` (currency × correction) picks the summed column through
+    :func:`effective_value_column`, as in :func:`flow_data` / :func:`partner_data`, and
+    the result is ``{rows, value_column, value_label}``. The mart only carries the full
+    currency matrix since v1.77.0, and a merge deploys the app and rebuilds the marts IN
+    PARALLEL — so a column the mart does not carry YET degrades to the nominal US$ it
+    always had, with a label saying so, instead of the query failing for everyone on the
+    default BRL·IPCA. ``None`` keeps the US$-native nominal reading for direct callers.
     """
     banco = banco_by_id(banco_id)
     if banco_id not in _LIVE_SOURCES or "monthly" not in banco.provides:
@@ -1050,17 +1096,26 @@ def monthly_data(banco_id: str, summary: dict | None = None) -> pd.DataFrame | N
     y0, y1 = _years_from_summary(summary)
     codes = _apply_levels(banco_id, summary, _basket(summary))
     if banco_id == "mdic_comex":
+        value_col, value_label = effective_value_column(banco, conv or _TRADE_NATIVE_CONV)
+        if value_col not in gateway.fetch_comex_seasonality_columns():
+            value_col = "val_yearfx_usd"
+            value_label = (
+                f"{fmt.convention_value_label(_TRADE_NATIVE_CONV)} · FOB "
+                "(a série mensal ainda não tem a correção escolhida)"
+            )
         # The active flow filter (export/import) is server-side on the seasonality mart
         # (which keeps ``flow`` in its grain) and must narrow the seasonal profile — COMEX
         # exports are ~40x imports, so an unfiltered heatmap under an "Importação" selection
         # renders essentially the EXPORT profile while the chips say otherwise.
-        return gateway.fetch_comex_seasonality(
+        rows = gateway.fetch_comex_seasonality(
             year_start=y0,
             year_end=y1,
             ncm_codes=codes,
             uf_codes=_states(summary),
             flow=_flow_from_summary(summary),
+            value_column=value_col,
         )
+        return {"rows": rows, "value_column": value_col, "value_label": value_label}
     return None
 
 

@@ -128,6 +128,71 @@ describe('trade producers thread the active filter summary', () => {
     expect(url).toContain('y1=2022');
   });
 
+  it('partnerData sends the active currency × correction and keys the cache by it', async () => {
+    // Until v1.77.0 it sent neither: the ranking stayed nominal US$ under a conventions
+    // strip saying "IPCA", and switching the strip re-rendered the same answer.
+    const f = vi.fn(() => jsonRes({}));
+    const w = await loadAll(f);
+    let conv = { currency: 'USD', correction: 'IPCA' };
+    w.dataStore = { ...(w.dataStore || {}), conv: () => conv };
+    w.CURRENCY_FX = { BRL: { symbol: 'R$' }, USD: { symbol: 'US$' } };
+
+    const cold = w.partnerData('mdic_comex', {}, 'value');
+    expect(urlOf(f)).toContain('currency=USD');
+    expect(urlOf(f)).toContain('correction=IPCA');
+    expect(cold.unit).toBe('US$'); // the loading shell already names the chosen currency
+
+    w.partnerData('mdic_comex', {}, 'value'); // same convention → cache hit
+    expect(f).toHaveBeenCalledTimes(1);
+    conv = { currency: 'BRL', correction: 'Nominal' };
+    w.partnerData('mdic_comex', {}, 'value'); // the strip changed → refetch
+    expect(f).toHaveBeenCalledTimes(2);
+    expect(urlOf(f, 1)).toContain('currency=BRL');
+    expect(urlOf(f, 1)).toContain('correction=Nominal');
+  });
+
+  it('flowData sends the active currency × correction and keys the cache by it', async () => {
+    // Same defect as partnerData, same fix: the Sankey was nominal US$ under any convention.
+    const f = vi.fn(() => jsonRes({}));
+    const w = await loadAll(f);
+    let conv = { currency: 'EUR', correction: 'IPCA' };
+    w.dataStore = { ...(w.dataStore || {}), conv: () => conv };
+    w.CURRENCY_FX = { EUR: { symbol: '€' }, USD: { symbol: 'US$' } };
+
+    const cold = w.flowData('mdic_comex', {});
+    expect(urlOf(f)).toContain('currency=EUR');
+    expect(urlOf(f)).toContain('correction=IPCA');
+    expect(cold.unit).toBe('€');
+
+    w.flowData('mdic_comex', {}); // same convention → cache hit
+    expect(f).toHaveBeenCalledTimes(1);
+    conv = { currency: 'USD', correction: 'Nominal' };
+    w.flowData('mdic_comex', {}); // the strip changed → refetch
+    expect(f).toHaveBeenCalledTimes(2);
+    expect(urlOf(f, 1)).toContain('currency=USD');
+  });
+
+  it('monthlyData sends the active currency × correction and keys the cache by it', async () => {
+    // The third view of the same defect: Sazonalidade was nominal US$ under any convention.
+    const f = vi.fn(() => jsonRes({}));
+    const w = await loadAll(f);
+    let conv = { currency: 'BRL', correction: 'IGP-M' };
+    w.dataStore = { ...(w.dataStore || {}), conv: () => conv };
+    w.CURRENCY_FX = { BRL: { symbol: 'R$' } };
+
+    const cold = w.monthlyData('mdic_comex', {});
+    expect(urlOf(f)).toContain('currency=BRL');
+    expect(urlOf(f)).toContain('correction=IGP-M');
+    expect(cold.unit).toBe('R$');
+
+    w.monthlyData('mdic_comex', {}); // same convention → cache hit
+    expect(f).toHaveBeenCalledTimes(1);
+    conv = { currency: 'BRL', correction: 'IPCA' };
+    w.monthlyData('mdic_comex', {}); // the strip changed → refetch
+    expect(f).toHaveBeenCalledTimes(2);
+    expect(urlOf(f, 1)).toContain('correction=IPCA');
+  });
+
   it('keys the resource by the filter signature so a changed window refetches', async () => {
     const f = vi.fn(() => jsonRes({}));
     const w = await loadAll(f);

@@ -38,12 +38,12 @@ def _campos_emitidos() -> tuple[set[str], set[str]]:
         [
             {
                 "partner_name": "X",
-                "exp_value_usd": 1.0,
-                "imp_value_usd": 1.0,
-                "value_usd": 2.0,
+                "exp_value": 1.0,
+                "imp_value": 1.0,
+                "total_value": 2.0,
                 "total_weight_kg": 1e9,  # acima do piso, para não cair em belowFloor
-                "priced_value_usd": 2.0,
-                "price_usd_per_kg": 1.0,
+                "priced_value": 2.0,
+                "price_per_kg": 1.0,
             }
         ]
     )

@@ -36,7 +36,22 @@ with comex as (
         tabela,
         state_acronym,
         any_value(ncm_description)  as ncm_description,
+        -- The full currency matrix, the same column set as serving_comex_annual. Until
+        -- v1.77.0 this mart carried only nominal US$, so the seasonality view could not
+        -- follow the conventions strip — it stayed nominal under "Correção IPCA" while
+        -- the annual views honoured it. IGP-M / IGP-DI × USD are omitted for the same
+        -- reason as there: the BFF allowlist (serving/sql.ALLOWED_VALUE_COLUMNS) can never
+        -- SELECT them, so materializing them would be dead bytes.
+        sum(val_yearfx_brl)         as val_yearfx_brl,
         sum(val_yearfx_usd)         as val_yearfx_usd,
+        sum(val_yearfx_eur)         as val_yearfx_eur,
+        sum(val_real_ipca_brl)      as val_real_ipca_brl,
+        sum(val_real_ipca_usd)      as val_real_ipca_usd,
+        sum(val_real_ipca_eur)      as val_real_ipca_eur,
+        sum(val_real_igpm_brl)      as val_real_igpm_brl,
+        sum(val_real_igpm_eur)      as val_real_igpm_eur,
+        sum(val_real_igpdi_brl)     as val_real_igpdi_brl,
+        sum(val_real_igpdi_eur)     as val_real_igpdi_eur,
         sum(net_weight_kg)          as net_weight_kg,
         count(*)                    as source_rows,
         max(last_refresh)           as last_refresh
@@ -57,7 +72,16 @@ select
     c.tabela,
     c.state_acronym,
     c.ncm_description,
+    c.val_yearfx_brl,
     c.val_yearfx_usd,
+    c.val_yearfx_eur,
+    c.val_real_ipca_brl,
+    c.val_real_ipca_usd,
+    c.val_real_ipca_eur,
+    c.val_real_igpm_brl,
+    c.val_real_igpm_eur,
+    c.val_real_igpdi_brl,
+    c.val_real_igpdi_eur,
     c.net_weight_kg,
     c.source_rows,
     c.last_refresh

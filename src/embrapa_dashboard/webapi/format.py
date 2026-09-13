@@ -41,6 +41,18 @@ def monetary_column(currency: str, correction: str) -> str:
     return f"val_{infix}_{suffix}"
 
 
+def column_currency(column: str) -> str | None:
+    """Currency a monetary column is denominated in — the inverse of
+    :func:`monetary_column`'s suffix (``val_real_ipca_usd`` → ``'USD'``); ``None`` for a
+    non-monetary column.
+
+    A payload's unit must come from the column actually summed, not from the request:
+    the seam falls back to R$ when a mart lacks the requested combo (US$ × IGP-M).
+    """
+    suffix = column.rsplit("_", 1)[-1]
+    return next((cur for cur, suf in _CURRENCY_SUFFIX.items() if suf == suffix), None)
+
+
 def convention_value_label(conv: dict) -> str:
     """Human label for the active monetary convention, e.g. 'Valor real (IPCA) — R$'."""
     sym = CURRENCY_SYMBOL.get(conv.get("currency", "BRL"), "R$")

@@ -1,6 +1,15 @@
 // ViewSeasonality — month × year patterns. Generic via the monthlyData
 // contract (real Gold data).
 
+// The contract (serialize_monthly) ships VALUES in MILLIONS of `data.unit`. Every card and
+// chart here formats with the shared pt-BR magnitude ladder (bi/mi/mil), which reads a
+// number as RAW units — so the values are converted back ONCE, here, before anything reads
+// them. Until v1.77.0 they were not: US$ 3,09 mi rendered "US$ 3,09" on the cards, the
+// heatmap and the Capital axis alike (the same defect ViewFlows had). Weight stays in the
+// contract's `mil t`: its unit label already carries the magnitude.
+const _MI = 1e6;
+const _toRaw = (v) => (Number(v) || 0) * _MI;
+
 function ViewSeasonality({ summary, conventions, database }) {
   const data  = window.monthlyData(database, summary);
 
@@ -9,9 +18,12 @@ function ViewSeasonality({ summary, conventions, database }) {
   // -1, so monthlyAvg[-1] = undefined and fmt(undefined).toLocaleString throws —
   // sending the whole perspective to the error boundary instead of an honest
   // empty state. Pad to 12 zeros and clamp the indices so the math always survives.
-  const avg = Array.isArray(data.monthlyAvg) && data.monthlyAvg.length === 12
+  const avg = (Array.isArray(data.monthlyAvg) && data.monthlyAvg.length === 12
     ? data.monthlyAvg
-    : Array.from({ length: 12 }, (_, m) => (data.monthlyAvg && data.monthlyAvg[m]) || 0);
+    : Array.from({ length: 12 }, (_, m) => (data.monthlyAvg && data.monthlyAvg[m]) || 0)
+  ).map(_toRaw);
+  const matrix = Object.fromEntries(
+    Object.entries(data.matrix || {}).map(([y, row]) => [y, (row || []).map(_toRaw)]));
   // Volume (net weight) profile — the second seasonal metric, same 12-month shape.
   const wavg = Array.isArray(data.weightMonthlyAvg) && data.weightMonthlyAvg.length === 12
     ? data.weightMonthlyAvg
@@ -69,12 +81,15 @@ function ViewSeasonality({ summary, conventions, database }) {
       </div>
 
       <div className="card">
+        {/* A convenção que o número REALMENTE carrega, dita pelo servidor — inclusive
+            quando a base mensal ainda não tem a correção escolhida e o servidor serve o
+            nominal: o rótulo diz isso, em vez de a tela afirmar uma correção que não houve. */}
         <window.SectionHeader
           overline="Mapa de calor · mês × ano"
           title="Padrão sazonal ao longo dos anos"
-          action={<span className="caption">{data.unit}</span>}
+          action={<span className="caption season-valuation">{data.valueLabel || data.unit}</span>}
         />
-        <window.MonthYearHeatmap matrix={data.matrix} years={years} unit={data.unit} formatValue={fmt} />
+        <window.MonthYearHeatmap matrix={matrix} years={years} unit={data.unit} formatValue={fmt} />
       </div>
 
       <div className="card">
@@ -85,8 +100,8 @@ function ViewSeasonality({ summary, conventions, database }) {
         />
         {hasWeight ? (
           <>
-            {/* Dual metric: Volume (peso) on the left axis, Capital (US$) on the
-                right — the two move together but on very different scales. */}
+            {/* Dual metric: Volume (peso) on the left axis, Capital on the right — the
+                two move together but on very different scales. */}
             <window.DualAxisLineChart
               height={300}
               showLegend={false}
