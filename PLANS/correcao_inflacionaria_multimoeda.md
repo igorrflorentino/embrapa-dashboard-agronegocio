@@ -158,24 +158,54 @@ economy too (`IPCA · Brasil`), so the distinction survives the strip being clos
 - [x] conventions strip bands + `conventionExplain` + chips + `clampConvention`
 - [x] value-gap note names an index that was never ingested
 - [x] glossary · ARCHITECTURE · CLAUDE.md · README · CHANGELOG
-- [ ] **operator**: deploy the ingestion Job, run the backfill, flip the dbt var (below)
+- [ ] **operator**: register the BLS key, deploy the ingestion Job, run the backfill,
+      flip the dbt var (below)
 
 ## Turning it on
 
-The code ships with the deflators declared and the data absent. Four steps, in order:
+The code ships with the deflators declared and the data absent. **Five** steps, in order —
+it was four until v1.83.0 added the BLS key, and the key comes FIRST because
+`deploy.sh` mounts it while building the Job, so a key registered afterwards means
+deploying twice.
 
 ```bash
-make ingest-job-deploy                              # 1. the Job image must carry the new source
-uv run embrapa ingest foreign-inflation --full      # 2. one 1974→today backfill
-#                                                     3. set DBT_ENABLE_FOREIGN_INFLATION=true (repo var)
-gh workflow run dbt-build-prod.yml --ref main       # 4. rebuild so Gold materializes the columns
+# 1. register the BLS key (once per project) — see deploy/ingestion/deploy.sh § 3c for the
+#    create-secret + secretAccessor commands, then put BLS_KEY_SECRET=bls-api-key in .env
+make ingest-job-deploy                              # 2. Job image carries the new source + the key
+uv run embrapa doctor                               # 3. both publishers answer, with the key live
+gcloud run jobs execute embrapa-ingest-all \
+  --args=ingest,foreign-inflation,--full            # 4. one 1974→today backfill
+#                                                     5a. set DBT_ENABLE_FOREIGN_INFLATION=true
+gh workflow run dbt-build-prod.yml --ref main       # 5b. rebuild so Gold materializes the columns
 ```
 
-Step 2 is the one to watch: both APIs were specified from their published contracts but
-could not be exercised from the build environment (outbound HTTPS to `api.bls.gov` and
-`data-api.ecb.europa.eu` is blocked there). A typo'd or retired series id fails **loudly**
-by design — `extract` raises naming the offending series rather than reporting success
-with an empty deflator — so the first run is the verification.
+**Why the key is not optional in practice.** The keyless v1 endpoint allows 25 requests/day
+counted **per calling IP** — not per project and not per key. The backfill needs only 6 of
+them (10-year windows over 1974→today), and that arithmetic is what the original design
+relied on; it is also exactly the premise that failed. The Job shares its egress address
+with everything else leaving from it and can find the cap already spent without having made
+a single request — measured 2026-09-13, when BLS answered `REQUEST_NOT_PROCESSED` (HTTP 200,
+zero observations) to a *first* call. A registered key moves the call to v2, whose 500/day
+quota is the **key's** and whose windows are 20 years wide, so the same backfill costs 3
+requests against a cap nobody else can spend.
+
+That is also what makes step 3 worth its place. `doctor` runs from the operator's machine,
+a different egress address than the Job — so while the quota is per-IP, a local pass proves
+nothing about what the Job will meet. Once the quota belongs to the key, both call the same
+cap and the probe becomes predictive. Run it keyed, or not at all.
+
+**Step 4 is the real verification.** Both APIs were specified from their published contracts
+but could not be exercised from the build environment (outbound HTTPS to `api.bls.gov` and
+`data-api.ecb.europa.eu` is blocked there). ECB has since answered a live call; BLS has not
+yet answered a successful one. A typo'd or retired series id fails **loudly** by design —
+`extract` raises naming the offending series rather than reporting success with an empty
+deflator — and since v1.82.1 a quota refusal fails loudly too, instead of being certified
+as a healthy 200.
+
+**Step 5 is the one that is dangerous out of order.** Flipping the var while Bronze is still
+empty points `silver_foreign_inflation` at a dataset that does not exist, and that failure
+cascades through `silver_inflation` into every Gold table — the whole reason the gate exists.
+Do not set it until step 4 has actually written rows.
 
 ## Risks & mitigations
 
@@ -183,7 +213,7 @@ with an empty deflator — so the first run is the verification.
 |---|---|
 | Prod `dbt build` breaks because Bronze is absent | `enable_foreign_inflation` defaults false; Gold column shape is identical either way |
 | A series id is wrong and the deflator stays empty | cold-empty series raises naming itself (`test_foreign_inflation.py`); `doctor` probes both publishers separately |
-| BLS daily quota (25 requests keyless) | 6 windows for the full backfill, 1 per delta run; a quota refusal (HTTP 200 + status string) is classified transient and retried |
+| BLS quota refused before a single request | the keyless 25/day is counted per EGRESS IP and shared, so window arithmetic does not bound it (measured 2026-09-13); `BLS_KEY_SECRET` moves the call to v2, where the 500/day is the key's own. The refusal arrives as HTTP 200 + a status string — classified transient by the client, and no longer certified healthy by `doctor` (v1.82.1) |
 | The two readings get conflated again | `test_the_two_correction_logics_get_different_labels_under_the_same_symbol`, the `_gold.yml` unit test where both indices triple so only the FX moment can explain 600 vs 1500, and the `_IMPOSSIBLE_PAIRS` allowlist sweep |
 
 ## Acceptance criteria

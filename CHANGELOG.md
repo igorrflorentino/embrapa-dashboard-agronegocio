@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.83.2] - 2026-09-13
+
+### Corrigido
+
+- **A sequência de ligar os deflatores estrangeiros voltou a descrever a sequência real.**
+  O `PLANS/correcao_inflacionaria_multimoeda.md` § *Turning it on* é a página que o operador
+  abre com o ambiente na frente, e ela ficou em quatro passos enquanto a v1.83.0 tornava a
+  chave do BLS um pré-requisito de fato — documentado no `deploy.sh` e no `.env.example`,
+  em todo lugar menos onde se lê na hora de executar. Três correções:
+  - **A chave virou o passo 1**, e por um motivo mecânico e não estilístico: o `deploy.sh` lê
+    `BLS_KEY_SECRET` enquanto constrói o Job, então registrar a chave depois significa fazer
+    deploy duas vezes.
+  - **A linha de risco da cota estava desmentida pela medição.** Ela dizia que 6 janelas
+    contra um teto de 25/dia bastavam e que uma recusa seria "retentada" — mas o teto keyless
+    é contado **por IP de saída** e compartilhado, então aritmética de janelas não o limita, e
+    retentar não ajuda contra uma cota que já chegou gasta (medido em 2026-09-13). A mitigação
+    verdadeira é a chave: v2, janelas de 20 anos, 500/dia que são **da chave**.
+  - **O passo da ingestão passou a ser o do Cloud Run Job**, não o `uv run` local, e o `doctor`
+    ganhou lugar explícito antes dele — com a observação que justifica esse lugar: sondando da
+    máquina do operador, que tem outro IP de saída, uma passagem local não prova nada sobre o
+    que o Job vai encontrar *enquanto a cota for por IP*. Com a chave, os dois disputam o mesmo
+    teto e a sonda passa a ser preditiva.
+  - Ficou dito onde o passo está o que antes se esperava que o leitor deduzisse da existência
+    do gate: ligar `DBT_ENABLE_FOREIGN_INFLATION` antes de o Bronze ter linhas aponta o
+    `silver_foreign_inflation` para um dataset que responde 404, e isso cascateia por
+    `silver_inflation` até todo o Gold.
+- `tests/test_turn_on_runbook.py` fixa o vocabulário do runbook contra renomeação silenciosa:
+  que ele começa pela chave, que cada identificador que ele cita (`BLS_KEY_SECRET`,
+  `make ingest-job-deploy`, `embrapa-ingest-all`, `DBT_ENABLE_FOREIGN_INFLATION`, o comando da
+  CLI, o check do `doctor`) ainda existe onde ele diz, e que o aviso da ordem perigosa
+  continua lá. A ORDEM em si não dá para testar — mora na prosa; o que se testa é o
+  vocabulário de que a prosa é feita. Verificado que os três reprovam contra o runbook antigo.
+
+---
+
 ## [1.83.1] - 2026-09-13
 
 ### Corrigido
