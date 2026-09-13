@@ -450,6 +450,20 @@ def snapshot(banco_id: str, conv: dict, summary: dict | None = None) -> dict:
             tabela=tabela,
         )
 
+    # COMEX: the months the active convention cannot value — the latest month before its
+    # deflator index is ingested, € sem correção before 1999. The annual marts behind every
+    # view here SUM the months, so without this the latest year's corrected total silently
+    # covered Jan–Jul under a "2026" label (measured 2026-09-13). Month-level and global: a
+    # missing index nulls every row of its month, so the list holds for any selection the
+    # browser makes. Skipped for the declared US$ (it never goes missing) and while the
+    # monthly mart lacks the column (it deploys in parallel with the app; see monthly_data).
+    value_gap_months = (
+        gateway.fetch_comex_value_gap_by_month(value_column=value_col)
+        if banco_id == "mdic_comex"
+        and value_col != "val_yearfx_usd"
+        and value_col in gateway.fetch_comex_seasonality_columns()
+        else None
+    )
     return {
         "products": products,
         "product_ts": product_ts,
@@ -462,6 +476,7 @@ def snapshot(banco_id: str, conv: dict, summary: dict | None = None) -> dict:
         "value_column": value_col,
         "value_label": value_label,
         "value_era_breaks": value_era_breaks(value_col),
+        "value_gap_months": value_gap_months,
     }
 
 

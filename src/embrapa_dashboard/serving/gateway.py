@@ -460,6 +460,16 @@ def fetch_comex_value_gap(
 
 
 @cache.memoize()
+def fetch_comex_value_gap_by_month(value_column: str = "val_yearfx_usd"):
+    """Months of the COMEX history ``value_column`` cannot value (backs the snapshot's
+    ``valueGap``; see :func:`sqlbuild.comex_value_gap_by_month`)."""
+    settings = get_settings()
+    table = sqlbuild.table_ref(settings, "bq_serving_dataset", "serving_comex_seasonality")
+    sql, params = sqlbuild.comex_value_gap_by_month(table, value_column=value_column)
+    return run_query(sql, params)
+
+
+@cache.memoize()
 def fetch_comex_months_per_year():
     """Distinct months present per year from the COMEX seasonality mart (backs the
     partial-latest-year signal in source-meta). Cheap year×month aggregate, cached."""

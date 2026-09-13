@@ -910,6 +910,32 @@ def comex_value_gap(
     return sql, params
 
 
+def comex_value_gap_by_month(
+    table: str, *, value_column: str = "val_yearfx_usd"
+) -> tuple[str, list]:
+    """Which months of the COMEX history ``value_column`` cannot value, from
+    ``serving_comex_seasonality`` (backs the snapshot's ``valueGap``).
+
+    Month-level and UNFILTERED on purpose: Gold joins the deflator and the FX by year +
+    month, so a missing index nulls EVERY row of that month — measured on prod 2026-09-13,
+    all 2.275 rows of 2026-08 in IPCA/IGP-DI, and every month of 1997–1998 in € sem
+    correção. The list is therefore exact for any product/UF/flow the screens filter in
+    the browser, and one cheap query per convention serves every COMEX view.
+    """
+    value_column = _validate_column(value_column, ALLOWED_VALUE_COLUMNS, "value_column")
+    sql = f"""
+        select
+            reference_year,
+            reference_month,
+            countif({value_column} is null)     as rows_without_value,
+            countif({value_column} is not null) as rows_with_value
+        from `{table}`
+        group by reference_year, reference_month
+        order by reference_year, reference_month
+    """
+    return sql, []
+
+
 def months_present_per_year(table: str) -> tuple[str, list]:
     """Distinct ``reference_month`` count per ``reference_year`` from a monthly mart
     (``serving_comex_seasonality``; backs the partial-latest-year signal).
