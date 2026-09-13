@@ -41,11 +41,13 @@ function ViewPartners({ summary, conventions, database }) {
   // How each metric formats a partner's measure for display. The currency is `data.unit`
   // — the one the server summed, which follows the conventions strip — never a fixed US$:
   // a hard-coded symbol is how this screen kept saying "US$" over whatever was chosen.
-  const fmtMoney = (v) =>
-    data.unit + ' ' + (v >= 1000 ? _nf(v / 1000, 1) + ' bi' : _nf(v, v < 10 ? 2 : 0) + ' mi');
+  // `null` = no value in this convention (a partner traded only in years the chosen
+  // currency cannot value — see ValueGapNote): '—', never a fabricated "0,00 mi".
+  const fmtMoney = (v) => v == null ? '—'
+    : data.unit + ' ' + (v >= 1000 ? _nf(v / 1000, 1) + ' bi' : _nf(v, v < 10 ? 2 : 0) + ' mi');
   const fmtMetric = (p) => {
     const v = p && p[spec.field];
-    if (metric === 'value')  return fmtMoney(v || 0);
+    if (metric === 'value')  return fmtMoney(v);
     if (metric === 'weight') return _nf((v || 0) * 1000) + ' t'; // mil t → t (pt-BR)
     return v == null ? '—' : data.unit + ' ' + _nf(v, 2) + '/kg'; // price (unit/kg)
   };
@@ -125,6 +127,8 @@ function ViewPartners({ summary, conventions, database }) {
             {data.valueLabel}
           </p>
         )}
+        {/* O peso não depende da moeda: a lacuna só vale para Capital e Preço médio. */}
+        {metric !== 'weight' && <window.ValueGapNote gap={data.valueGap} unit={data.unit} />}
         <div className="ptn-list">
           {partners.map((p, i) => (
             <div key={p.name} className="ptn-row">

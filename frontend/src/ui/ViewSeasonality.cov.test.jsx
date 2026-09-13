@@ -8,6 +8,8 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { cleanup, render } from '@testing-library/react';
+// The REAL note the view renders above the heatmap (window.ValueGapNote).
+import './MonetaryNotes.jsx';
 
 // The ui-side shared magnitude helper the migrated views use.
 function autoScaleNum(v) {
@@ -178,5 +180,33 @@ describe('ViewSeasonality — escala e convenção', () => {
       .toBe('Valor real (IPCA) — R$ · FOB');
     const pico = container.querySelector('.kpi[data-label="Mês de pico"] .kpi-sub');
     expect(pico.textContent).toBe('R$ 30 mi (média)');
+  });
+});
+
+describe('ViewSeasonality — o mês que a convenção não alcança', () => {
+  // € sem correção não existe antes de 1999 (v1.78.0): o mês de 1998 chega null e fica
+  // null — um buraco no mapa de calor, não um zero desenhado.
+  it('a célula sem valor continua vazia, e a nota diz que ficou fora das médias', () => {
+    window.fmtPct = (n, d = 1) => (n * 100).toFixed(d).replace('.', ',') + '%';
+    stubGlobals({
+      ...FULL_FIXTURE,
+      unit: '€',
+      years: [1998, 1999],
+      matrix: {
+        1998: [null, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        1999: [0.094, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+      },
+      valueGap: { years: [1998], share: 0.25 },
+    });
+    const { container } = render(
+      <ViewSeasonality summary={{}} conventions={{}} database="mdic_comex" />
+    );
+    expect(heatmapProps.matrix['1998'][0]).toBeNull(); // um zero aqui seria dado inventado
+    expect(heatmapProps.matrix['1998'][1]).toBe(0);    // mês sem linha: comércio nenhum
+    expect(heatmapProps.matrix['1999'][0]).toBeCloseTo(94_000);
+    expect(heatmapProps.formatValue(null)).toBe('sem valor nesta convenção');
+    const nota = container.querySelector('.value-gap-note').textContent;
+    expect(nota).toContain('Esse ano fica fora das médias');
+    expect(nota).toContain('O euro só existe desde 1999');
   });
 });

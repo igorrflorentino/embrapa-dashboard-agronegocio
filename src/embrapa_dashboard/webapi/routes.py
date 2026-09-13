@@ -1104,6 +1104,7 @@ def partners():
             rank_by=metric,
             value_column=payload.get("value_column"),
             value_label=payload.get("value_label"),
+            gap_rows=payload.get("gap_rows"),
         )
     )
 

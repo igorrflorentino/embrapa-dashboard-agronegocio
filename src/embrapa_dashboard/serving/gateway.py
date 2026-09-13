@@ -433,6 +433,33 @@ def fetch_comex_seasonality_columns() -> frozenset[str]:
 
 
 @cache.memoize()
+def fetch_comex_value_gap(
+    year_start: int | None = None,
+    year_end: int | None = None,
+    ncm_codes: Sequence[str] = (),
+    flow: str | None = None,
+    uf_codes: Sequence[str] = (),
+    value_column: str = "val_yearfx_usd",
+):
+    """Per-year coverage of ``value_column`` in a COMEX window, at the MONTHLY grain (backs
+    the partner ranking's and the Sankey's ``valueGap`` — the annual mart's SUM hides a
+    month without a deflator inside a non-null year total; see
+    :func:`sqlbuild.comex_value_gap`)."""
+    settings = get_settings()
+    table = sqlbuild.table_ref(settings, "bq_serving_dataset", "serving_comex_seasonality")
+    sql, params = sqlbuild.comex_value_gap(
+        table,
+        year_start=year_start,
+        year_end=year_end,
+        ncm_codes=tuple(ncm_codes),
+        flow=flow,
+        uf_codes=tuple(uf_codes),
+        value_column=value_column,
+    )
+    return run_query(sql, params)
+
+
+@cache.memoize()
 def fetch_comex_months_per_year():
     """Distinct months present per year from the COMEX seasonality mart (backs the
     partial-latest-year signal in source-meta). Cheap year×month aggregate, cached."""

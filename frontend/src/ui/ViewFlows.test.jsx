@@ -8,6 +8,8 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { cleanup, render } from '@testing-library/react';
+// The REAL note the view renders under the diagram (window.ValueGapNote).
+import './MonetaryNotes.jsx';
 
 // The ui-side shared magnitude helper the migrated views use (same thresholds as
 // charts/magnitude.js magnitudeParts, which window.autoScaleNum is bound to).
@@ -118,5 +120,25 @@ describe('ViewFlows — a convenção que o número carrega', () => {
     expect(container.querySelector('.flow-valuation').textContent)
       .toBe('Valor real (IPCA) — R$ · FOB');
     expect(total(container)).toBe('R$ 5 mi');
+  });
+});
+
+describe('ViewFlows — os anos que a convenção não alcança', () => {
+  it('nomeia os anos fora da soma logo abaixo do título do diagrama', () => {
+    window.fmtPct = (n, d = 1) => (n * 100).toFixed(d).replace('.', ',') + '%';
+    stubProtoGlobals({
+      unit: '€',
+      valueLabel: 'Valor nominal — € · FOB',
+      valueGap: { years: [1997, 1998], share: 0.0054 },
+      originLabel: 'UF',
+      destLabel: 'País',
+      nodes: [{ id: 'o0', label: 'AC', side: 'origin', value: 67.75 },
+        { id: 'd0', label: 'Peru', side: 'dest', value: 67.75 }],
+      links: [{ source: 'o0', target: 'd0', value: 67.75 }],
+    });
+    const { container } = render(<ViewFlows summary={{}} conventions={{}} database="mdic_comex" />);
+    const nota = container.querySelector('.value-gap-note').textContent;
+    expect(nota).toContain('Sem valor nesta convenção em 1997–1998');
+    expect(nota).toContain('fora da soma');
   });
 });

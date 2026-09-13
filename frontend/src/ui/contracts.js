@@ -63,6 +63,7 @@
 // @property {boolean} preview
 // @property {string}  unit        currency symbol of the column the server ACTUALLY summed (R$/US$/€) — follows the conventions strip; a combo the mart lacks (US$ × IGP-M) falls back to R$
 // @property {(string|null)} valueLabel  the convention on screen, e.g. "Valor real (IPCA) — US$ · FOB"
+// @property {({years:number[],partial:number[],share:(number|null)}|null)} valueGap  years inside the window the convention cannot value (€ sem correção before 1999; the latest COMEX month before its deflator index is ingested), which of them are missing only IN PART (`partial` — the note says "parte de 2026", never "2026"), and the share of the window's trade — in the declared US$ — they leave out of the sum; null when nothing is missing. The view MUST name them (window.ValueGapNote).
 // @property {string}  originLabel        Dimension label for the origin side.
 // @property {string}  destLabel          Dimension label for the destination side.
 // @property {{id:string,label:string,side:'origin'|'dest',value:number}[]} nodes
@@ -73,16 +74,18 @@
 // @property {string}  flowLabel
 // @property {string}  unit        currency symbol of the column the server ACTUALLY summed (R$/US$/€) — it follows the conventions strip, and a combo the mart lacks (US$ × IGP-M) falls back to R$
 // @property {(string|null)} valueLabel  the convention on screen, e.g. "Valor real (IPCA) — US$ · FOB"
+// @property {({years:number[],partial:number[],share:(number|null)}|null)} valueGap  years inside the window the convention cannot value (€ sem correção before 1999; the latest COMEX month before its deflator index is ingested), which of them are missing only IN PART (`partial` — the note says "parte de 2026", never "2026"), and the share of the window's trade — in the declared US$ — they leave out of the sum; null when nothing is missing. The view MUST name them (window.ValueGapNote).
 // @property {{name:string,exp:number,imp:number,value:number,weight:number,price:(number|null),pricedShare:(number|null)}[]} partners  value/exp/imp = `unit` mi · weight = mil t (net) · price = `unit`/kg, null when no weight. The price divides ONLY the value of rows that have a weight: COMTRADE publishes 79.528 rows (3,87% of the mart, measured 2026-09-07) with a value and no net weight, and dividing the WHOLE value by the weight of part of it inflated the number — Guam ranked 6th at US$ 1,251/kg and belongs 41st at US$ 0,567 (+121%). `pricedShare` is how much of that partner's trade backs the price (null when there is no base); below 0,9 the view names the partner, because the number then describes a part of what they trade. Row order = the server-side ranking metric (Capital/Volume/Preço médio).
 //
 // @typedef {Object} MonthlyData         window.monthlyData(bancoId, summary)
 // @property {boolean} preview
 // @property {string}  unit               Value (Capital) unit — symbol of the column the server ACTUALLY summed (R$/US$/€); follows the conventions strip.
 // @property {(string|null)} valueLabel   the convention on screen — and says so when the monthly mart cannot serve the chosen correction yet and the server fell back to nominal US$.
+// @property {({years:number[],partial:number[],share:(number|null)}|null)} valueGap  years with months the convention cannot value (€ sem correção before 1999; the latest COMEX month before its deflator index is ingested) — those months are null in `matrix` and out of `monthlyAvg`; `partial` = the years with some valued month. The view MUST name them (window.ValueGapNote).
 // @property {string}  weightUnit         Volume unit — 'mil t' (net weight).
 // @property {number[]} years
 // @property {number[]} months           [1..12]
-// @property {Object.<number,number[]>} matrix         year → 12 monthly VALUE (`unit` mi) values.
+// @property {Object.<number,(number|null)[]>} matrix  year → 12 monthly VALUE (`unit` mi) values. 0 = no trade recorded that month; null = trade the convention cannot value (see valueGap) — never drawn as a zero.
 // @property {number[]} monthlyAvg       12 value (`unit` mi) values.
 // @property {Object.<number,number[]>} weightMatrix   year → 12 monthly WEIGHT (mil t) values.
 // @property {number[]} weightMonthlyAvg 12 weight (mil t) values.

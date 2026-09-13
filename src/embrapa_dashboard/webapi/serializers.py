@@ -809,6 +809,80 @@ def serialize_trade_mirror(d: dict) -> dict:
 # ── trade adapters (flow / partner / monthly) — USD-valued, values → millions ──
 
 
+def _present_sum(values) -> float | None:
+    """Sum of the present values; ``None`` when none is present. ``min_count=1``: pandas
+    returns 0.0 for an all-NaN sum, which would read as a measured zero."""
+    if values is None:
+        return None
+    total = pd.to_numeric(values, errors="coerce").sum(min_count=1)
+    return None if pd.isna(total) else float(total)
+
+
+def _flat_years(cells) -> set[int]:
+    """Flatten the per-row year arrays (``years_without_value`` / ``years_with_value``)."""
+    years: set[int] = set()
+    for cell in cells:
+        try:
+            years.update(int(y) for y in cell)
+        except TypeError:  # None / NaN where BigQuery sent no array
+            continue
+    return years
+
+
+def _value_gap(df: pd.DataFrame | None, gap_rows: pd.DataFrame | None = None) -> dict | None:
+    """Where the convention's column is ABSENT inside the window, and how much trade that
+    leaves out of the sum — measured in the declared US$, which never is. ``None`` when
+    nothing is missing.
+
+    A SUM skips a NULL in silence: with € sem correção, which only exists from 1999, a
+    1997–2026 COMEX window totalled 1999–2026 under a period label that said otherwise,
+    and the screen had no way to know (v1.78.0). A value computed over a subset must say
+    which. Computed over the WHOLE frame, before any top-N cut, so the share describes the
+    window and not the page.
+
+    ``gap_rows`` wins when given: the per-year coverage the seam measured at the MONTHLY
+    grain (``rows_without_value`` / ``rows_with_value`` / ``unvalued_usd`` / ``total_usd``,
+    from gateway.fetch_comex_value_gap). The COMEX annual mart SUMs the months, so a month
+    without a deflator vanishes inside a non-null year total and the frame's own coverage
+    would say 0,2% where the truth is 2,05% (Acre × castanha, US$ · IPCA, 2026-09-13).
+    """
+    if gap_rows is not None:
+        if _empty(gap_rows):
+            return None
+
+        def _positivo(col: str) -> pd.Series:
+            return pd.to_numeric(gap_rows[col], errors="coerce").fillna(0) > 0
+
+        sem_valor = gap_rows[_positivo("rows_without_value")]
+        years = {int(y) for y in sem_valor["reference_year"]}
+        if not years:
+            return None
+        com_valor = gap_rows[_positivo("rows_without_value") & _positivo("rows_with_value")]
+        return {
+            "years": sorted(years),
+            "partial": sorted(int(y) for y in com_valor["reference_year"]),
+            "share": measures.ratio_present(
+                _present_sum(gap_rows.get("unvalued_usd")), _present_sum(gap_rows.get("total_usd"))
+            ),
+        }
+    if _empty(df) or "years_without_value" not in df.columns:
+        return None
+    years = _flat_years(df["years_without_value"])
+    if not years:
+        return None
+    valued = _flat_years(df["years_with_value"]) if "years_with_value" in df.columns else set()
+    return {
+        "years": sorted(years),
+        # A year missing only IN PART — typically the latest COMEX month before its deflator
+        # index is ingested (measured 2026-09-13: every August 2026 row had no
+        # val_real_ipca_*). The note must say "part of 2026", never "2026".
+        "partial": sorted(years & valued),
+        "share": measures.ratio_present(
+            _present_sum(df.get("unvalued_usd")), _present_sum(df.get("total_usd"))
+        ),
+    }
+
+
 def serialize_flow(d: dict | None, max_links: int = 40) -> dict:
     """seam.flow_data() → FlowData. Builds the Sankey nodes/links from the
     origin→dest link frame (top ``max_links`` by value for a readable diagram).
@@ -816,25 +890,33 @@ def serialize_flow(d: dict | None, max_links: int = 40) -> dict:
     ``unit`` is the symbol of the column the seam ACTUALLY summed (``value_column``;
     default the US$-native nominal one) and ``valueLabel`` names the convention — the
     same rule as :func:`serialize_partner`, so a US$ × IGP-M request that fell back to
-    R$ is labelled R$."""
+    R$ is labelled R$. ``valueGap`` names the years the convention cannot value."""
     d = d or {}
     currency = fmt.column_currency(d.get("value_column") or "val_yearfx_usd") or "USD"
     shell = {
         "preview": False,
         "unit": fmt.CURRENCY_SYMBOL[currency],
         "valueLabel": d.get("value_label"),
+        "valueGap": None,
         "originLabel": d.get("origin_label", "Origem"),
         "destLabel": d.get("dest_label", "Destino"),
     }
     links_df = d.get("links")
     if _empty(links_df):
         return {**shell, "nodes": [], "links": []}
+    shell["valueGap"] = _value_gap(links_df, d.get("gap_rows"))
     df = links_df.head(max_links)
     origins: dict[str, str] = {}
     dests: dict[str, str] = {}
     nodes: list[dict] = []
     links: list[dict] = []
     for r in df.itertuples():
+        # A link with no value in the convention lies wholly inside the gap `valueGap`
+        # names (a route traded only in 1997–1998, under € sem correção): it has no width
+        # to draw, and the note already says those years are out of the sum.
+        v = _measure_scaled(r.total_value, 1e6)  # → unit mi
+        if v is None:
+            continue
         oc, dc = str(r.origin_code), str(r.dest_code)
         if oc not in origins:
             origins[oc] = f"o{len(origins)}"
@@ -875,6 +957,7 @@ def serialize_partner(
     *,
     value_column: str | None = None,
     value_label: str | None = None,
+    gap_rows: pd.DataFrame | None = None,
 ) -> dict:
     """seam.partner_data() → PartnerData. Partner ranking with exp/imp split.
 
@@ -906,6 +989,8 @@ def serialize_partner(
         "flowLabel": "Parceiro",
         "unit": fmt.CURRENCY_SYMBOL[currency],
         "valueLabel": value_label,
+        # Over the WHOLE frame, before the top-N cut: the share describes the window.
+        "valueGap": _value_gap(df, gap_rows),
     }
     if _empty(df):
         return {**head, "partners": [], "belowFloor": []}
@@ -914,9 +999,13 @@ def serialize_partner(
         price = getattr(r, "price_per_kg", None)
         return {
             "name": r.partner_name,
+            # exp/imp zero on purpose: a flow the partner did not trade in the valued years
+            # IS zero there. The TOTAL is different — a partner traded only in years the
+            # convention cannot value (1997–1998 under € sem correção) has no value, and
+            # `_num` would rank it as a measured "0,00 mi" (v1.78.0).
             "exp": _num(r.exp_value) / 1e6,
             "imp": _num(r.imp_value) / 1e6,
-            "value": _num(r.total_value) / 1e6,
+            "value": _measure_scaled(r.total_value, 1e6),
             "weightKg": _num(getattr(r, "total_weight_kg", 0)),  # o piso mede em kg
             "weight": _num(getattr(r, "total_weight_kg", 0)) / 1e6,  # kg → mil t
             "price": None if price is None or pd.isna(price) else _num(price),  # unit/kg
@@ -1010,6 +1099,7 @@ def serialize_monthly(
         "preview": False,
         "unit": fmt.CURRENCY_SYMBOL[currency],
         "valueLabel": value_label,
+        "valueGap": None,
         "weightUnit": "mil t",
         "months": list(range(1, 13)),
     }
@@ -1027,27 +1117,57 @@ def serialize_monthly(
             "weightMonthlyAvg": [0.0] * 12,
             "series": [],
         }
-    # Seed absent months as None (not 0.0) so the 12-month average can tell a
-    # genuine 0-export month from a month with no data row. The emitted matrices
-    # still use 0.0 for absent months (the contract is 12 numbers per year).
+    # Seed absent months as None (not 0.0) so the 12-month average can tell a genuine
+    # 0-export month from a month with no data row. The emitted matrices use 0.0 for a
+    # month with no ROW — COMEX lists only what was traded — but keep None for a month
+    # whose rows exist and the convention cannot value (€ sem correção before 1999):
+    # drawn as 0.0, that was a zero nobody measured, pulling every monthly average down
+    # (v1.78.0). Those months stay out of `monthlyAvg`, and `valueGap` names their years.
     v_matrix: dict[int, list[float | None]] = {}
     w_matrix: dict[int, list[float | None]] = {}
+    unvalued: set[tuple[int, int]] = set()
+    gap_years: set[int] = set()
     series: list[dict] = []
     for r in df.itertuples():
         y, m = int(r.reference_year), int(r.reference_month)
-        v = _num(r.total_value) / 1e6  # unit mi
+        v = _measure_scaled(r.total_value, 1e6)  # unit mi; None = the convention cannot value it
         w = _num(getattr(r, "total_weight_kg", 0)) / 1e6  # kg → mil t
+        if v is None:
+            unvalued.add((y, m))
+        if v is None or (_measure(getattr(r, "unvalued_usd", None)) or 0) > 0:
+            gap_years.add(y)
         v_matrix.setdefault(y, [None] * 12)[m - 1] = v
         w_matrix.setdefault(y, [None] * 12)[m - 1] = w
         series.append({"ym": f"{y}-{m:02d}", "y": y, "m": m, "v": v, "w": w})
     years = sorted(v_matrix)
-    fill = lambda mx: {str(y): [c if c is not None else 0.0 for c in mx[y]] for y in years}  # noqa: E731
+
+    def fill(mx: dict[int, list[float | None]], keep: set[tuple[int, int]]) -> dict:
+        """None → 0.0 (no row), except the cells in ``keep`` (no VALUE), which stay None."""
+        return {
+            str(y): [
+                None if (y, i + 1) in keep else (0.0 if c is None else c)
+                for i, c in enumerate(mx[y])
+            ]
+            for y in years
+        }
+
     return {
         **base,
+        "valueGap": {
+            "years": sorted(gap_years),
+            # A year with SOME valued month is missing only in part (the latest COMEX month
+            # before its deflator index is ingested) — the note must not call it a year.
+            "partial": sorted(y for y in gap_years if any(c is not None for c in v_matrix[y])),
+            "share": measures.ratio_present(
+                _present_sum(df.get("unvalued_usd")), _present_sum(df.get("total_usd"))
+            ),
+        }
+        if gap_years
+        else None,
         "years": years,
-        "matrix": fill(v_matrix),
+        "matrix": fill(v_matrix, unvalued),
         "monthlyAvg": _monthly_avg(v_matrix, years),
-        "weightMatrix": fill(w_matrix),
+        "weightMatrix": fill(w_matrix, set()),
         "weightMonthlyAvg": _monthly_avg(w_matrix, years),
         "series": series,
     }

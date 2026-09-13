@@ -49,6 +49,7 @@ function ViewFlows({ summary, conventions, database }) {
           title="Para onde a produção vai"
           action={<span className="caption flow-valuation">{data.valueLabel || data.unit}</span>}
         />
+        <window.ValueGapNote gap={data.valueGap} unit={data.unit} />
         <window.SankeyChart nodes={data.nodes} links={data.links} unit={data.unit} formatValue={fmt} height={380} />
       </div>
 

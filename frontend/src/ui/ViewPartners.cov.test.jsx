@@ -15,6 +15,7 @@ import { cleanup, fireEvent, render } from '@testing-library/react';
 // prendida por tests/test_partner_price_floor_parity.py.
 import './seriesUtils.js';
 import './MaterialityFloorNote.jsx';
+import './MonetaryNotes.jsx';
 
 // partnerData captures the metric it was asked for so we can prove the toggle
 // drives a server-side recompute (a new partnerData call per metric).
@@ -380,5 +381,44 @@ describe('ViewPartners — a moeda é a que o servidor somou', () => {
       .toBe('Valor real (IPCA) — R$ · FOB');
     clicar(container, 'Volume');
     expect(container.querySelector('.ptn-valuation')).toBeFalsy();
+  });
+});
+
+describe('ViewPartners — a convenção que não alcança parte da janela', () => {
+  // € sem correção só existe desde 1999 e o COMEX começa em 1997 (v1.78.0): a soma cobria
+  // 1999–2026 sob um período que dizia 1997–2026, e um parceiro só daqueles anos saía como
+  // "€ 0,00 mi".
+  const COM_LACUNA = {
+    unit: '€',
+    valueLabel: 'Valor nominal — € · FOB',
+    valueGap: { years: [1997, 1998], share: 0.0054 },
+    flowLabel: 'destino',
+    notApplicable: null,
+    partners: [
+      { name: 'Peru',   value: 67.75, exp: 67.75, imp: 0, weight: 26,    price: 2.6 },
+      { name: 'Antigo', value: null,  exp: 0,     imp: 0, weight: 0.005, price: null },
+    ],
+  };
+  const abrir = () => {
+    stubGlobals({ value: COM_LACUNA, weight: COM_LACUNA, price: COM_LACUNA });
+    window.fmtPct = (n, d = 1) => (n * 100).toFixed(d).replace('.', ',') + '%';
+    return render(<ViewPartners summary={{}} conventions={{}} database="mdic_comex" />).container;
+  };
+
+  it('a tela nomeia os anos fora da soma, e quanto comércio eles são', () => {
+    const nota = abrir().querySelector('.value-gap-note').textContent;
+    expect(nota).toContain('Sem valor nesta convenção em 1997–1998');
+    expect(nota).toContain('0,5% do comércio do recorte');
+  });
+
+  it('o parceiro sem valor na convenção mostra "—", nunca "0,00 mi"', () => {
+    const vals = [...abrir().querySelectorAll('.ptn-val')].map((e) => e.textContent);
+    expect(vals).toEqual(['€ 68 mi', '—']);
+  });
+
+  it('no Volume a nota some — o peso não depende da moeda', () => {
+    const c = abrir();
+    fireEvent.click([...c.querySelectorAll('.seg-opt')].find((b) => b.textContent === 'Volume'));
+    expect(c.querySelector('.value-gap-note')).toBeFalsy();
   });
 });

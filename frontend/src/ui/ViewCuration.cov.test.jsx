@@ -12,6 +12,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render } from '@testing-library/react';
+// The REAL note (window.NominalSeriesNote) the value-added chart renders.
+import './MonetaryNotes.jsx';
 
 // ── shared widget/formatter stubs ─────────────────────────────────────────────
 function stubWidgets() {

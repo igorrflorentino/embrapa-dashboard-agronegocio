@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.78.0] - 2026-09-13
+
+### Corrigido
+
+- **Euro sem correção antes de 1999 virava zero — ou sumia da soma em silêncio.** O euro só
+  existe desde 1999 e o COMEX começa em 1997: na coluna `val_yearfx_eur` as 1.665 linhas de
+  1997 e as 1.758 de 1998 são NULL (medido em produção). Enquanto Parceiros, Sankey e
+  Sazonalidade somavam só dólar isso não aparecia; a v1.77.0 os ligou à faixa de convenções
+  e deixou a lacuna alcançável.
+  - **Sazonalidade** desenhava os 12 meses de 1998 como 0,0 — em dólar, janeiro de 1998 teve
+    US$ 0,05 mi — e esses zeros puxavam as médias mensais para baixo. Agora o mês sem valor
+    fica vazio no mapa de calor e fora das médias; o mês sem linha continua 0, porque no
+    COMEX isso é comércio nenhum registrado.
+  - **Parceiros e Sankey** somavam 1999–2026 sob um período que dizia 1997–2026. Os leitores
+    passam a devolver onde a coluna falta (`years_without_value`) e quanto comércio fica de
+    fora, medido no US$ declarado, que nunca falta (`unvalued_usd` / `total_usd`); as três
+    telas o dizem (`valueGap` → `ValueGapNote`). Um parceiro que só comerciou nesses anos
+    sai com valor `null` ("—"), não "0,00 mi"; um vínculo do Sankey sem valor não é
+    desenhado — está inteiro dentro da lacuna que a nota nomeia.
+  - **O preço médio por parceiro** dividiria o valor de 1999 em diante pelo peso desde 1997
+    — a quarta regra, as duas metades de uma razão cobrem as mesmas linhas. Agora cada metade
+    condiciona-se à presença da outra.
+
+  A lacuna do euro é de anos inteiros. A verificação em produção achou uma segunda, de
+  meses: toda correção (IPCA, IGP-M, IGP-DI) falta no mês mais recente do COMEX até o índice
+  daquele mês entrar — em 2026-09-13, as 2.275 linhas de agosto de 2026 estavam sem valor
+  corrigido, porque o Gold deflaciona mês a mês. As três telas dizem agora "parte do
+  comércio de 2026 não tem valor nesta convenção" (2,1% do recorte Acre × castanha em
+  US$ · IPCA), sem chamar um mês de ano (`valueGap.partial`). O mart anual escondia essa
+  lacuna: a soma dos meses engole o agosto sem deflator dentro de um total de 2026 não nulo,
+  e medida no grão anual ela era 0,2% — por isso Parceiros e Sankey tiram o total do mart
+  anual e a cobertura do COMEX do mensal (`comex_value_gap`, com os mesmos filtros). As
+  outras telas do COMEX que leem valor corrigido ainda somam esse ano parcial em silêncio —
+  fica para uma versão própria.
+
+### Adicionado
+
+- **`tests/test_monetary_conventions_guard.py`** — a varredura que teria pegado a v1.77.0
+  antes da planilha. Deriva do código as três ligações e reprova a que faltar: (1) nenhuma
+  soma monetária com a coluna escrita no SQL — o par de cobertura é reconhecido pelo alias,
+  e os dois leitores nominais por desenho têm o motivo escrito ao lado; (2) toda chamada do
+  seam a um leitor que aceita `value_column` o passa explícito, porque o padrão do leitor é
+  o US$ nominal silencioso; (3) toda rota que chama um seam que resolve a convenção lê e
+  repassa `currency`/`correction`. Cada regra tem a guarda do instrumento: reprova a forma
+  de antes da v1.77.0 e acha o que existe hoje.
+
+- **"nominais" nas séries em dólar do Multi-fonte e da análise curada.** Espelho comercial
+  (US$ bi), porteira × porto (US$/kg) e valor agregado (US$ bi, US$/kg) atravessam décadas
+  em dólar de cada ano. Essas telas não têm faixa de convenções — comparam fontes, não
+  moedas —, então nada afirmava uma correção; mas "US$" sozinho convida a ler um dólar de
+  1997 como um de hoje. O rótulo passa a dizer "nominais", e uma nota diz para que a série
+  serve: comparar as fontes no mesmo ano.
+
 ## [1.77.0] - 2026-09-12
 
 ### Corrigido

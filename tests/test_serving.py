@@ -484,7 +484,7 @@ def test_comex_seasonality_sums_the_convention_column():
     """The seasonality reads the column the conventions strip resolved (v1.77.0) — before
     it the mart carried only nominal US$ and the builder had it written in."""
     query, _ = sql.comex_seasonality("p.s.seas", value_column="val_real_igpm_brl")
-    assert "sum(val_real_igpm_brl)" in query and "val_yearfx_usd" not in query
+    assert "sum(val_real_igpm_brl)" in query and "val_yearfx_usd" not in _sem_cobertura(query)
     assert "as total_value" in query
     with pytest.raises(ValueError):
         sql.comex_seasonality("p.s.seas", value_column="val_yearfx_usd) --")
@@ -705,6 +705,17 @@ def test_trade_value_column_allowlist_blocks_injection():
         )
 
 
+def _sem_cobertura(query: str) -> str:
+    """The query minus the coverage pair (``total_usd`` / ``unvalued_usd``), which reads the
+    declared US$ on purpose — it measures what the convention cannot value (v1.78.0). What
+    must never read a fixed currency is every OTHER measure."""
+    return "\n".join(
+        linha
+        for linha in query.splitlines()
+        if "as total_usd" not in linha and "as unvalued_usd" not in linha
+    )
+
+
 def test_trade_by_partner_splits_export_and_import():
     query, params = sql.trade_by_partner(
         "p.serving.serving_comex_annual",
@@ -759,7 +770,7 @@ def test_trade_by_partner_sums_the_convention_column_everywhere():
         code_column="ncm_code",
     )
     query, _ = sql.trade_by_partner("p.s.t", value_column="val_real_ipca_usd", **base)
-    assert "val_yearfx_usd" not in query
+    assert "val_yearfx_usd" not in _sem_cobertura(query)
     assert "case when flow = 'export' then val_real_ipca_usd end" in query
     assert "case when flow = 'import' then val_real_ipca_usd end" in query
     assert "sum(val_real_ipca_usd)" in query
@@ -797,7 +808,7 @@ def test_trade_flows_sums_the_convention_column():
         code_column="ncm_code",
     )
     query, _ = sql.trade_flows("p.s.t", value_column="val_real_ipca_brl", **base)
-    assert "sum(val_real_ipca_brl)" in query and "val_yearfx_usd" not in query
+    assert "sum(val_real_ipca_brl)" in query and "val_yearfx_usd" not in _sem_cobertura(query)
     assert "order by total_value desc" in query
     with pytest.raises(ValueError):
         sql.trade_flows("p.s.t", value_column="val_yearfx_usd) --", **base)
