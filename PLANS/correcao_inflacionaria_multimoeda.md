@@ -202,6 +202,30 @@ yet answered a successful one. A typo'd or retired series id fails **loudly** by
 deflator — and since v1.82.1 a quota refusal fails loudly too, instead of being certified
 as a healthy 200.
 
+### Pre-flight: what was already verified, so step 4 only tests the APIs
+
+Measured against **production** on 2026-09-13, after the v1.83.2 build. The plumbing
+between the two APIs and the Gold columns cannot be exercised before turn-on — but every
+link in it can be checked statically or against the live schema, and was:
+
+| Link | How it was checked | Result |
+|---|---|---|
+| Bronze column names | the 7 fields `pipeline.py` declares vs. the 7 `silver_foreign_inflation` reads | identical |
+| Date format | both clients emit `dd/mm/yyyy`; the model parses `'%d/%m/%Y'` | match |
+| `silver_inflation` union | the foreign leg's 10 columns vs. the live BCB leg in prod, by position and type | identical |
+| Gold / mart columns | `INFORMATION_SCHEMA` on prod `gold` + `serving` | present in all 5 facts and 6 marts, `FLOAT64` |
+| Gate-off behaviour | non-null counts on three marts | `val_real_cpi_usd` / `val_real_hicp_eur` = 0 non-null; `val_real_ipca_brl` populated |
+
+The date format was the one worth checking rather than assuming: a mismatch makes
+`safe.parse_date` return NULL, the model's `where … is not null` then drops **every** row,
+and the deflator comes out empty with no error anywhere. BLS builds `01/{month:02d}/{year}`
+and the ECB side validates `TIME_PERIOD` against `\d{4}-\d{2}` before splitting it, so the
+two-digit month is guaranteed on both.
+
+So if step 4 fails, the cause is upstream of this repo — a quota refusal, a retired series
+id, credentials — not the pipeline shape. That is a narrower search than it would otherwise
+be.
+
 **Step 5 is the one that is dangerous out of order.** Flipping the var while Bronze is still
 empty points `silver_foreign_inflation` at a dataset that does not exist, and that failure
 cascades through `silver_inflation` into every Gold table — the whole reason the gate exists.

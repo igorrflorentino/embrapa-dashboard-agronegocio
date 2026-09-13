@@ -436,14 +436,19 @@ wants the abbreviations {N, NE, CO, SE, S} — map in the BFF.
 
 ## 8. Gold column reference
 
-Both flows tables share the 4 monetary conventions (× 3 currencies): `val_yearfx_*`
-(nominal at the year/month FX) and `val_real_{ipca,igpm,igpdi}_*` (deflated to today
-— use for cross-year comparison). See `dbt/models/gold/_gold.yml` for per-column docs.
+Both flows tables share the monetary conventions: `val_yearfx_*` (nominal at the
+year/month FX), `val_real_{ipca,igpm,igpdi}_*` (deflated by a Brazilian index, then
+converted at today's FX) and `val_real_cpi_usd` / `val_real_hicp_eur` (converted at the
+record's FX, then deflated by the foreign index). This is **not** a
+`correction × currency` grid — a foreign index pairs with its own currency only. Use any
+`val_real_*` for cross-year comparison, naming which. See `dbt/models/gold/_gold.yml` for
+per-column docs.
 
 - **gold_pevs_production**: reference_year, reference_date, state_acronym, state_name,
   region, city_code, city_name, product_code, product_description, family, unit_native,
   qty_native, qty_base, base_unit, val_yearfx_{brl,usd,eur},
-  val_real_{ipca,igpm,igpdi}_{brl,usd,eur}, data_quality_flag, last_refresh.
+  val_real_{ipca,igpm,igpdi}_{brl,usd,eur}, val_real_cpi_usd, val_real_hicp_eur,
+  data_quality_flag, last_refresh.
 - **gold_comex_flows**: + reference_month, ncm_code, hs_chapter, ncm_description,
   country_code/name/iso_a3, transport_route_code, via_name, stat_unit_code,
   unit_native_symbol, net_weight_kg, val_freight_usd, val_insurance_usd, source_rows.

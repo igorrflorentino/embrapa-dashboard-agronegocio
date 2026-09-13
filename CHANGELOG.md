@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.83.3] - 2026-09-13
+
+### Corrigido
+
+- **Os documentos que ENUMERAM a matriz de valores ganharam as colunas que a v1.82.0 criou.**
+  Aquela versão adicionou `val_real_cpi_usd` / `val_real_hicp_eur` às 5 tabelas Gold e aos 6
+  marts — e atualizou todo lugar que DESCREVE a funcionalidade, passando batido por todo
+  lugar que a enumera, que é justamente onde se procura "quais colunas existem". Três
+  versões depois, `ARCHITECTURE.md`, `docs/gold_data_model.md`,
+  `docs/frontend_data_contract.md` e a skill `dbt-workflow` ainda ensinavam uma matriz sem
+  um quarto dela.
+  - **O erro não era só de contagem, era de FORMA.** Esses docs apresentavam a matriz como
+    *"as 4 convenções monetárias (× 3 moedas)"*. Essa multiplicação codifica exatamente a
+    premissa que a v1.82.0 derrubou: um índice mede os preços de UMA economia, então CPI só
+    emparelha com US$ e HICP só com €. `val_real_cpi_brl` não existe e é recusado pelo
+    `serving.sql.ALLOWED_VALUE_COLUMNS`. Apresentar a família como produto cartesiano
+    convida o leitor a construir a combinação que o pipeline se recusa a servir.
+  - A seção § Value columns do `gold_data_model.md` era o caso mais grave: ensinava **uma
+    só** das duas lógicas de correção — "deflated to today via the respective BCB chain
+    index, optionally converted to a foreign currency at today's FX" — que é precisamente a
+    leitura que a v1.82.0 existiu para desfazer. A outra lógica não aparecia.
+  - Dois achados independentes no mesmo caminho: `gold_data_model.md` dizia
+    *"all four Gold facts"* para o `serving_quality_by_source` (são **cinco** desde o PPM;
+    prod devolve 31 linhas em 5 fontes), e a skill `dbt-workflow` afirmava *"28 columns"* no
+    `gold_pevs_production` (prod tem **31**, e já divergia antes da v1.82.0). A contagem fixa
+    deu lugar a um ponteiro para o `_gold.yml`, que é autoritativo: número cravado que
+    ninguém atualiza é pior que número nenhum.
+  - Os specs históricos sob `PLANS/` ficaram **intocados** de propósito: um spec é o registro
+    do que se construiu à época, e editá-lo para mencionar uma feature posterior falsifica o
+    registro em vez de corrigir um documento.
+- `tests/test_docs_value_matrix.py` fixa as duas coisas — que um doc vivo que soletra
+  `val_real_{ipca,igpm,igpdi}` nomeie também o par estrangeiro, e que nenhum deles volte a
+  cravar uma contagem de convenções. Verificado que 6 dos 10 reprovam contra os docs
+  anteriores.
+
+### Adicionado
+
+- **`PLANS/correcao_inflacionaria_multimoeda.md` § Pre-flight**: o encanamento entre as duas
+  APIs e as colunas Gold não pode ser exercitado antes da virada, mas cada elo dele pode ser
+  conferido — e foi, contra **produção**, em 2026-09-13: nomes de coluna do Bronze (os 7 que
+  a ingestão grava = os 7 que o modelo lê), formato de data (`dd/mm/yyyy` dos dois clientes =
+  o `'%d/%m/%Y'` do modelo), a UNION do `silver_inflation` (10 colunas, posição e tipo,
+  contra a perna do BCB viva), a presença das colunas nas 5 Gold e nos 6 marts, e o
+  comportamento com o gate desligado (0 não-nulos, IPCA populado). O elo do formato de data
+  era o que valia conferir em vez de supor: divergir ali faz o `safe.parse_date` devolver
+  NULL, o `where … is not null` descartar **todas** as linhas, e o deflator sair vazio sem
+  erro nenhum. Consequência prática: se o passo 4 falhar, a causa está acima deste repo —
+  cota, série aposentada, credencial — e não na forma do pipeline.
+
+---
+
 ## [1.83.2] - 2026-09-13
 
 ### Corrigido

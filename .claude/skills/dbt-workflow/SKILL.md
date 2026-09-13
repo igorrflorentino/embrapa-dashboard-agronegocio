@@ -58,10 +58,11 @@ The macro `dbt/macros/generate_schema_name.sql` enforces:
 ### Gold — `dbt/models/gold/`
 
 - **Materialization:** `table` (current). One comprehensive table per source — the PEVS model is `gold_pevs_production`. Ad-hoc aggregation is query-time `GROUP BY`; pre-aggregated marts for the React/webapi dashboard's Pushdown Computing live in the `serving/` layer (they derive from Gold, not replace it).
-- **Columns:** 28 columns per `(reference_year, state_acronym, city_code, product_code)`.
+- **Columns:** one row per `(reference_year, state_acronym, city_code, product_code)`. `dbt/models/gold/_gold.yml` is the authoritative column list — a hard-coded count here goes stale silently (this line read "28" while prod carried 31).
 - **Monetary conventions:**
   - `val_yearfx_*` — raw value ÷ year's average FX. NULL pre-1994.
-  - `val_real_{ipca,igpm,igpdi}_*` — value projected to today via chain-linked IPCA/IGP-M/IGP-DI index. **Use this for cross-year comparison.**
+  - `val_real_{ipca,igpm,igpdi}_*` — value projected to today via chain-linked IPCA/IGP-M/IGP-DI index, converted to a foreign currency at today's FX. **Use this for cross-year comparison.**
+  - `val_real_cpi_usd` / `val_real_hicp_eur` — converted at the record's FX, then deflated by US CPI-U / euro-area HICP. An index only corrects the money of the economy it measures, so these pair with one currency each and `val_real_cpi_brl` does not exist. Behind `enable_foreign_inflation` (build-order gate; NULL until the first ingest).
 - **Naming:** `gold_<source>_<form>` where `<form>` is `production` (output measurement, e.g. `gold_pevs_production`) or `flows` (origin→destination trade, e.g. `gold_comex_flows`).
 
 ### Seeds — `dbt/seeds/`
