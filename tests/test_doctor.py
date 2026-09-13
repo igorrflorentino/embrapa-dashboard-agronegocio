@@ -129,17 +129,147 @@ def test_check_foreign_inflation_codes_handles_an_unexpected_exception(
     assert result.ok is False and "boom" in result.detail
 
 
+def _foreign_inflation_response(url: str) -> MagicMock:
+    """A publisher answering NORMALLY — an HTTP 200 that actually carries an observation.
+
+    Both halves need a real body, not a bare 200: each publisher has a way of saying
+    "no data" while still returning 200, so the probe reads the body and a content-free
+    mock would be indistinguishable from the refusals the tests below assert on.
+    """
+    response = MagicMock()
+    response.raise_for_status.return_value = None
+    if "api.bls.gov" in url:
+        observation = {"year": "2025", "period": "M01", "value": "317.6"}
+        response.json.return_value = {
+            "status": "REQUEST_SUCCEEDED",
+            "Results": {"series": [{"data": [observation]}]},
+        }
+    else:
+        response.text = (
+            "KEY,FREQ,REF_AREA,TIME_PERIOD,OBS_VALUE\nICP.M.U2.N.000000.4.INX,M,U2,2025-01,126.72\n"
+        )
+    return response
+
+
 def test_check_foreign_inflation_probes_both_publishers(settings: Settings) -> None:
     """Two publishers, one line — so the line has to report BOTH. A green check hiding a
     dead half would leave one currency silently un-deflatable."""
-    with patch("embrapa_dashboard.doctor.requests.get") as get:
-        get.return_value.raise_for_status.return_value = None
+    with patch(
+        "embrapa_dashboard.doctor.requests.get",
+        side_effect=lambda url, **_kw: _foreign_inflation_response(url),
+    ) as get:
         result = doctor._check_foreign_inflation(settings)
     assert result.ok is True
     assert "bls." in result.detail and "ecb." in result.detail
     urls = [c.args[0] for c in get.call_args_list]
     assert any("/v1/timeseries/data/" in u for u in urls)
     assert any("/ICP/M.U2.N.000000.4.INX" in u for u in urls)
+
+
+def test_check_foreign_inflation_fails_when_bls_refuses_with_http_200(
+    settings: Settings,
+) -> None:
+    """The refusal that actually happens in the field, and the one a status-blind probe
+    calls green: BLS reports a quota/throttle refusal as HTTP 200 with the bad news in
+    the body. The keyless v1 quota is per calling IP, so a shared egress address reaches
+    it without this project making a single request — and the answer carries NO
+    observation. Vouching for that is worse than a red line: it certifies a deflator that
+    is not there. Measured live on 2026-09-13, when the probe returned 'bls 200 OK'."""
+    refusal = {
+        "status": "REQUEST_NOT_PROCESSED",
+        "message": [
+            "Request could not be serviced, as the daily threshold for total number of "
+            "requests allocated to the user with registration key  has been reached."
+        ],
+        "Results": {},
+    }
+
+    def bls_refuses(url, **_kw):
+        if "api.bls.gov" not in url:
+            return _foreign_inflation_response(url)
+        response = MagicMock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = refusal
+        return response
+
+    with patch("embrapa_dashboard.doctor.requests.get", side_effect=bls_refuses):
+        result = doctor._check_foreign_inflation(settings)
+    assert result.ok is False
+    assert "REQUEST_NOT_PROCESSED" in result.detail
+    # The reason travels with the verdict — "quota" and "BLS is down" need different
+    # operator responses, and the detail line is the only place that distinction lands.
+    assert "daily threshold" in result.detail
+    # The half that DID answer stays green.
+    assert "ecb." in result.detail and "200 OK" in result.detail
+
+
+def test_check_foreign_inflation_fails_when_ecb_answers_200_with_no_observations(
+    settings: Settings,
+) -> None:
+    """The ECB's counterpart of the same lie. A bogus series id is a clean 404 that
+    raise_for_status already catches, but a window the series does not cover comes back
+    200 with an EMPTY body — reachable host, no deflator."""
+
+    def ecb_empty(url, **_kw):
+        if "api.bls.gov" in url:
+            return _foreign_inflation_response(url)
+        response = MagicMock()
+        response.raise_for_status.return_value = None
+        response.text = ""
+        return response
+
+    with patch("embrapa_dashboard.doctor.requests.get", side_effect=ecb_empty):
+        result = doctor._check_foreign_inflation(settings)
+    assert result.ok is False
+    assert "no observations" in result.detail
+    assert "bls." in result.detail and "200 OK" in result.detail
+
+
+def test_check_foreign_inflation_probes_v2_when_a_key_is_configured(settings: Settings) -> None:
+    """The probe must exercise the endpoint the INGEST will actually use. The two BLS
+    versions draw on DIFFERENT quotas — v1's 25/day is counted per calling IP and shared
+    with every other caller on that address, v2's 500/day belongs to the key — so probing
+    v1 for a keyed pipeline spends a quota the real run never touches and can report a
+    refusal it never meets."""
+    settings.bls_api_key = "SEGREDO123"
+    with patch(
+        "embrapa_dashboard.doctor.requests.get",
+        side_effect=lambda url, **_kw: _foreign_inflation_response(url),
+    ) as get:
+        result = doctor._check_foreign_inflation(settings)
+    assert result.ok is True
+    bls_url = next(c.args[0] for c in get.call_args_list if "api.bls.gov" in c.args[0])
+    assert "/v2/timeseries/data/" in bls_url
+    assert "registrationkey=SEGREDO123" in bls_url
+
+
+def test_check_foreign_inflation_never_prints_the_key(settings: Settings) -> None:
+    """The key rides the QUERY STRING, and requests puts the whole URL into its exception
+    text. So the one path that reports a failure is also the one that would print the
+    secret to the operator's terminal and into whatever captures that output."""
+    settings.bls_api_key = "SEGREDO123"
+
+    def bls_raises(url, **_kw):
+        if "api.bls.gov" not in url:
+            return _foreign_inflation_response(url)
+        response = MagicMock()
+        response.raise_for_status.side_effect = RuntimeError(f"404 Client Error for url: {url}")
+        return response
+
+    with patch("embrapa_dashboard.doctor.requests.get", side_effect=bls_raises):
+        result = doctor._check_foreign_inflation(settings)
+    assert result.ok is False
+    assert "SEGREDO123" not in result.detail
+    assert "***" in result.detail
+
+
+def test_redact_is_a_no_op_without_a_configured_key() -> None:
+    """`"abc".replace("", x)` splices x between EVERY character, so an unguarded redaction
+    would mangle every failure line on the default (keyless) setup — the common case."""
+    plain = "404 Client Error for url: https://api.bls.gov/publicAPI/v1"
+    assert doctor._redact(plain, "") == plain
+    redacted = doctor._redact("registrationkey=abc123 refused", "abc123")
+    assert redacted == "registrationkey=*** refused"
 
 
 @pytest.mark.parametrize(
@@ -154,9 +284,10 @@ def test_check_foreign_inflation_fails_when_either_publisher_is_down(
     be green while a currency silently had no correction."""
 
     def one_side_down(url, **_kw):
+        if caida not in url:
+            return _foreign_inflation_response(url)
         response = MagicMock()
-        if caida in url:
-            response.raise_for_status.side_effect = RuntimeError(erro)
+        response.raise_for_status.side_effect = RuntimeError(erro)
         return response
 
     with patch("embrapa_dashboard.doctor.requests.get", side_effect=one_side_down):

@@ -7,6 +7,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.83.0] - 2026-09-13
+
+### Adicionado
+
+- **A chave do BLS passa a chegar ao Job de ingestão.** O campo `bls_api_key` já existia no
+  `config.py` e o pipeline já o usava, mas o `deploy.sh` **não encaminhava a chave** ao Cloud
+  Run Job, e o comentário no script justificava isso: *"o endpoint v1 sem chave cobre a carga
+  deste Job (6 requisições para um backfill completo, 1 por run delta, contra um teto de
+  25/dia)"*. A aritmética estava certa e a premissa não: **a cota keyless é contada por IP de
+  saída**, não por projeto nem por chave. O Job a divide com tudo o mais que sai do mesmo
+  endereço e pode encontrá-la já esgotada sem ter feito uma única requisição — foi o que se
+  mediu em 2026-09-13, quando o BLS respondeu `REQUEST_NOT_PROCESSED` a uma primeira chamada.
+  - Nova variável de deploy `BLS_KEY_SECRET`, espelhando `COMTRADE_KEY_SECRET`: ela nomeia um
+    segredo do Secret Manager, e o `deploy.sh` o monta com `--set-secrets`. A chave nunca
+    passa pelo `.env` do Job nem pelo script. Com ela a chamada vira v2 — janelas de 20 anos
+    e cota de 500/dia que é **da chave**.
+  - Os dois segredos (COMTRADE e BLS) agora viajam numa **única** flag `--set-secrets`: o
+    `gcloud` trata a flag repetida como SUBSTITUIÇÃO, não adição, então duas flags deixariam
+    a primeira chave silenciosamente desmontada em tempo de execução.
+
+### Corrigido
+
+- **A sonda do `doctor` ignorava a chave e sondava sempre o v1.** As duas versões do BLS
+  puxam de cotas DIFERENTES, então sondar o v1 num pipeline com chave gasta uma cota que a
+  execução real não toca e pode reportar uma recusa que ela nunca encontra — a imagem
+  espelhada do falso verde corrigido na v1.82.1. A sonda passa a usar o mesmo endpoint que a
+  ingestão usará.
+- **A chave não vaza mais para o terminal do operador.** Ela viaja na *query string*, e o
+  `requests` põe a URL inteira no texto das suas exceções — ou seja, justamente o caminho que
+  reporta falha era o que imprimiria o segredo. A redação acontece ANTES do truncamento:
+  cortar uma string meio-substituída deixaria um prefixo utilizável.
+
+---
+
+## [1.82.1] - 2026-09-13
+
+### Corrigido
+
+- **`embrapa doctor` dizia "Foreign inflation reachable: 200 OK" para uma recusa do BLS.**
+  O check nasceu junto com os deflatores estrangeiros da v1.82.0 e é exatamente o passo que
+  se pede para confirmar que as duas APIs respondem antes de ligar o
+  `enable_foreign_inflation` — mas ele só chamava `raise_for_status()`, e o BLS responde a
+  recusa por quota com **HTTP 200** e a má notícia no CORPO
+  (`status: REQUEST_NOT_PROCESSED`). A cota da v1 sem chave é de 25 requisições/dia **por IP
+  de saída**, então um endereço compartilhado a esgota sem que este projeto faça uma única
+  chamada. O resultado era a pior forma de falha possível para um health check: uma linha
+  verde atestando um deflator que não veio. O cliente de ingestão já sabia disso desde a
+  v1.82.0 — `_bls_window` comenta que "o BLS reporta a recusa com 200 e uma string de
+  status, então a checagem não pode viver no `_get`" —, mas a sonda do doctor nunca recebeu a
+  lição. Agora ela lê o `status` do corpo e leva o motivo junto do veredito, porque "quota
+  estourada" e "BLS fora do ar" pedem respostas diferentes do operador.
+- **A contraparte no lado do BCE.** Um id de série inválido já vinha como 404 limpo (e o
+  `raise_for_status()` pegava), mas uma janela que a série não cobre volta **200 com corpo
+  vazio** — host alcançável, nenhuma observação. A sonda passa a exigir uma linha de dado,
+  não só o cabeçalho.
+
+---
+
 ## [1.82.0] - 2026-09-13
 
 ### Adicionado
