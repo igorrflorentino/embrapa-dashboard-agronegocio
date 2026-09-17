@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.83.4] - 2026-09-17
+
+### Documentação
+
+- **Auditoria do monitoramento de saúde** — `docs/audits/monitoramento_saude_audit_2026-09-17.md`.
+  Cobre as cinco superfícies que juntas respondem "o pipeline está vivo e o dado está
+  chegando?": `embrapa doctor` (29 checks), o ingest heartbeat, o `dbt source freshness`
+  agendado, o alerta Cloud Monitoring sobre o Job e o `embrapa monitor`. A tela *Saúde* do
+  dashboard fica fora: é saúde do DADO para o pesquisador, não do sistema.
+  - **Veredito: a arquitetura está certa.** As três perguntas ortogonais — gatilho · dado ·
+    crash — têm cada uma o seu instrumento, e o limite de cada um está escrito ao lado dele.
+    Os oito achados são de uma classe só: **pontos onde o instrumento afirma mais do que
+    mediu**. Num monitor, um vermelho falso irrita e um verde falso desliga a vigilância.
+  - Dois 🔴: (1) `run_all` não tem guarda e duas sondas executam fora do próprio `try`, então
+    um `.env` malformado — o caso que o `doctor` existe para diagnosticar — mata o relatório
+    inteiro antes de imprimir a linha que já o tinha diagnosticado; o invariante está escrito
+    em `tests/test_doctor.py:1181` e é verificado para UMA sonda. (2) o check *Ingest
+    heartbeat* lê `max(run_ts)` e descarta a coluna `outcome`, enquanto `ingest all` sai 0 de
+    propósito em falha transiente — uma fonte que falha toda semana lê verde nas três
+    camadas ao mesmo tempo.
+  - Quatro 🟡: *Source data freshness* diz "every source current" sobre o subconjunto que
+    apareceu (o `having count(*) > 0` do `gold_source_metadata` faz uma fonte vazia sumir do
+    relatório); a janela `monthly` compara ANOS e detecta entre 13 e 24 meses depois, não no
+    ~1 mês que o comentário promete; instalação fria pinta de vermelho os dois checks que
+    leem tabelas criadas preguiçosamente, em vez de usar o `_skip_ou_quebra` que existe
+    exatamente para isso; e nenhuma consulta do `doctor` passa `maximum_bytes_billed` —
+    ≈ 362 MB varridos por execução, medidos por `dryRun` em prod.
+  - Estado de prod medido junto: 8 fontes no heartbeat com **zero** `failed`, todas dentro da
+    janela; `comtrade` corretamente em `pending` (tabela com 20 dias, janela de 34); as 5
+    fontes presentes no `gold_source_metadata`. **Todo achado é latente** — são sobre o que o
+    monitor deixaria de ver, não sobre algo que está passando agora.
+
 ## [1.83.3] - 2026-09-13
 
 ### Corrigido
