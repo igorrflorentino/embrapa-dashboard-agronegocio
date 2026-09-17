@@ -6,7 +6,7 @@ import ast
 import inspect
 import json
 import re
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -799,6 +799,97 @@ def test_every_ingest_source_is_covered_by_a_doctor_check() -> None:
     assert not orphans, f"doctor SOURCE_CHECKS has keys no ingest source maps to: {orphans}"
 
 
+# ── "a probe must never raise INTO run_all" — swept, not spot-checked ─────────
+# The invariant was already written down (see the silvicultura case further down) and
+# already false: `_check_comex` read `settings.comex_flows_list` before its own try and
+# `_check_bcb` caught only StopIteration, so a malformed .env — the very condition
+# `embrapa doctor` exists to pre-empt — raised out of run_all's comprehension. The
+# operator got a traceback and NONE of the 29 rows, including the `.env parsed ✗` that
+# had already diagnosed it. A one-probe assertion could not see that; a sweep can.
+_ENV_BREAKAGES = [
+    pytest.param({"comex_flows": ""}, id="COMEX_FLOWS empty"),
+    pytest.param({"comex_flows": "exportacao"}, id="COMEX_FLOWS invalid"),
+    pytest.param({"bcb_inflation_series": "433_no_colon"}, id="BCB_INFLATION_SERIES malformed"),
+    pytest.param({"bcb_currency_series": "1_no_colon"}, id="BCB_CURRENCY_SERIES malformed"),
+    pytest.param({"comex_ncm_codes": "08012100_no_colon"}, id="COMEX_NCM_CODES malformed"),
+    pytest.param({"comtrade_flows": "NOPE"}, id="COMTRADE_FLOWS invalid"),
+    pytest.param({"pam_product_codes": "x:"}, id="PAM_PRODUCT_CODES malformed"),
+]
+
+
+@pytest.mark.parametrize("breakage", _ENV_BREAKAGES)
+def test_no_probe_raises_on_a_malformed_env(settings: Settings, breakage: dict) -> None:
+    """EVERY probe answers with a CheckResult, never an exception — whatever the .env.
+
+    Swept over the whole registry rather than asserted on one probe: the two that broke
+    this were not the one the original assertion happened to pick.
+    """
+    for field, value in breakage.items():
+        setattr(settings, field, value)
+    raised: list[str] = []
+    with (
+        patch("embrapa_dashboard.doctor.requests.get") as get,
+        patch("embrapa_dashboard.doctor.requests.head") as head,
+        patch("embrapa_dashboard.doctor.google.auth.default") as auth,
+        patch("embrapa_dashboard.doctor.get_credentials", return_value=MagicMock()),
+        patch("embrapa_dashboard.doctor.bigquery.Client") as bq_cls,
+        patch("embrapa_dashboard.doctor.storage.Client") as gcs_cls,
+        patch("embrapa_dashboard.gcp.clients.resolve_bq_client", return_value=MagicMock()),
+    ):
+        auth.return_value = (MagicMock(), "p")
+        for mock in (get, head):
+            mock.return_value.status_code = 200
+            mock.return_value.raise_for_status.return_value = None
+            mock.return_value.json.return_value = {"status": "REQUEST_SUCCEEDED"}
+            mock.return_value.text = "header\nrow\n"
+        bq_cls.return_value.get_table.return_value = MagicMock()
+        gcs_cls.return_value.list_blobs.return_value = _list_blobs_mock([])
+        for key, probe in doctor.CHECKS:
+            try:
+                result = probe(settings)
+            except Exception as exc:
+                raised.append(f"{key}: {type(exc).__name__}: {exc}")
+                continue
+            if not isinstance(result, doctor.CheckResult):
+                raised.append(f"{key}: returned {type(result).__name__}")
+    assert raised == []
+
+
+def _raise_boom(_settings) -> doctor.CheckResult:
+    raise RuntimeError("boom")
+
+
+def _raise_not_found(_settings) -> doctor.CheckResult:
+    raise NotFound("no such table")
+
+
+def test_run_all_survives_a_probe_that_raises() -> None:
+    """The structural guarantee: a blown-up probe costs its OWN row, not the report.
+
+    Named by its REGISTRY KEY, because the display name lives inside the probe and a
+    probe that raised before returning is exactly the one that cannot supply it.
+    """
+    survivor = doctor.CheckResult("sobrevivente", True, "ok")
+    stub = [("explosiva", _raise_boom), ("outra", lambda _s: survivor)]
+    with patch.object(doctor, "CHECKS", stub):
+        results = doctor.run_all(Settings(_env_file=None, gcp_project_id="p", gcs_bucket="b"))
+
+    assert len(results) == 2  # the raiser did NOT take the other probe down
+    assert results[0].name == "explosiva" and results[0].ok is False
+    assert "CHECK QUEBRADO" in results[0].detail and "boom" in results[0].detail
+    assert results[1] is survivor
+
+
+def test_run_all_treats_a_missing_table_as_skipped_not_broken() -> None:
+    """A probe escaping with NotFound is a cold install, not a broken check — the same
+    distinction `_skip_ou_quebra` draws inside a probe, applied at the boundary."""
+    with patch.object(doctor, "CHECKS", [("ausente", _raise_not_found)]):
+        results = doctor.run_all(Settings(_env_file=None, gcp_project_id="p", gcs_bucket="b"))
+
+    assert results[0].ok is True
+    assert results[0].detail.startswith("skipped:")
+
+
 def test_pam_variable_codes_parity_passes_on_defaults(settings: Settings) -> None:
     """The 5 dbt PAM variable roles (8331/216/214/112/215) are all in the default
     PAM_VARIABLE_CODES → the parity check passes."""
@@ -1088,7 +1179,43 @@ def test_check_catalog_resolver_parity_falls_back_to_env_when_the_catalog_is_emp
 # "did the scheduler run" — see the docstring. These pin the cadence-dependent floor,
 # because that is the whole content of the check.
 def _freshness_rows(*triples):
-    return [SimpleNamespace(source=s, cadence=c, year_end=y) for s, c, y in triples]
+    """(source, cadence, year_end[, period_end]) → the rows gold_source_metadata returns.
+
+    `period_end` defaults to 31/12 of `year_end`, which is what the view emits for an
+    annual source. A monthly source passes its own date — that column exists precisely
+    because `year_end` cannot express mid-year staleness.
+    """
+    rows = []
+    for triple in triples:
+        source, cadence, year_end = triple[:3]
+        period_end = (
+            triple[3] if len(triple) > 3 else (date(year_end, 12, 31) if year_end else None)
+        )
+        rows.append(
+            SimpleNamespace(
+                source=source, cadence=cadence, year_end=year_end, period_end=period_end
+            )
+        )
+    return rows
+
+
+def _all_sources(*overrides):
+    """Every expected source present, so a test can isolate ONE of them.
+
+    Without this a fixture naming two sources would trip the new "missing source" finding
+    on the other three, and the assertion under test would pass for the wrong reason.
+    """
+    year = datetime.now(UTC).year
+    base = {
+        "ibge_pevs": ("ibge_pevs", "annual", year),
+        "ibge_pam": ("ibge_pam", "annual", year),
+        "ibge_ppm": ("ibge_ppm", "annual", year),
+        "mdic_comex": ("mdic_comex", "monthly", year, date(year, 12, 31)),
+        "un_comtrade": ("un_comtrade", "annual", year),
+    }
+    for override in overrides:
+        base[override[0]] = override
+    return _freshness_rows(*base.values())
 
 
 def _patch_freshness(rows):
@@ -1101,13 +1228,11 @@ def _patch_freshness(rows):
 def test_source_freshness_all_current(settings: Settings) -> None:
     year = datetime.now(UTC).year
     settings.source_freshness_annual_slack_years = 2
-    with _patch_freshness(
-        _freshness_rows(("ibge_pevs", "annual", year - 2), ("mdic_comex", "monthly", year))
-    ):
+    with _patch_freshness(_all_sources(("ibge_pevs", "annual", year - 2))):
         result = doctor._check_source_data_freshness(settings)
     assert result.ok is True
     assert "⚠" not in result.detail
-    assert "every source current" in result.detail
+    assert "every expected source current" in result.detail
 
 
 def test_source_freshness_warns_when_annual_source_falls_behind(settings: Settings) -> None:
@@ -1115,7 +1240,7 @@ def test_source_freshness_warns_when_annual_source_falls_behind(settings: Settin
     year = datetime.now(UTC).year
     settings.source_freshness_annual_slack_years = 2
     with _patch_freshness(
-        _freshness_rows(("ibge_ppm", "annual", year - 3), ("ibge_pevs", "annual", year - 1))
+        _all_sources(("ibge_ppm", "annual", year - 3), ("ibge_pevs", "annual", year - 1))
     ):
         result = doctor._check_source_data_freshness(settings)
     assert result.ok is True  # warn, never fail — a lagging source is a signal to look
@@ -1124,24 +1249,158 @@ def test_source_freshness_warns_when_annual_source_falls_behind(settings: Settin
     assert "ibge_pevs" not in result.detail  # the healthy one is not named as overdue
 
 
-def test_source_freshness_holds_monthly_sources_to_a_tighter_floor(settings: Settings) -> None:
-    """A monthly source one whole year behind is late even where an annual one is fine."""
-    year = datetime.now(UTC).year
-    settings.source_freshness_annual_slack_years = 2
-    with _patch_freshness(
-        _freshness_rows(("mdic_comex", "monthly", year - 2), ("ibge_pam", "annual", year - 2))
-    ):
-        result = doctor._check_source_data_freshness(settings)
-    assert "⚠" in result.detail
-    assert "mdic_comex" in result.detail
-    assert "ibge_pam" not in result.detail
-
-
 def test_source_freshness_flags_a_missing_year_end(settings: Settings) -> None:
-    with _patch_freshness(_freshness_rows(("sefaz_nf", "monthly", None))):
+    with _patch_freshness(_all_sources(("mdic_comex", "monthly", None))):
         result = doctor._check_source_data_freshness(settings)
     assert "⚠" in result.detail
     assert "no year_end" in result.detail
+
+
+# ── the monthly window: measured in MONTHS, off period_end ───────────────────
+# It compared YEARS, so a COMEX that stopped publishing in month M of year Y kept
+# reporting year_end = Y and only tripped in January of Y+2 — 13 to 24 months late,
+# where the comment promised about one. The test that "pinned" this used year-2, so
+# the real case (year-1) was never covered.
+def test_source_freshness_catches_a_monthly_source_stalled_inside_the_current_year(
+    settings: Settings,
+) -> None:
+    year = datetime.now(UTC).year
+    settings.source_freshness_monthly_slack_months = 3
+    stalled = date(year, 1, 31) if datetime.now(UTC).month > 4 else date(year - 1, 1, 31)
+    with _patch_freshness(_all_sources(("mdic_comex", "monthly", year, stalled))):
+        result = doctor._check_source_data_freshness(settings)
+    assert "⚠" in result.detail
+    assert "mdic_comex" in result.detail
+    assert "months behind" in result.detail
+
+
+def test_source_freshness_accepts_a_monthly_source_inside_its_publication_lag(
+    settings: Settings,
+) -> None:
+    """MDIC publishes a month at ~D+30 and the ETag gate adds more: a two-month-old
+    newest month is the HEALTHY steady state, not a stall."""
+    settings.source_freshness_monthly_slack_months = 3
+    today = datetime.now(UTC).date()
+    recent = date(today.year, today.month, 1) - timedelta(days=45)
+    with _patch_freshness(_all_sources(("mdic_comex", "monthly", recent.year, recent))):
+        result = doctor._check_source_data_freshness(settings)
+    assert "⚠" not in result.detail
+
+
+def test_source_freshness_flags_a_monthly_source_with_no_period_end(settings: Settings) -> None:
+    year = datetime.now(UTC).year
+    with _patch_freshness(_all_sources(("mdic_comex", "monthly", year, None))):
+        result = doctor._check_source_data_freshness(settings)
+    assert "⚠" in result.detail and "no period_end" in result.detail
+
+
+# ── a source that VANISHED is not a source that is current ───────────────────
+def test_source_freshness_names_a_source_missing_from_the_view(settings: Settings) -> None:
+    """The view ends each branch with `having count(*) > 0`, so an empty Gold emits NO
+    row. Iterating what came back, the check answered "every source current" over the
+    survivors — the same sentence the heartbeat check was already fixed not to say."""
+    year = datetime.now(UTC).year
+    with _patch_freshness(_freshness_rows(("mdic_comex", "monthly", year, date(year, 12, 31)))):
+        result = doctor._check_source_data_freshness(settings)
+    assert "⚠" in result.detail
+    assert "MISSING from gold_source_metadata" in result.detail
+    for vanished in ("ibge_pevs", "ibge_pam", "ibge_ppm", "un_comtrade"):
+        assert vanished in result.detail
+    assert "every expected source current" not in result.detail
+
+
+def test_source_freshness_leads_with_the_absent_source_not_alphabetically(
+    settings: Settings,
+) -> None:
+    """An absent acervo outranks a late one; it must not sort into the middle of the list."""
+    year = datetime.now(UTC).year
+    rows = _freshness_rows(
+        ("mdic_comex", "monthly", year, date(year, 12, 31)),
+        ("ibge_pevs", "annual", year),
+        ("ibge_pam", "annual", year),
+        ("un_comtrade", "annual", year - 9),  # late, and sorts after "MISSING" naturally
+    )
+    with _patch_freshness(rows):
+        result = doctor._check_source_data_freshness(settings)
+    assert result.detail.index("MISSING") < result.detail.index("un_comtrade")
+
+
+def test_every_bigquery_read_in_doctor_is_capped() -> None:
+    """No unbounded scan, statically. doctor is run ad hoc and repeatedly, and several
+    of its checks read Gold end to end (the gold_source_metadata view recomputes every
+    counter over the five fact tables). The gateway and the catalog resolver have passed
+    `maximum_bytes_billed` all along; this module passed none. The cap does not shrink
+    the scan — it makes an unbounded one impossible as the acervo grows."""
+    tree = ast.parse(Path(doctor.__file__).read_text(encoding="utf-8"))
+    uncapped = [
+        node.lineno
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "query"
+        and "job_config" not in {kw.arg for kw in node.keywords}
+    ]
+    assert uncapped == [], f"doctor.py has uncapped BigQuery reads at line(s) {uncapped}"
+
+
+def test_doctor_does_not_promise_a_ten_second_run() -> None:
+    """Three places ASSERTED "~10 seconds", one of them "even when something is broken".
+    The broken case is 10–11 sequential probes at PROBE_TIMEOUT_S each — about 100s —
+    which is the only case anyone times. Pinned on the assertive phrasings: the module
+    docstring still QUOTES the old promise to explain why it is gone, and quoting a
+    retracted claim is the opposite of making it."""
+    from embrapa_dashboard import cli
+
+    claims = ("reachability in ~10 seconds", "should finish in under ~15s", "ingest. ~10 seconds")
+    source = Path(doctor.__file__).read_text(encoding="utf-8")
+    for text in (source, cli.doctor_cmd.__doc__):
+        for claim in claims:
+            assert claim not in text, f"the retracted timing promise is back: {claim!r}"
+    # …and the honest figure is stated where the promise used to be.
+    assert "100s" in doctor.__doc__
+
+
+def test_serving_targets_match_the_dbt_serving_models() -> None:
+    """The deploy-readiness gate must cover every serving mart that exists.
+
+    SOURCE_CHECKS and BRONZE_TARGETS are pinned to cli.INGESTS above; SERVING_TARGETS
+    was the one registry with no parity guard, so an 8th mart would have been born
+    outside the gate in silence. It happened to be correct — nothing was holding it so.
+    """
+    models = {
+        p.stem for p in (Path(__file__).resolve().parents[1] / "dbt/models/serving").glob("*.sql")
+    }
+    registered = {
+        table for dataset, table in doctor.SERVING_TARGETS if dataset == "bq_serving_dataset"
+    }
+    # dim_code_industrialization_scd2 is DELIBERATELY out: it is gated behind
+    # `enable_curation`, so its absence in a standard build is expected, not an alarm.
+    deliberately_out = {"dim_code_industrialization_scd2"}
+    assert models - deliberately_out == registered, (
+        "dbt/models/serving and doctor.SERVING_TARGETS drifted; symmetric diff: "
+        f"{(models - deliberately_out) ^ registered}"
+    )
+
+
+def test_expected_metadata_sources_match_the_dbt_model() -> None:
+    """Registry-drift guard: the declared set IS a contract with gold_source_metadata.sql.
+
+    A sixth source added to the model without being listed here would never be reported
+    as missing — the exact hole this constant closes, reopened one branch over.
+    """
+    sql = (
+        Path(__file__).resolve().parents[1] / "dbt/models/gold/gold_source_metadata.sql"
+    ).read_text(encoding="utf-8")
+    # The model is a UNION ALL of one select per source, and each branch's FIRST string
+    # literal is its source id — whether the branch names its columns (`'ibge_pevs' as
+    # source`) or is positional (`'mdic_comex',`). Take that literal per branch rather
+    # than pattern-matching a line shape, which also matched 'annual' / 'monthly'.
+    branches = [b for b in re.split(r"^select\b", sql, flags=re.MULTILINE)[1:]]
+    emitted = {m.group(1) for b in branches if (m := re.search(r"'([a-z0-9_]+)'", b))}
+    assert emitted == set(doctor._EXPECTED_METADATA_SOURCES), (
+        "gold_source_metadata.sql and doctor._EXPECTED_METADATA_SOURCES drifted; "
+        f"symmetric diff: {emitted ^ set(doctor._EXPECTED_METADATA_SOURCES)}"
+    )
 
 
 def test_source_freshness_handles_an_empty_metadata_table(settings: Settings) -> None:

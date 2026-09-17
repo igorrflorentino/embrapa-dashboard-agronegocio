@@ -1182,7 +1182,7 @@ def monitor_cmd(
 # ─── doctor ───────────────────────────────────────────────────────────────────
 @app.command("doctor")
 def doctor_cmd() -> None:
-    """Quick health-check before running an ingest. ~10 seconds.
+    """Health-check before running an ingest. Seconds when healthy, ~2min when not.
 
     Validates: .env parsing (incl. the PAM/COMEX/COMTRADE mappings), the Gold
     inflation pivot codes, the currency-series and PAM-variable code drift,
@@ -1190,10 +1190,15 @@ def doctor_cmd() -> None:
     SIDRA, IBGE PAM, IBGE PPM, BCB SGS, COMEX, COMTRADE), whether Bronze tables
     and serving marts exist yet, and Gold-backup freshness.
 
+    The wall-clock spread is real, not a hedge: the source probes are sequential
+    and each waits up to PROBE_TIMEOUT_S, so an unreachable network is the slow
+    case. See the module docstring in `doctor.py` for the measured breakdown.
+
     Exits 1 if any check fails. Bronze-tables and serving-marts checks are
     informational (never fail); Gold-backup freshness FAILS when no complete
     snapshot exists — run `make dbt-build-prod-with-backup` once — and only
-    warns when the latest snapshot is older than BACKUP_STALENESS_DAYS.
+    warns when the latest snapshot is older than BACKUP_STALENESS_DAYS. A probe
+    that blows up costs its own row, never the report.
     """
     results = doctor.run_all()
     table = Table(title="embrapa doctor", show_lines=False)

@@ -7,6 +7,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.84.0] - 2026-09-17
+
+### Corrigido
+
+- **Os oito achados da auditoria do monitoramento de saúde.** Todos da mesma classe —
+  pontos onde o instrumento afirmava mais do que tinha medido. Num monitor, um vermelho
+  falso irrita; um verde falso desliga a vigilância.
+  - **`embrapa doctor` deixa de morrer inteiro por causa de um `.env` malformado** — que é
+    exatamente o caso que ele existe para diagnosticar. `_check_comex` lia
+    `comex_flows_list` antes do próprio `try` e `_check_bcb` capturava só `StopIteration`,
+    então o `ValueError` subia pela list-comprehension do `run_all` e o operador recebia um
+    traceback e **nenhuma** das 29 linhas — inclusive o `.env parsed ✗` que já tinha
+    nomeado o problema. As duas sondas passaram o corpo para dentro do `try` e o `run_all`
+    agora guarda cada uma: quem explode custa a PRÓPRIA linha, identificada pela chave de
+    registro (o nome de exibição mora dentro da sonda, que é justamente quem não consegue
+    fornecê-lo). O invariante já estava REDIGIDO em `tests/test_doctor.py` e verificado
+    para UMA sonda; virou varredura sobre todas × 7 formas de `.env` quebrado.
+  - **O check "Ingest heartbeat" passou a ler a coluna `outcome`.** Media `max(run_ts)` e
+    descartava o terceiro estado que a própria tabela registra. Importava porque o controle
+    compensatório está desarmado de propósito: `ingest all` sai 0 quando toda falha é
+    `SourceTransientError`, então nenhuma execução do Cloud Run é marcada como falha e o
+    alerta não dispara. Uma fonte falhando transiente toda semana lia verde aqui, muda lá,
+    e — nas fontes warn-only (PAM/PPM/COMTRADE, 60 d sem `error_after`) — verde também no
+    `dbt source freshness`. Três camadas concordando que estava tudo bem porque cada uma
+    tinha delegado a pergunta à outra. A janela agora mede o último SUCESSO, e entrou um
+    terceiro diagnóstico — *"roda mas não conclui"* — separado de *"parou de rodar"*,
+    porque o conserto é outro: os logs da execução, não o Cloud Scheduler.
+  - **"Source data freshness" não diz mais "every source current" sobre o subconjunto que
+    apareceu.** Cada ramo de `gold_source_metadata` termina em `having count(*) > 0`, então
+    uma fonte com Gold VAZIO não emite linha e simplesmente some do relatório — um
+    `gold_pevs_production` zerado leria como "tudo em dia". O conjunto esperado virou
+    declaração (`_EXPECTED_METADATA_SOURCES`), a fonte ausente LIDERA a linha em vez de
+    cair em ordem alfabética no meio, e um teste lê o modelo dbt e falha se as duas listas
+    divergirem. É a lição que o check vizinho já tinha aprendido 110 linhas abaixo.
+  - **A janela das fontes mensais passou a ser medida em MESES.** Comparava ANOS, e
+    `year_end` não consegue expressar o caso: um COMEX que parasse de publicar em março
+    continuaria reportando o ano corrente e só tropeçaria em janeiro do ano seguinte ao
+    seguinte — 13 a 24 meses de atraso, onde o comentário prometia cerca de um. O teste que
+    parecia fixar isso usava `year - 2`, então o caso real nunca fora coberto.
+- `embrapa doctor` numa instalação fria deixa de sair 1: os dois checks que leem tabelas
+  criadas preguiçosamente (`gold_source_metadata` no primeiro `dbt build`,
+  `ingestion_heartbeat` na primeira ingestão) passaram a usar o `_skip_ou_quebra`, que
+  existe exatamente para separar "sem dado para julgar" de "check quebrado".
+- Nenhuma leitura BigQuery do `doctor` era limitada. `maximum_bytes_billed` agora vale para
+  as sete, travado por um teste estático que percorre o `ast` atrás de um `.query()` sem
+  `job_config`. O teto já era passado no `gateway` e no `catalog_resolver`; só aqui não era
+  — num comando que o operador roda repetidamente enquanto depura, e cujo custo cresce com o
+  acervo (≈ 362 MB por execução, medidos por `dryRun` em prod).
+
+### Adicionado
+
+- **`gold_source_metadata.period_end`** (DATE) — o fim do período de referência mais novo:
+  31/12 do `year_end` nas fontes anuais, `last_day(max(reference_date))` no COMEX. Distinto
+  de `last_refresh`, que diz quando o PIPELINE escreveu, não quão novo é o DADO. Medido em
+  prod: `2026-08-31` para o COMEX, zero linhas sem `reference_date`.
+- `SOURCE_FRESHNESS_MONTHLY_SLACK_MONTHS` (default 3) — a tolerância das fontes mensais,
+  em meses. Setting próprio porque a anual não serve: medida em anos, ela não enxerga uma
+  fonte mensal que travou no meio do ano.
+- Teste de paridade entre `dbt/models/serving/*.sql` e `doctor.SERVING_TARGETS` — era o
+  único registro sem guarda de deriva (`SOURCE_CHECKS` e `BRONZE_TARGETS` já tinham), então
+  uma 8ª mart nasceria fora do gate de prontidão de deploy em silêncio. Estava correto;
+  nada o mantinha assim.
+
+### Documentação
+
+- As três afirmações de "~10 segundos" saíram do `doctor.py` e do help do CLI. O caso ruim
+  são 10–11 requisições sequenciais a `PROBE_TIMEOUT_S` cada — cerca de 100 s — que é o
+  único caso em que alguém cronometra. O módulo agora declara o custo real, e um teste
+  impede o retorno da promessa.
+- `docs/audits/monitoramento_saude_audit_2026-09-17.md` passou a `HISTORICAL`, nomeando
+  esta versão e os guardas novos, conforme a convenção que o próprio relatório registrou.
+
 ## [1.83.4] - 2026-09-17
 
 ### Documentação

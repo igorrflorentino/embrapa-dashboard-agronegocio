@@ -26,7 +26,12 @@ select
     -- real Brazilian UFs only — exclude special trade codes (EX/ND/ZN/MN/RE…),
     -- which have no state_name from the state lookup
     count(distinct case when state_name is not null then state_acronym end) as ufs_total,
-    max(last_refresh)              as last_refresh
+    max(last_refresh)              as last_refresh,
+    -- The END of the newest reference PERIOD, as a date. year_end alone cannot express
+    -- a monthly source's staleness: a COMEX that stopped publishing in March still
+    -- reports year_end = that year, so a year-granular check could not notice for
+    -- 13 to 24 months. Annual sources close on 31/12; COMEX closes on its newest month.
+    date(max(reference_year), 12, 31) as period_end
 from {{ ref('gold_pevs_production') }}
 -- F7 visibility gate: exclude products a researcher marked "indisponível" so the "acervo"
 -- counters (total_rows / products_total) a researcher SEES (ViewHealth, chip fallbacks) match
@@ -45,7 +50,8 @@ select
     count(*)                       as total_rows,
     count(distinct product_code)   as products_total,
     count(distinct case when state_name is not null then state_acronym end) as ufs_total,
-    max(last_refresh)              as last_refresh
+    max(last_refresh)              as last_refresh,
+    date(max(reference_year), 12, 31) as period_end
 from {{ ref('gold_pam_production') }}
 where {{ hidden_code_predicate('pam', 'product_code') }}
 having count(*) > 0
@@ -61,7 +67,8 @@ select
     count(*)                       as total_rows,
     count(distinct product_code)   as products_total,
     count(distinct case when state_name is not null then state_acronym end) as ufs_total,
-    max(last_refresh)              as last_refresh
+    max(last_refresh)              as last_refresh,
+    date(max(reference_year), 12, 31) as period_end
 from {{ ref('gold_ppm_production') }}
 where {{ hidden_code_predicate('ppm', 'product_code') }}
 having count(*) > 0
@@ -77,7 +84,8 @@ select
     count(*),
     count(distinct ncm_code),
     count(distinct case when state_name is not null then state_acronym end),
-    max(last_refresh)
+    max(last_refresh),
+    last_day(max(reference_date))  -- monthly: the newest month, closed
 from {{ ref('gold_comex_flows') }}
 where {{ hidden_code_predicate('comex', 'ncm_code') }}
 having count(*) > 0
@@ -93,7 +101,8 @@ select
     count(*),
     count(distinct cmd_code),
     cast(null as int64),           -- COMTRADE has no Brazilian UF (country↔country)
-    max(last_refresh)
+    max(last_refresh),
+    date(max(reference_year), 12, 31)
 from {{ ref('gold_comtrade_flows') }}
 where {{ hidden_code_predicate('comtrade', 'cmd_code') }}
 having count(*) > 0

@@ -1,11 +1,14 @@
 # Auditoria do monitoramento de saúde — 2026-09-17 (v1.83.3)
 
-> **STATUS — retrato de v1.83.3, com os oito achados ABERTOS na data.** Diferente dos demais
-> relatórios desta pasta, este ainda não foi seguido de correções: leia os achados como fila
-> de trabalho, e as MEDIÇÕES (bytes varridos, estado do heartbeat, fontes no
-> `gold_source_metadata`) como o retrato de 2026-09-17 — não como o estado de hoje. Quando
-> forem corrigidos, trocar este bloco por um `HISTORICAL` nomeando a versão, como fizeram
-> `chave_produto_audit_2026-08-30.md` e `full_audit_2026-08-30.md`.
+> **STATUS — HISTORICAL: registro do estado em v1.83.3.** Os OITO achados abaixo foram
+> corrigidos na v1.84.0, no mesmo PR que trouxe este relatório. Leia como a medição que
+> motivou a mudança, não como fila de trabalho; as MEDIÇÕES (bytes varridos, estado do
+> heartbeat, fontes no `gold_source_metadata`) são o retrato de 2026-09-17.
+> Guardas novos: a varredura `test_no_probe_raises_on_a_malformed_env` sobre TODAS as
+> sondas, `test_every_bigquery_read_in_doctor_is_capped` (estático, via `ast`),
+> `test_expected_metadata_sources_match_the_dbt_model`,
+> `test_serving_targets_match_the_dbt_serving_models`, e a coluna `period_end` em
+> `gold_source_metadata`. O que cada correção fez está na seção final.
 
 Auditoria pedida sobre **a lógica que monitora a saúde do sistema**: as cinco superfícies que
 respondem, juntas, "o pipeline está vivo e o dado está chegando?".
@@ -287,17 +290,19 @@ compartilham estado.
 
 ---
 
-## Ordem sugerida
+## O que foi corrigido (v1.84.0)
 
-1. **A1** — guarda em `run_all` + varredura do invariante que já está escrito. É o único
-   achado que hoje produz uma falha total de observabilidade.
-2. **A2** — ler `outcome`. Uma linha de SQL fecha o único buraco em que as três camadas
-   concordam que está tudo bem sem ninguém ter olhado.
-3. **A5** — duas linhas, e é o que evita que alguém aprenda a ignorar o `doctor`.
-4. **A3** + **A4** — ambos no mesmo check, ambos "o número está certo e responde outra
-   pergunta". A4 pede uma coluna nova em `gold_source_metadata`.
-5. **A6** + **A7** + **A8** — endurecimento e honestidade de texto.
+| achado | correção |
+|---|---|
+| **A1** | `run_all` guarda cada sonda e devolve a linha via `_skip_ou_quebra` — uma sonda que explode custa a PRÓPRIA linha, com o nome da chave de registro (o nome de exibição mora dentro da sonda, que é justamente quem não consegue fornecê-lo). `_check_comex` e `_check_bcb` passaram o corpo para dentro do `try`. O invariante virou varredura sobre TODAS as sondas × 7 formas de `.env` quebrado. |
+| **A2** | A janela passa a medir o último **sucesso** (`max(if(outcome='ok', run_ts, null))`). Um terceiro diagnóstico entrou na linha — *"roda mas não conclui"* — separado de *"parou de rodar"* e *"nunca rodou"*, porque o conserto é outro: os logs da execução, não o Cloud Scheduler. |
+| **A3** | `_EXPECTED_METADATA_SOURCES` declara as cinco fontes; uma ausente vira o achado que LIDERA a linha, e a frase só diz "every expected source current" depois de conferir o conjunto. Um teste lê `gold_source_metadata.sql` e falha se as duas listas divergirem. |
+| **A4** | `gold_source_metadata` ganhou `period_end` (DATE): 31/12 do `year_end` nas anuais, `last_day(max(reference_date))` no COMEX. A fonte mensal é medida em MESES, com folga própria (`SOURCE_FRESHNESS_MONTHLY_SLACK_MONTHS`, default 3). Detecção cai de 13–24 meses para ~4. |
+| **A5** | `_skip_ou_quebra` nos dois checks que leem tabelas criadas preguiçosamente. Instalação fria deixa de sair 1 com dois `✗ 404`. |
+| **A6** | `_bq_job_config` aplica `maximum_bytes_billed` às **sete** leituras BigQuery do módulo, travado por um teste estático que percorre o `ast` atrás de um `.query()` sem `job_config`. A união de códigos Gold virou um helper só. O volume varrido não muda; o que muda é que uma varredura ilimitada deixa de ser representável. |
+| **A7** | Teste de paridade entre `dbt/models/serving/*.sql` e `SERVING_TARGETS`, com `dim_code_industrialization_scd2` como exclusão declarada. |
+| **A8** | As três afirmações de "~10 segundos" saíram; o módulo agora declara o custo real (~100 s de rede no caso ruim + ~362 MB de scan) e um teste impede o retorno da promessa. |
 
-Nenhum destes é urgente: as oito fontes estão dentro da janela em prod hoje, com zero
-`failed` registrado e as cinco fontes presentes no `gold_source_metadata`. São achados sobre
-o que o monitor **deixaria de ver**, não sobre algo que ele está deixando passar agora.
+Nada disto era urgente quando foi escrito: as oito fontes estavam dentro da janela, com zero
+`failed` registrado e as cinco fontes presentes no `gold_source_metadata`. Eram achados sobre
+o que o monitor **deixaria de ver** — e é por isso que foram corrigidos antes de precisarem.

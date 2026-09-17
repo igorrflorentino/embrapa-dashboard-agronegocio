@@ -544,6 +544,14 @@ class Settings(BaseSettings):
     # WITHOUT the new year arriving. Lower it to tighten, raise it for a slower publisher.
     source_freshness_annual_slack_years: int = Field(default=2, ge=1)
 
+    # The same tolerance for a 'monthly' source, in MONTHS off gold_source_metadata.
+    # period_end. Its own setting because the annual one cannot serve: measured in years, a
+    # monthly source that stalled mid-year still reports the current year_end and only
+    # trips in January of the year AFTER next — 13 to 24 months late. Default 3 covers
+    # COMEX's real publication lag (MDIC releases a month at ~D+30, and the ETag-gated
+    # re-download adds slack) with room for one missed release.
+    source_freshness_monthly_slack_months: int = Field(default=3, ge=1)
+
     # Grace added to each source's own `IngestSpec.cadence_days` before `doctor` calls a
     # missing heartbeat overdue. 3 days absorbs one skipped run plus clock drift on every
     # cadence: a daily source trips at 4 days, a weekly one at 10, a monthly one at 34.
