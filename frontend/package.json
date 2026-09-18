@@ -18,14 +18,14 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "maplibre-gl": "^6.7.0",
-    "plotly.js": "^4.0.0",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "maplibre-gl": "^6.9.1",
+    "plotly.js": "^4.1.1",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
-    "@testing-library/dom": "^10.4.0",
+    "@testing-library/dom": "^10.4.2",
     "@testing-library/react": "^16.3.3",
     "@vitejs/plugin-react": "^6.1.1",
     "@vitest/coverage-v8": "^4.1.11",
@@ -34,7 +34,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.12.0",
     "jsdom": "^30.0.1",
-    "vite": "^8.2.2",
+    "vite": "^8.3.0",
     "vitest": "^4.1.9"
   }
 }
