@@ -1,9 +1,16 @@
 """Health-check probes for the local environment.
 
 Run via ``embrapa doctor`` to validate ADC, GCP access, .env parsing, and
-upstream API reachability in ~10 seconds — useful before kicking off a
-long ingest so credential/connectivity issues surface immediately instead
-of mid-run.
+upstream API reachability before kicking off a long ingest, so credential /
+connectivity issues surface immediately instead of mid-run.
+
+**Cost, stated honestly.** A healthy run takes a few seconds. A BROKEN one does
+not: the source probes are sequential and issue 10–11 HTTP requests at
+``PROBE_TIMEOUT_S`` each, so an unreachable network costs around 100s. The
+BigQuery-backed checks add ~362 MB of scan (measured on prod, 2026-09-17), all of
+it capped by ``_bq_job_config``. The docstrings promised "~10 seconds … even when
+something is broken" for a long time, which was wrong by an order of magnitude in
+exactly the case an operator sits watching the clock.
 """
 
 from __future__ import annotations
@@ -27,9 +34,46 @@ from embrapa_dashboard.discover import SIDRA_METADATA_URL
 
 logger = logging.getLogger(__name__)
 
-# All probes use the same short timeout — the whole `embrapa doctor` should
-# finish in under ~15s even when something is broken.
+# Per-REQUEST timeout for the network probes. Not a budget for the command: the source
+# probes run sequentially and issue 10–11 requests between them, so a wholly unreachable
+# network costs ~100s here plus the BigQuery reads below. `requests` applies this per
+# socket operation (connect, then read), not per call, so a slow-drip server can exceed
+# it. The docstrings used to promise "~10 seconds … even when something is broken",
+# which was wrong by an order of magnitude in the only case anyone times.
 PROBE_TIMEOUT_S = 10
+
+
+def _bq_job_config(settings: Settings) -> bigquery.QueryJobConfig:
+    """Every BigQuery read this module makes, capped at ``BQ_MAX_BYTES_BILLED``.
+
+    doctor is run ad hoc and repeatedly — during a debug session, before an ingest, in
+    a fresh clone — and several of its checks scan Gold end to end: the
+    ``gold_source_metadata`` view recomputes every counter over the five fact tables
+    (171,7 MB measured on prod 2026-09-17), and the cataloged-code checks union every
+    Gold code column (67,8 MB each). None of that was bounded, while the gateway and
+    the catalog resolver have been passing this same ceiling all along. The cap does
+    not make the scan smaller; it makes an unbounded one impossible — which is the
+    property a health command that grows with the acervo actually needs.
+    """
+    return bigquery.QueryJobConfig(maximum_bytes_billed=settings.bq_max_bytes_billed)
+
+
+def _gold_code_union(settings: Settings) -> str:
+    """``(src, code)`` over every Gold fact table, as a UNION ALL subquery.
+
+    Two checks need exactly this — "Catalog orphan lifecycle" and "Catalog → Gold
+    arrival" — and each had built it from ``GOLD_CODE_SOURCES`` on its own. One copy, so
+    a sixth banco cannot reach one check and miss the other. (Each still RUNS its own
+    scan: they are separate registry entries with separate verdicts. Measured 67,8 MB
+    apiece on prod, 2026-09-17.)
+    """
+    from embrapa_dashboard.serving import sql as sqlbuild
+
+    return " union all ".join(
+        f"select '{src}' as src, {col} as code from "
+        f"`{sqlbuild.table_ref(settings, 'bq_gold_dataset', tbl)}`"
+        for src, (tbl, col) in sqlbuild.GOLD_CODE_SOURCES.items()
+    )
 
 
 @dataclass(frozen=True)
@@ -437,11 +481,7 @@ def _check_orphan_lifecycle(settings: Settings) -> CheckResult:
             settings, "bq_research_inputs_dataset", settings.bq_catalog_lifecycle_log_table
         )
         # Same shape as gateway.fetch_orphan_produtos: tombstoned ⋈ Gold on the EXACT code.
-        gold_union = " union all ".join(
-            f"select '{src}' as src, {col} as code from "
-            f"`{sqlbuild.table_ref(settings, 'bq_gold_dataset', tbl)}`"
-            for src, (tbl, col) in sqlbuild.GOLD_CODE_SOURCES.items()
-        )
+        gold_union = _gold_code_union(settings)
         orphan_sql = f"""
             with tombstoned as (
               select codigo_produto, banco from (
@@ -464,8 +504,8 @@ def _check_orphan_lifecycle(settings: Settings) -> CheckResult:
               ) as _rn from `{lifecycle_log}` where element_kind = 'commodity'
             ) where _rn = 1 and status in ('descontinuado', 'purged')
         """
-        orphans = next(iter(bq.query(orphan_sql).result())).n
-        marked = next(iter(bq.query(marked_sql).result())).n
+        orphans = next(iter(bq.query(orphan_sql, job_config=_bq_job_config(settings)).result())).n
+        marked = next(iter(bq.query(marked_sql, job_config=_bq_job_config(settings)).result())).n
         if orphans > marked:
             return CheckResult(
                 "Catalog orphan lifecycle",
@@ -582,15 +622,22 @@ def _check_ppm(settings: Settings) -> CheckResult:
 
 
 def _check_bcb(settings: Settings) -> CheckResult:
-    """BCB SGS responds for the first inflation series in .env."""
+    """BCB SGS responds for the first inflation series in .env.
+
+    ``inflation_series_map`` is INSIDE the try, not just the ``next()`` around it: a
+    malformed ``BCB_INFLATION_SERIES`` raises ``ValueError`` from ``_parse_code_label``,
+    not ``StopIteration``, so catching only the latter let that escape into ``run_all``
+    and kill the whole report — with the ``.env parsed`` row that had already diagnosed
+    it never reaching the screen.
+    """
     try:
-        code = next(iter(settings.inflation_series_map))
-    except StopIteration:
-        return CheckResult("BCB SGS reachable", False, "BCB_INFLATION_SERIES is empty")
-    # Hit the URL pattern the real client uses, with a tiny 1-year window so
-    # we just verify reachability, not data correctness.
-    url = SGS_URL.format(code=code, start="01/01/2024", end="31/12/2024")
-    try:
+        try:
+            code = next(iter(settings.inflation_series_map))
+        except StopIteration:
+            return CheckResult("BCB SGS reachable", False, "BCB_INFLATION_SERIES is empty")
+        # Hit the URL pattern the real client uses, with a tiny 1-year window so
+        # we just verify reachability, not data correctness.
+        url = SGS_URL.format(code=code, start="01/01/2024", end="31/12/2024")
         response = requests.get(url, timeout=PROBE_TIMEOUT_S)
         response.raise_for_status()
         return CheckResult("BCB SGS reachable", True, f"sgs.{code} 200 OK")
@@ -683,23 +730,28 @@ def _check_comex(settings: Settings) -> CheckResult:
     year's file instead of flagging a healthy environment as broken. Note:
     this host is blocked on Claude Code on the web — it only passes from a
     network with the MDIC domain reachable.
+
+    The import and ``comex_flows_list`` are INSIDE the try: the property raises
+    ``ValueError`` on an empty/invalid ``COMEX_FLOWS``, and reading it before the try
+    let that escape into ``run_all`` and take the whole report down — on exactly the
+    malformed ``.env`` this command exists to diagnose.
     """
-    from embrapa_dashboard.comex.client import FILE_PREFIX, _ca_bundle
-
-    flow = settings.comex_flows_list[0] if settings.comex_flows_list else "export"
-    prefix = FILE_PREFIX.get(flow, "EXP")
-    end_year = settings.comex_end_year
-
-    def _head(year: int) -> None:
-        url = f"{settings.comex_csv_base_url.rstrip('/')}/{prefix}_{year}.csv"
-        # The host omits its TLS intermediate — reuse the client's certifi+vendored
-        # CA bundle so the probe verifies the same way the real download does.
-        response = requests.head(
-            url, timeout=PROBE_TIMEOUT_S, allow_redirects=True, verify=_ca_bundle()
-        )
-        response.raise_for_status()
-
     try:
+        from embrapa_dashboard.comex.client import FILE_PREFIX, _ca_bundle
+
+        flow = settings.comex_flows_list[0]
+        prefix = FILE_PREFIX.get(flow, "EXP")
+        end_year = settings.comex_end_year
+
+        def _head(year: int) -> None:
+            url = f"{settings.comex_csv_base_url.rstrip('/')}/{prefix}_{year}.csv"
+            # The host omits its TLS intermediate — reuse the client's certifi+vendored
+            # CA bundle so the probe verifies the same way the real download does.
+            response = requests.head(
+                url, timeout=PROBE_TIMEOUT_S, allow_redirects=True, verify=_ca_bundle()
+            )
+            response.raise_for_status()
+
         _head(end_year)
         return CheckResult("COMEX reachable", True, f"{prefix}_{end_year}.csv 200 OK")
     except requests.HTTPError as exc:
@@ -1040,6 +1092,16 @@ def _check_curation_backup(settings: Settings) -> CheckResult:
         return _skip_ou_quebra("Curation backup coverage", exc)
 
 
+# The sources `gold_source_metadata` is EXPECTED to emit a row for. Declared rather than
+# read off the result, because the result is precisely what goes quiet: each branch of the
+# view ends in `having count(*) > 0`, so a source whose Gold went empty emits nothing and
+# disappears from the report. `tests/test_doctor.py` parses the dbt model and fails if the
+# two drift — the list is a contract, not a copy.
+_EXPECTED_METADATA_SOURCES = frozenset(
+    {"ibge_pevs", "ibge_pam", "ibge_ppm", "mdic_comex", "un_comtrade"}
+)
+
+
 def _check_source_data_freshness(settings: Settings) -> CheckResult:
     """Is each source's latest REFERENCE PERIOD as recent as its cadence implies?
 
@@ -1059,8 +1121,24 @@ def _check_source_data_freshness(settings: Settings) -> CheckResult:
     this check CANNOT distinguish a healthy quiet source from a broken one, because the
     data is identical in both cases. It catches the stall at the window, not before it.
 
-    Reads `gold_source_metadata` (one row per source, with `cadence` and `year_end`), so it
-    costs one small query and extends automatically when a source is added there.
+    Reads `gold_source_metadata` (one row per source, with `cadence`, `year_end` and
+    `period_end`), so it costs one query and extends when a source is added there.
+
+    **Two things it used to get wrong, both of the same kind — a number that is right
+    answering a question nobody asked:**
+
+    * It reported "every source current" over the rows that came BACK. The view ends each
+      branch with ``having count(*) > 0``, so an EMPTY source emits no row at all and
+      simply vanishes from the report — a wiped `gold_pevs_production` would have read as
+      "all current". The expected set is now declared (`_EXPECTED_METADATA_SOURCES`, kept
+      in step with the model by a parity test) and a missing source is the LOUDEST finding
+      here, not an absent one. It is the lesson the heartbeat check below already learned:
+      never say "every" over the subset that happened to report.
+    * A monthly source was held to a YEAR-granular floor. `year_end` cannot express it: a
+      COMEX that stopped publishing in March still reports year_end = that year, so the
+      floor only passed it in January of year+2 — a detection lag of 13 to 24 months,
+      where the comment promised about one. Monthly sources are now measured on
+      `period_end` in MONTHS.
     """
     try:
         client = bigquery.Client(
@@ -1069,14 +1147,21 @@ def _check_source_data_freshness(settings: Settings) -> CheckResult:
             credentials=get_credentials(settings),
         )
         fqn = f"{settings.gcp_project_id}.{settings.bq_gold_dataset}.gold_source_metadata"
-        rows = list(client.query(f"select source, cadence, year_end from `{fqn}`").result())
+        rows = list(
+            client.query(
+                f"select source, cadence, year_end, period_end from `{fqn}`",
+                job_config=_bq_job_config(settings),
+            ).result()
+        )
         if not rows:
             return CheckResult(
                 "Source data freshness", True, f"⚠ {fqn} is empty — nothing to check yet"
             )
 
-        this_year = datetime.now(UTC).year
+        today = datetime.now(UTC).date()
+        this_year = today.year
         slack = settings.source_freshness_annual_slack_years
+        month_slack = settings.source_freshness_monthly_slack_months
         overdue: list[str] = []
         fresh: list[str] = []
         for row in rows:
@@ -1085,31 +1170,61 @@ def _check_source_data_freshness(settings: Settings) -> CheckResult:
             if year_end is None:
                 overdue.append(f"{row.source} (no year_end)")
                 continue
-            # 'monthly' sources should always carry the current year — except in January,
-            # when the newest closed month can still belong to the previous one (COMEX is
-            # D+30). Anything older than that has stopped arriving.
-            floor = this_year - (slack if cadence == "annual" else 1)
+            if cadence == "monthly":
+                # Measured in MONTHS off period_end (the newest month, closed), because a
+                # year comparison cannot see a monthly source that stalled mid-year.
+                if row.period_end is None:
+                    overdue.append(f"{row.source} monthly (no period_end)")
+                    continue
+                behind = (
+                    (today.year - row.period_end.year) * 12 + today.month - (row.period_end.month)
+                )
+                if behind > month_slack:
+                    overdue.append(
+                        f"{row.source} monthly ends {row.period_end:%Y-%m} "
+                        f"({behind} months behind > {month_slack})"
+                    )
+                else:
+                    fresh.append(f"{row.source}={row.period_end:%Y-%m}")
+                continue
+            floor = this_year - slack
             if int(year_end) < floor:
                 overdue.append(f"{row.source} {cadence} ends {year_end} < {floor}")
             else:
                 fresh.append(f"{row.source}={year_end}")
 
+        # A source that emits NO row is not "current" — it is absent, which the view's
+        # `having count(*) > 0` makes indistinguishable from "fine" unless we ask.
+        missing = sorted(_EXPECTED_METADATA_SOURCES - {row.source for row in rows})
+        if missing:
+            overdue.insert(
+                0,
+                f"MISSING from gold_source_metadata: {', '.join(missing)} — a source emits "
+                "no row when its Gold is EMPTY, so this is a vanished acervo, not a lag",
+            )
+
+        janelas = f"annual slack={slack}y, monthly slack={month_slack}mo"
         if overdue:
+            # `missing` is deliberately NOT sorted into the rest: an absent source outranks
+            # a late one, so it leads the line instead of landing alphabetically mid-list.
+            atrasadas = sorted(o for o in overdue if not o.startswith("MISSING"))
+            lider = [o for o in overdue if o.startswith("MISSING")]
             return CheckResult(
                 "Source data freshness",
                 True,  # warn, not fail — a lagging source is a signal to look, not a broken env
-                "⚠ behind its cadence: "
-                + " · ".join(sorted(overdue))
-                + f" (annual slack={slack}y; check the source's publication calendar and "
-                "the monthly trigger before assuming the pipeline broke)",
+                "⚠ "
+                + " · ".join(lider + atrasadas)
+                + f" ({janelas}; check the source's publication calendar and "
+                "the trigger before assuming the pipeline broke)",
             )
+        # "every" is safe here ONLY because the expected set was checked above.
         return CheckResult(
             "Source data freshness",
             True,
-            f"every source current: {' · '.join(sorted(fresh))} (annual slack={slack}y)",
+            f"every expected source current: {' · '.join(sorted(fresh))} ({janelas})",
         )
-    except Exception as exc:
-        return CheckResult("Source data freshness", False, str(exc)[:120])
+    except Exception as exc:  # sem dado → verde; check quebrado → vermelho
+        return _skip_ou_quebra("Source data freshness", exc)
 
 
 def _check_ingest_heartbeat(settings: Settings) -> CheckResult:
@@ -1133,6 +1248,20 @@ def _check_ingest_heartbeat(settings: Settings) -> CheckResult:
     That case used to be invisible here, and it is exactly the case a NEW scheduler is
     in: the weekly batch (2026-08-28) had never executed, and this check answered
     "every scheduled ingest ran".
+
+    **The window is measured on the last SUCCESS, not the last invocation.** The
+    heartbeat records three states (see ``ingestion_heartbeat``) and this check used to
+    read two, collapsing ``outcome='failed'`` into "it ran" — with the evidence sitting
+    in the table it had just queried. That mattered because the compensating control is
+    deliberately disarmed: ``ingest all`` exits 0 when every failure is a marked
+    ``SourceTransientError``, so no Cloud Run execution is marked failed and the
+    Monitoring alert stays quiet. A source failing transiently every single run would
+    read green here, silent there, and — for the warn-only sources (PAM/PPM/COMTRADE,
+    60d with no ``error_after``) — green in ``dbt source freshness`` too. Three layers
+    each agreeing nothing was wrong because each had delegated the question to another.
+
+    A source that is still being INVOKED but has stopped succeeding gets its own line:
+    "rodou há 3d, último sucesso há 47d" is a different fix from a dead trigger.
     """
     try:
         from embrapa_dashboard import ingestion_heartbeat
@@ -1145,9 +1274,12 @@ def _check_ingest_heartbeat(settings: Settings) -> CheckResult:
         )
         fqn = ingestion_heartbeat.table_fqn(settings)
         rows = {
-            r.source: r.last_run
+            r.source: r
             for r in client.query(
-                f"select source, max(run_ts) as last_run from `{fqn}` group by source"
+                "select source, max(run_ts) as last_run, "
+                "max(if(outcome = 'ok', run_ts, null)) as last_ok "
+                f"from `{fqn}` group by source",
+                job_config=_bq_job_config(settings),
             ).result()
         }
         if not rows:
@@ -1165,32 +1297,55 @@ def _check_ingest_heartbeat(settings: Settings) -> CheckResult:
         watched_days = (now - client.get_table(fqn).created).total_seconds() / 86400
 
         overdue: list[str] = []
+        failing: list[str] = []
         never: list[str] = []
         pending: list[str] = []
         seen: list[str] = []
+
+        def _age(ts) -> float:
+            return (now - ts).total_seconds() / 86400
+
         for spec in INGESTS:
-            last = rows.get(spec.name)
+            row = rows.get(spec.name)
             window = spec.cadence_days + settings.heartbeat_slack_days
-            if last is None:
+            if row is None:
                 # Never reported. Only an answer once the table is older than the window.
                 if watched_days > window:
                     never.append(f"{spec.name} (nunca, {watched_days:.0f}d observando)")
                 else:
                     pending.append(spec.name)
                 continue
-            age_days = (now - last).total_seconds() / 86400
             # The window is the source's OWN cadence plus a grace margin — not a guess
             # from `in_all`, which stopped meaning "daily" when the batch went weekly.
-            if age_days > window:
-                overdue.append(f"{spec.name} {age_days:.0f}d ago (> {window}d)")
+            # And it is measured on the last SUCCESS: a run that failed proves the
+            # trigger fired, not that the ingest worked.
+            if row.last_ok is not None and _age(row.last_ok) <= window:
+                seen.append(f"{spec.name}={_age(row.last_ok):.0f}d")
+                continue
+            invoked = f"rodou há {_age(row.last_run):.0f}d"
+            if _age(row.last_run) <= window:
+                # Still being invoked, just never succeeding — the case the alert cannot
+                # raise, because a transient-only batch exits 0 and never marks a failed
+                # Cloud Run execution.
+                if row.last_ok is None:
+                    failing.append(f"{spec.name} ({invoked}, NENHUM sucesso registrado)")
+                else:
+                    failing.append(
+                        f"{spec.name} ({invoked}, último sucesso há "
+                        f"{_age(row.last_ok):.0f}d > {window}d)"
+                    )
             else:
-                seen.append(f"{spec.name}={age_days:.0f}d")
+                overdue.append(f"{spec.name} {_age(row.last_run):.0f}d ago (> {window}d)")
 
-        if overdue or never:
+        if overdue or failing or never:
             parts = []
             if overdue:
                 parts.append("parou de rodar: " + " · ".join(sorted(overdue)))
-            # Distinct from "stopped": nothing ever arrived, and enough time has passed
+            # Distinct from "stopped": the trigger fires, the ingest does not work. The
+            # fix is in the pipeline/logs, not in Cloud Scheduler.
+            if failing:
+                parts.append("roda mas não conclui: " + " · ".join(sorted(failing)))
+            # Distinct from both: nothing ever arrived, and enough time has passed
             # that something should have. Points at the trigger's CREATION, not its health.
             if never:
                 parts.append("nunca rodou: " + " · ".join(sorted(never)))
@@ -1199,18 +1354,19 @@ def _check_ingest_heartbeat(settings: Settings) -> CheckResult:
                 True,  # warn — the trigger may be paused on purpose
                 "⚠ "
                 + " ; ".join(parts)
-                + " (check Cloud Scheduler + the Job's executions — this is the TRIGGER, "
-                "not the data)",
+                + " (trigger → Cloud Scheduler + the Job's executions; 'roda mas não "
+                "conclui' → the run's own logs, the alert stays quiet on a transient-only "
+                "batch because it exits 0)",
             )
         # Never say "every" over the subset that happens to have reported — the sources
         # still inside their first window are named, so the line accounts for all of them.
-        msg = f"ran inside its window: {' · '.join(sorted(seen)) or 'nenhuma ainda'}"
+        msg = f"succeeded inside its window: {' · '.join(sorted(seen)) or 'nenhuma ainda'}"
         if pending:
             msg += " · sem primeiro registro, ainda dentro da janela: "
             msg += " · ".join(sorted(pending))
         return CheckResult("Ingest heartbeat", True, msg)
-    except Exception as exc:
-        return CheckResult("Ingest heartbeat", False, str(exc)[:120])
+    except Exception as exc:  # sem dado → verde; check quebrado → vermelho
+        return _skip_ou_quebra("Ingest heartbeat", exc)
 
 
 _INFRA_CHECKS: list[tuple[str, Callable[[Settings], CheckResult]]] = [
@@ -1287,11 +1443,7 @@ def _check_catalog_data_arrival(settings: Settings) -> CheckResult:
         catalog_log = sqlbuild.table_ref(
             settings, "bq_research_inputs_dataset", settings.bq_produto_catalog_log_table
         )
-        gold_union = " union all ".join(
-            f"select '{src}' as src, {col} as code from "
-            f"`{sqlbuild.table_ref(settings, 'bq_gold_dataset', tbl)}`"
-            for src, (tbl, col) in sqlbuild.GOLD_CODE_SOURCES.items()
-        )
+        gold_union = _gold_code_union(settings)
         sql = f"""
             with ativos as (
               select codigo_produto, banco from (
@@ -1307,7 +1459,7 @@ def _check_catalog_data_arrival(settings: Settings) -> CheckResult:
             where g.code is null
             order by a.banco, a.codigo_produto
         """
-        rows = list(bq.query(sql).result())
+        rows = list(bq.query(sql, job_config=_bq_job_config(settings)).result())
         if not rows:
             return CheckResult(
                 "Catalog → Gold arrival", True, "every cataloged produto has data in Gold"
@@ -1380,7 +1532,7 @@ def _check_curation_referential_integrity(settings: Settings) -> CheckResult:
         """
         pendentes = [
             (r.codigo_produto, r.banco, r.agrupamento_id)
-            for r in bq.query(grupo_sql).result()
+            for r in bq.query(grupo_sql, job_config=_bq_job_config(settings)).result()
             if r.agrupamento_id not in registered
         ]
 
@@ -1394,7 +1546,7 @@ def _check_curation_referential_integrity(settings: Settings) -> CheckResult:
         # '' is the explicit CLEAR (latest-wins un-classification), not a bad value.
         fora_da_escala = [
             (r.source, r.code, r.industrialization_level)
-            for r in bq.query(nivel_sql).result()
+            for r in bq.query(nivel_sql, job_config=_bq_job_config(settings)).result()
             if r.industrialization_level not in CUR_LEVELS
         ]
 
@@ -1485,7 +1637,9 @@ def _check_shared_code_across_tables(settings: Settings) -> CheckResult:
                 having n > 1
                 order by product_code
             """
-            codigos = [r.product_code for r in bq.query(sql).result()]
+            codigos = [
+                r.product_code for r in bq.query(sql, job_config=_bq_job_config(settings)).result()
+            ]
             if codigos:
                 achados.append(f"{banco}: {', '.join(codigos[:5])}")
         if achados:
@@ -1527,6 +1681,25 @@ CHECKS = _INFRA_CHECKS + SOURCE_CHECKS + _POSTCHECKS
 
 
 def run_all(settings: Settings | None = None) -> list[CheckResult]:
-    """Execute every probe and return the results in the same order as CHECKS."""
+    """Execute every probe and return the results in the same order as CHECKS.
+
+    Each probe is guarded, so one that raises costs its OWN row and nothing else. Every
+    probe already owns a ``try``; this is the structural guarantee behind that habit,
+    and it was not hypothetical. ``_check_comex`` read ``comex_flows_list`` before its
+    try and ``_check_bcb`` caught only ``StopIteration``, so a malformed ``.env`` — the
+    very condition this command exists to diagnose — raised out of the comprehension
+    that built this list. The operator got a traceback and NONE of the rows, including
+    the ``.env parsed ✗`` that had already named the problem.
+
+    The fallback name is the registry key rather than the probe's display name: the
+    display name lives inside the probe, and a probe that blew up before returning is
+    exactly the one that cannot supply it. A key is enough to find the check.
+    """
     settings = settings or get_settings()
-    return [fn(settings) for _, fn in CHECKS]
+    results: list[CheckResult] = []
+    for key, fn in CHECKS:
+        try:
+            results.append(fn(settings))
+        except Exception as exc:
+            results.append(_skip_ou_quebra(key, exc))
+    return results

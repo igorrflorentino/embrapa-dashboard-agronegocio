@@ -757,6 +757,16 @@ models:
       - name: last_refresh
         description: "Max ingestion_timestamp across the source's Gold rows. Feeds refresh / goldVersion.at / isStale."
         tests: [not_null]
+      - name: period_end
+        description: >
+          End of the newest reference PERIOD, as a DATE — 31/12 of year_end for the
+          annual sources, the last day of the newest month for COMEX. It exists because
+          year_end cannot express a monthly source's staleness: a COMEX that stopped
+          publishing in March still reports year_end = that year, so a year-granular
+          freshness check could not notice for 13–24 months (doctor's "Source data
+          freshness"). Distinct from last_refresh, which is when the PIPELINE last wrote,
+          not how new the DATA is.
+        tests: [not_null]
 
 unit_tests:
   # ── Monetary deflation / FX numeric correctness — the dashboard's scientific

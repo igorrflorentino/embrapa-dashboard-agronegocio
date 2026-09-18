@@ -52,8 +52,24 @@ def test_record_truncates_a_long_detail(settings) -> None:
 
 # ── doctor's reader ──────────────────────────────────────────────────────────
 def _rows(*pairs):
+    """Each pair is (source, days_ago) — a source whose last run SUCCEEDED that long ago.
+
+    A third element overrides the last SUCCESS separately: ``("comex", 1, 40)`` is a
+    source invoked a day ago whose newest ``outcome='ok'`` is 40 days old, and ``None``
+    means it has never succeeded at all.
+    """
     now = datetime.now(UTC)
-    return [SimpleNamespace(source=s, last_run=now - timedelta(days=d)) for s, d in pairs]
+    out = []
+    for pair in pairs:
+        source, run_days, ok_days = (*pair, pair[1])[:3] if len(pair) == 2 else pair
+        out.append(
+            SimpleNamespace(
+                source=source,
+                last_run=now - timedelta(days=run_days),
+                last_ok=None if ok_days is None else now - timedelta(days=ok_days),
+            )
+        )
+    return out
 
 
 def _patch(rows, table_age_days: float = 1.0):
@@ -151,6 +167,63 @@ def test_heartbeat_check_reports_a_query_failure(settings) -> None:
     client.query.side_effect = RuntimeError("table not found")
     with patch("embrapa_dashboard.doctor.bigquery.Client", return_value=client):
         assert doctor._check_ingest_heartbeat(settings).ok is False
+
+
+def test_heartbeat_check_skips_on_a_cold_install_instead_of_going_red(settings) -> None:
+    """The heartbeat table is created lazily, on the FIRST ingest. Before that a 404 is
+    an absence of data, not a broken check — and a fresh project showing ✗ on a table
+    that cannot exist yet is how an operator learns to ignore doctor."""
+    from google.cloud.exceptions import NotFound
+
+    client = MagicMock()
+    client.query.side_effect = NotFound("Table ingestion_heartbeat not found")
+    with patch("embrapa_dashboard.doctor.bigquery.Client", return_value=client):
+        result = doctor._check_ingest_heartbeat(settings)
+    assert result.ok is True
+    assert result.detail.startswith("skipped:")
+
+
+# ── outcome: the third state the check used to throw away ─────────────────────
+def test_heartbeat_window_is_measured_on_the_last_SUCCESS(settings) -> None:
+    """The defect: a source invoked on schedule but failing every time read green.
+
+    `ingest all` exits 0 when every failure is a marked SourceTransientError, so no
+    Cloud Run execution is marked failed and the Monitoring alert never fires. The
+    heartbeat table held the evidence (outcome='failed') and the check discarded it.
+    """
+    with _patch(_rows(("bcb-currency", 0, 30))):  # invoked today, no success for 30 days
+        result = doctor._check_ingest_heartbeat(settings)
+    assert "⚠" in result.detail
+    assert "roda mas não conclui" in result.detail
+    assert "bcb-currency" in result.detail
+    assert "último sucesso há 30d" in result.detail
+
+
+def test_heartbeat_names_a_source_that_never_once_succeeded(settings) -> None:
+    """Invoked repeatedly, `outcome='ok'` never written — a pipeline broken since day one."""
+    with _patch(_rows(("ibge", 1, None))):
+        result = doctor._check_ingest_heartbeat(settings)
+    assert "⚠" in result.detail
+    assert "NENHUM sucesso registrado" in result.detail
+
+
+def test_heartbeat_separates_a_dead_trigger_from_a_failing_pipeline(settings) -> None:
+    """Two diagnoses, two fixes: Cloud Scheduler vs the run's own logs. The line must
+    not merge them — a source that stopped being INVOKED and one that is invoked and
+    never finishes look identical on `max(run_ts)` alone."""
+    with _patch(_rows(("bcb-currency", 0, 30), ("comex", 40, 40))):
+        detail = doctor._check_ingest_heartbeat(settings).detail
+    assert "bcb-currency" in detail.split("roda mas não conclui")[1]
+    assert "comex" in detail.split("parou de rodar")[1].split(";")[0]
+
+
+def test_heartbeat_stays_green_when_the_last_run_succeeded(settings) -> None:
+    """A source that failed once and recovered is healthy — the window tracks the newest
+    success, so an older failure inside the window must not keep warning."""
+    with _patch(_rows(("ibge", 1, 1), ("ibge-pam", 10, 10))):
+        result = doctor._check_ingest_heartbeat(settings)
+    assert result.ok is True and "⚠" not in result.detail
+    assert "succeeded inside its window" in result.detail
 
 
 def test_record_creates_the_table_once_and_retries(settings) -> None:
