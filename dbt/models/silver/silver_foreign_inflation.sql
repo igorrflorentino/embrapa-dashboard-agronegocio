@@ -76,6 +76,129 @@ parsed as (
     from deduplicated
     where safe.parse_date('%d/%m/%Y', reference_date_str) is not null
 
+),
+
+observed as (
+
+    select
+        series_code,
+        series_name,
+        provider,
+        economy,
+        reference_date,
+        index_value,
+        ingestion_timestamp
+    from parsed
+    where
+        index_value is not null
+        -- A price index is strictly positive. A zero would divide the deflation by zero
+        -- (safe_divide saves the query, not the reading) and a negative one is a parse
+        -- error.
+        and index_value > 0
+
+),
+
+{# A month the PUBLISHER never released — not one we failed to fetch. BLS shows '-' for
+    CPI-U October 2025 (no prices were collected during the US federal shutdown), and a
+    hole there breaks two things: `assert_foreign_inflation_no_month_gaps` fails, which
+    in `dbt build` skips every Gold model, and COMEX's monthly deflation leaves Oct/2025
+    unvalued, so serving_comex_annual would sum 11 months of 2025 and present them as
+    the year (~8% short, with nothing on screen to say so).
+
+    The month is filled with the GEOMETRIC mean of its two published neighbours — the
+    midpoint of the log-linear path between them, i.e. the month-over-month inflation
+    split evenly across the two months. Three rules keep it an estimate of a point and
+    not a licence to paper over holes:
+      * only months DECLARED in the `foreign_inflation_publisher_gaps` seed, each with
+        its reason — an undeclared hole (an ingest that lost a month) still fails the
+        gap test, which is that test's whole job;
+      * only a SINGLE missing month (the neighbours exactly two months apart) — bridging
+        a longer run would be estimating a trend, and has to be a new decision;
+      * a published value always wins: if the publisher later releases the month, the
+        observation replaces the estimate on the next build.
+    Every filled row says so in `is_interpolated`. -#}
+declared_gaps as (
+
+    select
+        series_code,
+        cast(reference_date as date) as reference_date
+    from {{ ref('foreign_inflation_publisher_gaps') }}
+
+),
+
+gap_neighbours as (
+
+    select
+        declared_gaps.series_code,
+        declared_gaps.reference_date,
+        max(
+            if(observed.reference_date < declared_gaps.reference_date, observed.reference_date, null)
+        ) as prev_date,
+        min(
+            if(observed.reference_date > declared_gaps.reference_date, observed.reference_date, null)
+        ) as next_date
+    from declared_gaps
+    inner join observed
+        on declared_gaps.series_code = observed.series_code
+    group by declared_gaps.series_code, declared_gaps.reference_date
+
+),
+
+interpolated as (
+
+    select
+        gap_neighbours.series_code,
+        prev_obs.series_name,
+        prev_obs.provider,
+        prev_obs.economy,
+        gap_neighbours.reference_date,
+        sqrt(prev_obs.index_value * next_obs.index_value) as index_value,
+        greatest(prev_obs.ingestion_timestamp, next_obs.ingestion_timestamp) as ingestion_timestamp
+    from gap_neighbours
+    inner join observed as prev_obs
+        on
+            gap_neighbours.series_code = prev_obs.series_code
+            and gap_neighbours.prev_date = prev_obs.reference_date
+    inner join observed as next_obs
+        on
+            gap_neighbours.series_code = next_obs.series_code
+            and gap_neighbours.next_date = next_obs.reference_date
+    left join observed as published
+        on
+            gap_neighbours.series_code = published.series_code
+            and gap_neighbours.reference_date = published.reference_date
+    where
+        date_diff(gap_neighbours.next_date, gap_neighbours.prev_date, month) = 2
+        and published.series_code is null
+
+),
+
+combined as (
+
+    select
+        series_code,
+        series_name,
+        provider,
+        economy,
+        reference_date,
+        index_value,
+        ingestion_timestamp,
+        false as is_interpolated
+    from observed
+
+    union all
+
+    select
+        series_code,
+        series_name,
+        provider,
+        economy,
+        reference_date,
+        index_value,
+        ingestion_timestamp,
+        true as is_interpolated
+    from interpolated
+
 )
 
 select
@@ -84,7 +207,7 @@ select
     provider,
     economy,
     reference_date,
-    extract(year  from reference_date) as reference_year,
+    extract(year from reference_date) as reference_year,
     extract(month from reference_date) as reference_month,
     -- Derived for symmetry/inspection only — the deflation reads index_value.
     100.0 * safe_divide(
@@ -92,9 +215,6 @@ select
         lag(index_value) over (partition by series_code order by reference_date)
     ) as monthly_pct_change,
     index_value,
-    ingestion_timestamp
-from parsed
-where index_value is not null
-  -- A price index is strictly positive. A zero would divide the deflation by zero
-  -- (safe_divide saves the query, not the reading) and a negative one is a parse error.
-  and index_value > 0
+    ingestion_timestamp,
+    is_interpolated
+from combined

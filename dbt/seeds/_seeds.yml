@@ -402,3 +402,48 @@ seeds:
         tests:
           - not_null:
               config: { severity: warn }
+
+  # ─── Foreign deflators: months the publisher never released ────────────────
+  - name: foreign_inflation_publisher_gaps
+    description: |
+      Months a foreign price-index PUBLISHER never released — not months we failed to
+      ingest. silver_foreign_inflation fills each one with the geometric mean of its two
+      published neighbours and marks the row `is_interpolated`. Only a SINGLE missing month
+      between two published ones is bridged, and a value the publisher later releases
+      always replaces the estimate.
+
+      A row here is a methodological decision, not a data fix: it states that the hole is
+      the source's, gives the reason a researcher can cite, and turns off the gap test
+      (assert_foreign_inflation_no_month_gaps) for that one month only. An UNDECLARED hole
+      still fails the build — which is the test's purpose, and why this is a seed a human
+      edits rather than a rule that fills any gap it finds.
+
+      CPI-U October 2025: BLS shows '-' — no prices were collected during the US federal
+      government shutdown of October–November 2025, and the index was never released.
+      Without the fill, COMEX's monthly deflation left Oct/2025 unvalued and the annual
+      mart summed 11 months of 2025 as the year (decided 2026-09-23).
+    config:
+      column_types:
+        series_code: string
+        reference_date: date
+        publisher: string
+        reason: string
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - series_code
+              - reference_date
+    columns:
+      - name: series_code
+        tests: [not_null]
+      - name: reference_date
+        description: "First day of the missing month."
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: "= date_trunc(reference_date, month)"
+      - name: reason
+        description: "Why the publisher has no value — the sentence a researcher would cite."
+        tests: [not_null]

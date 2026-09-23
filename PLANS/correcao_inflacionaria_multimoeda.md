@@ -99,6 +99,19 @@ that looked for empty or failed answers** (measured 2026-09-23, after the first 
 CPI-U is chosen over the seasonally-adjusted CPIAUCSL because the published NSA index is
 never revised once out — which matters for a delta ingest that rewinds only a year.
 
+**A month the publisher never released.** BLS has no CPI-U for **October 2025** (the series
+shows `-`): prices were not collected during the US federal shutdown. Found on the first
+keyed backfill (2026-09-23) — 632 months 1974-01 → 2026-08, one of them valueless. Left as a
+hole it fails `assert_foreign_inflation_no_month_gaps` (and in `dbt build` a failed test
+skips every Gold model downstream) and leaves COMEX's Oct/2025 unvalued, so the annual mart
+would sum 11 months as the year. `silver_foreign_inflation` fills it with the geometric
+mean of the two published neighbours and marks the row `is_interpolated` — but only for a
+month DECLARED, with its reason, in the `foreign_inflation_publisher_gaps` seed; only for a
+single missing month; and a later published value always replaces the estimate. An
+undeclared hole still fails the build. The flag stops at Silver: Gold and the screens do
+not yet carry it, so the seed's `reason` and this paragraph are where the estimate is
+disclosed.
+
 ### Pipeline
 
 ```

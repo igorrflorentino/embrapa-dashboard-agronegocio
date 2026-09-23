@@ -1967,6 +1967,17 @@ _SEED_CATALOG: list[tuple[str, str, bool, str]] = [
         "Cada município → suas regiões (UF, grande região, meso/micro e "
         "intermediária/imediata). ~5570 linhas, regenerada por script.",
     ),
+    (
+        # The DISCLOSURE of an estimate: the only place, today, where a researcher can see
+        # that one month of a deflator is interpolated and why (the flag stops at Silver).
+        "foreign_inflation_publisher_gaps",
+        "Meses não publicados (inflação estrangeira)",
+        False,
+        "Meses que o próprio publicador nunca divulgou — não falhas de coleta nossa — e que "
+        "o pipeline preenche pela média geométrica dos dois meses vizinhos publicados. Hoje: "
+        "CPI-U de outubro de 2025, que o BLS não publicou (paralisação do governo dos EUA). "
+        "Só um mês isolado é preenchido, e um valor publicado depois substitui a estimativa.",
+    ),
 ]
 _SEED_BY_ID: dict[str, tuple[str, str, bool, str]] = {s[0]: s for s in _SEED_CATALOG}
 

@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.86.0] - 2026-09-23
+
+### Adicionado
+
+- **Outubro de 2025 do CPI-U é interpolado, e a linha diz que é.** O BLS nunca publicou o
+  índice desse mês: não houve coleta de preços durante a paralisação do governo americano
+  (outubro–novembro de 2025), e a série traz `-` no lugar do valor. Achado ao medir a
+  cobertura do primeiro backfill com chave (2026-09-23): 632 meses de 1974-01 a 2026-08,
+  um deles sem valor. Sem tratamento, ligar o gate quebraria duas coisas:
+  - `assert_foreign_inflation_no_month_gaps` reprova o salto 2025-09 → 2025-11, e num
+    `dbt build` um teste reprovado PULA todo modelo a jusante — o Gold inteiro;
+  - a deflação mensal do COMEX deixaria out/2025 sem valor em US$·CPI, e a
+    `serving_comex_annual` somaria 11 meses de 2025 como se fossem o ano (~8% a menos, sem
+    nada na tela dizendo isso).
+
+  `silver_foreign_inflation` preenche o mês com a média GEOMÉTRICA dos dois vizinhos
+  publicados (o ponto médio do caminho log-linear: a inflação do bimestre dividida por
+  igual entre os dois meses) e marca a linha com a coluna nova **`is_interpolated`**.
+  Três regras mantêm isso uma estimativa de um ponto, e não licença para tapar buracos:
+  - só meses DECLARADOS no seed novo **`foreign_inflation_publisher_gaps`**, cada um com o
+    motivo citável — um buraco não declarado (uma ingestão que perdeu um mês) continua
+    reprovando o teste de lacunas, que existe exatamente para isso;
+  - só UM mês faltando entre dois publicados — emendar uma sequência já seria estimar uma
+    tendência, e exige uma decisão nova;
+  - valor publicado sempre vence: se o BLS um dia publicar o mês, a observação substitui a
+    estimativa no build seguinte.
+
+  Um teste unitário de dbt fixa os três casos, com valores escolhidos para a média
+  geométrica ser EXATA em ponto flutuante (√(100 × 121) = 110). Os bancos anuais (PEVS, PAM,
+  PPM, COMTRADE) não eram afetados: deflacionam pelo índice de dezembro.
+
 ## [1.85.0] - 2026-09-23
 
 ### Corrigido
