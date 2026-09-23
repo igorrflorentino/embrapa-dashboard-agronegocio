@@ -64,6 +64,28 @@ def correction_economy(correction: str) -> str | None:
     return CORRECTION_ECONOMY.get(correction)
 
 
+# The correction the dashboard assumes when none is given — and the one its screen opens
+# on. Nominal since v1.88.0 (it was IPCA): a correction is the researcher's methodological
+# choice, not something the tool presumes. Mirrors window.DEFAULT_CONVENTIONS.
+DEFAULT_CORRECTION = "Nominal"
+
+
+def correction_offered(currency: str, correction: str) -> bool:
+    """Whether the dashboard OFFERS this pairing: 'Nominal', or an index of the currency's
+    OWN economy (R$ → IPCA/IGP-M/IGP-DI, US$ → CPI, € → HICP).
+
+    Mirrors ``window.correctionsFor`` in frontend/src/ui/MetricConventions.jsx. Narrower
+    than what the marts carry: ``val_real_ipca_usd`` still exists (a Brazilian index under
+    a foreign symbol — "Brazilian purchasing power, printed in dollars") and is still
+    served to a request that names it, but since v1.88.0 the strip no longer offers it, so
+    nothing the BFF SUGGESTS to the screen may point at it either.
+    """
+    if correction == "Nominal":
+        return True
+    economy = CORRECTION_ECONOMY.get(correction)
+    return economy is not None and ECONOMY_CURRENCY.get(economy) == currency
+
+
 def deflates_own_currency(currency: str, correction: str) -> bool:
     """True when the index measures the prices of the money being displayed.
 
@@ -115,7 +137,7 @@ def convention_value_label(conv: dict) -> str:
     """
     currency = conv.get("currency", "BRL")
     sym = CURRENCY_SYMBOL.get(currency, "R$")
-    corr = conv.get("correction", "IPCA")
+    corr = conv.get("correction", DEFAULT_CORRECTION)
     if corr == "Nominal":
         return f"Valor nominal — {sym}"
     economy = CORRECTION_ECONOMY.get(corr)

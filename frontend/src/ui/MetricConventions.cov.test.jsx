@@ -2,8 +2,8 @@
 // (MetricConventions.jsx): the controlled <MetricConventions> component AND the
 // formatter/scaler helpers it exports on window.*. We import the real data.js so the
 // unit-family registry + defaultUnitOf/unitToBase are the actual ones under test, then
-// drive the component branches (currency/correction groups, the unserved USD×IGP combo
-// disable, the auto-scale checkbox, physical-unit groups, the clampConvention snap on
+// drive the component branches (currency/correction groups, the per-currency correction
+// options, the auto-scale checkbox, physical-unit groups, the clampConvention carry on
 // currency switch) and exercise every exported helper (formatValue, applyConv,
 // formatMassQty/VolumeQty/CountQty, scaleSeries, scaleLabel, valueAxisLabel, …).
 //
@@ -84,19 +84,18 @@ describe('MetricConventions — controlled component (expanded)', () => {
     expect(onBtn).toBeTruthy();
   });
 
-  it('disables the USD × IGP-M / IGP-DI combos (unserved) and keeps them under USD', () => {
-    const usd = { ...BASE, currency: 'USD' };
+  it('offers only Nominal and CPI under USD — the Brazilian indices are not even shown', () => {
+    const usd = { ...BASE, currency: 'USD', correction: 'CPI' };
     const { container } = render(
       <MetricConventions value={usd} onChange={() => {}} families={['mass']} banco="mdic_comex"
                           expanded={true} onToggleExpanded={() => {}} />
     );
-    const disabled = [...container.querySelectorAll('.seg-opt.disabled')].map((e) => e.textContent);
-    // IGP-M and IGP-DI buttons are disabled under USD.
-    expect(disabled.join(' ')).toContain('IGP-M');
-    expect(disabled.join(' ')).toContain('IGP-DI');
+    const corr = [...container.querySelectorAll('.mc-group-corr .seg-opt')].map((e) => e.firstChild.textContent);
+    expect(corr).toEqual(['Nominal', 'CPI']);
+    expect(container.querySelectorAll('.seg-opt.disabled')).toHaveLength(0);
   });
 
-  it('snaps an unserved correction back to IPCA when switching currency to USD (clampConvention)', () => {
+  it("switching BRL · IGP-M to USD keeps the correction on, by the dollar's own index (clampConvention)", () => {
     const onChange = vi.fn();
     const igpm = { ...BASE, currency: 'BRL', correction: 'IGP-M' };
     const { container } = render(
@@ -109,7 +108,7 @@ describe('MetricConventions — controlled component (expanded)', () => {
     expect(onChange).toHaveBeenCalled();
     const next = onChange.mock.calls[0][0];
     expect(next.currency).toBe('USD');
-    expect(next.correction).toBe('IPCA'); // IGP-M was clamped away in the same update
+    expect(next.correction).toBe('CPI'); // IGP-M is not offered in US$ — the dollar's own index takes over
   });
 
   it('toggles the auto-scale checkbox through onChange', () => {
@@ -168,12 +167,12 @@ describe('MetricConventions — controlled component (expanded)', () => {
 describe('MetricConventions — exported window helpers', () => {
   const conv = { currency: 'BRL', correction: 'IPCA', units: { mass: 't', volume: 'm³', count: 'un' }, autoScale: false };
 
-  it('clampConvention snaps only the unserved USD×IGP combos', () => {
-    expect(window.clampConvention({ currency: 'USD', correction: 'IGP-M' }).correction).toBe('IPCA');
-    expect(window.clampConvention({ currency: 'USD', correction: 'IGP-DI' }).correction).toBe('IPCA');
-    // A servable combo passes through untouched.
-    expect(window.clampConvention({ currency: 'USD', correction: 'IPCA' }).correction).toBe('IPCA');
-    expect(window.clampConvention({ currency: 'EUR', correction: 'IGP-M' }).correction).toBe('IGP-M');
+  it("clampConvention replaces an index the currency does not offer by the currency's own", () => {
+    expect(window.clampConvention({ currency: 'USD', correction: 'IGP-M' }).correction).toBe('CPI');
+    expect(window.clampConvention({ currency: 'USD', correction: 'IPCA' }).correction).toBe('CPI');
+    expect(window.clampConvention({ currency: 'EUR', correction: 'IGP-M' }).correction).toBe('HICP');
+    // An offered combo passes through untouched.
+    expect(window.clampConvention({ currency: 'BRL', correction: 'IGP-M' }).correction).toBe('IGP-M');
     expect(window.clampConvention(null)).toBeNull(); // guards null
   });
 
@@ -264,6 +263,7 @@ describe('MetricConventions — exported window helpers', () => {
 
   it('DEFAULT_CONVENTIONS + CURRENCY_FX + autoScaleNum are exported', () => {
     expect(window.DEFAULT_CONVENTIONS.currency).toBe('BRL');
+    expect(window.DEFAULT_CONVENTIONS.correction).toBe('Nominal'); // the screen opens uncorrected
     expect(window.CURRENCY_FX.USD.symbol).toBe('US$');
     expect(window.autoScaleNum(1_500_000)).toEqual({ factor: 1e6, suffix: 'mi' });
   });

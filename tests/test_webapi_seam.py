@@ -626,10 +626,10 @@ def test_effective_value_column_trade_serves_real_brl_eur_columns():
     )
     assert col == "val_real_ipca_eur"
     assert "€" in label and "FOB" in label and "CIF" in label
-    # The route default (BRL · IPCA, no explicit currency) resolves to the real
-    # BRL column — NOT the old USD hard-lock.
+    # The route default (BRL · Nominal since v1.88.0, no explicit currency) resolves to
+    # the real year-FX BRL column — NOT the old USD hard-lock.
     col, label = seam.effective_value_column(banco_by_id("mdic_comex"), {})
-    assert col == "val_real_ipca_brl"
+    assert col == "val_yearfx_brl"
 
 
 def test_effective_value_column_trade_falls_back_for_unmodelled_combo():
@@ -1641,6 +1641,31 @@ def test_value_gap_alternatives_can_offer_the_own_currency_deflator(monkeypatch)
     out = seam._value_gap_alternatives("ibge_pevs", "val_real_ipca_usd", gap_rows)
     assert set(out) == {"CPI"}
     assert asked == ["val_real_cpi_usd"]
+
+
+def test_value_gap_alternatives_never_suggest_a_pairing_the_screen_does_not_offer(monkeypatch):
+    """val_real_ipca_usd still exists in the marts, but since v1.88.0 the strip no longer
+    offers a Brazilian index under US$. A US$ · CPI gap note that said "IPCA reaches these
+    years" would send the researcher after a button that is not there — so under US$ there
+    is no alternative to ask about, and under R$ only the other Brazilian indices."""
+    import pandas as pd
+
+    seam = _seam()
+    gap_rows = pd.DataFrame({"reference_year": [1990], "rows_without_value": [5]})
+    asked: list[str] = []
+
+    def fake_gap(source, *, value_column):
+        asked.append(value_column)
+        return pd.DataFrame()
+
+    monkeypatch.setattr(seam.gateway, "fetch_annual_value_gap", fake_gap)
+
+    assert seam._value_gap_alternatives("ibge_pam", "val_real_cpi_usd", gap_rows) == {}
+    assert asked == []
+
+    out = seam._value_gap_alternatives("ibge_pam", "val_real_ipca_brl", gap_rows)
+    assert set(out) == {"IGP-M", "IGP-DI"}
+    assert sorted(asked) == ["val_real_igpdi_brl", "val_real_igpm_brl"]
 
 
 def test_effective_value_column_final_fallback_to_real_ipca_brl(monkeypatch):

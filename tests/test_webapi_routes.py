@@ -888,7 +888,9 @@ def test_snapshot_get_threads_banco_and_conventions(monkeypatch):
         assert key in body
 
 
-def test_snapshot_get_defaults_conventions_to_brl_ipca(monkeypatch):
+def test_snapshot_get_defaults_conventions_to_brl_nominal(monkeypatch):
+    """No currency/correction → BRL · Nominal, the same default the screen opens on
+    (window.DEFAULT_CONVENTIONS). It was BRL · IPCA until v1.88.0."""
     from embrapa_dashboard.webapi import seam
 
     client = _client(monkeypatch)
@@ -898,7 +900,7 @@ def test_snapshot_get_defaults_conventions_to_brl_ipca(monkeypatch):
     )
     resp = client.get("/api/snapshot?banco=ibge_pevs")
     assert resp.status_code == 200
-    assert captured["conv"] == {"currency": "BRL", "correction": "IPCA"}
+    assert captured["conv"] == {"currency": "BRL", "correction": "Nominal"}
 
 
 def test_product_uf_get_threads_code_conv_and_year_window(monkeypatch):
@@ -916,7 +918,7 @@ def test_product_uf_get_threads_code_conv_and_year_window(monkeypatch):
     resp = client.get("/api/product-uf?banco=ibge_pevs&code=3405&startDate=2010&endDate=2020")
     assert resp.status_code == 200
     assert captured["code"] == "3405"
-    assert captured["conv"] == {"currency": "BRL", "correction": "IPCA"}
+    assert captured["conv"] == {"currency": "BRL", "correction": "Nominal"}
     assert captured["summary"] == {"startDate": "2010", "endDate": "2020"}
     assert resp.get_json() == {"uf": []}
 

@@ -222,7 +222,7 @@ function AppShell({
   // pastes into a paper. Swept in AppShell.cov.test.jsx (N1).
   const convLabel = [
     conventions?.currency || 'BRL',
-    conventions?.correction || 'IPCA',
+    conventions?.correction || 'Nominal',
     conventions?.units?.mass || 't',
     conventions?.units?.volume || 'm\u00b3',
   ].join(' \u00b7 ');
