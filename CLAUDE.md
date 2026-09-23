@@ -88,7 +88,11 @@ of recent years and a newly published year — instead of the whole 1986→today
 window, a huge SIDRA request that can blow the slow-byte deadline on an
 unattended Cloud Run job. A cold Bronze table falls back to the full window.
 Use `--full` to force the complete window (or `ingest ibge-batch` to chunk a
-first historical backfill). **COMEX is the exception** — its per-file ETag check
+first historical backfill). **Never pin an `*_END_YEAR`** — every end year floats with the
+current year (a not-yet-published year just returns no rows). A pin below today stops the
+source, and for IBGE the delta SKIPS once Bronze reaches it, absorbing no revision: the
+prod Job carried `IBGE_END_YEAR=2024` until v1.86.1 and every weekly PEVS-extração run was a
+no-op. `deploy.sh` no longer forwards any END_YEAR; `doctor` (`pinned-end-years`) warns. **COMEX is the exception** — its per-file ETag check
 re-detects a revision to *any* year every run, so the delta limitation below is
 IBGE/BCB-only.
 

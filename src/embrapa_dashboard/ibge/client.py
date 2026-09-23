@@ -535,7 +535,8 @@ def fetch_sidra_dataframe(
         # can skip the GCS/BQ load instead of poisoning Bronze with junk.
         logger.warning(
             "SIDRA returned no rows for periods %d-%d. "
-            "Check `embrapa discover ibge-periods --table-id %s` and adjust IBGE_END_YEAR.",
+            "Expected when the window runs ahead of the latest release; see "
+            "`embrapa discover ibge-periods --table-id %s`.",
             start_year,
             end_year,
             table_id,

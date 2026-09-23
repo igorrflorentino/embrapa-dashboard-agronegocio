@@ -116,7 +116,8 @@ _DIAGNOSIS_PATTERNS: list[tuple[tuple[str, ...], str]] = [
     (
         ("returned no rows", "no rows for the requested"),
         "SIDRA returned empty — the year has probably not been published yet "
-        "(PEVS has ~1 year of staleness). Adjust IBGE_END_YEAR.",
+        "(PEVS has ~1 year of staleness) — expected while IBGE_END_YEAR floats "
+        "ahead of the latest release; nothing to change.",
     ),
 ]
 

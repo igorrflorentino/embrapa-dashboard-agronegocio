@@ -275,11 +275,17 @@ def _delta_start_year(settings: Settings, bq_client: bigquery.Client) -> Setting
         return settings
     if last_year >= settings.ibge_end_year:
         # Bronze already holds the latest configured year — nothing newer to
-        # pull. Skip cleanly instead of building an inverted window.
-        logger.info(
+        # pull. Skip cleanly instead of building an inverted window. With a
+        # FLOATING end (the default: the current year) this needs Bronze to hold
+        # the current year, which PEVS' ~1-year publication lag rules out — so in
+        # practice it means IBGE_END_YEAR is PINNED, and the skip also stops the
+        # overlap re-fetch that absorbs revisions. WARNING, not INFO: it was an
+        # INFO line while every weekly production run was a no-op (2026-09-21).
+        logger.warning(
             "IBGE delta: Bronze already at year %d (>= IBGE_END_YEAR %d) — "
-            "nothing new to fetch, skipping. Raise IBGE_END_YEAR or use --full "
-            "to force a re-fetch.",
+            "skipping, so recent years' revisions are NOT re-fetched either. "
+            "IBGE_END_YEAR is pinned: unset it so it floats with the current "
+            "year, or use --full to force a re-fetch.",
             last_year,
             settings.ibge_end_year,
         )

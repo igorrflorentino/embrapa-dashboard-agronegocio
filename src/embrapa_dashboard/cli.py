@@ -369,8 +369,9 @@ def ingest_ibge(
     else:
         console.print(
             "[yellow]⚠ IBGE ingest skipped:[/yellow] SIDRA returned no new rows. "
-            "On a delta run Bronze is likely already current; on --full, lower "
-            "IBGE_END_YEAR in .env to the latest published year."
+            "On a delta run Bronze is likely already current (or the new year is "
+            "not published yet — expected). Do NOT pin IBGE_END_YEAR to the latest "
+            "published year: the delta would stop absorbing revisions."
         )
 
 
@@ -1099,7 +1100,9 @@ def discover_ibge_periods(
     console.print(f"[bold]Table {table_id}[/bold] — {len(years)} years available")
     console.print(f"  First: [green]{years[0]}[/green]   Last: [green]{years[-1]}[/green]")
     console.print(
-        f"[dim]Suggested .env:[/dim] IBGE_START_YEAR={years[0]} IBGE_END_YEAR={years[-1]}"
+        f"[dim]Suggested .env:[/dim] IBGE_START_YEAR={years[0]}  "
+        f"(leave IBGE_END_YEAR unset: it floats with the current year, and pinning it to "
+        f"{years[-1]} makes the delta skip once Bronze reaches it)"
     )
 
 

@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.86.1] - 2026-09-23
+
+### Corrigido
+
+- **A extração da PEVS parou de absorver revisões, e nada avisou.** O Job de ingestão
+  carregava `IBGE_END_YEAR=2024` fixo. Com o Bronze já em 2024, a delta da t289 caía no
+  ramo "Bronze already at year 2024 (>= IBGE_END_YEAR 2024) — skipping" e virava um no-op
+  TODA semana — sem rebaixar os anos recentes, que é justamente como a delta absorve as
+  revisões do IBGE. Na mesma execução (2026-09-21), a silvicultura (t291), cujo ano final
+  flutua, rebaixou 2023–2026 (44.604 linhas) sem problema, o que mostra que a janela pode
+  passar do último ano publicado. E quando a PEVS 2025 sair, as duas metades do mesmo
+  levantamento ficariam em anos diferentes. O Job também tinha `BCB_END_YEAR=2026`, que em
+  janeiro de 2027 pararia câmbio, inflação e os deflatores estrangeiros com o heartbeat
+  verde (a execução "dá certo", só não traz nada novo).
+  - **A origem era o próprio repositório.** O `.env.example` trazia `IBGE_END_YEAR=2024`
+    ATIVO — único banco assim; todos os outros deixam o ano final comentado —, o
+    `scripts/setup_dev_env.py` escrevia `IBGE_END_YEAR=2024` e `BCB_END_YEAR=2026` no `.env`
+    que gera (e ainda `BCB_START_YEAR=1980`, a armadilha que corta PAM/PPM 1974–1979 de
+    todo deflator), o `embrapa discover ibge-periods` SUGERIA escrever o ano fixo, e a CLI
+    recomendava "abaixar IBGE_END_YEAR para o último ano publicado" — enquanto o pipeline,
+    a poucas linhas dali, avisava para NÃO fazer isso.
+  - **`deploy.sh` não repassa mais nenhum `*_END_YEAR`** do `.env` para o Job, nos dois
+    caminhos (o allowlist principal e o bloco do Comtrade), e diz quais descartou. Um teste
+    executa o próprio trecho do script sob `set -euo pipefail`.
+  - **`embrapa doctor` ganha a linha "Pinned END_YEAR"**: aviso quando um ano final está
+    fixo abaixo do ano corrente. Aviso, não falha — um pin local pode ser deliberado; é o
+    pin que ninguém lembra de ter posto que a linha existe para achar.
+  - O ramo de "skip" da delta da PEVS passa de INFO a WARNING e diz o que ele custa; as
+    mensagens de CLI, cliente e monitor deixam de recomendar o pin.
+
 ## [1.86.0] - 2026-09-23
 
 ### Adicionado
