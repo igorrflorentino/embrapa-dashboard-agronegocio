@@ -207,6 +207,12 @@ gh workflow run dbt-build-prod.yml --ref main       # 5b. rebuild so Gold materi
 Until v1.85.0 this runbook repeated `ingest` as the first arg — which would run
 `embrapa ingest ingest …` — and a test pinned that spelling as correct.
 
+**From PowerShell, quote the args value** (`'--args=foreign-inflation,--full'`). Unquoted,
+the comma is PowerShell's array operator: `gcloud.ps1` receives an array, joins it with a
+space, and the Job gets ONE arg, `foreign-inflation --full` — typer answers "No such
+command" and exits 2, three times over with the Job's retries (measured 2026-09-23). No
+request reaches a publisher, so it costs nothing but the run; the fences here are bash.
+
 **Why the surgical update over `make ingest-job-deploy`.** `deploy.sh` rebuilds the Job's
 env from the operator's `.env` (`--env-vars-file` REPLACES the block) and passes every
 mounted secret in one `--set-secrets`, which REPLACES the mounts: a `.env` lacking

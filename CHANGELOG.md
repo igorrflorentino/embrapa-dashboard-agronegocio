@@ -57,7 +57,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
   caminho cirúrgico (`gcloud run jobs update --update-secrets`), que não reconstrói o env a
   partir do `.env` nem substitui a montagem do Comtrade; `--region` nos comandos; e o passo
   4 verificado por COBERTURA (meses distintos por série, com `SAFE.PARSE_DATE`), não pelo
-  código de saída nem por contagem de linhas num Bronze append-only.
+  código de saída nem por contagem de linhas num Bronze append-only. E, no PowerShell, o
+  valor de `--args` entre aspas: sem elas a vírgula é o operador de array, e o Job recebe
+  UM argumento `foreign-inflation --full` (medido: saída 2, três vezes com os retries).
 - O comentário do gate em `dbt_project.yml` descrevia uma sequência de quatro passos sem a
   chave e com um `--full-refresh` desnecessário (Gold e marts são tabelas). Aponta agora
   para o runbook.
