@@ -266,6 +266,19 @@ models:
           - dbt_utils.expression_is_true:
               arguments:
                 expression: "is null or index_value > 0"
+      - name: is_interpolated
+        description: |
+          TRUE on a reading the publisher never released and silver_foreign_inflation
+          estimated (geometric mean of the published neighbours, declared in the
+          foreign_inflation_publisher_gaps seed). Always FALSE on the BCB half. Carried
+          here so the consultable deflator table discloses the estimate.
+        tests:
+          - not_null
+          # Only a foreign index can be interpolated — the BCB series are published
+          # readings, chain-linked, and a TRUE there would mean the union mislabelled a row.
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: "= false or economy != 'BR'"
 
   - name: silver_bcb_currency
     description: "Daily FX rates: BRL per foreign currency unit (BCB SGS: USD, EUR)."

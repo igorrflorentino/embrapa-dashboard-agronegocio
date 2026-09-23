@@ -419,6 +419,74 @@ Wire it up (one-time):
    exists (override the name with `FEEDBACK_GITHUB_TOKEN_SECRET`), so a routine redeploy
    **keeps** the loop active — it is never a plaintext env var.
 
+## The BLS API key (foreign deflators): where it lives, rotating it, verifying it
+
+The US CPI-U deflator needs a registered BLS key: the keyless v1 endpoint IGNORES
+`startyear/endyear` and answers only the latest three years, so without the key no
+backfill can reach 1974 (see `PLANS/correcao_inflacionaria_multimoeda.md`).
+
+| What | Where |
+|---|---|
+| The key | Secret Manager `bls-api-key` (versions; the Job reads `:latest`) |
+| Who may read it | `sa-data-pipeline-prod` — `roles/secretmanager.secretAccessor` on that secret only |
+| How the Job gets it | env `BLS_API_KEY` ← `bls-api-key:latest` (mounted 2026-09-23) |
+| Local runs | `BLS_API_KEY` in the process env — never written to `.env` or a commit |
+
+**Rotating** (or setting it the first time). A new version is enough — the mount reads
+`:latest` at each execution, so nothing else changes. Run as-is; paste the key only at the
+prompt. The format guard refuses anything that is not 32 hex characters, which is what a
+BLS key is — it exists because a password once went into the secret in its place:
+
+```powershell
+$P = 'embrapa-dashboard-commodities'
+$s = Read-Host 'BLS key (32 hex characters, from the e-mail)' -AsSecureString
+$k = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($s))
+if ($k -notmatch '^[0-9a-fA-F]{32}$') { Write-Host 'Not a BLS key. Nothing stored.' -ForegroundColor Red }
+else { $t = New-TemporaryFile; [IO.File]::WriteAllText($t.FullName, $k); gcloud secrets versions add bls-api-key --data-file="$($t.FullName)" --project $P; Remove-Item $t.FullName -Force }
+Remove-Variable s, k, t -ErrorAction SilentlyContinue
+```
+
+`WriteAllText` instead of a pipe is deliberate: PowerShell 5.1 appends `\r\n` to a string
+piped into a native program, and the secret would be stored as `key\r\n`. A new key must
+also be ACTIVATED through the link in the BLS e-mail before it works.
+
+**Verifying without reading the value** — metadata only:
+
+```bash
+gcloud secrets versions list bls-api-key --project embrapa-dashboard-commodities
+gcloud run jobs describe embrapa-ingest-all --region us-central1 --project embrapa-dashboard-commodities --format='value(spec.template.spec.template.spec.containers[0].env[].name)'
+```
+
+The real test is a run: `gcloud run jobs execute embrapa-ingest-all --region us-central1
+'--args=foreign-inflation' --wait`, then the coverage query in the PLANS runbook.
+
+**If a WRONG value was stored** (what happened on 2026-09-23). BLS repeats a refused key
+verbatim in its error ("The key:… provided by the User is invalid"); since v1.85.0 the
+client scrubs it, but an older image copied it into the Job's stderr and into
+`research_inputs.ingestion_heartbeat.detail`. The clean-up, in this order:
+
+1. Stop further use: `gcloud run jobs update embrapa-ingest-all --region us-central1
+   --remove-secrets BLS_API_KEY` (restores the keyless Job; remount later with
+   `--update-secrets BLS_API_KEY=bls-api-key:latest`). Unmount BEFORE disabling the
+   version — a mount pointing at a disabled `:latest` fails the WHOLE execution.
+2. `gcloud secrets versions disable <n>`, then `… destroy <n>` (permanent — a human step).
+3. Redact the heartbeat rows (keeps the failure record, drops the value). From PowerShell,
+   collapse the SQL to one line — `bq` is a `.cmd`, and cmd.exe reads only the first line
+   of a multi-line argument (the first attempt ran just `UPDATE <table>` and failed):
+   `UPDATE research_inputs.ingestion_heartbeat SET detail = REGEXP_REPLACE(detail,
+   r'The key:\S+ provided', 'The key:[removido] provided') WHERE source =
+   'foreign-inflation' AND STRPOS(detail, 'provided by the User is invalid') > 0` —
+   `bq query --dry_run` first. BigQuery time travel keeps the old rows for 7 days.
+4. Cloud Logging entries cannot be deleted one by one (only the whole `stderr` log); they
+   expire with the `_Default` bucket (30 days). If the value was a password, change it —
+   it also reached BLS's servers in a URL, which nothing here can recall.
+
+**PowerShell and `gcloud` lists.** Quote any comma-separated value
+(`'--args=foreign-inflation,--full'`, `'--remove-env-vars=A,B'`): unquoted, the comma is
+PowerShell's array operator, `gcloud.ps1` joins the array with a space, and gcloud gets ONE
+token. `--remove-env-vars A,B` answered "successfully updated" while removing nothing — only
+a before/after diff of the Job showed it.
+
 ## Editing a dbt seed (currency factors, unit conversions) → run `--full-refresh`
 
 **⚠ A seed edit does NOT propagate on a plain `dbt build`.** `silver_ibge_pevs` is

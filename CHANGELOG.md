@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.87.0] - 2026-09-23
+
+### Adicionado
+
+- **"Referências" passa a mostrar qual leitura de deflator é estimada.** A tabela que o
+  pesquisador consulta ("Deflatores, todos") é a view `silver_inflation`, e a marcação
+  `is_interpolated` da v1.86.0 parava um nível abaixo, em `silver_foreign_inflation` — a
+  estimativa ficava declarada só num seed que ninguém teria motivo para abrir. A view carrega
+  a coluna (`false` literal na metade do BCB, que só tem leituras publicadas), com um teste de
+  que nenhuma série brasileira aparece marcada. Medido no dev com o gate ligado: exatamente
+  UMA linha marcada em toda a view — CPI-U 2025-10.
+
+### Corrigido
+
+- **Um build LOCAL de prod esvaziaria os deflatores estrangeiros em silêncio.** Produção roda
+  com o gate ligado desde 2026-09-23, pela variável de repositório que só o
+  `dbt-build-prod.yml` lê. Os alvos `make dbt-build-prod`, `dbt-build-prod-with-backup` (o
+  caminho que o CLAUDE.md recomenda) e `reconcile` rodavam o build de prod SEM a variável —
+  gate desligado, `silver_inflation` sem a metade estrangeira, e todo `val_real_{cpi,hicp}_*`
+  do Gold NULL, sem nenhuma falha. É o mesmo formato de defeito dos anos fixos da v1.86.1: o
+  CI certo, o caminho local errado. As receitas passam `$(PROD_VARS)`
+  (`ENABLE_FOREIGN_INFLATION`, padrão `true`; `=false` para um build deliberado sem os
+  deflatores), e um teste varre TODA receita de build de prod do Makefile — uma receita nova
+  não entra sem o gate. No CI, um segundo teste roda `make -n` e confere a expansão real.
+
+### Documentação
+
+- `PLANS/correcao_inflacionaria_multimoeda.md`: o status diz que os deflatores estão no ar
+  desde 2026-09-23, com a cobertura medida na virada e como desligar.
+- `CLAUDE.md`: o bullet do gate diz o que PRODUÇÃO roda (ligado, pela variável de
+  repositório), não só o padrão do código — uma sessão futura concluiria errado a partir de
+  "começa desligado".
+- `docs/operations_runbook.md`: seção nova sobre a chave do BLS — onde mora, quem lê, como
+  trocar sem expor o valor (com a trava de formato), como verificar só por metadados, o
+  procedimento de limpeza quando um valor errado é gravado, e as armadilhas do PowerShell
+  com o `gcloud` e o `bq`.
+
 ## [1.86.1] - 2026-09-23
 
 ### Corrigido

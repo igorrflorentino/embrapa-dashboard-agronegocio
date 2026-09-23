@@ -26,8 +26,11 @@ Neither half can be flipped alone.
 from __future__ import annotations
 
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
+import pytest
 import yaml
 
 REPO = Path(__file__).resolve().parents[1]
@@ -123,3 +126,49 @@ def test_the_gate_ships_off_and_is_a_literal_boolean():
     project = yaml.safe_load(PROJECT_YML.read_text(encoding="utf-8"))
     value = project["vars"][GATE]
     assert value is False, f"{GATE} must be the literal boolean false, got {value!r}"
+
+
+MAKEFILE = REPO / "Makefile"
+
+
+def _prod_build_lines(text: str) -> list[str]:
+    return [ln.strip() for ln in text.splitlines() if "--target prod" in ln and "build" in ln]
+
+
+def test_every_local_prod_build_carries_the_gate_prod_runs_with():
+    """Production has run with the gate ON since 2026-09-23 — through the repo variable
+    DBT_ENABLE_FOREIGN_INFLATION, which only dbt-build-prod.yml reads. The Makefile's prod
+    targets (including `dbt-build-prod-with-backup`, the path CLAUDE.md recommends, and
+    `reconcile`) ran a bare prod build: gate OFF, so a local prod build rebuilt Gold with
+    every val_real_{cpi,hicp}_* NULL. Nothing failed; the columns just emptied. Same defect
+    shape as the pinned END_YEARs of v1.86.1 — CI right, the local path wrong. A sweep, so a
+    NEW prod recipe cannot be added without the gate either."""
+    text = MAKEFILE.read_text(encoding="utf-8")
+    prod_lines = _prod_build_lines(text)
+    assert prod_lines, "no prod build recipe found in the Makefile — did it change?"
+    bare = [ln for ln in prod_lines if "$(PROD_VARS)" not in ln and GATE not in ln]
+    assert not bare, f"prod build recipe(s) without the foreign-deflator gate: {bare}"
+
+    default = re.search(r"^ENABLE_FOREIGN_INFLATION\s*\?=\s*(\S+)", text, re.M)
+    assert default and default.group(1) == "true", "the local prod default must match prod (ON)"
+    assert re.search(
+        r"^PROD_VARS\s*:=.*" + GATE + r":\s*\$\(ENABLE_FOREIGN_INFLATION\)", text, re.M
+    ), "PROD_VARS must hand dbt the gate from ENABLE_FOREIGN_INFLATION"
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="needs GNU make (CI is Linux)")
+def test_make_expands_the_gate_into_the_prod_build_command():
+    """The recipe as make will actually run it (`make -n` prints, executes nothing)."""
+    on = subprocess.run(
+        ["make", "-n", "dbt-build-prod"], cwd=REPO, capture_output=True, text=True, check=True
+    ).stdout
+    built = _prod_build_lines(on)
+    assert built and all(f"{GATE}: true" in ln for ln in built), built
+    off = subprocess.run(
+        ["make", "-n", "dbt-build-prod", "ENABLE_FOREIGN_INFLATION=false"],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert f"{GATE}: false" in off

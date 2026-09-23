@@ -2016,7 +2016,9 @@ _REFERENCE_TABLE_CATALOG: list[tuple[str, str, bool, str]] = [
         "A tabela que o Gold consulta para corrigir valores: os índices brasileiros do "
         "BCB mais o CPI dos EUA (BLS) e o HICP da zona do euro (BCE). A coluna `economy` "
         "diz de qual economia cada índice mede os preços — e, portanto, qual moeda ele "
-        "pode corrigir: um índice só corrige o dinheiro da economia que ele mede.",
+        "pode corrigir: um índice só corrige o dinheiro da economia que ele mede. A coluna "
+        "`is_interpolated` marca a leitura que o publicador nunca divulgou e o pipeline "
+        "estimou — hoje, só o CPI de outubro de 2025.",
     ),
 ]
 _REFERENCE_BY_ID: dict[str, tuple[str, str, bool, str]] = {
