@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.88.1] - 2026-09-23
+
+Higiene de dependências: o Vitest 5 chegou em **dois PRs que não podiam entrar em ordem
+nenhuma**, e agora entra junto. Sem Release: só muda dependência de desenvolvimento, e a
+imagem servida é a mesma.
+
+### Alterado
+- **`vitest` e `@vitest/coverage-v8` 4.1.11 → 5.0.1, juntos.** O `@vitest/coverage-v8`
+  exige como peer o `vitest` na MESMA versão exata, então o Dependabot, abrindo um PR por
+  pacote (#463, #464), produziu duas combinações impossíveis: cada uma morria no `npm ci`
+  com `ERESOLVE` antes de rodar um único teste, e mergear uma primeira deixaria a `main`
+  sem instalar. Medido com os dois juntos: **1318/1318** testes, e cobertura igual à do
+  Vitest 4 na `main` até a segunda casa (statements 84,35 → 84,37%, branches 71,34 →
+  71,29%, functions 82,53 → 82,57%, lines 87,45 → 87,46%), longe dos limites (81/67/79/84).
+  - A tabela de cobertura **encolhe de 102 para 91 linhas** e isso não é perda de medição:
+    o Vitest 5 oculta os arquivos com 100%. O resumo JSON confirma os mesmos 6025/7141
+    statements, com os 11 arquivos ocultos medidos. Um deles, `brazilUfGeo.js` (só dados,
+    0 statements), aparecia como "0%" e agora conta como "100%", a leitura certa para
+    "nada a cobrir".
+  - Das mudanças incompatíveis da v5, as que tocam esta suíte são as que a deixam mais
+    rigorosa (mocks zerados antes de cada teste, asserção assíncrona sem `await` passa a
+    falhar, `toHaveTextContent` estrito); se algum teste dependesse do comportamento
+    antigo, ele quebraria em vez de passar. Os relatórios em `.vitest/` não afetam o
+    projeto: o CI só lê o código de saída do `npm test`.
+- **`.github/dependabot.yml`**: grupo **`vitest`** (`vitest` + `@vitest/*`), sem
+  restrição de tipo e **acima** do grupo `npm`, porque o Dependabot põe cada dependência no
+  PRIMEIRO grupo que casa. É a única exceção à regra "major chega sozinho": o grupo não
+  contém mais nada, então um major continua revisável isoladamente, só que agora instalável.
+
+---
+
 ## [1.88.0] - 2026-09-23
 
 ### Alterado

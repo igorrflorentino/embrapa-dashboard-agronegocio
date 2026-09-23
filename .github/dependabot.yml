@@ -53,6 +53,19 @@ updates:
     commit-message:
       prefix: build
     groups:
+      # The vitest family moves in LOCKSTEP, majors included — the one exception to the
+      # "majors arrive alone" rule below. `@vitest/coverage-v8` pins its `vitest` peer to
+      # the EXACT same version, so a per-package major PR is uninstallable by
+      # construction: vitest 5 beside coverage-v8 4 (and vice versa) dies in `npm ci`
+      # with ERESOLVE before a single test runs. That is what #463/#464 did on
+      # 2026-09-23 — two PRs, each red, neither landable first. Grouping them keeps a
+      # major reviewable on its own (this group holds nothing else) while making it
+      # installable. It must stay ABOVE the `npm` group: Dependabot assigns a
+      # dependency to the FIRST group whose patterns match.
+      vitest:
+        patterns:
+          - "vitest"
+          - "@vitest/*"
       # Minor/patch only — see the github-actions group above. This one is the
       # reason the rule exists: the grouped PR bundled react 18→19, plotly 2→3,
       # maplibre 4→6 and eslint 9→10 with a dozen routine patches. Those four
