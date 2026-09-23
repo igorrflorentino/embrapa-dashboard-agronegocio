@@ -36,6 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
     pin que ninguém lembra de ter posto que a linha existe para achar.
   - O ramo de "skip" da delta da PEVS passa de INFO a WARNING e diz o que ele custa; as
     mensagens de CLI, cliente e monitor deixam de recomendar o pin.
+  - O runbook generaliza o aviso do PowerShell: qualquer lista com vírgula passada sem
+    aspas ao `gcloud` vira UM token. `--remove-env-vars IBGE_END_YEAR,BCB_END_YEAR` respondeu
+    "successfully updated" sem remover nada — só o diff do Job antes/depois mostrou.
 
 ## [1.86.0] - 2026-09-23
 

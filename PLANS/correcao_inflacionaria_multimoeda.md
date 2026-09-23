@@ -225,6 +225,11 @@ the comma is PowerShell's array operator: `gcloud.ps1` receives an array, joins 
 space, and the Job gets ONE arg, `foreign-inflation --full` — typer answers "No such
 command" and exits 2, three times over with the Job's retries (measured 2026-09-23). No
 request reaches a publisher, so it costs nothing but the run; the fences here are bash.
+The trap is not specific to `--args`: ANY comma list handed to `gcloud` from PowerShell
+unquoted (`--remove-env-vars`, `--update-env-vars`, `--set-secrets`, …) arrives as one
+space-joined token. `--remove-env-vars IBGE_END_YEAR,BCB_END_YEAR` "successfully updated"
+the Job while removing a single key named `IBGE_END_YEAR BCB_END_YEAR` that does not exist
+— a silent no-op, caught only by diffing the Job before and after (2026-09-23).
 
 **Why the surgical update over `make ingest-job-deploy`.** `deploy.sh` rebuilds the Job's
 env from the operator's `.env` (`--env-vars-file` REPLACES the block) and passes every
