@@ -13,7 +13,7 @@
     foreign publishers publish index levels (used directly). By the time a row is here,
     `index_value` means the same thing in both — a price level whose RATIO between two
     dates is the correction factor. The bases differ (IPCA's chain starts at 100 in its
-    first month, CPI-U is 1982-84=100, HICP 2015=100) and must never be compared across
+    first month, CPI-U is 1982-84=100, HICP 2025=100) and must never be compared across
     series; a ratio within one series is base-invariant, which is the only use there is.
 
     `economy` is the column that makes the pairing checkable: an index may only deflate

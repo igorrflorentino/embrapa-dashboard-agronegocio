@@ -20,6 +20,7 @@ of an operator's afternoon.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -77,8 +78,9 @@ def test_every_identifier_the_runbook_names_exists():
             "vars.DBT_ENABLE_FOREIGN_INFLATION" in workflow,
         ),
         (
-            # As the Job spells it: `--args=ingest,foreign-inflation,--full`.
-            "ingest,foreign-inflation",
+            # As the Job spells it — args FOLLOW the image's `embrapa ingest` entrypoint,
+            # so they start at the subcommand (see the entrypoint test below).
+            "--args=foreign-inflation,--full",
             "cli.py",
             'ingest_app.command("foreign-inflation")' in cli,
         ),
@@ -96,6 +98,53 @@ def test_every_identifier_the_runbook_names_exists():
     # And the runbook must not have quietly dropped any of them.
     missing = [name for name, _, _ in claims if name not in body]
     assert not missing, f"the runbook stopped naming: {missing}"
+
+
+def _entrypoint() -> list[str]:
+    dockerfile = (REPO / "deploy" / "ingestion" / "Dockerfile").read_text(encoding="utf-8")
+    match = re.search(r"^ENTRYPOINT\s+(\[.*\])\s*$", dockerfile, re.M)
+    assert match, "deploy/ingestion/Dockerfile lost its exec-form ENTRYPOINT"
+    return json.loads(match.group(1))
+
+
+def test_job_args_never_repeat_the_entrypoint():
+    """`gcloud run jobs execute --args=…` APPENDS to the image's ENTRYPOINT, and that
+    entrypoint is already `embrapa ingest`. So an arg list that starts with `ingest,` runs
+    `embrapa ingest ingest …` and fails on the one step the operator cannot redo cheaply.
+
+    This runbook shipped exactly that from v1.82.0 to v1.84.0, and the vocabulary test
+    above pinned it as correct ("as the Job spells it") — a test that checked the NAME
+    existed and never asked what the Job would do with it. The truth lives in the
+    Dockerfile, so the check reads it there, and sweeps every file that tells an operator
+    how to run the Job, not only this one page.
+    """
+    entrypoint = _entrypoint()
+    assert entrypoint[:1] == ["embrapa"], entrypoint
+    already = entrypoint[1:]  # the subcommand words the image supplies itself
+    if not already:
+        return
+    doubled = re.compile(r"--args[= ]" + re.escape(",".join(already)) + r"(,|\s|$)")
+
+    swept = [
+        PLAN,
+        REPO / "Makefile",
+        REPO / "CLAUDE.md",
+        REPO / "README.md",
+        *sorted((REPO / "deploy" / "ingestion").glob("*.sh")),
+        *sorted((REPO / "deploy" / "ingestion").glob("*.md")),
+        *sorted((REPO / "docs").rglob("*.md")),
+    ]
+    offenders = [
+        f"{path.relative_to(REPO)}:{n}"
+        for path in swept
+        if path.exists()
+        for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+        if doubled.search(line)
+    ]
+    assert not offenders, (
+        f"these repeat the image's entrypoint ({' '.join(entrypoint)}) in --args, which "
+        f"would run `{' '.join(entrypoint + already)} …`: {offenders}"
+    )
 
 
 def test_the_runbook_warns_against_flipping_the_var_early():

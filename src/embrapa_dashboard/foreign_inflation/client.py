@@ -8,9 +8,15 @@ every inflation series regardless of who published it. The per-provider quirks
 here; nothing downstream branches on the provider again.
 
 One difference from SGS matters downstream and is NOT hidden here: these series
-are INDEX LEVELS (CPI-U 1982-84=100, HICP 2015=100), while SGS 433/189/190 are
+are INDEX LEVELS (CPI-U 1982-84=100, HICP 2025=100), while SGS 433/189/190 are
 monthly % changes. ``silver_foreign_inflation`` uses the value as the index
 directly instead of chain-linking it.
+
+Both publishers have a way of answering 200 with data that is not what was asked
+for, and both have bitten: the keyless BLS v1 GET ignores the requested years, and
+the ECB's older ``ICP`` dataflow keeps serving a series that stopped in 2025-12.
+The first is refused here (a window answered entirely outside itself); the second
+is visible only against the calendar, which is the doctor's job, not the ingest's.
 """
 
 from __future__ import annotations
@@ -114,6 +120,7 @@ def _bls_window(base_url: str, series_id: str, start: int, end: int, api_key: st
     series = payload.get("Results", {}).get("series", [])
     rows = series[0].get("data", []) if series else []
     records = []
+    outside: list[int] = []
     for row in rows:
         period = str(row.get("period", ""))
         # M01..M12 are the monthly readings; M13 is the ANNUAL AVERAGE BLS ships in the
@@ -121,9 +128,37 @@ def _bls_window(base_url: str, series_id: str, start: int, end: int, api_key: st
         # December two candidate readings for the year-end index.
         if not period.startswith("M") or period == "M13":
             continue
+        year = int(row["year"])
+        if not start <= year <= end:
+            outside.append(year)
+            continue
         month = int(period[1:])
-        records.append(
-            {"data": f"01/{month:02d}/{int(row['year'])}", "valor": str(row.get("value", ""))}
+        records.append({"data": f"01/{month:02d}/{year}", "valor": str(row.get("value", ""))})
+
+    if outside and not records:
+        # The keyless v1 GET ignores startyear/endyear and answers the latest three years
+        # whatever was asked (measured 2026-09-23). Taking that answer as the window's
+        # would store the same recent months once per window and report a backfill that
+        # never happened — which is exactly what the 2026-09-14 run did, six times over.
+        # Refusing here turns that silent truncation into a failure that names its cause.
+        raise ForeignInflationRequestError(
+            f"BLS {series_id} {start}-{end}: the answer covers {min(outside)}-{max(outside)}, "
+            f"none of the requested window — BLS ignored startyear/endyear. The keyless v1 "
+            "endpoint does this; set BLS_KEY_SECRET (the Job) or BLS_API_KEY (local) so the "
+            "call goes to v2, which honours the window."
+        )
+    if outside:
+        # A window that overlaps the latest three years (a delta run) gets its own years
+        # back plus the neighbours v1 always sends. The neighbours are not this window's
+        # to store: dropping them keeps each window's archive exactly its own span.
+        logger.info(
+            "BLS %s %d-%d: dropped %d observation(s) outside the window (%d-%d).",
+            series_id,
+            start,
+            end,
+            len(outside),
+            min(outside),
+            max(outside),
         )
     if not records:
         logger.info("BLS %s: no observations for %d-%d — skipping window.", series_id, start, end)
@@ -155,8 +190,8 @@ def fetch_ecb_series(
 ) -> pd.DataFrame:
     """Fetch an ECB Data Portal series in one call → the ``data``/``valor`` frame.
 
-    The SDMX REST path splits the series key at its FIRST dot: ``ICP`` is the dataflow
-    and ``M.U2.N.000000.4.INX`` the series within it. ``format=csvdata`` is asked for
+    The SDMX REST path splits the series key at its FIRST dot: ``HICP`` is the dataflow
+    and ``M.U2.N.000000.4D0.INX`` the series within it. ``format=csvdata`` is asked for
     because the CSV is a flat table (one row per observation) — the SDMX-JSON
     alternative nests observations under positional indices that have to be re-joined
     to a dimension list, which is a lot of parsing for the same two columns.
@@ -167,7 +202,7 @@ def fetch_ecb_series(
     if "." not in series_key:
         raise ForeignInflationRequestError(
             f"ECB series key {series_key!r} has no dataflow prefix "
-            "(expected e.g. 'ICP.M.U2.N.000000.4.INX')"
+            "(expected e.g. 'HICP.M.U2.N.000000.4D0.INX')"
         )
     dataflow, key = series_key.split(".", 1)
     url = (
@@ -194,7 +229,13 @@ def fetch_ecb_series(
     # Monthly series only: 'YYYY-MM'. Anything else (an annual 'YYYY' row, a quarterly
     # 'YYYY-Q1') is a different frequency that must not be mixed into a monthly index.
     monthly = periods.str.fullmatch(r"\d{4}-\d{2}")
-    raw = raw[monthly.fillna(False)]
+    # A period with no value is a month the series does not cover, not a reading. The
+    # HICP dataflow lists 1990-01..1995-12 with an EMPTY OBS_VALUE (the euro-area index
+    # starts in 1996); read with dtype=str that cell is NaN, and `astype(str)` below
+    # would store it as the four-character string "nan" — a row Silver then has to
+    # know to discard. Absence stays absence here, at the boundary.
+    valued = raw["OBS_VALUE"].fillna("").astype(str).str.strip().ne("")
+    raw = raw[monthly.fillna(False) & valued]
     if raw.empty:
         return _empty()
     parts = raw["TIME_PERIOD"].astype(str).str.split("-", n=1, expand=True)

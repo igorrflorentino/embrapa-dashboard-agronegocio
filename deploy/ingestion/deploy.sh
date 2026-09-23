@@ -156,6 +156,13 @@ fi
 #       printf '%s' 'YOUR_BLS_KEY' | gcloud secrets versions add bls-api-key --data-file=- --project "$PROJECT"
 #       gcloud secrets add-iam-policy-binding bls-api-key --project "$PROJECT" \
 #         --member "serviceAccount:<INGEST_JOB_RUNTIME_SA>" --role roles/secretmanager.secretAccessor
+#     The key is not only about quota: the keyless v1 GET IGNORES startyear/endyear and
+#     answers the latest three years, so without it no backfill can reach 1974.
+#     If the Job already exists and the key is the ONLY change, this script is the heavy
+#     path: it rebuilds the whole env from .env (--env-vars-file REPLACES it) and
+#     --set-secrets replaces every mount. The surgical equivalent adds just the one:
+#       gcloud run jobs update embrapa-ingest-all --region us-central1 --project "$PROJECT" \
+#         --update-secrets BLS_API_KEY=bls-api-key:latest
 BLS_SECRET="${BLS_KEY_SECRET:-$(get_env BLS_KEY_SECRET)}"
 if [ -n "$BLS_SECRET" ]; then
   echo "BLS key enabled: mounting BLS_API_KEY from secret '$BLS_SECRET' (v2 endpoint)."

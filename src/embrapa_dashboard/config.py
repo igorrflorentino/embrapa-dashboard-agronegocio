@@ -323,8 +323,14 @@ class Settings(BaseSettings):
     # going to the source (IBGE, BCB, MDIC, UN):
     #   • CPI-U  — US Bureau of Labor Statistics, series CUUR0000SA0 (all items, US city
     #     average, NOT seasonally adjusted — the published index, monthly since 1913).
-    #   • HICP   — ECB Data Portal, series ICP.M.U2.N.000000.4.INX (euro area changing
-    #     composition, all items, index 2015=100, monthly since 1996-01).
+    #   • HICP   — ECB Data Portal, series HICP.M.U2.N.000000.4D0.INX (euro area changing
+    #     composition, all items, index 2025=100, monthly since 1996-01).
+    #     The ECB FROZE its older `ICP` dataflow at 2025-12 — all 458 euro-area series in
+    #     it stop there — and carries on in the `HICP` dataflow, rebased 2025=100
+    #     (measured 2026-09-23: the old/new ratio is a constant 1.2873 across 2024-12 →
+    #     2025-12, i.e. the same index rescaled). The old key still answers 200, with
+    #     data, for any window up to 2025 — nothing fails; the deflator just stops
+    #     advancing. `embrapa doctor` now checks each series' LATEST observation.
     # Both are INDEX LEVELS, not the monthly % change the SGS series carry, so Silver
     # uses them directly instead of chain-linking them (see silver_foreign_inflation).
     #
@@ -334,15 +340,18 @@ class Settings(BaseSettings):
     # silently pivots on the default while config.py reads the new value — the drift
     # `embrapa doctor` (foreign-inflation-codes) exists to catch.
     foreign_inflation_cpi_code: str = Field(default="CUUR0000SA0")
-    foreign_inflation_hicp_code: str = Field(default="ICP.M.U2.N.000000.4.INX")
-    # BLS public API. v1 needs NO key (10 years per request, 25 requests/day) — enough
-    # for the 1974→today backfill in 6 windows and for a one-window delta run. A key
-    # upgrades the call to v2 (20-year windows, 500 requests/day); it is optional on
-    # purpose, so a fresh clone can ingest without a secret.
+    foreign_inflation_hicp_code: str = Field(default="HICP.M.U2.N.000000.4D0.INX")
+    # BLS public API. The keyless v1 GET IGNORES startyear/endyear and always answers
+    # the latest three years (measured 2026-09-23: a 1990-1995 request returned
+    # 2024-2026). So keyless, a delta run works — its window IS the recent years — but
+    # a backfill cannot: the 2026-09-14 "full" run stored the same 32 months six times,
+    # once per window. A key upgrades the call to v2, which honours the window (20-year
+    # windows, 500 requests/day of the KEY's own quota). The client refuses a window
+    # whose answer falls entirely outside it, so the keyless backfill now fails loudly.
     bls_api_base_url: str = Field(default="https://api.bls.gov/publicAPI")
     bls_api_key: str = Field(default="")
     # ECB Data Portal (SDMX REST). Keyless. The series key's FIRST dot-segment is the
-    # dataflow (ICP) and the rest is the series within it — the client splits it.
+    # dataflow (HICP) and the rest is the series within it — the client splits it.
     ecb_api_base_url: str = Field(default="https://data-api.ecb.europa.eu/service/data")
     # Same start year as the BCB series: the deflator window has to cover the data
     # window, and a provider answers with whatever part of it exists (CPI reaches back

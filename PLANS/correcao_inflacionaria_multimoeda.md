@@ -1,7 +1,8 @@
 # Multi-currency inflation correction
 
-> **Status:** IMPLEMENTED in code (v1.82.0). The deflator DATA is not live yet — the
-> `enable_foreign_inflation` gate ships off and turns on with the operator sequence in
+> **Status:** IMPLEMENTED in code (v1.82.0); sources corrected in v1.85.0 (BLS keyed v2,
+> HICP moved to the ECB's `HICP` dataflow). The deflator DATA is not live until the
+> `enable_foreign_inflation` gate is turned on with the operator sequence in
 > [Turning it on](#turning-it-on). Until then the new conventions are selectable and
 > honestly report that they value nothing.
 
@@ -69,13 +70,31 @@ Primary publishers, matching the project's rule of going to the source:
 
 | Index | Series | Publisher | API | Key |
 |---|---|---|---|---|
-| CPI-U | `CUUR0000SA0` (all items, US city average, **not** seasonally adjusted) | US Bureau of Labor Statistics | `api.bls.gov/publicAPI` v1 (v2 with a key) | optional |
-| HICP | `ICP.M.U2.N.000000.4.INX` (euro area, all items, 2015=100) | ECB Data Portal (SDMX) | `data-api.ecb.europa.eu` | none |
+| CPI-U | `CUUR0000SA0` (all items, US city average, **not** seasonally adjusted) | US Bureau of Labor Statistics | `api.bls.gov/publicAPI` v2 | **required for a backfill** |
+| HICP | `HICP.M.U2.N.000000.4D0.INX` (euro area, all items, 2025=100) | ECB Data Portal (SDMX) | `data-api.ecb.europa.eu` | none |
 
 Both are **index levels**, not the monthly % change the SGS series carry, so Silver uses
-them directly instead of chain-linking them. Their bases differ (1982-84=100 vs 2015=100)
+them directly instead of chain-linking them. Their bases differ (1982-84=100 vs 2025=100)
 and are deliberately *not* normalised: every downstream use is a ratio within one series,
 which is base-invariant, so rebasing would add an anchor year that changes no number.
+
+**Both publishers answered 200 with the wrong thing, and neither was caught by a check
+that looked for empty or failed answers** (measured 2026-09-23, after the first backfill):
+
+* **BLS v1 ignores the requested years.** The keyless GET answers the latest three years
+  whatever `startyear/endyear` say — a 1990–1995 request returned 2024–2026. The first
+  `--full` backfill therefore stored the same 32 months six times (192 rows, one copy per
+  10-year window) and reported success. The key is not optional for a backfill: v2 honours
+  the window. `_bls_window` now refuses a window answered entirely outside itself, so a
+  keyless backfill fails naming the cause instead of truncating.
+* **The ECB froze its `ICP` dataflow at 2025-12.** All 458 euro-area series in it stop
+  there; the index continues in the `HICP` dataflow, rebased 2025=100 — the old/new ratio
+  is a constant 1.2873 over 2024-12 → 2025-12, so it is the same index rescaled. The old
+  key (`ICP.M.U2.N.000000.4.INX`) still answers 200 with data for any window up to 2025,
+  so nothing failed: the € deflator just stopped advancing. `doctor` now probes each
+  series' *latest* observation against the calendar, and refuses a key still in `ICP`.
+  Both keys can sit in Bronze at once; `silver_foreign_inflation` reads only the
+  configured one, so the two bases never meet in a ratio.
 
 CPI-U is chosen over the seasonally-adjusted CPIAUCSL because the published NSA index is
 never revised once out — which matters for a delta ingest that rewinds only a year.
@@ -164,30 +183,52 @@ economy too (`IPCA · Brasil`), so the distinction survives the strip being clos
 ## Turning it on
 
 The code ships with the deflators declared and the data absent. **Five** steps, in order —
-it was four until v1.83.0 added the BLS key, and the key comes FIRST because
-`deploy.sh` mounts it while building the Job, so a key registered afterwards means
-deploying twice.
+it was four until v1.83.0 added the BLS key, and the key comes FIRST because the Job
+must carry it before the backfill runs: keyless, the backfill cannot reach 1974 at all.
 
 ```bash
 # 1. register the BLS key (once per project) — see deploy/ingestion/deploy.sh § 3c for the
-#    create-secret + secretAccessor commands, then put BLS_KEY_SECRET=bls-api-key in .env
-make ingest-job-deploy                              # 2. Job image carries the new source + the key
-uv run embrapa doctor                               # 3. both publishers answer, with the key live
-gcloud run jobs execute embrapa-ingest-all \
-  --args=ingest,foreign-inflation,--full            # 4. one 1974→today backfill
+#    create-secret + secretAccessor commands, and keep BLS_KEY_SECRET=bls-api-key in .env
+# 2. mount it on the Job. Surgical (the Job already exists; env, image and the Comtrade
+#    mount untouched):
+gcloud run jobs update embrapa-ingest-all --region us-central1 \
+  --update-secrets BLS_API_KEY=bls-api-key:latest
+#    …or the heavy path, which rebuilds the Job's whole env from .env:
+#    make ingest-job-deploy
+uv run embrapa doctor                               # 3. both publishers answer, keyed, with recent data
+gcloud run jobs execute embrapa-ingest-all --region us-central1 --wait \
+  --args=foreign-inflation,--full                   # 4. one 1974→today backfill — then MEASURE it
 #                                                     5a. set DBT_ENABLE_FOREIGN_INFLATION=true
 gh workflow run dbt-build-prod.yml --ref main       # 5b. rebuild so Gold materializes the columns
 ```
 
-**Why the key is not optional in practice.** The keyless v1 endpoint allows 25 requests/day
-counted **per calling IP** — not per project and not per key. The backfill needs only 6 of
-them (10-year windows over 1974→today), and that arithmetic is what the original design
-relied on; it is also exactly the premise that failed. The Job shares its egress address
-with everything else leaving from it and can find the cap already spent without having made
-a single request — measured 2026-09-13, when BLS answered `REQUEST_NOT_PROCESSED` (HTTP 200,
-zero observations) to a *first* call. A registered key moves the call to v2, whose 500/day
-quota is the **key's** and whose windows are 20 years wide, so the same backfill costs 3
-requests against a cap nobody else can spend.
+**`--args` does not repeat `ingest`.** The Job's image has `ENTRYPOINT ["embrapa", "ingest"]`
+(`deploy/ingestion/Dockerfile`), so its args are what follows it: `foreign-inflation,--full`.
+Until v1.85.0 this runbook repeated `ingest` as the first arg — which would run
+`embrapa ingest ingest …` — and a test pinned that spelling as correct.
+
+**Why the surgical update over `make ingest-job-deploy`.** `deploy.sh` rebuilds the Job's
+env from the operator's `.env` (`--env-vars-file` REPLACES the block) and passes every
+mounted secret in one `--set-secrets`, which REPLACES the mounts: a `.env` lacking
+`COMTRADE_KEY_SECRET` would unmount the Comtrade key, and a stale one reverts
+`BCB_START_YEAR`. When the key is the only change, `--update-secrets` adds it and touches
+nothing else — the same reasoning `ingestion-job-deploy.yml` uses for its image swap.
+
+**Step 4 is verified by coverage, not by the Job's exit code.** Count *distinct months per
+series* in Bronze with `SAFE.PARSE_DATE('%d/%m/%Y', reference_date_str)` — `MIN`/`MAX` over
+the raw `dd/mm/yyyy` string are lexicographic, and row counts lie on an append-only table
+(the truncated first backfill had 224 rows over 32 months). Expect CPI 1974-01 → the latest
+month, and HICP 1996-01 → the latest month.
+
+**Why the key is not optional.** Two reasons, and the second was found only after the first
+was fixed. (1) The keyless v1 endpoint allows 25 requests/day counted **per calling IP** —
+not per project and not per key — so the Job can find the cap already spent without having
+made a single request (measured 2026-09-13, `REQUEST_NOT_PROCESSED` to a *first* call).
+(2) More basic: **v1 ignores `startyear/endyear`** and always answers the latest three years
+(measured 2026-09-23), so no amount of quota lets a keyless backfill reach 1974 — the first
+one stored 2024–2026 once per window and stopped there. A registered key moves the call to
+v2, which honours the window, with a 500/day quota that is the **key's** and 20-year windows,
+so the backfill costs 3 requests against a cap nobody else can spend.
 
 That is also what makes step 3 worth its place. `doctor` runs from the operator's machine,
 a different egress address than the Job — so while the quota is per-IP, a local pass proves
@@ -196,11 +237,13 @@ cap and the probe becomes predictive. Run it keyed, or not at all.
 
 **Step 4 is the real verification.** Both APIs were specified from their published contracts
 but could not be exercised from the build environment (outbound HTTPS to `api.bls.gov` and
-`data-api.ecb.europa.eu` is blocked there). ECB has since answered a live call; BLS has not
-yet answered a successful one. A typo'd or retired series id fails **loudly** by design —
-`extract` raises naming the offending series rather than reporting success with an empty
-deflator — and since v1.82.1 a quota refusal fails loudly too, instead of being certified
-as a healthy 200.
+`data-api.ecb.europa.eu` is blocked there). A typo'd or retired series id fails **loudly**
+by design — `extract` raises naming the offending series rather than reporting success with
+an empty deflator — a quota refusal fails loudly since v1.82.1, and a window BLS ignored
+fails loudly since v1.85.0. What no guard in the ingest can see is a series that is merely
+*old* (the frozen `ICP` flow): that is the calendar check in `doctor`, which is why step 3
+comes before step 4. The first backfill (2026-09-14) is the reason every one of those
+sentences is written in the past tense.
 
 ### Pre-flight: what was already verified, so step 4 only tests the APIs
 
@@ -224,7 +267,8 @@ two-digit month is guaranteed on both.
 
 So if step 4 fails, the cause is upstream of this repo — a quota refusal, a retired series
 id, credentials — not the pipeline shape. That is a narrower search than it would otherwise
-be.
+be. The table verified the *shape*; it could not verify that the publishers would answer
+what was asked, which is where both real defects were (see § Sources).
 
 **Step 5 is the one that is dangerous out of order.** Flipping the var while Bronze is still
 empty points `silver_foreign_inflation` at a dataset that does not exist, and that failure

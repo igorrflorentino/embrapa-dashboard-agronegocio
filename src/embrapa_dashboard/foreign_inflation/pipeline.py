@@ -88,7 +88,7 @@ FOREIGN_INDICES: tuple[ForeignIndexSpec, ...] = (
         economy="EA",
         currency="EUR",
         code_attr="foreign_inflation_hicp_code",
-        description="Euro-area HICP, all items, index 2015=100 (ECB Data Portal)",
+        description="Euro-area HICP, all items, index 2025=100 (ECB Data Portal)",
     ),
 )
 

@@ -20,11 +20,11 @@
     ── Why this is NOT silver_bcb_inflation with a different filter ────────────────────
     The SGS series are monthly PERCENT CHANGE, chain-linked there into a 100-base index.
     CPI-U and HICP are published as INDEX LEVELS already (CPI-U 1982-84=100, HICP
-    2015=100), so chain-linking them would compound a level as if it were a rate and
+    2025=100), so chain-linking them would compound a level as if it were a rate and
     produce numbers that look like an index and are not one. The value goes through as
     `index_value` directly.
 
-    The BASE of each level differs (1982-84=100 vs 2015=100) and that is deliberately NOT
+    The BASE of each level differs (1982-84=100 vs 2025=100) and that is deliberately NOT
     normalised here: every use downstream is a RATIO of two readings of the SAME series
     (index_now / index_then), and a ratio is base-invariant. Rebasing would add an
     arbitrary anchor year with no effect on any number and one more thing to keep in sync.
@@ -39,7 +39,7 @@
     have: `embrapa doctor` (foreign-inflation-codes) guards the parity. -#}
 {%- set _foreign_codes = [
     "'" ~ var('inflation_series_cpi',  'CUUR0000SA0') ~ "'",
-    "'" ~ var('inflation_series_hicp', 'ICP.M.U2.N.000000.4.INX') ~ "'",
+    "'" ~ var('inflation_series_hicp', 'HICP.M.U2.N.000000.4D0.INX') ~ "'",
 ] -%}
 
 with deduplicated as (
@@ -48,6 +48,10 @@ with deduplicated as (
     from {{ source('bronze_foreign', 'inflation_raw') }}
     -- Bronze is APPEND-ONLY, so a series id dropped from the config can still sit there.
     -- Without this filter a retired series would keep feeding a deflator nobody selected.
+    -- It is also what made the 2026 move of HICP safe: the ECB froze the ICP dataflow
+    -- (2015=100) at 2025-12 and continued the index in HICP (2025=100). Both keys live in
+    -- Bronze; only the configured one reaches here, so the two bases never share a
+    -- ratio — mixing them would read a 22% deflation into a single month.
     where series_code in ({{ _foreign_codes | join(', ') }})
     qualify row_number() over (
         partition by series_code, reference_date_str
