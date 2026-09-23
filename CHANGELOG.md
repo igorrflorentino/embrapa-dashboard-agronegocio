@@ -32,6 +32,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
     entram na mesma razão (misturá-las leria uma deflação de 22% num único mês).
   - O fluxo novo lista 1990–1995 com `OBS_VALUE` **vazio**, que o `astype(str)` gravaria
     como a string `"nan"`. O cliente do BCE descarta o período sem valor na fronteira.
+- **A chave do BLS não sai mais do processo.** Ela viaja na query string, e três caminhos a
+  levavam para fora: o próprio BLS a REPETE na recusa (*"The key:… provided by the User is
+  invalid"*), o `requests` põe a URL inteira nos erros de conexão e de timeout, e o hook de
+  retry registra esses erros. A mensagem vira exceção, a exceção vira o stderr do Job e a
+  coluna `ingestion_heartbeat.detail` — foi assim que um valor colado por engano chegou aos
+  dois em 2026-09-23. `_scrub` remove a chave pelo valor exato e pelo FORMATO
+  (`registrationkey=…`, o eco do BLS), antes de truncar; a janela relança o erro já limpo
+  com a transitoriedade preservada e `from None`, porque o original encadeado imprimiria a
+  URL crua no traceback logo abaixo da mensagem limpa. O `doctor` já fazia isso na sonda
+  (`_redact`); o cliente de ingestão, não.
 - **A sonda `foreign-inflation` do `doctor` confere a resposta contra o pedido e contra o
   calendário.** Pedia um ano fixo no passado (`bcb_end_year - 1`) e aceitava qualquer 200
   com dado — por isso não via nem a janela ignorada nem a série parada. Agora:

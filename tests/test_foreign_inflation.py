@@ -23,6 +23,7 @@ from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
+import requests
 import responses
 
 from embrapa_dashboard.config import Settings
@@ -203,6 +204,74 @@ def test_bls_neighbours_outside_a_recent_window_are_dropped_not_stored() -> None
     years = {d[-4:] for d in df["data"]}
     assert years == {"2025", "2026"}
     assert len(df) == 24
+
+
+_KEY = "SEGREDO123"  # low-entropy on purpose: a realistic fake trips gitleaks
+
+
+@responses.activate
+def test_bls_refusal_that_echoes_the_key_never_carries_it_out() -> None:
+    """BLS repeats the key in its own refusal. That message becomes the exception, the
+    exception becomes the Job's stderr and the `ingestion_heartbeat.detail` column — which
+    is how a pasted value reached both on 2026-09-23. The verdict must survive; the key
+    must not."""
+    responses.add(
+        responses.GET,
+        _BLS_URL,
+        json={
+            "status": "REQUEST_NOT_PROCESSED",
+            "message": [
+                f"The key:{_KEY} provided by the User is invalid. Please provide a proper key "
+                "for the operation to be successful"
+            ],
+            "Results": {},
+        },
+        status=200,
+    )
+    with pytest.raises(client.ForeignInflationRequestError) as exc:
+        client.fetch_bls_series(
+            "CUUR0000SA0", 2021, 2021, base_url="https://api.bls.gov/publicAPI", api_key=_KEY
+        )
+    assert _KEY not in str(exc.value)
+    assert "invalid" in str(exc.value)  # the operator still learns WHY
+
+
+def test_a_network_error_carrying_the_url_is_scrubbed_and_stays_transient(monkeypatch) -> None:
+    """requests puts the full URL — query string and key included — into its connection
+    and timeout errors. Scrubbed, re-raised as our transient type (so `ingest all` still
+    reads it as transient), and WITHOUT the chained original, which would print the raw
+    URL in the traceback right under the clean message."""
+
+    def unreachable(url, *, context):
+        raise requests.ConnectionError(f"Max retries exceeded with url: {url}")
+
+    monkeypatch.setattr(client, "_get", unreachable)
+    with pytest.raises(client.ForeignInflationTransientError) as exc:
+        client.fetch_bls_series(
+            "CUUR0000SA0", 2021, 2021, base_url="https://api.bls.gov/publicAPI", api_key=_KEY
+        )
+    assert _KEY not in str(exc.value)
+    assert "registrationkey=***" in str(exc.value)
+    assert exc.value.__suppress_context__ is True
+
+
+def test_the_retry_log_scrubs_a_key_it_was_never_told(caplog) -> None:
+    """The retry hook logs before the window wrapper sees the error, and it does not hold
+    the key — so it scrubs by SHAPE (the query parameter, the BLS echo), not by value."""
+    boom = requests.ConnectionError(
+        f"url: /publicAPI/v2/timeseries/data/X?startyear=1&registrationkey={_KEY}"
+    )
+    state = SimpleNamespace(outcome=SimpleNamespace(exception=lambda: boom), attempt_number=1)
+    with caplog.at_level("WARNING"):
+        client._emit_retry(state)
+    assert _KEY not in caplog.text
+    assert "registrationkey=***" in caplog.text
+
+
+def test_scrub_covers_the_bls_echo_even_without_the_literal_key() -> None:
+    assert (
+        client._scrub(f"The key:{_KEY} provided by the User") == "The key:*** provided by the User"
+    )
 
 
 @responses.activate

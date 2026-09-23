@@ -23,8 +23,10 @@ from __future__ import annotations
 
 import io
 import logging
+import re
 
 import pandas as pd
+import requests
 
 from embrapa_dashboard.core import SourceTransientError
 from embrapa_dashboard.core import http as core_http
@@ -51,12 +53,33 @@ class ForeignInflationTransientError(ForeignInflationRequestError, SourceTransie
     """Transient (retryable) response from a foreign price-index API."""
 
 
+_KEY_IN_URL = re.compile(r"(registrationkey=)[^&\s'\"]+", re.I)
+_KEY_IN_BLS_ECHO = re.compile(r"(The key:)\S+", re.I)
+
+
+def _scrub(text: str, secret: str = "") -> str:
+    """Remove the BLS key from text headed for a log, a traceback or the heartbeat.
+
+    The key rides the QUERY STRING, so three paths carry it out: requests puts the full
+    URL into its connection/timeout errors; the retry hook logs those; and BLS ECHOES
+    the key in its own refusal ("The key:<key> provided by the User is invalid") — which
+    is how a pasted value reached the Job's stderr and three `ingestion_heartbeat` rows on
+    2026-09-23. The literal replace covers the exact configured key; the two patterns
+    cover the places a key sits even when this caller does not hold it (the retry hook).
+    """
+    if secret:
+        text = text.replace(secret, "***")
+    text = _KEY_IN_URL.sub(r"\1***", text)
+    return _KEY_IN_BLS_ECHO.sub(r"\1***", text)
+
+
 def _emit_retry(retry_state):  # type: ignore[no-untyped-def]
     exc = retry_state.outcome.exception() if retry_state.outcome else None
     logger.warning(
         "Retrying foreign-inflation fetch attempt=%d: %s",
         retry_state.attempt_number,
-        str(exc)[:200] if exc else "?",
+        # Scrub BEFORE truncating: a slice can cut the pattern and leave a usable prefix.
+        _scrub(str(exc))[:200] if exc else "?",
     )
 
 
@@ -104,14 +127,27 @@ def _bls_window(base_url: str, series_id: str, start: int, end: int, api_key: st
     url = f"{base_url}/{version}/timeseries/data/{series_id}?startyear={start}&endyear={end}"
     if api_key:
         url = f"{url}&registrationkey={api_key}"
-    response = _get(url, context=f"BLS {series_id} {start}-{end}")
+    try:
+        response = _get(url, context=f"BLS {series_id} {start}-{end}")
+    except Exception as exc:
+        # The retries are spent by now; what is left is a message on its way to stderr
+        # and the heartbeat. A requests error carries the URL — and with it the key.
+        # Re-raised as our own type with the transience preserved (`ingest all` treats a
+        # transient failure differently), and `from None`: the chained original would
+        # print the unscrubbed URL in the traceback right under the scrubbed one.
+        scrubbed = _scrub(str(exc), api_key)
+        if scrubbed == str(exc):
+            raise
+        transient = isinstance(exc, (requests.RequestException, SourceTransientError))
+        kind = ForeignInflationTransientError if transient else ForeignInflationRequestError
+        raise kind(scrubbed) from None
     payload = response.json()
     status = payload.get("status", "")
     if status != "REQUEST_SUCCEEDED":
         # BLS reports a throttle/quota refusal with HTTP 200 and a status string, so
         # the status check cannot live in _get. Daily-quota exhaustion is transient in
         # the only sense that matters here: it clears on its own.
-        messages = "; ".join(payload.get("message", []))[:300]
+        messages = _scrub("; ".join(payload.get("message", [])), api_key)[:300]
         msg = f"BLS {series_id} {start}-{end}: {status} {messages}"
         if "threshold" in messages.lower() or "limit" in messages.lower():
             raise ForeignInflationTransientError(msg)
