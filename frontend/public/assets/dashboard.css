@@ -2822,6 +2822,9 @@ body.sb-resizing .sidebar-resizer { background: color-mix(in srgb, var(--embrapa
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-1);
+  /* Query container: whether the two option areas fit side by side depends on THIS bar's
+     width (the sidebar decides how much of the window it gets), not on the viewport. */
+  container: mc / inline-size;
 }
 /* Duas áreas como .fm-trigger-bar (ver o comentário lá): informação à esquerda, que
    quebra, e ação à direita, que não. `nowrap` + `flex-start` prendem "Editar métricas" /
@@ -2888,7 +2891,7 @@ body.sb-resizing .sidebar-resizer { background: color-mix(in srgb, var(--embrapa
    a frase do que o número é; à direita as famílias físicas, separadas por um fio. */
 .mc-groups {
   display: grid;
-  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  grid-template-columns: minmax(0, 11fr) minmax(0, 9fr);
   gap: 16px 24px;
   align-items: start;
 }
@@ -2910,7 +2913,12 @@ body.sb-resizing .sidebar-resizer { background: color-mix(in srgb, var(--embrapa
   padding-left: 24px;
   border-left: 1px solid var(--border-subtle);
 }
-.mc-block-units > .mc-group { flex: 1 1 180px; }
+.mc-block-units > .mc-group {
+  /* Each family as wide as its own options on one line (auto basis = max-content). When two
+     do not fit side by side, the SECOND one moves whole to the next line — its buttons never
+     break 2+1 inside the group, which an equal split did to Volume (L hL / m³) at ~1400px. */
+  flex: 1 1 auto;
+}
 /* Banco sem valor monetário: as unidades são o painel inteiro, sem fio à esquerda. */
 .mc-block-units.mc-block-solo { grid-column: 1 / -1; padding-left: 0; border-left: 0; }
 .mc-group {
@@ -2977,9 +2985,11 @@ body.sb-resizing .sidebar-resizer { background: color-mix(in srgb, var(--embrapa
   color: var(--fg-3);
 }
 
-/* Abaixo de ~1360px as duas áreas lado a lado espremem as unidades: empilha, e o fio passa
-   de vertical a horizontal. */
-@media (max-width: 1360px) {
+/* When the PANEL gets too narrow for both areas (currency+correction need ~520px, mass+volume
+   ~430px), stack them and turn the divider from vertical to horizontal. Measured on the
+   panel's width (container `mc`), not the window's: the sidebar decides how much room is
+   left, and a viewport rule got it wrong in both directions. */
+@container mc (max-width: 1020px) {
   .mc-groups { grid-template-columns: minmax(0, 1fr); }
   .mc-block-units {
     padding-left: 0;
@@ -2989,7 +2999,7 @@ body.sb-resizing .sidebar-resizer { background: color-mix(in srgb, var(--embrapa
   }
   .mc-block-units.mc-block-solo { padding-top: 0; border-top: 0; }
 }
-@media (max-width: 720px) {
+@container mc (max-width: 560px) {
   .mc-block-row { grid-template-columns: minmax(0, 1fr); }
 }
 
