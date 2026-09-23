@@ -112,6 +112,14 @@ def test_floating_end_years_are_not_reported(settings_factory) -> None:
     assert "⚠" not in result.detail
 
 
+def test_pinned_end_year_check_reports_its_own_breakage() -> None:
+    """A check that cannot evaluate must say so in red, never fall through to "none"."""
+    broken = SimpleNamespace(model_fields_set={"ibge_end_year"}, ibge_end_year="not-a-year")
+    result = doctor._check_pinned_end_years(broken)
+    assert result.ok is False
+    assert result.name == "Pinned END_YEAR"
+
+
 def test_an_end_year_pinned_at_or_after_today_is_not_a_problem(settings_factory) -> None:
     """Pinning AHEAD of today is harmless (the window already covers every release)."""
     this_year = datetime.now(UTC).year
