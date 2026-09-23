@@ -116,7 +116,9 @@ _LABEL_CASES = [
     ({"currency": "BRL", "correction": "IPCA"}, "Valor real (IPCA) — R$"),
     ({"currency": "BRL", "correction": "Nominal"}, "Valor nominal — R$"),
     ({"currency": "USD", "correction": "Nominal"}, "Valor nominal — US$"),
-    ({}, "Valor real (IPCA) — R$"),  # empty conv → BRL + IPCA defaults
+    # Empty conv → the BRL · Nominal defaults. It was BRL · IPCA until v1.88.0: the
+    # dashboard no longer presumes a correction (fmt.DEFAULT_CORRECTION).
+    ({}, "Valor nominal — R$"),
     # A BRAZILIAN index under a foreign symbol must say so. 'Valor real (IGP-M) — US$'
     # reads as dollars corrected by Brazilian inflation, which is not what the number
     # is: it is R$ deflated by IGP-M and then converted at today's rate.
@@ -163,6 +165,49 @@ def test_the_two_correction_logics_get_different_labels_under_the_same_symbol():
 )
 def test_deflates_own_currency(currency, correction, own):
     assert fmt.deflates_own_currency(currency, correction) is own
+
+
+@pytest.mark.parametrize(
+    ("currency", "offered"),
+    [
+        ("BRL", {"Nominal", "IPCA", "IGP-M", "IGP-DI"}),
+        ("USD", {"Nominal", "CPI"}),
+        ("EUR", {"Nominal", "HICP"}),
+    ],
+)
+def test_correction_offered_is_the_currencys_own_economy(currency, offered):
+    """Since v1.88.0 the dashboard offers, per currency, Nominal plus the indices of that
+    currency's OWN economy — no Brazilian index under US$/€, no foreign index under R$."""
+    every = {"Nominal", *fmt.CORRECTION_ECONOMY}
+    assert {c for c in every if fmt.correction_offered(currency, c)} == offered
+
+
+def test_default_correction_is_nominal():
+    """The screen opens on Nominal (window.DEFAULT_CONVENTIONS), and so does the BFF when a
+    request names no correction — the two defaults answer the same question."""
+    assert fmt.DEFAULT_CORRECTION == "Nominal"
+
+
+def test_the_correction_maps_match_the_screen():
+    """format.py and MetricConventions.jsx each carry the correction → economy → currency
+    maps (the server picks the column, the screen names it and decides what to offer), and
+    both files have said "keep in step" in a comment since v1.82.0 with nothing checking
+    it. Read the JS literals and compare."""
+    import re
+    from pathlib import Path
+
+    js = (
+        Path(__file__).resolve().parents[1] / "frontend" / "src" / "ui" / "MetricConventions.jsx"
+    ).read_text(encoding="utf-8")
+
+    def js_map(name: str) -> dict:
+        body = re.search(rf"window\.{name} = \{{(.*?)\}};", js, re.S).group(1)
+        return dict(re.findall(r"'?([\w-]+)'?\s*:\s*'([\w-]+)'", body))
+
+    assert js_map("CORRECTION_ECONOMY") == fmt.CORRECTION_ECONOMY
+    assert js_map("ECONOMY_CURRENCY") == fmt.ECONOMY_CURRENCY
+    js_default = re.search(r"correction:\s*'(\w+)'", js.split("window.DEFAULT_CONVENTIONS")[1])
+    assert js_default.group(1) == fmt.DEFAULT_CORRECTION
 
 
 @pytest.mark.parametrize(("conv", "expected"), _LABEL_CASES)

@@ -34,7 +34,7 @@ from embrapa_dashboard.serving.research_inputs import (
 
 from . import seam, seam_attribute_engineering, serializers
 from .auth import current_author
-from .format import _CORRECTION_INFIX, _CURRENCY_SUFFIX
+from .format import _CORRECTION_INFIX, _CURRENCY_SUFFIX, DEFAULT_CORRECTION
 
 logger = logging.getLogger(__name__)
 
@@ -53,12 +53,12 @@ _ALLOWED_CORRECTIONS = frozenset(_CORRECTION_INFIX)
 def _conversion_or_400():
     """Parse + validate the currency/correction query params into a conv dict.
 
-    Returns ``(conv, None)`` when both are valid (defaulting to BRL/IPCA when
-    absent), else ``(None, (response, 400))`` with a pt-BR error naming the bad
-    value. Without this, an invalid value silently falls back to BRL/IPCA inside
-    monetary_column, so the user sees the wrong deflated series with no signal."""
+    Returns ``(conv, None)`` when both are valid (defaulting to BRL · Nominal when
+    absent — the screen's own default since v1.88.0), else ``(None, (response, 400))``
+    with a pt-BR error naming the bad value. Without this, an invalid value silently
+    falls back inside monetary_column, so the user sees the wrong series with no signal."""
     currency = request.args.get("currency", "BRL")
-    correction = request.args.get("correction", "IPCA")
+    correction = request.args.get("correction", DEFAULT_CORRECTION)
     if currency not in _ALLOWED_CURRENCIES:
         return None, (jsonify(error=f"moeda inválida: {currency!r}"), 400)
     if correction not in _ALLOWED_CORRECTIONS:

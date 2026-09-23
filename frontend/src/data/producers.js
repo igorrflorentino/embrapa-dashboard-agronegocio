@@ -159,7 +159,7 @@ window.geoYearly = function geoYearly(bancoId, summary) {
   if (!b || !(b.provides || []).includes('geo')) return null;
   const conv = window.dataStore && window.dataStore.conv
     ? window.dataStore.conv()
-    : { currency: 'BRL', correction: 'IPCA' };
+    : { currency: 'BRL', correction: 'Nominal' };
   // Flow (export/import) is a SERVER-SIDE filter (the trade marts are pre-aggregated
   // over flow), so it belongs in the cube's cache key + request exactly like the
   // snapshot's — without it a COMEX basket renders all-flows VALOR TOTAL/map while
@@ -224,7 +224,7 @@ window.municipioYearly = function municipioYearly(bancoId, summary, cityCodes, y
   if (!b || !(b.provides || []).includes('geo')) return null;
   const conv = window.dataStore && window.dataStore.conv
     ? window.dataStore.conv()
-    : { currency: 'BRL', correction: 'IPCA' };
+    : { currency: 'BRL', correction: 'Nominal' };
   const codes = filterCodes(summary); // undefined = all products; comma list otherwise
   // INVARIANT (DATA-4): flow is deliberately omitted from the key AND the request below
   // because the município cube is only ever reached for a geo banco (the `provides` guard
@@ -453,7 +453,7 @@ window.flowData = function flowData(bancoId, summary) {
   // nominal US$ under any convention.
   const conv = window.dataStore && window.dataStore.conv
     ? window.dataStore.conv()
-    : { currency: 'BRL', correction: 'IPCA' };
+    : { currency: 'BRL', correction: 'Nominal' };
   const key = `trade:flow:${bancoId}:${conv.currency}|${conv.correction}:${filterSig(summary)}:${countrySig(summary)}:${axisKey(ax)}`;
   ensure(key, () =>
     `${API}/flow?${qs({
@@ -491,7 +491,7 @@ window.partnerData = function partnerData(bancoId, summary, metric) {
   // claimed "IPCA" — and in a historical ranking the correction can reorder the countries.
   const conv = window.dataStore && window.dataStore.conv
     ? window.dataStore.conv()
-    : { currency: 'BRL', correction: 'IPCA' };
+    : { currency: 'BRL', correction: 'Nominal' };
   const key = `trade:partners:${bancoId}:${m}:${conv.currency}|${conv.correction}:${filterSig(summary)}:${countrySig(summary)}:${axisKey(ax)}`;
   ensure(key, () =>
     `${API}/partners?${qs({
@@ -562,7 +562,7 @@ window.monthlyData = function monthlyData(bancoId, summary) {
   // seasonality view was nominal US$ under any convention.
   const conv = window.dataStore && window.dataStore.conv
     ? window.dataStore.conv()
-    : { currency: 'BRL', correction: 'IPCA' };
+    : { currency: 'BRL', correction: 'Nominal' };
   const key = `trade:monthly:${bancoId}:${conv.currency}|${conv.correction}:${filterSig(summary)}:${axisKey(ax)}`;
   ensure(key, () => `${API}/monthly?${qs({
     banco: bancoId, codes, states, y0, y1,

@@ -2880,14 +2880,39 @@ body.sb-resizing .sidebar-resizer { background: color-mix(in srgb, var(--embrapa
   border-color: color-mix(in srgb, var(--pres-yale-blue) 32%, transparent);
   color: var(--pres-yale-blue);
 }
+/* ── Duas áreas: VALOR MONETÁRIO | UNIDADES ─────────────────────────────────
+   Até a v1.87 era uma grade única de 4 colunas: a correção (três bandas empilhadas)
+   ocupava duas e ficava alta, Massa sentava ao lado, e Volume caía para uma segunda linha
+   debaixo da Moeda — o vazio que a tela mostrava. Agora cada área tem a altura do próprio
+   conteúdo: à esquerda moeda + correção (uma linha só, com as opções da moeda escolhida) e
+   a frase do que o número é; à direita as famílias físicas, separadas por um fio. */
 .mc-groups {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
-  /* Align groups to the top so a 2×2 group (Massa) growing taller never leaves empty
-     space under the shorter 3-option groups (Moeda/Volume). */
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  gap: 16px 24px;
   align-items: start;
 }
+.mc-block { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+/* Moeda e Correção lado a lado. A coluna da correção tem largura FIXA na grade e os
+   botões esticam para ocupá-la: com 4 opções (R$) ou 2 (US$, €) o grupo tem o mesmo
+   tamanho, então trocar de moeda não empurra nada na tela. */
+.mc-block-row {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 4fr);
+  gap: 14px;
+  align-items: start;
+}
+.mc-block-units {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px 14px;
+  padding-left: 24px;
+  border-left: 1px solid var(--border-subtle);
+}
+.mc-block-units > .mc-group { flex: 1 1 180px; }
+/* Banco sem valor monetário: as unidades são o painel inteiro, sem fio à esquerda. */
+.mc-block-units.mc-block-solo { grid-column: 1 / -1; padding-left: 0; border-left: 0; }
 .mc-group {
   display: flex;
   flex-direction: column;
@@ -2933,34 +2958,39 @@ body.sb-resizing .sidebar-resizer { background: color-mix(in srgb, var(--embrapa
 }
 .mc-group .seg-opt.on small { color: var(--embrapa-green-darker); opacity: 0.72; }
 
-/* ── Correção monetária: bandas por ECONOMIA ────────────────────────────────
-   O grupo da correção carrega três bandas rotuladas e uma frase de explicação, então
-   ocupa duas colunas da grade; as outras (Moeda, Massa, Volume) continuam de uma.
-   O eixo que as bandas expõem não é "qual índice" e sim EM QUE ECONOMIA a correção
-   acontece — que é o que muda a operação, a ordem do câmbio e, no fim, o número. */
-.mc-group-corr { grid-column: span 2; gap: 7px; }
-.mc-corr-band { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.mc-corr-band-label {
-  font: 400 10px var(--font-body);
+/* ── Correção monetária: uma linha, opções da moeda escolhida ─────────────────
+   O rótulo leva ao lado a economia ("inflação do Brasil", "dos EUA"): é o que explica por
+   que as opções mudam quando a moeda muda. Um índice só corrige a moeda da economia que
+   ele mede, então o painel não oferece as combinações cruzadas. */
+.mc-label-row { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.mc-label-note {
+  font: 400 11px var(--font-body);
   color: var(--fg-3);
-  letter-spacing: 0.02em;
-  text-transform: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.mc-group-corr .seg { min-height: 38px; }
 .mc-corr-explain {
-  margin: 2px 0 0;
+  margin: 0;
   font-size: 11.5px;
   line-height: 1.4;
   color: var(--fg-3);
 }
 
-@media (max-width: 1180px) {
-  .mc-groups { grid-template-columns: repeat(2, 1fr); }
+/* Abaixo de ~1360px as duas áreas lado a lado espremem as unidades: empilha, e o fio passa
+   de vertical a horizontal. */
+@media (max-width: 1360px) {
+  .mc-groups { grid-template-columns: minmax(0, 1fr); }
+  .mc-block-units {
+    padding-left: 0;
+    border-left: 0;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-subtle);
+  }
+  .mc-block-units.mc-block-solo { padding-top: 0; border-top: 0; }
 }
 @media (max-width: 720px) {
-  .mc-groups { grid-template-columns: 1fr; }
-  /* Numa coluna só, `span 2` estouraria a grade. */
-  .mc-group-corr { grid-column: span 1; }
+  .mc-block-row { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* ====================================================================

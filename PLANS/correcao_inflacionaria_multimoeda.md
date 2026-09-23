@@ -163,25 +163,48 @@ they are different:
 
 ### The strip
 
-The correction group is re-organised into three bands, labelled by **where the correction
-happens** rather than by who publishes the index:
+**Since v1.88.0 the index follows the currency.** The strip offers, per currency, only
+Nominal and the indices of that currency's OWN economy:
 
 ```
-CORREÇÃO MONETÁRIA
-  Sem correção                              [ Nominal ]
-  Inflação do Brasil · câmbio de hoje       [ IPCA ] [ IGP-M ] [ IGP-DI ]
-  Inflação da própria moeda · câmbio do ano [ CPI ]  [ HICP ]
+MOEDA               CORREÇÃO MONETÁRIA · inflação do Brasil      │ MASSA        VOLUME
+[BRL] [USD] [EUR]   [Nominal] [IPCA] [IGP-M] [IGP-DI]           │ [kg] [t]     [L] [hL] [m³]
+Valores em reais de cada ano, sem correção: …                    │ [@]  [sc]
 
-  Deflacionado pelo IPCA — a inflação do BRASIL — e convertido ao câmbio de hoje.
-  Mede poder de compra brasileiro, apresentado em dólares: não é a inflação dos EUA.
+US$ →  [Nominal] [CPI]      € →  [Nominal] [HICP]
 ```
 
-The band label drops its `· câmbio de hoje` suffix under R$, where no conversion happens —
-announcing one that does not exist would be the same defect in the other direction. The
-explanatory line (`window.conventionExplain`) is the point of the whole redesign: it states
-what the number *is*, including the explicit negation, because a reader who is not told
-completes the sentence themselves and completes it wrong. The collapsed chip carries the
-economy too (`IPCA · Brasil`), so the distinction survives the strip being closed.
+The first design (v1.82.0) kept BOTH readings under a foreign symbol — "US$ · IPCA"
+(val_real_ipca_usd: Brazilian purchasing power, printed in dollars) and "US$ · CPI" — in
+three bands labelled by *where the correction happens*, with an explanatory line whose
+explicit negation ("não é a inflação dos EUA") carried the distinction. It was accurate and
+it was confusing: a researcher who picks dollars and "correct for inflation" expects the
+dollar's inflation, and the three stacked bands made the panel tall and left empty space
+beside it. The maintainer's decision (2026-09-23): the index follows the currency, and
+the panel opens on **Nominal** — a correction is the researcher's methodological choice,
+not something the tool presumes.
+
+What that means mechanically:
+
+* `window.correctionsFor(currency)` is the one rule (mirrored by `fmt.correction_offered`,
+  a parity test reads the JS maps): R$ → IPCA/IGP-M/IGP-DI, US$ → CPI, € → HICP.
+* Options not offered are not shown (no disabled buttons). The correction group keeps a
+  fixed width, so switching currency (4 options ↔ 2) moves nothing on screen.
+* `clampConvention`: a currency switch with a correction on keeps a correction on, by the
+  new currency's own index (R$·IGP-M → US$·CPI); an old deep link with a cross pairing
+  lands the same way (`?cur=USD&corr=IPCA` → US$·CPI); an unrecognisable correction, or none,
+  falls to Nominal.
+* The cross columns stay in Gold (`val_real_ipca_usd`, `val_real_{ipca,igpm,igpdi}_eur`) for
+  Looker and "Estrutura de dados", and the BFF still serves them to a request that names
+  them; the value-gap suggestions (`_value_gap_alternatives`) offer only offered pairings.
+* The explanatory line (`window.conventionExplain`) stays, under the money block: it still
+  says what the number is — including, for Nominal, what it must not be used for.
+
+The panel is two areas — VALOR MONETÁRIO (moeda + correção + the line) and UNIDADES (the
+physical families) — each as tall as its own content, stacking below ~1360px. The v1.82.0
+grid of four columns, with the tall correction group spanning two, dropped Volume onto a
+second row and left the empty space that prompted the redesign (297 → 168 px measured at
+1600px).
 
 ## Tasks
 
@@ -315,7 +338,10 @@ Do not set it until step 4 has actually written rows.
 ## Acceptance criteria
 
 * `US$ · CPI` and `US$ · IPCA` resolve to different columns and carry different labels.
-* No screen presents a foreign currency corrected by a Brazilian index without saying so.
+* No screen presents a foreign currency corrected by a Brazilian index without saying so —
+  since v1.88.0, by not offering the pairing at all.
 * `R$ · CPI` cannot be selected, cannot be deep-linked, and cannot be served.
+* (v1.88.0) Each currency offers only Nominal and its own economy's indices; the default,
+  and the fallback for an unrecognisable state, is Nominal.
 * With the gate off, every existing number is unchanged and the new conventions report
   their own absence.

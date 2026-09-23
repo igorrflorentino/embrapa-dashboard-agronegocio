@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.88.0] - 2026-09-23
+
+### Alterado
+
+- **O painel de convenções métricas foi reorganizado, e o índice agora acompanha a moeda.**
+  Pedido do mantenedor ao ver o painel depois das mudanças da v1.82: espaço vazio demais e
+  combinações que não faziam sentido para quem as escolhia.
+  - **O índice acompanha a moeda.** Cada moeda oferece só "sem correção" e os índices da
+    PRÓPRIA economia: R$ → IPCA · IGP-M · IGP-DI; US$ → CPI; € → HICP. As outras opções não
+    aparecem — em vez de aparecerem desabilitadas — e o rótulo diz de onde é a inflação
+    ("Correção monetária · inflação dos EUA"). Sai do painel a leitura "US$ · IPCA" (poder de
+    compra brasileiro impresso em dólares): legítima, mas quem pede dólares corrigidos pela
+    inflação espera a inflação do dólar. As colunas cruzadas continuam no Gold e o BFF ainda
+    as serve a quem pedir por URL; nenhuma tela as oferece nem as sugere mais — as sugestões
+    da nota de lacuna (`valueGap.coveredBy`) passaram a respeitar a mesma regra
+    (`fmt.correction_offered`, com teste de paridade contra os mapas do JS).
+  - **Trocar a moeda preserva a intenção.** Com uma correção ligada, ela continua ligada pelo
+    índice da nova moeda (R$·IGP-M → US$·CPI → €·HICP → R$·IPCA); o Nominal continua Nominal.
+    Um link antigo com combinação cruzada (`?cur=USD&corr=IPCA`) abre em US$·CPI; um valor
+    irreconhecível, ou nenhum, abre em Nominal.
+  - **O painel abre sem correção (Nominal).** Era IPCA. A correção é uma escolha metodológica
+    do pesquisador, e a frase sob a faixa diz, desde o primeiro carregamento, para que o
+    nominal serve e para que não serve. O padrão mudou nos dois lados: `window.DEFAULT_CONVENTIONS`
+    e os fallbacks do frontend (`dataStore`, `producers`, `AppShell`) e, no BFF, a rota, o rótulo
+    e `effective_value_column` quando a requisição não nomeia correção (`fmt.DEFAULT_CORRECTION`).
+    O `dataStore` começar no mesmo padrão da tela também evita uma consulta desperdiçada no
+    primeiro carregamento (buscava R$·IPCA e logo em seguida R$·Nominal).
+  - **Layout em duas áreas.** VALOR MONETÁRIO (moeda + correção numa linha só + a frase do que o
+    número é) e UNIDADES (as famílias físicas), cada uma com a altura do próprio conteúdo. A grade
+    de quatro colunas de antes deixava a correção — três faixas empilhadas — alta numa coluna e
+    empurrava Volume para uma segunda linha vazia. Medido a 1600 px: **297 → 168 px** de altura,
+    sem texto de botão cortado a 1920, 1600, 1300 (as áreas empilham abaixo de ~1360 px) ou no
+    celular. O grupo da correção tem largura fixa: com 4 opções ou 2, trocar a moeda não move nada.
+  - Glossário ("Corrigir em qual economia?", "IPCA · IGP-M · IGP-DI", "Moeda", `val_real_ipca_*`)
+    e "Sobre" (valor nominal × real) reescritos para a regra nova; o PLANS registra a decisão.
+
 ## [1.87.1] - 2026-09-23
 
 ### Corrigido

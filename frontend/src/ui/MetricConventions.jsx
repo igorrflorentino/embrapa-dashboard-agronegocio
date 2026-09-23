@@ -10,7 +10,8 @@
 //   <MetricConventions value={...} onChange={fn(next)} expanded={bool} onToggleExpanded={fn} />
 // where value is:
 //   { currency: 'BRL'|'USD'|'EUR',
-//     correction: 'Nominal'|'IPCA'|'IGP-M'|'IGP-DI',
+//     correction: 'Nominal'|'IPCA'|'IGP-M'|'IGP-DI'|'CPI'|'HICP'  // offered per currency:
+//                 see window.correctionsFor
 //     units: { mass: 't', volume: 'm³', … }  // display unit per family }
 //
 // `expanded`/`onToggleExpanded` are lifted to the root (main.jsx), NOT local useState —
@@ -53,42 +54,35 @@ window.deflatesOwnCurrency = (currency, correction) => {
 // O catálogo de correções, na ordem em que a faixa as apresenta. `sub` é o publicador
 // (o que o pesquisador precisa para citar), `economy` é o que decide tudo o mais.
 window.CORRECTIONS = [
-  { id: 'Nominal', sub: 'sem corr.', economy: null },
-  { id: 'IPCA',    sub: 'IBGE',      economy: 'BR' },
-  { id: 'IGP-M',   sub: 'FGV',       economy: 'BR' },
-  { id: 'IGP-DI',  sub: 'FGV',       economy: 'BR' },
-  { id: 'CPI',     sub: 'BLS',       economy: 'US' },
-  { id: 'HICP',    sub: 'BCE',       economy: 'EA' },
+  { id: 'Nominal', sub: 'sem correção', economy: null },
+  { id: 'IPCA',    sub: 'IBGE',         economy: 'BR' },
+  { id: 'IGP-M',   sub: 'FGV',          economy: 'BR' },
+  { id: 'IGP-DI',  sub: 'FGV',          economy: 'BR' },
+  { id: 'CPI',     sub: 'BLS',          economy: 'US' },
+  { id: 'HICP',    sub: 'BCE',          economy: 'EA' },
 ];
 
-// Uma combinação (moeda × correção) que o servidor consegue servir de verdade.
-// Espelha serving/sql.ALLOWED_VALUE_COLUMNS, que é quem manda:
-//   • os índices brasileiros existem em R$ e €, e em US$ só o IPCA (não há
-//     val_real_{igpm,igpdi}_usd);
-//   • os índices estrangeiros existem SÓ na moeda que medem — "R$ corrigido pelo CPI"
-//     seria o poder de compra do dólar impresso em reais, que não responde pergunta
-//     nenhuma que o painel faça.
-window.servableConvention = (currency, correction) => {
-  const eco = window.CORRECTION_ECONOMY[correction];
-  if (!eco) return true;                                   // Nominal: sempre
-  if (eco !== 'BR') return window.ECONOMY_CURRENCY[eco] === currency;
-  return !(currency === 'USD' && (correction === 'IGP-M' || correction === 'IGP-DI'));
-};
+// De qual economia é cada moeda — o inverso de ECONOMY_CURRENCY.
+window.CURRENCY_ECONOMY = { BRL: 'BR', USD: 'US', EUR: 'EA' };
 
-// Por que esta combinação não está disponível — a frase muda conforme o motivo, porque
-// os motivos são diferentes: um é uma coluna que o mart não materializa, o outro é uma
-// pergunta que não tem sentido.
-window.unservableReason = (currency, correction) => {
-  const eco = window.CORRECTION_ECONOMY[correction];
-  if (!eco || window.servableConvention(currency, correction)) return undefined;
-  if (eco === 'BR') {
-    return `Indisponível para US$ — não há coluna deflacionada por este índice em dólar `
-      + `(use R$/€, ou o IPCA, ou o CPI para corrigir o próprio dólar).`;
-  }
-  const moeda = (window.CURRENCY_FX[window.ECONOMY_CURRENCY[eco]] || {}).symbol;
-  return `O ${correction} mede os preços ${window.ECONOMY_DA[eco]} — ele corrige ${moeda}, `
-    + `não ${(window.CURRENCY_FX[currency] || {}).symbol}. Troque a moeda para usá-lo.`;
-};
+// As correções que o painel OFERECE para uma moeda: sem correção, ou os índices da
+// PRÓPRIA economia dela — R$ → IPCA · IGP-M · IGP-DI; US$ → CPI; € → HICP. É a regra
+// única: a faixa mostra só estas opções, clampConvention conserta qualquer outra, e o
+// decodificador de deep link passa por clampConvention.
+//
+// Até a v1.87 o painel oferecia também um índice brasileiro sob US$/€ (val_real_ipca_usd:
+// "poder de compra brasileiro, impresso em dólares"). A leitura é legítima, mas a escolha
+// confundia mais do que servia — quem pede dólares corrigidos pela inflação espera a
+// inflação do dólar — e a faixa precisava de três bandas e de uma frase de negação para
+// sustentá-la. Decisão do mantenedor (2026-09-23, v1.88.0): o índice acompanha a moeda.
+// As colunas cruzadas continuam no Gold (Looker, "Estrutura de dados") e o BFF ainda as
+// serve a quem pedir por URL; o painel só não as oferece. webapi/format.py
+// (correction_offered) espelha esta regra para as sugestões de lacuna do valueGap.
+window.correctionsFor = (currency) =>
+  window.CORRECTIONS.filter(c => !c.economy || window.ECONOMY_CURRENCY[c.economy] === currency);
+
+window.offeredConvention = (currency, correction) =>
+  window.correctionsFor(currency).some(c => c.id === correction);
 
 // Hoisted to module scope: it closes over nothing (everything arrives via props).
 // Defined inside the render body it was a NEW component type on every render, so
@@ -104,10 +98,9 @@ function Group({ label, options, active, onPick, mono }) {
         {options.map(o => (
           <button key={o.id}
                   type="button"
-                  disabled={o.disabled}
-                  title={o.disabled ? o.disabledReason : undefined}
-                  className={'seg-opt ' + (active === o.id ? 'on' : '') + (o.disabled ? ' disabled' : '')}
-                  onClick={() => !o.disabled && onPick(o.id)}>
+                  aria-pressed={active === o.id}
+                  className={'seg-opt ' + (active === o.id ? 'on' : '')}
+                  onClick={() => onPick(o.id)}>
             <span className={mono ? 'tnum' : ''}>{o.id}</span>
             {o.sub && <small>{o.sub}</small>}
           </button>
@@ -117,59 +110,31 @@ function Group({ label, options, active, onPick, mono }) {
   );
 }
 
-// As faixas em que a correção é apresentada. O eixo NÃO é "qual índice" — é EM QUE
-// ECONOMIA a correção acontece, porque é isso que muda a operação (e o número). Um
-// índice brasileiro sob um símbolo estrangeiro deflaciona em reais e converte pelo
-// câmbio de HOJE; o índice da própria moeda converte pelo câmbio do ANO e deflaciona
-// lá. Com as duas numa lista só, a escolha parecia ser entre fontes de índice.
-function correctionBands(currency) {
-  const eco = window.CORRECTION_ECONOMY;
-  const opcao = (c) => ({
-    id: c.id,
-    sub: c.sub,
-    disabled: !window.servableConvention(currency, c.id),
-    disabledReason: window.unservableReason(currency, c.id),
-  });
-  const doBrasil = window.CORRECTIONS.filter(c => eco[c.id] === 'BR').map(opcao);
-  const daPropria = window.CORRECTIONS.filter(c => eco[c.id] && eco[c.id] !== 'BR').map(opcao);
-  return [
-    { id: 'nominal', label: 'Sem correção', options: window.CORRECTIONS.filter(c => !eco[c.id]).map(opcao) },
-    {
-      id: 'br',
-      // O sufixo só aparece quando há conversão: em R$ não há câmbio nenhum no caminho,
-      // e anunciar um que não existe seria o mesmo defeito na direção oposta.
-      label: currency === 'BRL' ? 'Inflação do Brasil' : 'Inflação do Brasil · câmbio de hoje',
-      options: doBrasil,
-    },
-    { id: 'own', label: 'Inflação da própria moeda · câmbio do ano', options: daPropria },
-  ];
-}
-
-function CorrectionGroup({ currency, active, onPick, explain }) {
+// A correção é UMA linha de opções, e as opções dependem da moeda (window.correctionsFor):
+// o painel só oferece o que faz sentido, em vez de mostrar tudo e desabilitar metade. O
+// nome da economia vai ao lado do rótulo — "inflação do Brasil", "dos EUA" — porque é ele
+// que explica por que as opções mudam quando a moeda muda.
+function CorrectionGroup({ currency, active, onPick }) {
+  const eco = window.CURRENCY_ECONOMY[currency];
   return (
     <div className="mc-group mc-group-corr">
-      <span className="mc-label">Correção monetária</span>
-      {correctionBands(currency).map(band => (
-        <div key={band.id} className="mc-corr-band">
-          <span className="mc-corr-band-label">{band.label}</span>
-          <div className="seg">
-            {band.options.map(o => (
-              <button key={o.id}
-                      type="button"
-                      disabled={o.disabled}
-                      title={o.disabled ? o.disabledReason : undefined}
-                      className={'seg-opt ' + (active === o.id ? 'on' : '') + (o.disabled ? ' disabled' : '')}
-                      onClick={() => !o.disabled && onPick(o.id)}>
-                <span>{o.id}</span>
-                {o.sub && <small>{o.sub}</small>}
-              </button>
-            ))}
-          </div>
-        </div>
-      ))}
-      {/* O que o número É, em uma frase. A faixa inteira existe para que esta linha
-          possa ser dita — sem ela, "US$ · IPCA" continua parecendo inflação americana. */}
-      <p className="mc-corr-explain">{explain}</p>
+      <div className="mc-label-row"
+           title="Cada índice corrige apenas a moeda da economia cujos preços ele mede — por isso as opções acompanham a moeda escolhida.">
+        <span className="mc-label">Correção monetária</span>
+        {eco && <span className="mc-label-note">inflação {window.ECONOMY_DA[eco]}</span>}
+      </div>
+      <div className="seg">
+        {window.correctionsFor(currency).map(o => (
+          <button key={o.id}
+                  type="button"
+                  aria-pressed={active === o.id}
+                  className={'seg-opt ' + (active === o.id ? 'on' : '')}
+                  onClick={() => onPick(o.id)}>
+            <span>{o.id}</span>
+            {o.sub && <small>{o.sub}</small>}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -193,11 +158,11 @@ function MetricConventions({ value, onChange, families, banco, expanded, onToggl
   const setUnitFor = (fid, id) => set({ units: { ...(value.units || {}), [fid]: id } });
 
 
-  // Picking a currency must not leave an unservable correction active: switching to US$
-  // while IGP-M/IGP-DI (or HICP) is selected fixes the correction in the SAME update, so
-  // the request never carries a combo the BFF would have to substitute behind the user's
-  // back. Reuses window.clampConvention — the strip, the deep-link decoder and the
-  // banco-switch default share one rule.
+  // Picking a currency must not leave a correction the new currency does not offer: R$ ·
+  // IGP-M → US$ becomes US$ · CPI in the SAME update (a correction was on, so it stays on,
+  // by the new currency's own index), and Nominal stays Nominal. Reuses
+  // window.clampConvention — the strip, the deep-link decoder and the banco-switch default
+  // share one rule.
   const setCurrency = (id) => onChange(window.clampConvention({ ...value, currency: id }));
 
   // Collapsed-state summary chips — read-only, mirror FilterTriggerBar's
@@ -272,43 +237,51 @@ function MetricConventions({ value, onChange, families, banco, expanded, onToggl
             </div>
           </div>
 
+          {/* Duas áreas: VALOR MONETÁRIO (moeda + correção + o que o número é) e UNIDADES.
+              Cada uma tem a altura do próprio conteúdo — a grade única de antes deixava a
+              correção alta numa coluna e empurrava Volume para uma segunda linha vazia. */}
           <div className="mc-groups">
             {monetary && (
-              <Group
-                label="Moeda"
-                mono
-                options={[
-                  // BRL/USD/EUR are real Gold columns (BCB PTAX series).
-                  { id: 'BRL', sub: 'R$'  },
-                  { id: 'USD', sub: 'US$' },
-                  { id: 'EUR', sub: '€'   },
-                ]}
-                active={value.currency}
-                onPick={setCurrency}
-              />
+              <section className="mc-block mc-block-money" aria-label="Valor monetário">
+                <div className="mc-block-row">
+                  <Group
+                    label="Moeda"
+                    mono
+                    options={[
+                      // BRL/USD/EUR are real Gold columns (BCB PTAX series).
+                      { id: 'BRL', sub: 'R$'  },
+                      { id: 'USD', sub: 'US$' },
+                      { id: 'EUR', sub: '€'   },
+                    ]}
+                    active={value.currency}
+                    onPick={setCurrency}
+                  />
+                  <CorrectionGroup
+                    currency={value.currency}
+                    active={value.correction}
+                    onPick={(id) => set({ correction: id })}
+                  />
+                </div>
+                {/* O que o número É, em uma frase — sob os dois grupos, porque depende dos dois. */}
+                <p className="mc-corr-explain">{window.conventionExplain(value, banco)}</p>
+              </section>
             )}
 
-            {monetary && (
-              <CorrectionGroup
-                currency={value.currency}
-                active={value.correction}
-                onPick={(id) => set({ correction: id })}
-                explain={window.conventionExplain(value, banco)}
-              />
-            )}
-
-            {physFams.map(fid => {
-              const fam = window.UNIT_FAMILIES[fid];
-              return (
-                <Group key={fid}
-                  label={fam.label}
-                  mono
-                  options={(fam.units || []).map(u => ({ id: u.id, sub: u.long }))}
-                  active={unitFor(fid)}
-                  onPick={(id) => setUnitFor(fid, id)}
-                />
-              );
-            })}
+            <section className={'mc-block mc-block-units' + (monetary ? '' : ' mc-block-solo')}
+                     aria-label="Unidades de medida">
+              {physFams.map(fid => {
+                const fam = window.UNIT_FAMILIES[fid];
+                return (
+                  <Group key={fid}
+                    label={fam.label}
+                    mono
+                    options={(fam.units || []).map(u => ({ id: u.id, sub: u.long }))}
+                    active={unitFor(fid)}
+                    onPick={(id) => setUnitFor(fid, id)}
+                  />
+                );
+              })}
+            </section>
           </div>
         </>
       )}
@@ -318,37 +291,38 @@ function MetricConventions({ value, onChange, families, banco, expanded, onToggl
 
 // Helpers — exported on window for use by views ----------------------
 
+// O painel abre SEM correção: valores nominais, na moeda de cada ano. É o estado que não
+// presume nenhuma escolha metodológica — a correção é uma decisão do pesquisador, e a
+// frase sob a faixa diz, desde o primeiro carregamento, para que o nominal serve e para
+// que não serve. Vale também quando o estado anterior não pode ser reconhecido (link sem
+// `corr`, ou com um valor que não existe). Era IPCA até a v1.87.
 window.DEFAULT_CONVENTIONS = {
   currency:   'BRL',
-  correction: 'IPCA',
+  correction: 'Nominal',
   units:      { mass: 't', volume: 'm³' },
   autoScale:  false,
 };
 
-// A fonte única das combinações servíveis (window.servableConvention, no topo). A faixa
-// desabilita as demais e o decodificador de deep link (main.jsx) as corrige — um
-// ?cur=USD&corr=IGP-M guardado nos favoritos não pode passar por baixo da tela. Devolve
-// SEMPRE uma convenção servível, e a MESMA REFERÊNCIA quando nada muda (main.jsx conta
-// com isso para não re-renderizar as convenções à toa).
+// A fonte única das combinações oferecidas é window.correctionsFor (no topo). A faixa só
+// mostra essas, e o decodificador de deep link (main.jsx) e a troca de banco passam por
+// aqui — um ?cur=USD&corr=IPCA guardado nos favoritos não pode passar por baixo da tela.
+// Devolve SEMPRE uma convenção oferecida, e a MESMA REFERÊNCIA quando nada muda (main.jsx
+// conta com isso para não re-renderizar as convenções à toa).
 //
-// Qual correção substitui a impossível depende do que a pessoa estava pedindo:
-//   • um índice ESTRANGEIRO numa moeda que ele não mede (US$ · HICP) → o índice da nova
-//     moeda, se existir. A intenção era "corrigir pela inflação da própria moeda", e
-//     trocar para o IPCA responderia justamente o que ela escolheu não perguntar.
-//   • um índice BRASILEIRO sem coluna naquela moeda (US$ · IGP-M) → IPCA, o índice
-//     brasileiro que tem coluna em dólar. A medição continua sendo a mesma.
+// A moeda é do usuário; é a correção que cede. Qual correção entra depende do que dá para
+// reconhecer do pedido:
+//   • um ÍNDICE conhecido que a moeda não oferece (US$ · IPCA, R$ · CPI, € · IGP-M) → o
+//     primeiro índice da própria moeda. A intenção era "corrigir pela inflação", e ela se
+//     mantém — pela inflação da economia cuja moeda está na tela.
+//   • algo que não é índice nenhum → Nominal, o padrão: sem saber o que a pessoa queria,
+//     o painel não presume uma correção.
 window.clampConvention = (conv) => {
   if (!conv) return conv;
   const { currency, correction } = conv;
-  if (window.servableConvention(currency, correction)) return conv;
-  const eco = window.CORRECTION_ECONOMY[correction];
-  if (eco && eco !== 'BR') {
-    const propria = window.CORRECTIONS.find(
-      c => c.economy && c.economy !== 'BR' && window.ECONOMY_CURRENCY[c.economy] === currency
-    );
-    return { ...conv, correction: propria ? propria.id : 'IPCA' };
-  }
-  return { ...conv, correction: 'IPCA' };
+  if (window.offeredConvention(currency, correction)) return conv;
+  const pedidoDeCorrecao = !!window.CORRECTION_ECONOMY[correction];
+  const propria = window.correctionsFor(currency).find(c => c.economy);
+  return { ...conv, correction: pedidoDeCorrecao && propria ? propria.id : 'Nominal' };
 };
 
 // O que o número É, em uma frase — a linha que a faixa inteira existe para poder dizer.
@@ -435,9 +409,10 @@ window.CURRENCY_FX = {
 // requested currency for EVERY live banco (production AND trade). There is no client
 // multiplier left; this helper exists so the manual value-scaling sites (views
 // building chart series by hand) read a single factor that agrees with applyConv /
-// formatValue. (Edge: USD + IGP-M/IGP-DI has no _usd column → the BFF falls back to
-// the real BRL column and the value_label flags "moeda indisponível → R$"; the
-// figure is still real, never a mock conversion.)
+// formatValue. (Edge, BFF-only since v1.88.0 — the strip no longer offers it: USD +
+// IGP-M/IGP-DI has no _usd column → the BFF falls back to the real BRL column and the
+// value_label flags "moeda indisponível → R$"; the figure is still real, never a mock
+// conversion.)
 window.convFactor = (_conv) => 1;
 
 // Base-aware value multiplier — kept for the views that call it (ViewGeography /

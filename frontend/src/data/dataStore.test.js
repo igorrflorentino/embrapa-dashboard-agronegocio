@@ -239,7 +239,9 @@ describe('dataStore', () => {
     const f = vi.fn(() => jsonRes(validSnap()));
     const ds = await loadStore(f);
     await ds.load('ibge_pevs');
-    ds.setConventions({ currency: 'BRL', correction: 'IPCA' }); // same as active
+    // Same as active: the store starts on BRL · Nominal, the screen's own default since
+    // v1.88.0 — so the app's first setConventions is a no-op, not a second snapshot fetch.
+    ds.setConventions({ currency: 'BRL', correction: 'Nominal' });
     await settle();
     expect(snapCalls(f)).toBe(1);
   });

@@ -128,10 +128,11 @@ function readStateFromURL() {
   if (corr && window.CORRECTION_ECONOMY && (corr === 'Nominal' || window.CORRECTION_ECONOMY[corr])) {
     conv.correction = corr;
   }
-  // Clamp an unservable currency × correction combo — US$ × IGP-M/IGP-DI (no US$
-  // deflated column, so it would render a real R$ value under a US$ symbol), and since
-  // v1.82.0 also an index paired with a currency it does not measure (R$ × CPI). The
-  // strip disables these; a bookmarked deep link must not bypass that gate.
+  // Clamp a currency × correction combo the strip does not offer. Since v1.88.0 an index
+  // is offered only for the currency of the economy it measures (R$ → IPCA/IGP-M/IGP-DI,
+  // US$ → CPI, € → HICP), so an old bookmarked ?cur=USD&corr=IPCA lands on US$ · CPI (a
+  // correction was asked for, and it stays one) — and a link WITHOUT `corr` keeps the
+  // default, Nominal. A deep link must not bypass the gate the strip enforces.
   if (window.clampConvention) Object.assign(conv, window.clampConvention(conv));
   if (q.get('mu') || q.get('vu')) {
     conv.units = { ...conv.units, mass: q.get('mu') || conv.units?.mass, volume: q.get('vu') || conv.units?.volume };
@@ -517,9 +518,9 @@ function Dashboard() {
     if (nextId === databaseRef.current) return; // re-selection: no reset
     setSummary({}); // F1.3: drop the previous banco's basket/period/value/geo
     const base = window.canonCurrencyFor ? window.canonCurrencyFor(nextId) : 'BRL';
-    // Default to the banco's base currency, then clamp: a USD-base banco inherits the
-    // unservable US$ × IGP-M/IGP-DI combo — or a € × HICP left over from the previous
-    // banco — if that correction is still active, so fix it in the same update.
+    // Default to the banco's base currency, then clamp: a correction the base currency
+    // does not offer (R$ · IPCA carried into a US$-base banco) becomes that currency's own
+    // index (US$ · CPI) in the same update; Nominal stays Nominal.
     setConventions((c) => {
       const next = c && c.currency === base ? c : { ...c, currency: base };
       return window.clampConvention ? window.clampConvention(next) : next;

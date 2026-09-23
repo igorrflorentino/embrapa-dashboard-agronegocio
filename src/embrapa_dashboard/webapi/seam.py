@@ -87,7 +87,7 @@ def effective_value_column(banco: Banco, conv: dict) -> tuple[str, str]:
     treats the two cases differently for that reason.
     """
     currency = conv.get("currency", "BRL")
-    correction = conv.get("correction", "IPCA")
+    correction = conv.get("correction", fmt.DEFAULT_CORRECTION)
     requested = fmt.monetary_column(currency, correction)
     note = f" · {_trade_valuation_note(banco)}" if banco.id in _TRADE else ""
     if requested in sqlbuild.ALLOWED_VALUE_COLUMNS:
@@ -490,9 +490,13 @@ _CORRECTIONS = ("IPCA", "IGP-M", "IGP-DI", "CPI", "HICP")
 
 def _value_gap_alternatives(banco_id: str, value_col: str, gap_rows) -> dict:
     """For an annual banco whose corrected convention leaves years without value: the
-    OTHER corrections in the same currency, each with its own gap frame — so the note can
-    name the one that does reach those years (PAM/PPM 1974–1979: IGP-DI, from the v1.81.0
-    backfill on). {} when there is no gap to fill.
+    OTHER corrections the screen OFFERS in the same currency, each with its own gap frame
+    — so the note can name the one that does reach those years (PAM/PPM 1974–1979: IGP-DI,
+    from the v1.81.0 backfill on). {} when there is no gap to fill.
+
+    "Offered", not merely "has a column": since v1.88.0 a Brazilian index is not offered
+    under US$/€ (fmt.correction_offered), and a note suggesting "US$ · IPCA reaches these
+    years" would point the researcher at a button that no longer exists.
 
     Asked of the data, never assumed: until IGP-DI is re-ingested from 1974, its frame shows
     the same hole and nothing is offered. Nominal is left out (its only hole is the euro
@@ -509,7 +513,11 @@ def _value_gap_alternatives(banco_id: str, value_col: str, gap_rows) -> dict:
     out = {}
     for correction in _CORRECTIONS:
         col = fmt.monetary_column(currency, correction)
-        if col != value_col and col in sqlbuild.ALLOWED_VALUE_COLUMNS:
+        if (
+            col != value_col
+            and col in sqlbuild.ALLOWED_VALUE_COLUMNS
+            and fmt.correction_offered(currency, correction)
+        ):
             out[correction] = gateway.fetch_annual_value_gap(banco_id, value_column=col)
     return out
 

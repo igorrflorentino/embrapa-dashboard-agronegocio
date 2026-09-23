@@ -60,31 +60,33 @@ describe('convFactor / convFactorFor never convert server-backed values', () => 
   });
 });
 
-describe('clampConvention guards the unservable USD × IGP-M/IGP-DI combos', () => {
-  // The serving marts carry IGP-M/IGP-DI deflation in BRL/EUR only — there is no
-  // val_real_{igpm,igpdi}_usd in the allowlist. Requesting USD × IGP-M/IGP-DI would
-  // make the BFF fall back to a real R$ figure shown under a US$ symbol (wrong-symbol
-  // display). The strip disables those buttons; clampConvention is the shared rule the
-  // deep-link decoder + banco-switch default reuse so no path can slip the combo past.
-  it.each(['IGP-M', 'IGP-DI'])('snaps USD × %s back to IPCA', (correction) => {
-    const out = window.clampConvention({ currency: 'USD', correction });
-    expect(out.currency).toBe('USD');
-    expect(out.correction).toBe('IPCA');
+describe('clampConvention keeps every convention on the offered set', () => {
+  // Since v1.88.0 an index is offered only for the currency of the economy it measures
+  // (R$ → IPCA/IGP-M/IGP-DI, US$ → CPI, € → HICP). clampConvention is the shared rule the
+  // strip's currency switch, the deep-link decoder and the banco-switch default reuse, so
+  // no path can slip a cross pairing past the screen.
+  it.each([
+    ['USD', 'IGP-M', 'CPI'],
+    ['USD', 'IGP-DI', 'CPI'],
+    ['USD', 'IPCA', 'CPI'],
+    ['EUR', 'IPCA', 'HICP'],
+  ])("snaps %s × %s to the currency's own index (%s)", (currency, correction, own) => {
+    const out = window.clampConvention({ currency, correction });
+    expect(out.currency).toBe(currency);
+    expect(out.correction).toBe(own);
   });
 
-  it('leaves every servable combo untouched (and returns the same object reference)', () => {
-    // USD keeps Nominal/IPCA; BRL/EUR keep ALL four corrections (their _usd/_eur
-    // deflated columns exist). The identity return matters: main.jsx relies on it to
-    // avoid a needless conventions re-render on a no-op clamp.
-    const servable = [
+  it('leaves every offered combo untouched (and returns the same object reference)', () => {
+    // The identity return matters: main.jsx relies on it to avoid a needless
+    // conventions re-render on a no-op clamp.
+    const offered = [
       { currency: 'USD', correction: 'Nominal' },
-      { currency: 'USD', correction: 'IPCA' },
+      { currency: 'USD', correction: 'CPI' },
+      { currency: 'EUR', correction: 'HICP' },
       { currency: 'BRL', correction: 'IGP-M' },
       { currency: 'BRL', correction: 'IGP-DI' },
-      { currency: 'EUR', correction: 'IGP-M' },
-      { currency: 'EUR', correction: 'IGP-DI' },
     ];
-    for (const conv of servable) {
+    for (const conv of offered) {
       expect(window.clampConvention(conv)).toBe(conv); // unchanged, same reference
     }
   });

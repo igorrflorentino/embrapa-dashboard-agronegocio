@@ -1,20 +1,20 @@
-// correctionEconomy.test.jsx — a correção acontece em ALGUMA economia, e a tela tem de
-// dizer em qual.
+// correctionEconomy.test.jsx — a correção acontece em ALGUMA economia, e o índice
+// acompanha a moeda.
 //
-// O defeito que este arquivo guarda não era um número errado: era um número certo com
-// rótulo errado. "US$ · IPCA" produz val_real_ipca_usd, que é real deflacionado pelo
-// IPCA e convertido ao câmbio de HOJE — poder de compra brasileiro, apresentado em
-// dólares. Lido de relance, porém, a faixa afirmava que dólares estavam sendo corrigidos
-// por inflação brasileira, que não é uma operação que exista. A partir da v1.82.0 existe
-// também val_real_cpi_usd, que converte pelo câmbio do ANO e corrige pelo CPI: outra
-// pergunta, outro número, e agora as duas cabem na mesma faixa — o que só é seguro se a
-// faixa as distinguir.
+// Até a v1.87 a faixa oferecia duas operações sob o mesmo símbolo: "US$ · IPCA"
+// (val_real_ipca_usd — real deflacionado pelo IPCA e convertido ao câmbio de HOJE: poder
+// de compra brasileiro, apresentado em dólares) e "US$ · CPI" (val_real_cpi_usd — câmbio
+// do ANO, corrigido pela inflação americana). As duas eram legítimas, mas a primeira
+// confundia mais do que servia — quem pede dólares corrigidos pela inflação espera a
+// inflação do dólar — e exigia três bandas e uma frase de negação para ser lida certo.
+// Desde a v1.88.0 (decisão do mantenedor, 2026-09-23) o painel só oferece, para cada
+// moeda, "sem correção" ou um índice da PRÓPRIA economia dela.
 //
-// Por isso os testes abaixo verificam TRÊS coisas e não só a terceira:
-//   1. que as duas leituras continuam sendo convenções distintas (não uma renomeando a
-//      outra);
-//   2. que um índice nunca pode ser oferecido para uma moeda que ele não mede;
-//   3. que o que aparece na tela — banda, frase, chip — nomeia a economia.
+// Os testes abaixo guardam três coisas:
+//   1. a regra: R$ → IPCA · IGP-M · IGP-DI; US$ → CPI; € → HICP; Nominal em todas;
+//   2. que NENHUM caminho — clique, troca de moeda, deep link — produz outra combinação,
+//      e que o padrão é o Nominal;
+//   3. que a tela diz de que economia é a inflação oferecida.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render } from '@testing-library/react';
@@ -30,7 +30,7 @@ beforeEach(async () => {
 
 afterEach(() => cleanup());
 
-const BASE = { currency: 'BRL', correction: 'IPCA', units: { mass: 't', volume: 'm³' }, autoScale: false };
+const BASE = { currency: 'BRL', correction: 'Nominal', units: { mass: 't', volume: 'm³' }, autoScale: false };
 
 function strip(conv, extra = {}) {
   return render(
@@ -39,6 +39,9 @@ function strip(conv, extra = {}) {
                        expanded onToggleExpanded={() => {}} />
   );
 }
+
+const opcoesDaCorrecao = (container) =>
+  [...container.querySelectorAll('.mc-group-corr .seg-opt')].map(e => e.firstChild.textContent);
 
 describe('o catálogo de correções sabe qual economia cada índice mede', () => {
   it('pareia cada índice com a economia dos preços que ele mede', () => {
@@ -52,6 +55,7 @@ describe('o catálogo de correções sabe qual economia cada índice mede', () =
 
   it('espelha o mapa economia → moeda que o backend usa para escolher a coluna', () => {
     expect(window.ECONOMY_CURRENCY).toEqual({ BR: 'BRL', US: 'USD', EA: 'EUR' });
+    expect(window.CURRENCY_ECONOMY).toEqual({ BRL: 'BR', USD: 'US', EUR: 'EA' });
   });
 
   it.each([
@@ -66,72 +70,75 @@ describe('o catálogo de correções sabe qual economia cada índice mede', () =
   });
 });
 
-describe('um índice só é oferecido para a moeda que ele mede', () => {
+describe('cada moeda oferece só a inflação da própria economia', () => {
   it.each([
-    ['BRL', 'CPI'],
-    ['BRL', 'HICP'],
-    ['EUR', 'CPI'],
-    ['USD', 'HICP'],
-  ])('%s × %s não é servível', (currency, correction) => {
-    expect(window.servableConvention(currency, correction)).toBe(false);
-    // …e o motivo explica a REGRA, não só a ausência: quem lê tem de aprender que o
-    // índice pertence a uma moeda, senão volta a tentar a mesma combinação.
-    expect(window.unservableReason(currency, correction)).toMatch(/mede os preços/);
+    ['BRL', ['Nominal', 'IPCA', 'IGP-M', 'IGP-DI']],
+    ['USD', ['Nominal', 'CPI']],
+    ['EUR', ['Nominal', 'HICP']],
+  ])('%s oferece %j', (currency, ids) => {
+    expect(window.correctionsFor(currency).map(c => c.id)).toEqual(ids);
   });
 
-  it('mantém servível o que o mart realmente carrega', () => {
-    for (const c of ['BRL', 'USD', 'EUR']) expect(window.servableConvention(c, 'Nominal')).toBe(true);
-    for (const c of ['BRL', 'USD', 'EUR']) expect(window.servableConvention(c, 'IPCA')).toBe(true);
-    expect(window.servableConvention('USD', 'CPI')).toBe(true);
-    expect(window.servableConvention('EUR', 'HICP')).toBe(true);
-    // A lacuna antiga (não há val_real_{igpm,igpdi}_usd) continua valendo.
-    expect(window.servableConvention('USD', 'IGP-M')).toBe(false);
-    expect(window.servableConvention('EUR', 'IGP-DI')).toBe(true);
+  it.each([
+    ['USD', 'IPCA'], ['USD', 'IGP-M'], ['USD', 'IGP-DI'], ['USD', 'HICP'],
+    ['EUR', 'IPCA'], ['EUR', 'IGP-M'], ['EUR', 'IGP-DI'], ['EUR', 'CPI'],
+    ['BRL', 'CPI'], ['BRL', 'HICP'],
+  ])('%s × %s não é oferecido', (currency, correction) => {
+    expect(window.offeredConvention(currency, correction)).toBe(false);
+  });
+
+  it('o padrão é o Nominal, e ele é oferecido em toda moeda', () => {
+    expect(window.DEFAULT_CONVENTIONS.correction).toBe('Nominal');
+    for (const c of ['BRL', 'USD', 'EUR']) expect(window.offeredConvention(c, 'Nominal')).toBe(true);
   });
 });
 
-describe('clampConvention substitui pela INTENÇÃO, não pelo padrão', () => {
-  it('troca de moeda mantendo "corrigir pela própria moeda"', () => {
-    // Quem estava em US$ · CPI pediu a inflação da própria moeda. Ao ir para o euro, a
-    // resposta equivalente é o HICP — cair no IPCA devolveria justamente a leitura que
-    // essa pessoa escolheu não usar.
-    expect(window.clampConvention({ currency: 'EUR', correction: 'CPI' }).correction).toBe('HICP');
-    expect(window.clampConvention({ currency: 'USD', correction: 'HICP' }).correction).toBe('CPI');
+describe('clampConvention: a moeda é do usuário, a correção é que cede', () => {
+  it.each([
+    ['USD', 'IPCA', 'CPI'],     // link antigo de "poder de compra brasileiro em dólares"
+    ['USD', 'IGP-DI', 'CPI'],
+    ['EUR', 'IGP-M', 'HICP'],
+    ['EUR', 'CPI', 'HICP'],     // trocou de moeda estando no CPI
+    ['USD', 'HICP', 'CPI'],
+    ['BRL', 'CPI', 'IPCA'],
+    ['BRL', 'HICP', 'IPCA'],
+  ])('%s × %s → índice da própria moeda (%s): a correção pedida continua ligada', (currency, correction, esperado) => {
+    const out = window.clampConvention({ currency, correction });
+    expect(out.currency).toBe(currency);
+    expect(out.correction).toBe(esperado);
   });
 
-  it('cai no IPCA quando não existe índice próprio para a moeda', () => {
-    // Não há índice "do real" entre os estrangeiros, então R$ × CPI volta ao IPCA —
-    // que é, de fato, a inflação do real.
-    expect(window.clampConvention({ currency: 'BRL', correction: 'CPI' }).correction).toBe('IPCA');
+  it('algo que não é índice nenhum cai no Nominal — sem saber o pedido, não presume correção', () => {
+    expect(window.clampConvention({ currency: 'BRL', correction: 'XYZ' }).correction).toBe('Nominal');
+    expect(window.clampConvention({ currency: 'USD', correction: undefined }).correction).toBe('Nominal');
   });
 
-  it('mantém o comportamento antigo para um índice brasileiro sem coluna em US$', () => {
-    // Aqui a medição (preços do Brasil) sobrevive à troca, então o IPCA é o vizinho certo.
-    expect(window.clampConvention({ currency: 'USD', correction: 'IGP-M' }).correction).toBe('IPCA');
-    expect(window.clampConvention({ currency: 'USD', correction: 'IGP-DI' }).correction).toBe('IPCA');
-  });
-
-  it('nunca devolve uma combinação que o servidor teria de substituir por baixo', () => {
+  it('não toca no que já é oferecido (e devolve a MESMA referência)', () => {
     for (const currency of ['BRL', 'USD', 'EUR']) {
-      for (const c of window.CORRECTIONS) {
-        const out = window.clampConvention({ currency, correction: c.id });
-        expect(window.servableConvention(out.currency, out.correction)).toBe(true);
-        expect(out.currency).toBe(currency); // a moeda é do usuário; a correção é que cede
+      for (const c of window.correctionsFor(currency)) {
+        const conv = { currency, correction: c.id };
+        expect(window.clampConvention(conv)).toBe(conv);
       }
     }
+  });
+
+  it('nunca devolve uma combinação que a faixa não oferece', () => {
+    for (const currency of ['BRL', 'USD', 'EUR']) {
+      for (const correction of ['Nominal', 'IPCA', 'IGP-M', 'IGP-DI', 'CPI', 'HICP', 'lixo']) {
+        const out = window.clampConvention({ currency, correction });
+        expect(window.offeredConvention(out.currency, out.correction)).toBe(true);
+      }
+    }
+  });
+
+  it('tolera uma convenção ausente', () => {
+    expect(window.clampConvention(null)).toBeNull();
+    expect(window.clampConvention(undefined)).toBeUndefined();
   });
 });
 
 describe('conventionExplain diz o que o número É', () => {
-  it('nega explicitamente a leitura errada quando o índice é brasileiro e a moeda não', () => {
-    const frase = window.conventionExplain({ currency: 'USD', correction: 'IPCA' }, 'ibge_pevs');
-    expect(frase).toContain('BRASIL');
-    expect(frase).toContain('câmbio de hoje');
-    // A negativa é o ponto: sem ela o leitor completa a frase sozinho, e completa errado.
-    expect(frase).toContain('não é a inflação dos EUA');
-  });
-
-  it('descreve a ordem inversa para o índice da própria moeda', () => {
+  it('descreve câmbio do ano + inflação da própria economia para o índice estrangeiro', () => {
     const frase = window.conventionExplain({ currency: 'USD', correction: 'CPI' }, 'ibge_pevs');
     expect(frase).toContain('câmbio do ano');
     expect(frase).toContain('dos EUA');
@@ -149,85 +156,109 @@ describe('conventionExplain diz o que o número É', () => {
     expect(frase).toBe('Deflacionado pelo IPCA: reais de hoje.');
   });
 
-  it('diz para que serve o nominal, na moeda certa', () => {
+  it('diz para que serve o nominal — e para que NÃO serve — na moeda certa', () => {
+    // É a primeira frase que o pesquisador lê: o painel abre no nominal.
+    const reais = window.conventionExplain({ currency: 'BRL', correction: 'Nominal' }, 'ibge_pevs');
+    expect(reais).toContain('reais de cada ano');
+    expect(reais).toContain('não para comparar anos distantes');
     expect(window.conventionExplain({ currency: 'USD', correction: 'Nominal' }, 'mdic_comex'))
       .toContain('dólares de cada ano');
-    expect(window.conventionExplain({ currency: 'BRL', correction: 'Nominal' }, 'ibge_pevs'))
-      .toContain('reais de cada ano');
-  });
-
-  it('dá frases DIFERENTES para as duas leituras sob o mesmo símbolo', () => {
-    const viaBrasil = window.conventionExplain({ currency: 'USD', correction: 'IPCA' }, 'ibge_pevs');
-    const viaEua = window.conventionExplain({ currency: 'USD', correction: 'CPI' }, 'ibge_pevs');
-    expect(viaBrasil).not.toBe(viaEua);
   });
 });
 
-describe('a faixa mostra as bandas, a frase e o chip', () => {
-  it('separa as correções em bandas por economia', () => {
-    const { container } = strip({ currency: 'USD', correction: 'CPI' });
-    const bandas = [...container.querySelectorAll('.mc-corr-band-label')].map(e => e.textContent);
-    expect(bandas).toEqual([
-      'Sem correção',
-      'Inflação do Brasil · câmbio de hoje',
-      'Inflação da própria moeda · câmbio do ano',
-    ]);
+describe('a faixa mostra só as opções da moeda e diz de que economia é a inflação', () => {
+  it.each([
+    ['BRL', ['Nominal', 'IPCA', 'IGP-M', 'IGP-DI'], 'inflação do Brasil'],
+    ['USD', ['Nominal', 'CPI'], 'inflação dos EUA'],
+    ['EUR', ['Nominal', 'HICP'], 'inflação da zona do euro'],
+  ])('sob %s: %j, com a nota "%s"', (currency, ids, nota) => {
+    const { container } = strip({ currency });
+    expect(opcoesDaCorrecao(container)).toEqual(ids);
+    expect(container.querySelector('.mc-group-corr .mc-label-note').textContent).toBe(nota);
   });
 
-  it('não anuncia uma conversão que não acontece quando a moeda é o real', () => {
-    const { container } = strip({ currency: 'BRL' });
-    const bandas = [...container.querySelectorAll('.mc-corr-band-label')].map(e => e.textContent);
-    expect(bandas).toContain('Inflação do Brasil');
-    expect(bandas.join(' ')).not.toContain('Inflação do Brasil · câmbio de hoje');
+  it('não mostra botão desabilitado nenhum — o que não faz sentido simplesmente não aparece', () => {
+    for (const currency of ['BRL', 'USD', 'EUR']) {
+      const { container, unmount } = strip({ currency });
+      expect(container.querySelectorAll('.seg-opt.disabled, .seg-opt[disabled]')).toHaveLength(0);
+      unmount();
+    }
   });
 
-  it('desabilita o CPI e o HICP sob R$, com o motivo no title', () => {
-    const { container } = strip({ currency: 'BRL' });
-    const desabilitados = [...container.querySelectorAll('.seg-opt.disabled')];
-    const ids = desabilitados.map(e => e.textContent);
-    expect(ids.join(' ')).toContain('CPI');
-    expect(ids.join(' ')).toContain('HICP');
-    const cpi = desabilitados.find(e => e.textContent.startsWith('CPI'));
-    expect(cpi.getAttribute('title')).toMatch(/mede os preços dos EUA/);
-  });
-
-  it('sob US$ o CPI fica clicável e o HICP não', () => {
+  it('clicar no índice da moeda o seleciona', () => {
     const onChange = vi.fn();
     const { container } = strip({ currency: 'USD' }, { onChange });
-    const botao = (id) => [...container.querySelectorAll('.seg-opt')].find(e => e.textContent.startsWith(id));
-    expect(botao('CPI').classList.contains('disabled')).toBe(false);
-    expect(botao('HICP').classList.contains('disabled')).toBe(true);
-    fireEvent.click(botao('CPI'));
-    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ correction: 'CPI' }));
+    const cpi = [...container.querySelectorAll('.mc-group-corr .seg-opt')].find(e => e.firstChild.textContent === 'CPI');
+    fireEvent.click(cpi);
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ currency: 'USD', correction: 'CPI' }));
   });
 
-  it('imprime a frase de explicação junto do grupo', () => {
-    const { container } = strip({ currency: 'USD', correction: 'IPCA' });
-    const explica = container.querySelector('.mc-corr-explain');
-    expect(explica.textContent).toContain('não é a inflação dos EUA');
+  it.each([
+    [{ currency: 'BRL', correction: 'IGP-DI' }, 'USD', 'CPI'],
+    [{ currency: 'USD', correction: 'CPI' }, 'EUR', 'HICP'],
+    [{ currency: 'EUR', correction: 'HICP' }, 'BRL', 'IPCA'],
+    [{ currency: 'BRL', correction: 'Nominal' }, 'EUR', 'Nominal'],
+  ])('trocar a moeda de %j para %s leva a correção junto (%s)', (antes, moeda, esperado) => {
+    const onChange = vi.fn();
+    const { container } = strip(antes, { onChange });
+    const botao = [...container.querySelectorAll('.mc-block-row > .mc-group:not(.mc-group-corr) .seg-opt')]
+      .find(e => e.firstChild.textContent === moeda);
+    fireEvent.click(botao);
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ currency: moeda, correction: esperado }));
+  });
+
+  it('imprime a frase de explicação sob os dois grupos monetários', () => {
+    const { container } = strip({ currency: 'USD', correction: 'CPI' });
+    const explica = container.querySelector('.mc-block-money > .mc-corr-explain');
+    expect(explica.textContent).toContain('dos EUA');
   });
 
   it('o chip recolhido carrega a economia, não só o índice', () => {
-    expect(window.correctionChip({ currency: 'USD', correction: 'IPCA' })).toBe('IPCA · Brasil');
     expect(window.correctionChip({ currency: 'USD', correction: 'CPI' })).toBe('CPI · EUA');
     expect(window.correctionChip({ currency: 'EUR', correction: 'HICP' })).toBe('HICP · zona do euro');
+    expect(window.correctionChip({ currency: 'BRL', correction: 'IPCA' })).toBe('IPCA · Brasil');
     expect(window.correctionChip({ currency: 'BRL', correction: 'Nominal' })).toBe('Sem correção');
   });
 
   it('mostra o chip com a economia já no estado recolhido', () => {
     const { container } = render(
-      <MetricConventions value={{ ...BASE, currency: 'USD', correction: 'IPCA' }} onChange={() => {}}
+      <MetricConventions value={{ ...BASE, currency: 'USD', correction: 'CPI' }} onChange={() => {}}
                          families={['mass']} banco="ibge_pevs" expanded={false} onToggleExpanded={() => {}} />
     );
     const chips = [...container.querySelectorAll('.fm-chip-filter')].map(e => e.textContent);
-    expect(chips.some(c => c.includes('IPCA · Brasil'))).toBe(true);
+    expect(chips.some(c => c.includes('CPI · EUA'))).toBe(true);
+  });
+});
+
+describe('o painel separa VALOR MONETÁRIO de UNIDADES', () => {
+  it('moeda e correção numa área, as famílias físicas na outra', () => {
+    const { container } = render(
+      <MetricConventions value={BASE} onChange={() => {}} families={['mass', 'volume']} banco="ibge_pevs"
+                         expanded onToggleExpanded={() => {}} />
+    );
+    const rotulos = (sel) => [...container.querySelectorAll(`${sel} .mc-label`)].map(e => e.textContent);
+    expect(rotulos('.mc-block-money')).toEqual(['Moeda', 'Correção monetária']);
+    expect(rotulos('.mc-block-units')).toEqual(['Massa', 'Volume']);
+  });
+
+  it('sem valor monetário, as unidades ocupam o painel sozinhas', () => {
+    window.isMonetaryBanco = () => false;
+    try {
+      const { container } = render(
+        <MetricConventions value={BASE} onChange={() => {}} families={['mass']} banco="future_physical"
+                           expanded onToggleExpanded={() => {}} />
+      );
+      expect(container.querySelector('.mc-block-money')).toBeNull();
+      expect(container.querySelector('.mc-block-units.mc-block-solo')).toBeTruthy();
+    } finally {
+      delete window.isMonetaryBanco;
+    }
   });
 });
 
 describe('conventionMonetaryLabel nomeia a economia quando o símbolo não basta', () => {
-  it('marca o índice brasileiro sob moeda estrangeira', () => {
+  it('marca um índice brasileiro sob moeda estrangeira (convenção vinda de fora da faixa)', () => {
     expect(window.conventionMonetaryLabel({ currency: 'USD', correction: 'IPCA' })).toBe('USD · IPCA (Brasil)');
-    expect(window.conventionMonetaryLabel({ currency: 'EUR', correction: 'IGP-M' })).toBe('EUR · IGP-M (Brasil)');
   });
 
   it('não polui o rótulo quando o índice já é o da moeda exibida', () => {

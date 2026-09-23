@@ -35,7 +35,7 @@ const notify = () => {
 };
 
 // Active display conventions (currency/correction drive the value column).
-let activeConv = { currency: 'BRL', correction: 'IPCA' };
+let activeConv = { currency: 'BRL', correction: 'Nominal' };  // = window.DEFAULT_CONVENTIONS (v1.88.0)
 // Active flow (export/import) — a SERVER-SIDE filter, NOT a display convention: the
 // trade marts are pre-aggregated over flow, so a direction is part of the snapshot's
 // cache key + request, exactly like the value column. 'all' (the default) sums every
@@ -435,7 +435,7 @@ window.dataStore = {
   // loading) under the PREVIOUS conventions, now under the new key, then notify.
   setConventions(conv) {
     if (!conv) return;
-    const next = { currency: conv.currency || 'BRL', correction: conv.correction || 'IPCA' };
+    const next = { currency: conv.currency || 'BRL', correction: conv.correction || 'Nominal' };
     if (next.currency === activeConv.currency && next.correction === activeConv.correction) return;
     // Bancos touched under any previous convention (cache keys are `id|cur|corr`).
     const loadedBancos = [...new Set(Object.keys(store).map((k) => k.split('|')[0]))];
