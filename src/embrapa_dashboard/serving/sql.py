@@ -1987,6 +1987,7 @@ def raw_table_rows(
     order_dir: str = "asc",
     filters: Sequence[dict] = (),
     visibility_predicate: str = "",
+    stable_order: bool = False,
 ) -> tuple[str, list]:
     """``SELECT *`` over one allowlisted table, optionally ordered + filtered, paginated.
 
@@ -2008,7 +2009,10 @@ def raw_table_rows(
         col = _validate_column(order_by, frozenset(columns_types), "order_by column")
         direction = "desc" if str(order_dir).lower() == "desc" else "asc"
         order_clause = f"order by `{col}` {direction}"
-    elif conditions:
+    elif conditions or stable_order:
+        # ``stable_order``: a plain browse of a VIEW lands here too — a view has no storage
+        # for the free tabledata.list route (gateway._is_listable) — and needs the same
+        # deterministic paging as a filtered one.
         # This filtered/gated path runs one BigQuery job PER PAGE, and BigQuery guarantees
         # NO result ordering without ORDER BY — so a bare LIMIT/OFFSET can duplicate/skip
         # rows across pages (a researcher filtering + paging would see the same row twice

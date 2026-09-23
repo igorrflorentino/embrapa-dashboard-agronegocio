@@ -1783,6 +1783,23 @@ def _inspect_visibility_predicate(banco_id: str, table_id: str) -> str:
     return sqlbuild.visibility_clause(get_settings(), short, cols[0])
 
 
+# BigQuery's free ``tabledata.list`` reads a table's STORAGE, and a view has none: it answers
+# 400 "Cannot list a table of type VIEW", and a view's ``num_rows`` is 0. silver_inflation —
+# the deflator union, consultable in "Referências" and in every banco's Silver layer of
+# "Estrutura de dados" — IS a view, so both screens failed on their DEFAULT (unsorted) browse
+# and counted 0 rows, from v1.82.0 (which surfaced it) until v1.87.1, while a sorted browse
+# (the query path) worked. Found 2026-09-23 while checking the is_interpolated column reached
+# the screen. It is the only view in either allowlist today (census of all 54 entries).
+_UNLISTABLE_TABLE_TYPES = frozenset({"VIEW", "MATERIALIZED_VIEW"})
+
+
+def _is_listable(ref: str) -> bool:
+    """Whether ``ref`` may take the free shortcuts (tabledata.list rows, cached num_rows) —
+    true for a TABLE. A view has no storage to list and no row count to read, so it goes
+    through the cost-guarded query path instead (one metadata read; free)."""
+    return _client().get_table(ref).table_type not in _UNLISTABLE_TABLE_TYPES
+
+
 @cache.memoize()
 def fetch_table_schema(banco_id: str, table_id: str) -> dict:
     """Column names + types + row count for an allowlisted table (FREE — table metadata,
@@ -1814,7 +1831,8 @@ def fetch_table_rows(
     off = max(0, min(int(offset), RAW_TABLE_MAX_OFFSET))
     # A gated Gold fact (vis != '') CANNOT use the free tabledata.list shortcut — that path
     # can't carry the F7 predicate — so it always goes through the (cost-guarded) query path.
-    if not order_by and not filters and not vis:
+    plain = not order_by and not filters and not vis
+    if plain and _is_listable(ref):
         return (
             _client()
             .list_rows(ref, max_results=lim, start_index=off)
@@ -1833,6 +1851,7 @@ def fetch_table_rows(
         order_dir=order_dir,
         filters=flt,
         visibility_predicate=vis,
+        stable_order=plain,
     )
     return run_query(sql, params, max_bytes=RAW_TABLE_MAX_BYTES)
 
@@ -1850,9 +1869,9 @@ def fetch_table_count(banco_id: str, table_id: str, filters: tuple = ()) -> int:
     vis = _inspect_visibility_predicate(banco_id, table_id)
     # Unfiltered + ungated → the table's cached num_rows (free). A gated Gold fact must run a
     # real COUNT(*) so the denominator matches the gated page (hidden rows excluded from both).
-    if not filters and not vis:
-        return fetch_table_schema(banco_id, table_id)["num_rows"]
     ref = _resolve_inspect_table(banco_id, table_id)
+    if not filters and not vis and _is_listable(ref):
+        return fetch_table_schema(banco_id, table_id)["num_rows"]
     columns_types = {
         c["name"]: c["type"] for c in fetch_table_schema(banco_id, table_id)["columns"]
     }
@@ -2108,7 +2127,8 @@ def fetch_seed_rows(
     ref = _resolve_seed_table(seed_id)
     lim = max(1, min(int(limit), sqlbuild.RAW_TABLE_MAX_LIMIT))
     off = max(0, min(int(offset), RAW_TABLE_MAX_OFFSET))
-    if not order_by and not filters:
+    plain = not order_by and not filters
+    if plain and _is_listable(ref):
         return (
             _client()
             .list_rows(ref, max_results=lim, start_index=off)
@@ -2124,6 +2144,7 @@ def fetch_seed_rows(
         order_by=order_by,
         order_dir=order_dir,
         filters=flt,
+        stable_order=plain,
     )
     return run_query(sql, params, max_bytes=RAW_TABLE_MAX_BYTES)
 
@@ -2132,9 +2153,9 @@ def fetch_seed_rows(
 def fetch_seed_count(seed_id: str, filters: tuple = ()) -> int:
     """Total matching rows for a consultable seed (the pagination denominator).
     Unfiltered → the cached ``num_rows`` (free); filtered → a cost-guarded ``COUNT(*)``."""
-    if not filters:
-        return fetch_seed_schema(seed_id)["num_rows"]
     ref = _resolve_seed_table(seed_id)
+    if not filters and _is_listable(ref):
+        return fetch_seed_schema(seed_id)["num_rows"]
     columns_types = {c["name"]: c["type"] for c in fetch_seed_schema(seed_id)["columns"]}
     flt = [{"col": c, "op": o, "val": v} for (c, o, v) in filters]
     sql, params = sqlbuild.raw_table_count(ref, columns_types=columns_types, filters=flt)

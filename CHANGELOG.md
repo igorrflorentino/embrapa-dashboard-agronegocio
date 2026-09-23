@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.87.1] - 2026-09-23
+
+### Corrigido
+
+- **A tabela de deflatores não abria em "Referências" nem em "Estrutura de dados".**
+  `silver_inflation` — a união dos deflatores (BR + estrangeiros), consultável em "Referências"
+  ("Deflatores, todos") e no Silver de cada um dos cinco bancos em "Estrutura de dados" — é uma
+  VIEW, e a navegação padrão (sem ordenação nem filtro) usava o `tabledata.list` gratuito do
+  BigQuery, que lê o armazenamento de uma TABELA: numa view ele responde 400 ("Cannot list a
+  table of type VIEW"), e o `num_rows` de uma view é 0. Resultado desde a v1.82.0, que pôs a view
+  nas duas telas: erro na abertura e "0 linhas" no contador; só uma navegação ORDENADA (que vai
+  pelo caminho de consulta) funcionava. Achado ao conferir que a coluna `is_interpolated` da
+  v1.87.0 chegava à tela — o endpoint respondia HTTP 500.
+  - Os quatro leitores (`fetch_{table,seed}_{rows,count}`) só usam os atalhos gratuitos quando o
+    objeto é uma TABELA; uma view vai pela consulta com teto de bytes e, para a contagem, por um
+    `COUNT(*)`. O censo das 54 entradas das duas listas permitidas mostrou que `silver_inflation`
+    é a única view hoje (6 entradas); as outras 48 seguem no caminho gratuito, inalteradas.
+  - A navegação de uma view pagina um job por página, e o BigQuery não garante ordem sem
+    `ORDER BY`: `raw_table_rows(stable_order=True)` aplica o mesmo desempate por todas as colunas
+    que o caminho filtrado já usava, senão a página 2 poderia repetir linhas da página 1.
+  - Verificado contra produção: navegação padrão OK (11 colunas, `is_interpolated` inclusive),
+    total de 2.639 linhas (1.639 BR + 632 CPI + 368 HICP), páginas 1 e 2 disjuntas, e
+    `/api/seed?id=silver_inflation` respondendo 200.
+
 ## [1.87.0] - 2026-09-23
 
 ### Adicionado
