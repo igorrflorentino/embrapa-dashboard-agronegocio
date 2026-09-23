@@ -92,6 +92,41 @@ def test_check_inflation_pivot_codes_fails_when_code_not_ingested(settings: Sett
     assert "189" in result.detail or "190" in result.detail
 
 
+def test_pinned_end_year_below_today_is_named(settings_factory) -> None:
+    """The production Job carried IBGE_END_YEAR=2024 from an operator .env, and every
+    weekly PEVS-extração run became a no-op (Bronze had reached the pin, so the delta
+    skipped entirely and absorbed no revision). Nothing reported it. This line does."""
+    settings = settings_factory(gcp_project_id="p", gcs_bucket="b", ibge_end_year=2000)
+    result = doctor._check_pinned_end_years(settings)
+    assert result.ok is True  # a warning: a local pin can be deliberate
+    assert "IBGE_END_YEAR=2000" in result.detail
+    assert "⚠" in result.detail and "unset" in result.detail
+
+
+def test_floating_end_years_are_not_reported(settings_factory) -> None:
+    """Defaults float to the current year — not a pin, even though the value is a year.
+    Only a value someone SET counts, which is what model_fields_set distinguishes."""
+    settings = settings_factory(gcp_project_id="p", gcs_bucket="b")
+    result = doctor._check_pinned_end_years(settings)
+    assert result.ok is True
+    assert "⚠" not in result.detail
+
+
+def test_pinned_end_year_check_reports_its_own_breakage() -> None:
+    """A check that cannot evaluate must say so in red, never fall through to "none"."""
+    broken = SimpleNamespace(model_fields_set={"ibge_end_year"}, ibge_end_year="not-a-year")
+    result = doctor._check_pinned_end_years(broken)
+    assert result.ok is False
+    assert result.name == "Pinned END_YEAR"
+
+
+def test_an_end_year_pinned_at_or_after_today_is_not_a_problem(settings_factory) -> None:
+    """Pinning AHEAD of today is harmless (the window already covers every release)."""
+    this_year = datetime.now(UTC).year
+    settings = settings_factory(gcp_project_id="p", gcs_bucket="b", bcb_end_year=this_year)
+    assert "⚠" not in doctor._check_pinned_end_years(settings).detail
+
+
 def test_check_foreign_inflation_codes_pass(settings: Settings) -> None:
     """Both deflators declared, the ECB key carrying its dataflow prefix → ok."""
     result = doctor._check_foreign_inflation_codes(settings)
@@ -845,6 +880,7 @@ def test_run_all_executes_every_probe(settings: Settings) -> None:
     assert len(results) == len(doctor.CHECKS)
     assert [r.name for r in results] == [
         ".env parsed",
+        "Pinned END_YEAR",
         "Inflation pivot codes",
         "Currency series codes",
         "Foreign inflation codes",

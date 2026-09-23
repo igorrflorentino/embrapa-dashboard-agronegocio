@@ -173,6 +173,40 @@ def _check_env(settings: Settings) -> CheckResult:
         return CheckResult(".env parsed", False, str(exc)[:120])
 
 
+def _check_pinned_end_years(settings: Settings) -> CheckResult:
+    """No ingest window's END is pinned below the current year.
+
+    Every ``*_END_YEAR`` defaults to the current year and should be left unset: a year a
+    source has not published yet simply returns no rows, so the window can run ahead of
+    the latest release. A pin below today stops the source at that year — and for IBGE it
+    does worse than stop: once Bronze reaches the pin, the delta skips ENTIRELY, so the
+    recent years' revisions are never re-fetched either. Measured on the production Job
+    (2026-09-21): ``IBGE_END_YEAR=2024`` made every weekly PEVS-extração run a no-op while
+    the silvicultura half, floating, re-fetched 2023-2026 in the same run.
+
+    A warning, not a failure: a local pin can be deliberate (a reproducible historical
+    run). It is the pin nobody remembers setting that this line exists for — the Job's
+    came from an operator .env, which is why deploy.sh no longer forwards any END_YEAR.
+    """
+    try:
+        this_year = datetime.now(UTC).year
+        pinned = sorted(
+            f"{name.upper()}={getattr(settings, name)}"
+            for name in settings.model_fields_set
+            if name.endswith("_end_year") and getattr(settings, name) < this_year
+        )
+        if not pinned:
+            return CheckResult("Pinned END_YEAR", True, "none — every window floats to today")
+        return CheckResult(
+            "Pinned END_YEAR",
+            True,
+            f"⚠ {', '.join(pinned)} (below {this_year}): new years are never fetched, and "
+            "the IBGE delta skips once Bronze reaches the pin — unset to let it float",
+        )
+    except Exception as exc:
+        return CheckResult("Pinned END_YEAR", False, str(exc)[:120])
+
+
 def _check_inflation_pivot_codes(settings: Settings) -> CheckResult:
     """Each Gold inflation pivot code must be present in BCB_INFLATION_SERIES.
 
@@ -1463,6 +1497,7 @@ def _check_ingest_heartbeat(settings: Settings) -> CheckResult:
 
 _INFRA_CHECKS: list[tuple[str, Callable[[Settings], CheckResult]]] = [
     ("env", _check_env),
+    ("pinned-end-years", _check_pinned_end_years),
     ("inflation-codes", _check_inflation_pivot_codes),
     ("currency-codes", _check_currency_series_codes),
     ("foreign-inflation-codes", _check_foreign_inflation_codes),

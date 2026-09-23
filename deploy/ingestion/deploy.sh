@@ -119,8 +119,22 @@ gcloud builds submit "$REPO_ROOT" --project "$PROJECT" \
 # their monthly schedulers override args to `ibge-pam`/`ibge-ppm`, and the Job must carry
 # their PRODUCT_CODES / START_YEAR / … for those runs to use your .env scope.
 INGEST_ALLOWLIST='^(GCP_PROJECT_ID|GCS_[A-Z0-9_]+|BQ_LOCATION|BQ_BRONZE_(IBGE|PAM|PPM|BCB|COMEX|FOREIGN)_[A-Z0-9_]+|BQ_RESEARCH_INPUTS_DATASET|BQ_PRODUTO_CATALOG_LOG_TABLE|CATALOG_[A-Z0-9_]+|IBGE_[A-Z0-9_]+|PAM_[A-Z0-9_]+|PPM_[A-Z0-9_]+|BCB_[A-Z0-9_]+|COMEX_[A-Z0-9_]+|FOREIGN_INFLATION_[A-Z0-9_]+|(BLS|ECB)_API_BASE_URL)='
+# …minus every *_END_YEAR. The Job's upper year bound is NEVER taken from an operator
+# .env: every END_YEAR defaults to the current year, and a pin freezes its source at that
+# year — for IBGE worse than freezes, since once Bronze reaches the pin the delta skips
+# ENTIRELY and absorbs no revision either. The production Job ran that way with
+# IBGE_END_YEAR=2024 (every weekly PEVS-extração run a no-op, measured 2026-09-21) and
+# BCB_END_YEAR=2026 (câmbio, inflação and the foreign deflators would have stopped in
+# January 2027), both inherited from a .env on the last deploy. A deliberate pin for a
+# bounded historical run belongs on that run's command line, not in the Job.
+INGEST_DENYLIST='^[A-Z0-9_]+_END_YEAR='
+DROPPED_END_YEARS="$({ grep -E "$INGEST_ALLOWLIST" "$ENV_FILE" || true; } | { grep -E "$INGEST_DENYLIST" || true; } | cut -d= -f1 | tr '\n' ' ')"
+if [ -n "$DROPPED_END_YEARS" ]; then
+  echo "Not forwarding pinned end years from .env (they float in the Job): $DROPPED_END_YEARS"
+fi
 ENV_YAML="$(mktemp)"; trap 'rm -f "$ENV_YAML"' EXIT
 grep -E "$INGEST_ALLOWLIST" "$ENV_FILE" \
+  | { grep -vE "$INGEST_DENYLIST" || true; } \
   | while IFS='=' read -r key val; do
       printf "%s: '%s'\n" "$key" "$(printf '%s' "$val" | tr -d '\r')"
     done > "$ENV_YAML"
@@ -139,6 +153,7 @@ if [ -n "$COMTRADE_SECRET" ]; then
   # Append Comtrade scope/Bronze config (NOT the key — that comes from the secret).
   grep -E '^(BQ_BRONZE_COMTRADE_[A-Z0-9_]+|COMTRADE_[A-Z0-9_]+)=' "$ENV_FILE" \
     | grep -vE '^COMTRADE_API_KEY=' \
+    | { grep -vE "$INGEST_DENYLIST" || true; } \
     | while IFS='=' read -r key val; do
         printf "%s: '%s'\n" "$key" "$(printf '%s' "$val" | tr -d '\r')"
       done >> "$ENV_YAML"
