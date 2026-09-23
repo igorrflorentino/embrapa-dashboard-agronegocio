@@ -3396,6 +3396,20 @@ def test_raw_table_rows_unfiltered_ungated_adds_no_order():
     assert "order by" not in query
 
 
+def test_raw_table_rows_stable_order_orders_a_plain_browse():
+    """The one plain browse that DOES reach the query path — a view, which the free
+    tabledata.list route cannot read — asks for the tiebreak explicitly, because it pages one
+    job per page just like a filtered browse. An explicit sort still wins over it."""
+    cols = {"reference_year": "INTEGER", "series_code": "STRING"}
+    query, _ = sql.raw_table_rows("p.d.v", columns_types=cols, limit=10, stable_order=True)
+    assert "order by `reference_year`, `series_code`" in query
+    sorted_q, _ = sql.raw_table_rows(
+        "p.d.v", columns_types=cols, limit=10, order_by="series_code", stable_order=True
+    )
+    assert "order by `series_code` asc" in sorted_q
+    assert "`reference_year`, `series_code`" not in sorted_q
+
+
 def test_raw_table_rows_contains_rejects_missing_value():
     """A 'contains' filter with an absent/None val is rejected (400) like the comparison ops,
     not silently turned into contains_substr(col, 'None') (which matches rows containing
@@ -3454,6 +3468,11 @@ def test_fetch_table_rows_clamps_absurd_offset(monkeypatch):
             return "df"
 
     class _Client:
+        def get_table(self, ref):
+            # A real TABLE — the free path only serves what has storage to list (a view
+            # takes the query path since v1.87.1).
+            return type("T", (), {"table_type": "TABLE"})()
+
         def list_rows(self, ref, *, max_results, start_index):
             captured["start_index"] = start_index
             return _Rows()

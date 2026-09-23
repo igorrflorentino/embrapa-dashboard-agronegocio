@@ -472,6 +472,100 @@ def test_fetch_table_rows_serving_mart_uses_free_list_rows(monkeypatch):
     assert client.list_rows.call_args.kwargs["start_index"] == 0
 
 
+def _view_client(num_rows=0):
+    """A mock BQ client whose get_table is a VIEW — no storage to list, num_rows 0 —
+    and whose list_rows EXPLODES, as BigQuery's does ("Cannot list a table of type VIEW")."""
+    client = _schema_client(num_rows=num_rows)
+    client.get_table.return_value.table_type = "VIEW"
+    client.list_rows.side_effect = AssertionError("tabledata.list on a VIEW is a 400 in BigQuery")
+    return client
+
+
+def test_fetch_table_rows_plain_browse_of_a_view_queries_with_a_stable_order(monkeypatch):
+    """silver_inflation, the deflator union, is a view — surfaced in every banco's Silver
+    layer. Its DEFAULT browse (no sort, no filter) took the free tabledata.list route and
+    got a 400 from v1.82.0 until v1.87.1; only a sorted browse worked. A view goes through
+    the query path, and — paging one job per page, where BigQuery guarantees no order —
+    with the deterministic tiebreak, or page 2 could repeat page 1's rows."""
+    pytest.importorskip("flask_caching")
+    from embrapa_dashboard.serving import gateway
+
+    recorded = {}
+
+    def recorder(query, params, **kwargs):
+        recorded["query"] = query
+        recorded["max_bytes"] = kwargs.get("max_bytes")
+        return "VIEW ROWS"
+
+    monkeypatch.setattr(gateway, "get_settings", lambda: _isolated_settings())
+    monkeypatch.setattr(gateway, "_client", lambda: _view_client())
+    monkeypatch.setattr(gateway, "run_query", recorder)
+    app, cache = _bind_simplecache()
+
+    with app.app_context():
+        cache.clear()
+        out = gateway.fetch_table_rows("ibge_pevs", "serving_pevs_annual", limit=5, offset=5)
+
+    assert out == "VIEW ROWS"
+    assert recorded["max_bytes"] == gateway.RAW_TABLE_MAX_BYTES
+    assert "order by `year`, `product_code`" in recorded["query"]
+    assert "offset 5" in recorded["query"]
+
+
+def test_fetch_table_count_of_a_view_counts_instead_of_reading_num_rows(monkeypatch):
+    """A view's num_rows is 0 — the screen said "0 linhas" over 2,639 real ones."""
+    pytest.importorskip("flask_caching")
+    import pandas as pd
+
+    from embrapa_dashboard.serving import gateway
+
+    recorded = {}
+
+    def recorder(query, params, **kwargs):
+        recorded["query"] = query
+        return pd.DataFrame({"n": [2639]})
+
+    monkeypatch.setattr(gateway, "get_settings", lambda: _isolated_settings())
+    monkeypatch.setattr(gateway, "_client", lambda: _view_client(num_rows=0))
+    monkeypatch.setattr(gateway, "run_query", recorder)
+    app, cache = _bind_simplecache()
+
+    with app.app_context():
+        cache.clear()
+        n = gateway.fetch_table_count("ibge_pevs", "serving_pevs_annual")
+
+    assert n == 2639
+    assert "count(*)" in recorded["query"].lower()
+
+
+def test_fetch_seed_rows_and_count_of_a_view_go_through_the_query_path(monkeypatch):
+    """The same view is consultable in "Referências" ("Deflatores, todos")."""
+    pytest.importorskip("flask_caching")
+    import pandas as pd
+
+    from embrapa_dashboard.serving import gateway
+
+    queries = []
+
+    def recorder(query, params, **kwargs):
+        queries.append(query)
+        return pd.DataFrame({"n": [2639]}) if "count(*)" in query.lower() else "SEED VIEW ROWS"
+
+    monkeypatch.setattr(gateway, "get_settings", lambda: _isolated_settings())
+    monkeypatch.setattr(gateway, "_client", lambda: _view_client())
+    monkeypatch.setattr(gateway, "run_query", recorder)
+    app, cache = _bind_simplecache()
+
+    with app.app_context():
+        cache.clear()
+        rows = gateway.fetch_seed_rows("historical_currency_factors", limit=10)
+        n = gateway.fetch_seed_count("historical_currency_factors")
+
+    assert rows == "SEED VIEW ROWS"
+    assert n == 2639
+    assert "order by `year`, `product_code`" in queries[0]
+
+
 def test_fetch_table_rows_with_order_runs_cost_guarded_query(monkeypatch):
     """An ORDER BY forces the query path: it pulls the schema for the column
     allowlist and calls run_query with a tight max_bytes cap."""
