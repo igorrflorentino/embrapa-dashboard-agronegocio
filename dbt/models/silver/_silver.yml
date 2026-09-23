@@ -229,11 +229,22 @@ models:
               arguments:
                 values: [US, EA]
       - name: index_value
-        description: "The published price level. Strictly positive — the model drops anything else."
+        description: |
+          The published price level. Strictly positive — the model drops anything else.
+          On an `is_interpolated` row it is NOT published: it is the geometric mean of the
+          two published neighbours, for a month the publisher declared it never released.
         tests:
           - dbt_utils.expression_is_true:
               arguments:
                 expression: "> 0"
+      - name: is_interpolated
+        description: |
+          TRUE on a month the publisher never released (declared, with its reason, in the
+          `foreign_inflation_publisher_gaps` seed) and this model filled with the geometric
+          mean of the two published neighbours. Today exactly one row: CPI-U 2025-10, which
+          BLS never published (US federal shutdown). Every other row is FALSE — a published
+          reading, verbatim.
+        tests: [not_null]
 
   - name: silver_inflation
     description: |
@@ -536,3 +547,42 @@ unit_tests:
         - {product_code: "2685", variable_code: "106", measure_kind: "flow",  family: "contagem", qty_base: 36000, is_monetary_value: false, numeric_value: 3}
         - {product_code: "2687", variable_code: "106", measure_kind: "flow",  family: "massa",    qty_base: 2,     is_monetary_value: false, numeric_value: 2000}
         - {product_code: "2682", variable_code: "215", measure_kind: "flow",  family: null,       qty_base: null,  is_monetary_value: true,  numeric_value: 100000}
+
+  # The publisher-gap fill, pinned on the three cases that decide whether it is an
+  # estimate of a point or a way to paper over holes. Values are chosen so the geometric
+  # mean is EXACT in floating point (sqrt(100 × 121) = 110): the test asserts the rule,
+  # not a rounding. Rides the build-order gate like the model — with the foreign
+  # deflators off there is no model to test.
+  - name: test_foreign_inflation_fills_only_declared_single_month_gaps
+    model: silver_foreign_inflation
+    config:
+      enabled: "{{ var('enable_foreign_inflation', false) }}"
+    given:
+      - input: source('bronze_foreign', 'inflation_raw')
+        rows:
+          # (a) a DECLARED gap the publisher shows as '-' → filled, marked
+          - {series_code: "CUUR0000SA0", series_name: "CPI", provider: "bls", economy: "US", reference_date_str: "01/09/2025", value_str: "100",   ingestion_timestamp: "2026-09-23 00:00:00"}
+          - {series_code: "CUUR0000SA0", series_name: "CPI", provider: "bls", economy: "US", reference_date_str: "01/10/2025", value_str: "-",     ingestion_timestamp: "2026-09-23 00:00:00"}
+          - {series_code: "CUUR0000SA0", series_name: "CPI", provider: "bls", economy: "US", reference_date_str: "01/11/2025", value_str: "121",   ingestion_timestamp: "2026-09-23 00:00:00"}
+          # (b) an UNDECLARED hole (Feb/2024 simply absent) → stays absent: the gap test's
+          #     job is to catch exactly this, and a fill would silence it
+          - {series_code: "CUUR0000SA0", series_name: "CPI", provider: "bls", economy: "US", reference_date_str: "01/01/2024", value_str: "90",    ingestion_timestamp: "2026-09-23 00:00:00"}
+          - {series_code: "CUUR0000SA0", series_name: "CPI", provider: "bls", economy: "US", reference_date_str: "01/03/2024", value_str: "92",    ingestion_timestamp: "2026-09-23 00:00:00"}
+          # (c) a declared month the publisher DID release → the published value wins
+          - {series_code: "CUUR0000SA0", series_name: "CPI", provider: "bls", economy: "US", reference_date_str: "01/06/2024", value_str: "95",    ingestion_timestamp: "2026-09-23 00:00:00"}
+          - {series_code: "CUUR0000SA0", series_name: "CPI", provider: "bls", economy: "US", reference_date_str: "01/07/2024", value_str: "95.5",  ingestion_timestamp: "2026-09-23 00:00:00"}
+          - {series_code: "CUUR0000SA0", series_name: "CPI", provider: "bls", economy: "US", reference_date_str: "01/08/2024", value_str: "96",    ingestion_timestamp: "2026-09-23 00:00:00"}
+      - input: ref('foreign_inflation_publisher_gaps')
+        rows:
+          - {series_code: "CUUR0000SA0", reference_date: "2025-10-01", publisher: "bls", reason: "never released"}
+          - {series_code: "CUUR0000SA0", reference_date: "2024-07-01", publisher: "bls", reason: "declared, but published"}
+    expect:
+      rows:
+        - {reference_date: "2024-01-01", index_value: 90,   is_interpolated: false}
+        - {reference_date: "2024-03-01", index_value: 92,   is_interpolated: false}
+        - {reference_date: "2024-06-01", index_value: 95,   is_interpolated: false}
+        - {reference_date: "2024-07-01", index_value: 95.5, is_interpolated: false}
+        - {reference_date: "2024-08-01", index_value: 96,   is_interpolated: false}
+        - {reference_date: "2025-09-01", index_value: 100,  is_interpolated: false}
+        - {reference_date: "2025-10-01", index_value: 110,  is_interpolated: true}
+        - {reference_date: "2025-11-01", index_value: 121,  is_interpolated: false}
