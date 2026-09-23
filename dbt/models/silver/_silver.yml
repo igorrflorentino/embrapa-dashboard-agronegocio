@@ -194,7 +194,7 @@ models:
     description: |
       The foreign deflators: US CPI-U (BLS) and euro-area HICP (ECB Data Portal).
       Published as INDEX LEVELS, so — unlike the BCB series — they are NOT chain-linked;
-      the value is the index. Their bases differ (1982-84=100 · 2015=100) and are
+      the value is the index. Their bases differ (1982-84=100 · 2025=100) and are
       deliberately not normalised: every downstream use is a ratio within one series,
       which is base-invariant.
     tests:

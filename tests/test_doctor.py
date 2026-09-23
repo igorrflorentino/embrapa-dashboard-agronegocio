@@ -117,6 +117,17 @@ def test_check_foreign_inflation_codes_fails_on_a_prefixless_ecb_key(settings: S
     assert "dataflow prefix" in result.detail
 
 
+def test_check_foreign_inflation_codes_refuses_the_frozen_icp_dataflow(settings: Settings) -> None:
+    """The key that nothing else catches: the ECB's ICP flow still answers 200 with data
+    for any window up to 2025-12, so an operator .env copied before the move would ingest
+    cleanly forever while the € deflator stood still. The detail names the successor."""
+    settings.foreign_inflation_hicp_code = "ICP.M.U2.N.000000.4.INX"
+    result = doctor._check_foreign_inflation_codes(settings)
+    assert result.ok is False
+    assert "frozen at 2025-12" in result.detail
+    assert "HICP.M.U2.N.000000.4D0.INX" in result.detail
+
+
 def test_check_foreign_inflation_codes_handles_an_unexpected_exception(
     settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -129,26 +140,63 @@ def test_check_foreign_inflation_codes_handles_an_unexpected_exception(
     assert result.ok is False and "boom" in result.detail
 
 
+def _months_ago(n: int) -> date:
+    """The first day of the month `n` months before today — the probe measures against
+    the calendar, so a fixture pinned to a literal year would go stale on its own."""
+    today = datetime.now(UTC).date()
+    year, month0 = divmod(today.year * 12 + today.month - 1 - n, 12)
+    return date(year, month0 + 1, 1)
+
+
+def _bls_body(*months: date) -> dict:
+    return {
+        "status": "REQUEST_SUCCEEDED",
+        "Results": {
+            "series": [
+                {
+                    "data": [
+                        {"year": str(m.year), "period": f"M{m.month:02d}", "value": "317.6"}
+                        for m in months
+                    ]
+                }
+            ]
+        },
+    }
+
+
+def _ecb_body(*months: date) -> str:
+    rows = "".join(f"HICP.M.U2.N.000000.4D0.INX,M,U2,{m:%Y-%m},103.69\n" for m in months)
+    return "KEY,FREQ,REF_AREA,TIME_PERIOD,OBS_VALUE\n" + rows
+
+
 def _foreign_inflation_response(url: str) -> MagicMock:
-    """A publisher answering NORMALLY — an HTTP 200 that actually carries an observation.
+    """A publisher answering NORMALLY — an HTTP 200 carrying a RECENT observation.
 
     Both halves need a real body, not a bare 200: each publisher has a way of saying
     "no data" while still returning 200, so the probe reads the body and a content-free
-    mock would be indistinguishable from the refusals the tests below assert on.
+    mock would be indistinguishable from the refusals the tests below assert on. And the
+    observation has to be recent, because a series that answers with data but has stopped
+    advancing is the other 200 the probe exists to refuse.
     """
     response = MagicMock()
     response.raise_for_status.return_value = None
     if "api.bls.gov" in url:
-        observation = {"year": "2025", "period": "M01", "value": "317.6"}
-        response.json.return_value = {
-            "status": "REQUEST_SUCCEEDED",
-            "Results": {"series": [{"data": [observation]}]},
-        }
+        response.json.return_value = _bls_body(_months_ago(1))
     else:
-        response.text = (
-            "KEY,FREQ,REF_AREA,TIME_PERIOD,OBS_VALUE\nICP.M.U2.N.000000.4.INX,M,U2,2025-01,126.72\n"
-        )
+        response.text = _ecb_body(_months_ago(1))
     return response
+
+
+def _with_bls(body: dict):
+    def get(url, **_kw):
+        if "api.bls.gov" not in url:
+            return _foreign_inflation_response(url)
+        response = MagicMock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = body
+        return response
+
+    return get
 
 
 def test_check_foreign_inflation_probes_both_publishers(settings: Settings) -> None:
@@ -163,7 +211,86 @@ def test_check_foreign_inflation_probes_both_publishers(settings: Settings) -> N
     assert "bls." in result.detail and "ecb." in result.detail
     urls = [c.args[0] for c in get.call_args_list]
     assert any("/v1/timeseries/data/" in u for u in urls)
-    assert any("/ICP/M.U2.N.000000.4.INX" in u for u in urls)
+    ecb_url = next(u for u in urls if "/HICP/M.U2.N.000000.4D0.INX" in u)
+    # The LATEST observation, not a fixed past year — a fixed year cannot see a series
+    # that stopped, which is how the retired ICP key stayed green eight months behind.
+    assert "lastNObservations=1" in ecb_url
+    assert "startPeriod" not in ecb_url
+    # And the detail says HOW recent, so a green line carries its own evidence.
+    assert f"latest {_months_ago(1):%Y-%m}" in result.detail
+
+
+def test_keyless_bls_window_is_a_warning_not_a_failure(settings: Settings) -> None:
+    """Keyless v1 ignores the requested years and answers the latest three. That is its
+    documented limit, harmless for a delta run and fatal for a backfill — so the line
+    stays green and SAYS it, rather than going red on every keyless machine or staying
+    silently green as it did while a backfill stored 3 years of 53."""
+    body = _bls_body(_months_ago(30), _months_ago(1))
+    assert not settings.bls_api_key
+    with patch("embrapa_dashboard.doctor.requests.get", side_effect=_with_bls(body)):
+        result = doctor._check_foreign_inflation(settings)
+    assert result.ok is True
+    assert "keyless v1 ignores the requested years" in result.detail
+    assert "BLS_API_KEY" in result.detail
+
+
+def test_keyed_bls_answer_outside_the_window_fails(settings: Settings) -> None:
+    """Keyed, the call goes to v2, whose whole point is honouring the window. An answer
+    outside it there is the same defect on the path the ingest depends on."""
+    settings.bls_api_key = "SEGREDO123"
+    body = _bls_body(_months_ago(30), _months_ago(1))
+    with patch("embrapa_dashboard.doctor.requests.get", side_effect=_with_bls(body)):
+        result = doctor._check_foreign_inflation(settings)
+    assert result.ok is False
+    assert "ignored the requested window" in result.detail
+    assert "SEGREDO123" not in result.detail
+
+
+def test_bls_series_that_stopped_advancing_fails(settings: Settings) -> None:
+    """Eight months back is always inside the probe's window (last year → this year), so
+    the only thing wrong with this answer is its age — and that alone must turn it red."""
+    body = _bls_body(_months_ago(8))
+    with patch("embrapa_dashboard.doctor.requests.get", side_effect=_with_bls(body)):
+        result = doctor._check_foreign_inflation(settings)
+    assert result.ok is False
+    assert "8 months old" in result.detail and "stopped advancing" in result.detail
+
+
+def test_ecb_series_that_stopped_advancing_fails(settings: Settings) -> None:
+    """The ECB's ICP dataflow, as found on 2026-09-23: 200, a valued observation, and
+    2025-12 as the newest one — eight months behind, with every older check green."""
+
+    def ecb_frozen(url, **_kw):
+        if "api.bls.gov" in url:
+            return _foreign_inflation_response(url)
+        response = MagicMock()
+        response.raise_for_status.return_value = None
+        response.text = _ecb_body(_months_ago(8))
+        return response
+
+    with patch("embrapa_dashboard.doctor.requests.get", side_effect=ecb_frozen):
+        result = doctor._check_foreign_inflation(settings)
+    assert result.ok is False
+    assert "8 months old" in result.detail and "stopped advancing" in result.detail
+    # The BLS half answered and still reads as such.
+    assert "bls." in result.detail and "200 OK" in result.detail
+
+
+def test_the_lag_allowance_covers_a_normal_release_calendar(settings: Settings) -> None:
+    """CPI-U for month M is out mid-M+1, so on the 1st of a month the newest reading is two
+    months back. That is a healthy series and must not read as a stopped one."""
+    at_limit = _months_ago(doctor.FOREIGN_INDEX_MAX_LAG_MONTHS)
+
+    def both_at_limit(url, **_kw):
+        response = MagicMock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = _bls_body(at_limit)
+        response.text = _ecb_body(at_limit)
+        return response
+
+    with patch("embrapa_dashboard.doctor.requests.get", side_effect=both_at_limit):
+        result = doctor._check_foreign_inflation(settings)
+    assert result.ok is True, result.detail
 
 
 def test_check_foreign_inflation_fails_when_bls_refuses_with_http_200(

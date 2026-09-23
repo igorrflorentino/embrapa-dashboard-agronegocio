@@ -15,12 +15,14 @@ exactly the case an operator sits watching the clock.
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import google.auth
 import requests
@@ -41,6 +43,13 @@ logger = logging.getLogger(__name__)
 # it. The docstrings used to promise "~10 seconds … even when something is broken",
 # which was wrong by an order of magnitude in the only case anyone times.
 PROBE_TIMEOUT_S = 10
+
+# How far behind today a foreign price index's LATEST observation may be before the
+# series is presumed to have stopped. CPI-U for month M is released mid-M+1 and the HICP
+# flash at the end of M, so a healthy series trails by at most ~2 months; 3 leaves room
+# for a slipped release calendar. The ECB's `ICP` dataflow was 8 months stale when it
+# was found (2026-09-23), still answering 200 with data for every window it covered.
+FOREIGN_INDEX_MAX_LAG_MONTHS = 3
 
 
 def _bq_job_config(settings: Settings) -> bigquery.QueryJobConfig:
@@ -200,16 +209,25 @@ def _check_foreign_inflation_codes(settings: Settings) -> CheckResult:
 
     The BCB counterpart checks membership in an ingested CODE:LABEL map. Here the
     ingested set IS the declared pair, so the drift worth catching is different: an
-    EMPTY id (dbt would pivot on '' and NULL the column in silence), or an ECB key with
+    EMPTY id (dbt would pivot on '' and NULL the column in silence), an ECB key with
     no dataflow prefix (the REST path is built by splitting at the first dot, so a
-    prefix-less key would request a dataflow that does not exist and 404 forever).
+    prefix-less key would request a dataflow that does not exist and 404 forever), or a
+    key still pointing at the ECB's retired `ICP` dataflow. That one is the dangerous
+    case because nothing about it fails: the old key answers 200 with data up to
+    2025-12 and then simply never advances, so an operator .env copied before the move
+    would ingest cleanly forever while the € deflator stood still.
     """
     try:
         codes = settings.foreign_inflation_pivot_codes
         problems = [f"{label}: empty" for label, code in codes.items() if not code]
         hicp = codes.get("HICP", "")
         if hicp and "." not in hicp:
-            problems.append(f"HICP: {hicp!r} has no ECB dataflow prefix (expected 'ICP.…')")
+            problems.append(f"HICP: {hicp!r} has no ECB dataflow prefix (expected 'HICP.…')")
+        elif hicp.startswith("ICP."):
+            problems.append(
+                f"HICP: {hicp!r} is in the ECB's ICP dataflow, frozen at 2025-12 — use the "
+                "HICP dataflow (default 'HICP.M.U2.N.000000.4D0.INX', the same index 2025=100)"
+            )
         if problems:
             return CheckResult(
                 "Foreign inflation codes",
@@ -657,29 +675,36 @@ def _redact(text: str, secret: str) -> str:
     return text.replace(secret, "***") if secret else text
 
 
-def _check_foreign_inflation(settings: Settings) -> CheckResult:
-    """BLS and the ECB Data Portal each answer for their configured series.
+def _months_behind(latest: date, today: date) -> int:
+    return (today.year - latest.year) * 12 + (today.month - latest.month)
 
-    Two publishers, so the probe reports BOTH: a green line that hides one dead half
-    would leave US$ or € silently un-deflatable — the failure this feature exists to
-    remove. A one-year window is enough for reachability; correctness is the ingest's
-    job. Note: both hosts are blocked on Claude Code on the web.
-    """
-    year = settings.bcb_end_year - 1
-    results: list[str] = []
-    ok = True
+
+def _stale(latest: date, today: date) -> str | None:
+    """The reason a series' latest observation is too old to vouch for, or None."""
+    behind = _months_behind(latest, today)
+    if behind <= FOREIGN_INDEX_MAX_LAG_MONTHS:
+        return None
+    return (
+        f"latest observation {latest:%Y-%m} is {behind} months old — the series has "
+        "stopped advancing (did the publisher move it?)"
+    )
+
+
+def _probe_bls(settings: Settings, today: date) -> tuple[bool, str]:
     cpi = settings.foreign_inflation_cpi_code
+    first, last = today.year - 1, today.year
     # Probe the endpoint the INGEST will actually use. Keyless that is v1, whose 25/day
     # quota is counted per calling IP and so is shared with every other caller on that
     # address; with a key it is v2, whose 500/day quota belongs to the key. Probing v1
     # while the ingest runs keyed would spend a quota the real run never touches and
     # report a refusal it never meets — the mirror image of the false green above.
-    version = "v2" if settings.bls_api_key else "v1"
+    keyed = bool(settings.bls_api_key)
+    version = "v2" if keyed else "v1"
     url = (
         f"{settings.bls_api_base_url}/{version}/timeseries/data/{cpi}"
-        f"?startyear={year}&endyear={year}"
+        f"?startyear={first}&endyear={last}"
     )
-    if settings.bls_api_key:
+    if keyed:
         url = f"{url}&registrationkey={settings.bls_api_key}"
     try:
         response = requests.get(url, timeout=PROBE_TIMEOUT_S)
@@ -694,30 +719,97 @@ def _check_foreign_inflation(settings: Settings) -> CheckResult:
         if status != "REQUEST_SUCCEEDED":
             message = "; ".join(payload.get("message", []) or [])
             raise ValueError(f"{status}: {message}" if message else status)
-        results.append(f"bls.{cpi} 200 OK")
+        series = (payload.get("Results") or {}).get("series") or [{}]
+        months = [
+            date(int(row["year"]), int(str(row["period"])[1:]), 1)
+            for row in series[0].get("data", []) or []
+            if str(row.get("period", "")).startswith("M") and row.get("period") != "M13"
+        ]
+        if not months:
+            raise ValueError("200 with no observations")
+        # A 200 carrying data is still not proof the window was honoured. The keyless v1
+        # GET ignores startyear/endyear and answers the latest three years whatever was
+        # asked, which is why the 2026-09-14 backfill stored 3 years instead of 53 and
+        # every check stayed green. Keyed, an answer outside the window is that same
+        # defect on the path the ingest depends on; keyless, it is v1's known limit —
+        # fine for a delta run, fatal for a backfill — so it is said, not failed.
+        outside = sorted({m.year for m in months if not first <= m.year <= last})
+        if outside and keyed:
+            raise ValueError(
+                f"BLS ignored the requested window {first}-{last} (answered {outside}) — "
+                "a backfill would store the wrong years"
+            )
+        latest = max(months)
+        reason = _stale(latest, today)
+        if reason:
+            raise ValueError(reason)
+        detail = f"bls.{cpi} 200 OK (latest {latest:%Y-%m})"
+        if outside:
+            detail += (
+                " ⚠ keyless v1 ignores the requested years: fine for a delta, but a "
+                "backfill needs BLS_API_KEY"
+            )
+        return True, detail
     except Exception as exc:
-        ok = False
-        results.append(f"bls.{cpi} {_redact(str(exc), settings.bls_api_key)[:160]}")
+        return False, f"bls.{cpi} {_redact(str(exc), settings.bls_api_key)[:200]}"
 
+
+def _latest_ecb_period(text: str) -> date | None:
+    """The newest monthly period carrying a value in an SDMX csvdata body, or None."""
+    latest: date | None = None
+    for row in csv.DictReader(io.StringIO(text)):
+        period = (row.get("TIME_PERIOD") or "").strip()
+        if not re.fullmatch(r"\d{4}-\d{2}", period) or not (row.get("OBS_VALUE") or "").strip():
+            continue
+        month = date(int(period[:4]), int(period[5:]), 1)
+        latest = month if latest is None or month > latest else latest
+    return latest
+
+
+def _probe_ecb(settings: Settings, today: date) -> tuple[bool, str]:
     hicp = settings.foreign_inflation_hicp_code
     dataflow, _, key = hicp.partition(".")
+    # The LATEST observation, not a fixed past year. A fixed year cannot see a series that
+    # stopped: the retired ICP key answers any window up to 2025 with data, and a probe
+    # of `end_year - 1` kept vouching for it while it was eight months behind.
     url = (
         f"{settings.ecb_api_base_url}/{dataflow}/{key}"
-        f"?format=csvdata&detail=dataonly&startPeriod={year}-01&endPeriod={year}-12"
+        "?format=csvdata&detail=dataonly&lastNObservations=1"
     )
     try:
         response = requests.get(url, timeout=PROBE_TIMEOUT_S)
         response.raise_for_status()
         # Same class of lie on the other publisher: a bogus series id is a clean 404
-        # (raise_for_status catches it), but a window the series does not cover comes
-        # back 200 with an EMPTY body. Require an observation row, not just a header.
-        if not [line for line in response.text.splitlines()[1:] if line.strip()]:
+        # (raise_for_status catches it), but a series with nothing to report comes back
+        # 200 with an EMPTY body. Require a valued observation, not just a header.
+        latest = _latest_ecb_period(response.text)
+        if latest is None:
             raise ValueError("200 with no observations")
-        results.append(f"ecb.{hicp} 200 OK")
+        reason = _stale(latest, today)
+        if reason:
+            raise ValueError(reason)
+        return True, f"ecb.{hicp} 200 OK (latest {latest:%Y-%m})"
     except Exception as exc:
-        ok = False
-        results.append(f"ecb.{hicp} {str(exc)[:160]}")
-    return CheckResult("Foreign inflation reachable", ok, "; ".join(results))
+        return False, f"ecb.{hicp} {str(exc)[:200]}"
+
+
+def _check_foreign_inflation(settings: Settings) -> CheckResult:
+    """BLS and the ECB Data Portal each answer for their configured series — with data
+    that is what was asked for, and recent.
+
+    Two publishers, so the probe reports BOTH: a green line that hides one dead half
+    would leave US$ or € silently un-deflatable — the failure this feature exists to
+    remove. "Answers" means more than a 200: each publisher has shipped a 200 that was
+    not the answer (BLS ignoring the requested years, the ECB serving a series that had
+    stopped), so each half checks the answer against the request and against the
+    calendar. Note: both hosts are blocked on Claude Code on the web.
+    """
+    today = datetime.now(UTC).date()
+    bls_ok, bls_detail = _probe_bls(settings, today)
+    ecb_ok, ecb_detail = _probe_ecb(settings, today)
+    return CheckResult(
+        "Foreign inflation reachable", bls_ok and ecb_ok, f"{bls_detail}; {ecb_detail}"
+    )
 
 
 def _check_comex(settings: Settings) -> CheckResult:

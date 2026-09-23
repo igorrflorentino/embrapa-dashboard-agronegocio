@@ -7,6 +7,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.85.0] - 2026-09-23
+
+### Corrigido
+
+- **Os dois deflatores estrangeiros estavam incompletos, e nenhuma trava percebeu.** A
+  primeira ingestão (14/09) terminou com sucesso, o `doctor` ficou todo verde, e o Bronze
+  tinha 3 dos 53 anos do CPI e um HICP parado em dezembro de 2025. Nos dois casos o
+  publicador respondeu 200 com dados plausíveis — e toda trava do projeto procurava
+  "vazio" ou "erro", nunca "dado que não é o que foi pedido". Medido em 2026-09-23:
+  - **O v1 sem chave do BLS ignora `startyear/endyear`** e responde sempre os três anos
+    mais recentes: um pedido de 1990–1995 devolveu 2024–2026. O backfill gravou o mesmo
+    bloco de 32 meses seis vezes, uma por janela de 10 anos (192 linhas), e se declarou
+    completo. A causa não era a cota, como se supunha. `_bls_window` agora recusa a janela
+    cuja resposta cai inteira fora dela, nomeando a causa e o remédio (`BLS_KEY_SECRET`),
+    e descarta os anos vizinhos quando a janela se sobrepõe aos recentes — então a delta
+    sem chave continua funcionando e só o backfill sem chave falha, em vez de truncar.
+  - **O BCE congelou o fluxo `ICP` em 2025-12.** As 458 séries da zona do euro nele param
+    ali; o índice continua no fluxo `HICP`, rebaseado 2025=100. A razão entre as duas é
+    constante (1,2873 de 2024-12 a 2025-12): o mesmo índice, reescalado. A chave padrão
+    passa a `HICP.M.U2.N.000000.4D0.INX` em `config.py`, `dbt_project.yml`,
+    `silver_foreign_inflation`, `dbt-build-prod.yml` e `.env.example`. O Bronze antigo
+    pode ficar onde está: o Silver lê só a chave configurada, então as duas bases nunca
+    entram na mesma razão (misturá-las leria uma deflação de 22% num único mês).
+  - O fluxo novo lista 1990–1995 com `OBS_VALUE` **vazio**, que o `astype(str)` gravaria
+    como a string `"nan"`. O cliente do BCE descarta o período sem valor na fronteira.
+- **A chave do BLS não sai mais do processo.** Ela viaja na query string, e três caminhos a
+  levavam para fora: o próprio BLS a REPETE na recusa (*"The key:… provided by the User is
+  invalid"*), o `requests` põe a URL inteira nos erros de conexão e de timeout, e o hook de
+  retry registra esses erros. A mensagem vira exceção, a exceção vira o stderr do Job e a
+  coluna `ingestion_heartbeat.detail` — foi assim que um valor colado por engano chegou aos
+  dois em 2026-09-23. `_scrub` remove a chave pelo valor exato e pelo FORMATO
+  (`registrationkey=…`, o eco do BLS), antes de truncar; a janela relança o erro já limpo
+  com a transitoriedade preservada e `from None`, porque o original encadeado imprimiria a
+  URL crua no traceback logo abaixo da mensagem limpa. O `doctor` já fazia isso na sonda
+  (`_redact`); o cliente de ingestão, não.
+- **A sonda `foreign-inflation` do `doctor` confere a resposta contra o pedido e contra o
+  calendário.** Pedia um ano fixo no passado (`bcb_end_year - 1`) e aceitava qualquer 200
+  com dado — por isso não via nem a janela ignorada nem a série parada. Agora:
+  - o BCE é consultado por `lastNObservations=1` e a observação mais nova precisa estar a
+    no máximo `FOREIGN_INDEX_MAX_LAG_MONTHS` (3) meses de hoje — o `ICP` estava a 8;
+  - no BLS, a mesma checagem de defasagem, e resposta fora da janela é **falha** com chave
+    (é o defeito, no caminho do qual a ingestão depende) e **aviso** sem chave (é o limite
+    conhecido do v1, inofensivo para a delta);
+  - a linha verde passa a dizer o mês mais recente que viu (`latest 2026-08`), então o
+    verde carrega a própria evidência;
+  - `foreign-inflation-codes` recusa uma chave ainda no fluxo `ICP`, que é o caso que
+    nenhuma outra checagem pega: um `.env` copiado antes da mudança ingeriria sem erro para
+    sempre, com o deflator do euro parado.
+- **O runbook de ligar mandava rodar `embrapa ingest ingest …`.** O ENTRYPOINT da imagem
+  do Job já é `embrapa ingest`, então os args começam no subcomando
+  (`--args=foreign-inflation,--full`). O teste de vocabulário do runbook travava a grafia
+  errada como correta — conferia que o NOME existia, nunca o que o Job faria com ele. Um
+  teste novo lê o ENTRYPOINT do `Dockerfile` e varre todo arquivo que ensina a rodar o Job.
+
+### Documentação
+
+- `PLANS/correcao_inflacionaria_multimoeda.md` § Turning it on: a chave montada no Job pelo
+  caminho cirúrgico (`gcloud run jobs update --update-secrets`), que não reconstrói o env a
+  partir do `.env` nem substitui a montagem do Comtrade; `--region` nos comandos; e o passo
+  4 verificado por COBERTURA (meses distintos por série, com `SAFE.PARSE_DATE`), não pelo
+  código de saída nem por contagem de linhas num Bronze append-only. E, no PowerShell, o
+  valor de `--args` entre aspas: sem elas a vírgula é o operador de array, e o Job recebe
+  UM argumento `foreign-inflation --full` (medido: saída 2, três vezes com os retries).
+- O comentário do gate em `dbt_project.yml` descrevia uma sequência de quatro passos sem a
+  chave e com um `--full-refresh` desnecessário (Gold e marts são tabelas). Aponta agora
+  para o runbook.
+
 ## [1.84.0] - 2026-09-17
 
 ### Corrigido

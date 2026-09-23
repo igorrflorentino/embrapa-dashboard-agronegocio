@@ -118,7 +118,7 @@ vars:
   # SGS codes: BLS CPI-U and the ECB HICP series key, whose first dot-segment is the
   # SDMX dataflow. A value here that is not ingested makes the column silently NULL.
   inflation_series_cpi:   "{{ env_var('FOREIGN_INFLATION_CPI_CODE',  'CUUR0000SA0') }}"
-  inflation_series_hicp:  "{{ env_var('FOREIGN_INFLATION_HICP_CODE', 'ICP.M.U2.N.000000.4.INX') }}"
+  inflation_series_hicp:  "{{ env_var('FOREIGN_INFLATION_HICP_CODE', 'HICP.M.U2.N.000000.4D0.INX') }}"
 
   # Gate for the foreign deflators, OFF until their Bronze table exists.
   #
@@ -128,14 +128,16 @@ vars:
   # table downstream. Since the dashboard's whole prod build hangs off that chain, the
   # default has to be the one that cannot break it.
   #
-  # Turning it on, in this order:
-  #   1. redeploy the ingestion Job so it carries the new source
-  #      (`make ingest-job-deploy` — deploy/ingestion/deploy.sh rebuilds the image)
-  #   2. `uv run embrapa ingest foreign-inflation --full`  (one 1974→today backfill)
+  # Turning it on — the full sequence, with the reasons for its order, is
+  # PLANS/correcao_inflacionaria_multimoeda.md § Turning it on. In short:
+  #   1. the BLS key reaches the Job (Secret Manager → BLS_API_KEY): the keyless v1
+  #      endpoint ignores the requested years, so without it a backfill stores 3 of 53
+  #   2. one `ingest foreign-inflation --full` backfill, and its COVERAGE measured
+  #      (distinct months per series, not row counts — Bronze is append-only)
   #   3. set the DBT_ENABLE_FOREIGN_INFLATION repo variable to "true" — the prod workflow
   #      then adds `--vars 'enable_foreign_inflation: true'`, exactly as
   #      DBT_ENABLE_CURATION does for the SCD2 views (locally: pass the same --vars)
-  #   4. `dbt build --full-refresh` so Gold re-materializes the columns with data
+  #   4. a plain prod `dbt build` (Gold and the marts are tables, so no --full-refresh)
   #
   # While it is off nothing breaks and nothing lies: the Gold val_real_{cpi,hicp}_*
   # columns still EXIST (the pivot simply finds no rows and yields NULL), so the mart

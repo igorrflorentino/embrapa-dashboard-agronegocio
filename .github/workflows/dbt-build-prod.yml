@@ -268,7 +268,7 @@ jobs:
           BCB_INFLATION_SERIES_IGPDI_CODE: ${{ vars.BCB_INFLATION_SERIES_IGPDI_CODE || '190' }}
           BCB_CURRENCY_SERIES: ${{ vars.BCB_CURRENCY_SERIES || '1:USD,21619:EUR' }}
           FOREIGN_INFLATION_CPI_CODE: ${{ vars.FOREIGN_INFLATION_CPI_CODE || 'CUUR0000SA0' }}
-          FOREIGN_INFLATION_HICP_CODE: ${{ vars.FOREIGN_INFLATION_HICP_CODE || 'ICP.M.U2.N.000000.4.INX' }}
+          FOREIGN_INFLATION_HICP_CODE: ${{ vars.FOREIGN_INFLATION_HICP_CODE || 'HICP.M.U2.N.000000.4D0.INX' }}
         run: |
           ARGS=(build --target prod)
           if [ "${{ github.event.inputs.full_refresh }}" = "true" ]; then

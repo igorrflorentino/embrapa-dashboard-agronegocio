@@ -23,13 +23,14 @@ from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
+import requests
 import responses
 
 from embrapa_dashboard.config import Settings
 from embrapa_dashboard.foreign_inflation import client, pipeline
 
 _BLS_URL = re.compile(r"https://api\.bls\.gov/publicAPI/v\d/timeseries/data/.*")
-_ECB_URL = re.compile(r"https://data-api\.ecb\.europa\.eu/service/data/ICP/.*")
+_ECB_URL = re.compile(r"https://data-api\.ecb\.europa\.eu/service/data/HICP/.*")
 
 
 def _bls_payload(rows: list[dict]) -> dict:
@@ -155,6 +156,124 @@ def test_bls_chunks_the_window_to_the_keyless_ten_year_cap() -> None:
     assert windows == [(1974, 1983), (1984, 1993), (1994, 2003)]
 
 
+def _latest_three_years() -> list[dict]:
+    """What the keyless v1 GET answers WHATEVER startyear/endyear say (measured
+    2026-09-23: a 1990-1995 request returned 2024-2026)."""
+    return [
+        {"year": str(y), "period": f"M{m:02d}", "value": f"{300 + y - 2024 + m / 100:.3f}"}
+        for y in (2024, 2025, 2026)
+        for m in range(1, 13)
+    ]
+
+
+@responses.activate
+def test_bls_window_answered_entirely_outside_itself_is_refused() -> None:
+    """The 2026-09-14 backfill, reproduced. Every 10-year window came back holding the
+    same 2024-2026 block, each was stored as if it were its own span, and the run reported
+    success with 3 years of a 53-year series. A window whose answer has NONE of its own
+    years is not a sparse window — it is an ignored request, and saying so beats storing
+    it. Permanent, not transient: retrying the same keyless call gets the same answer."""
+    responses.add(responses.GET, _BLS_URL, json=_bls_payload(_latest_three_years()), status=200)
+    with pytest.raises(client.ForeignInflationRequestError, match="ignored") as exc:
+        client.fetch_bls_series("CUUR0000SA0", 1990, 1995, base_url="https://api.bls.gov/publicAPI")
+    assert not isinstance(exc.value, client.ForeignInflationTransientError)
+    # The remedy travels with the refusal: the operator reads WHAT to set, not just "failed".
+    assert "BLS_KEY_SECRET" in str(exc.value)
+
+
+@responses.activate
+def test_keyless_backfill_fails_instead_of_truncating() -> None:
+    """End to end over the chunker: a keyless 1974-2026 backfill must not come back with
+    2024-2026 six times over. It stops at the first window, naming why."""
+    responses.add(responses.GET, _BLS_URL, json=_bls_payload(_latest_three_years()), status=200)
+    with pytest.raises(client.ForeignInflationRequestError, match="1974-1983"):
+        client.fetch_bls_series("CUUR0000SA0", 1974, 2026, base_url="https://api.bls.gov/publicAPI")
+    assert len(responses.calls) == 1
+
+
+@responses.activate
+def test_bls_neighbours_outside_a_recent_window_are_dropped_not_stored() -> None:
+    """A delta window overlaps the latest three years, so keyless v1 answers it with its
+    own years plus a neighbour. That is still a usable answer — the delta works without a
+    key — but the neighbour is not this window's to store: kept, the raw archive would
+    claim a span it was never asked for."""
+    responses.add(responses.GET, _BLS_URL, json=_bls_payload(_latest_three_years()), status=200)
+    df = client.fetch_bls_series(
+        "CUUR0000SA0", 2025, 2026, base_url="https://api.bls.gov/publicAPI"
+    )
+    years = {d[-4:] for d in df["data"]}
+    assert years == {"2025", "2026"}
+    assert len(df) == 24
+
+
+_KEY = "SEGREDO123"  # low-entropy on purpose: a realistic fake trips gitleaks
+
+
+@responses.activate
+def test_bls_refusal_that_echoes_the_key_never_carries_it_out() -> None:
+    """BLS repeats the key in its own refusal. That message becomes the exception, the
+    exception becomes the Job's stderr and the `ingestion_heartbeat.detail` column — which
+    is how a pasted value reached both on 2026-09-23. The verdict must survive; the key
+    must not."""
+    responses.add(
+        responses.GET,
+        _BLS_URL,
+        json={
+            "status": "REQUEST_NOT_PROCESSED",
+            "message": [
+                f"The key:{_KEY} provided by the User is invalid. Please provide a proper key "
+                "for the operation to be successful"
+            ],
+            "Results": {},
+        },
+        status=200,
+    )
+    with pytest.raises(client.ForeignInflationRequestError) as exc:
+        client.fetch_bls_series(
+            "CUUR0000SA0", 2021, 2021, base_url="https://api.bls.gov/publicAPI", api_key=_KEY
+        )
+    assert _KEY not in str(exc.value)
+    assert "invalid" in str(exc.value)  # the operator still learns WHY
+
+
+def test_a_network_error_carrying_the_url_is_scrubbed_and_stays_transient(monkeypatch) -> None:
+    """requests puts the full URL — query string and key included — into its connection
+    and timeout errors. Scrubbed, re-raised as our transient type (so `ingest all` still
+    reads it as transient), and WITHOUT the chained original, which would print the raw
+    URL in the traceback right under the clean message."""
+
+    def unreachable(url, *, context):
+        raise requests.ConnectionError(f"Max retries exceeded with url: {url}")
+
+    monkeypatch.setattr(client, "_get", unreachable)
+    with pytest.raises(client.ForeignInflationTransientError) as exc:
+        client.fetch_bls_series(
+            "CUUR0000SA0", 2021, 2021, base_url="https://api.bls.gov/publicAPI", api_key=_KEY
+        )
+    assert _KEY not in str(exc.value)
+    assert "registrationkey=***" in str(exc.value)
+    assert exc.value.__suppress_context__ is True
+
+
+def test_the_retry_log_scrubs_a_key_it_was_never_told(caplog) -> None:
+    """The retry hook logs before the window wrapper sees the error, and it does not hold
+    the key — so it scrubs by SHAPE (the query parameter, the BLS echo), not by value."""
+    boom = requests.ConnectionError(
+        f"url: /publicAPI/v2/timeseries/data/X?startyear=1&registrationkey={_KEY}"
+    )
+    state = SimpleNamespace(outcome=SimpleNamespace(exception=lambda: boom), attempt_number=1)
+    with caplog.at_level("WARNING"):
+        client._emit_retry(state)
+    assert _KEY not in caplog.text
+    assert "registrationkey=***" in caplog.text
+
+
+def test_scrub_covers_the_bls_echo_even_without_the_literal_key() -> None:
+    assert (
+        client._scrub(f"The key:{_KEY} provided by the User") == "The key:*** provided by the User"
+    )
+
+
 @responses.activate
 def test_bls_key_upgrades_to_v2_and_a_wider_window() -> None:
     responses.add(responses.GET, _BLS_URL, json=_bls_payload([]), status=200)
@@ -169,8 +288,8 @@ def test_bls_key_upgrades_to_v2_and_a_wider_window() -> None:
 
 _ECB_CSV = (
     "KEY,FREQ,TIME_PERIOD,OBS_VALUE\n"
-    "ICP.M.U2.N.000000.4.INX,M,2021-01,105.5\n"
-    "ICP.M.U2.N.000000.4.INX,M,2021-02,106.4\n"
+    "HICP.M.U2.N.000000.4D0.INX,M,2021-01,105.5\n"
+    "HICP.M.U2.N.000000.4D0.INX,M,2021-02,106.4\n"
 )
 
 
@@ -178,7 +297,7 @@ _ECB_CSV = (
 def test_ecb_parses_the_csv_into_the_shared_date_shape() -> None:
     responses.add(responses.GET, _ECB_URL, body=_ECB_CSV, status=200)
     df = client.fetch_ecb_series(
-        "ICP.M.U2.N.000000.4.INX",
+        "HICP.M.U2.N.000000.4D0.INX",
         2021,
         2021,
         base_url="https://data-api.ecb.europa.eu/service/data",
@@ -191,12 +310,12 @@ def test_ecb_parses_the_csv_into_the_shared_date_shape() -> None:
 def test_ecb_splits_the_series_key_at_the_dataflow() -> None:
     responses.add(responses.GET, _ECB_URL, body=_ECB_CSV, status=200)
     client.fetch_ecb_series(
-        "ICP.M.U2.N.000000.4.INX",
+        "HICP.M.U2.N.000000.4D0.INX",
         2021,
         2021,
         base_url="https://data-api.ecb.europa.eu/service/data",
     )
-    assert "/data/ICP/M.U2.N.000000.4.INX?" in responses.calls[0].request.url
+    assert "/data/HICP/M.U2.N.000000.4D0.INX?" in responses.calls[0].request.url
 
 
 @responses.activate
@@ -211,7 +330,7 @@ def test_ecb_keeps_only_monthly_observations() -> None:
         status=200,
     )
     df = client.fetch_ecb_series(
-        "ICP.M.U2.N.000000.4.INX",
+        "HICP.M.U2.N.000000.4D0.INX",
         2021,
         2021,
         base_url="https://data-api.ecb.europa.eu/service/data",
@@ -224,12 +343,37 @@ def test_ecb_404_is_no_data_not_a_failure() -> None:
     """HICP does not exist before 1996; the early backfill windows must stay silent."""
     responses.add(responses.GET, _ECB_URL, body="", status=404)
     df = client.fetch_ecb_series(
-        "ICP.M.U2.N.000000.4.INX",
+        "HICP.M.U2.N.000000.4D0.INX",
         1974,
         1980,
         base_url="https://data-api.ecb.europa.eu/service/data",
     )
     assert df.empty
+
+
+@responses.activate
+def test_ecb_period_with_an_empty_value_is_absent_not_the_string_nan() -> None:
+    """The HICP dataflow lists 1990-01..1995-12 with an EMPTY OBS_VALUE (the euro-area index
+    starts in 1996). Read as str that cell is NaN, and `astype(str)` turns NaN into the
+    four characters "nan" — a Bronze row that looks like a value to anything but a cast."""
+    responses.add(
+        responses.GET,
+        _ECB_URL,
+        body=(
+            "KEY,FREQ,TIME_PERIOD,OBS_VALUE\n"
+            "HICP.M.U2.N.000000.4D0.INX,M,1995-12,\n"
+            "HICP.M.U2.N.000000.4D0.INX,M,1996-01,55.12\n"
+        ),
+        status=200,
+    )
+    df = client.fetch_ecb_series(
+        "HICP.M.U2.N.000000.4D0.INX",
+        1995,
+        1996,
+        base_url="https://data-api.ecb.europa.eu/service/data",
+    )
+    assert list(df["data"]) == ["01/01/1996"]
+    assert "nan" not in set(df["valor"])
 
 
 def test_ecb_key_without_a_dataflow_prefix_is_refused_before_any_request() -> None:
@@ -370,7 +514,7 @@ def test_fetch_routes_each_index_to_its_own_publisher(monkeypatch: pytest.Monkey
     settings = _settings(bls_api_key="k")
     for spec in pipeline.FOREIGN_INDICES:
         pipeline._fetch(spec, settings, 2020, 2021)
-    assert seen == [("bls", "CUUR0000SA0", "k"), ("ecb", "ICP.M.U2.N.000000.4.INX", "")]
+    assert seen == [("bls", "CUUR0000SA0", "k"), ("ecb", "HICP.M.U2.N.000000.4D0.INX", "")]
 
 
 def test_fetch_refuses_an_unknown_provider() -> None:
@@ -464,7 +608,7 @@ def test_a_non_retryable_status_is_permanent() -> None:
     responses.add(responses.GET, _ECB_URL, body="nope", status=400)
     with pytest.raises(client.ForeignInflationRequestError) as exc:
         client.fetch_ecb_series(
-            "ICP.M.U2.N.000000.4.INX",
+            "HICP.M.U2.N.000000.4D0.INX",
             2021,
             2021,
             base_url="https://data-api.ecb.europa.eu/service/data",
@@ -479,7 +623,7 @@ def test_ecb_csv_without_the_expected_columns_is_empty_not_a_crash() -> None:
     turns a persistent version of that into a loud failure."""
     responses.add(responses.GET, _ECB_URL, body="KEY,FREQ\nx,M\n", status=200)
     df = client.fetch_ecb_series(
-        "ICP.M.U2.N.000000.4.INX",
+        "HICP.M.U2.N.000000.4D0.INX",
         2021,
         2021,
         base_url="https://data-api.ecb.europa.eu/service/data",
@@ -493,7 +637,7 @@ def test_ecb_response_with_no_monthly_rows_is_empty() -> None:
         responses.GET, _ECB_URL, body="KEY,FREQ,TIME_PERIOD,OBS_VALUE\nx,A,2021,104.0\n", status=200
     )
     df = client.fetch_ecb_series(
-        "ICP.M.U2.N.000000.4.INX",
+        "HICP.M.U2.N.000000.4D0.INX",
         2021,
         2021,
         base_url="https://data-api.ecb.europa.eu/service/data",
