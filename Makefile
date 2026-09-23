@@ -22,6 +22,16 @@ DBT_DIR := dbt
 # baked-in env_var() defaults and ignore .env (see scripts/dbt-with-env.sh).
 DBT := bash scripts/dbt-with-env.sh
 
+# The foreign-deflator gate, as PROD runs it. The dbt default stays `false` — a build-order
+# safety for a fresh environment whose bronze_foreign does not exist yet — but production
+# has run with it ON since 2026-09-23, through the repo variable DBT_ENABLE_FOREIGN_INFLATION
+# that dbt-build-prod.yml turns into --vars. A LOCAL prod build that did not say the same
+# would rebuild Gold with every val_real_{cpi,hicp}_* NULL, silently: nothing fails, the
+# columns just empty. Every `--target prod` recipe below carries this (a test sweeps them).
+# Override for a deliberate gate-off build: make dbt-build-prod ENABLE_FOREIGN_INFLATION=false
+ENABLE_FOREIGN_INFLATION ?= true
+PROD_VARS := --vars 'enable_foreign_inflation: $(ENABLE_FOREIGN_INFLATION)'
+
 # A bare `make` lists the annotated targets rather than running the first one — so
 # it never silently mutates the environment (the old default ran `setup`, which
 # pins Python + syncs the venv). Run `make setup` explicitly for that.
@@ -66,7 +76,7 @@ reconcile: dbt-deps    ## Deep-refresh: full re-ingest (catches OLD-year revisio
 	@echo "[reconcile]          before running — a drifted local .env will regress Bronze. The deployed Job"
 	@echo "[reconcile]          path (make ingest-job-reconcile-schedule) uses the correct prod config and is unaffected."
 	$(PY) embrapa ingest reconcile
-	$(DBT) build --target prod
+	$(DBT) build --target prod $(PROD_VARS)
 	@echo "[reconcile] Done. This may have rewritten HISTORICAL Gold — consider 'make backup-gold'."
 
 ingest-job-deploy:    ## Build + deploy the `embrapa ingest all` Cloud Run Job (reads .env)
@@ -109,7 +119,7 @@ dbt-build: dbt-deps    ## Dev: silver+gold in dbt_dev_silver / dbt_dev_gold
 	$(DBT) build
 
 dbt-build-prod: dbt-deps    ## Prod: silver+gold in silver / gold (real datasets)
-	$(DBT) build --target prod
+	$(DBT) build --target prod $(PROD_VARS)
 
 backup-gold:    ## Snapshot prod Gold tables to gs://${GCS_BUCKET}/backups/run=<ts>/
 	$(PY) embrapa backup-gold

@@ -1,10 +1,14 @@
 # Multi-currency inflation correction
 
-> **Status:** IMPLEMENTED in code (v1.82.0); sources corrected in v1.85.0 (BLS keyed v2,
-> HICP moved to the ECB's `HICP` dataflow). The deflator DATA is not live until the
-> `enable_foreign_inflation` gate is turned on with the operator sequence in
-> [Turning it on](#turning-it-on). Until then the new conventions are selectable and
-> honestly report that they value nothing.
+> **Status:** LIVE in production since 2026-09-23. Code in v1.82.0; sources corrected in
+> v1.85.0 (BLS keyed v2, HICP moved to the ECB's `HICP` dataflow); the one month BLS never
+> published (CPI-U 2025-10) interpolated and marked in v1.86.0; the marker surfaced in
+> "Referências" in v1.87.0. The gate is ON through the repository variable
+> `DBT_ENABLE_FOREIGN_INFLATION=true` (the dbt default stays `false`, as a build-order
+> safety for fresh environments). Coverage at turn-on: CPI-U 1974-01 → 2026-08 (632
+> months), HICP 1996-01 → 2026-08 (368); `serving_comex_annual` 103,204 / 103,204 rows
+> valued in US$·CPI. Turning it OFF: delete the variable and rebuild — the columns stay,
+> NULL, exactly as before turn-on.
 
 ## Context
 
