@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.88.6] - 2026-09-24
+
+Documentação alinhada ao que as versões 1.88.1 a 1.88.5 mudaram. Um trecho dela mandava
+fazer um build de produção que esvaziaria os deflatores estrangeiros.
+
+### Corrigido (documentação)
+- **`docs/operations_runbook.md`, seção da curadoria, reescrita.** Ela dizia que a curadoria
+  estava congelada e "não deve ser ativada", e mandava rodar
+  `dbt build --target prod --vars 'enable_curation: true'`. Os dois estavam errados:
+  - o *Nível de industrialização* está no ar desde 2026-07-05 (#218), com
+    `enable_curation: true` no `dbt_project.yml`;
+  - aquele comando, sem o gate `enable_foreign_inflation`, reconstruiria o Gold com todo
+    `val_real_{cpi,hicp}_*` NULL, sem erro nenhum.
+
+  Agora a seção registra o estado real, que desligar a variável de repositório NÃO desliga a
+  curadoria, e a regra do `--vars` único, com o comando certo para um build direto.
+- **`ARCHITECTURE.md`**: o build de prod também dispara por mudança no próprio workflow (foi
+  assim que o #461 e o #480 o rodaram), e as duas variáveis de repositório vão num mapa só.
+- **`docs/gold_data_model.md`** e **`PLANS/comtrade_flows_regimes_market.md`**: o mesmo
+  comando perigoso, trocado por um build de prod normal.
+- **`CLAUDE.md`**: a regra do `--vars` único, ao lado do aviso do gate, e um item novo
+  sobre dependências:
+  - alertas ligados;
+  - o updater `uv`;
+  - o grupo `vitest`;
+  - os comandos de auditoria;
+  - "um PR de segurança pode subir o DONO da restrição sem dizer no título";
+  - validar atualização de dbt por comparação com a produção.
+- **`docs/iam_setup.md` §2.1**: com as permissões documentadas, todo build de dev local
+  termina com código 2 DEPOIS de `Done. PASS=… ERROR=0`. O hook `apply_dev_ttl` precisa de
+  `bigquery.datasets.update`, e o `dataEditor` não tem. O item registra o sintoma e o
+  `GRANT … ON SCHEMA` restrito aos três datasets de dev.
+- **`docs/testing.md`**, três trechos novos:
+  - o que não é simulado de propósito (o IAP real);
+  - os testes que só rodam em bash e aparecem pulados no Windows;
+  - a receita para validar uma atualização do dbt ou do adaptador (metadados →
+    impressão digital → diferença relativa linha a linha), a mesma usada no #476 e no #481.
+- **`SECURITY.md`**: as práticas de dependências incluem os alertas e as atualizações de
+  segurança do Dependabot, e os quatro ecossistemas cobertos.
+
+---
+
 ## [1.88.5] - 2026-09-24
 
 Prepara o terreno para o primeiro PR agrupado de Python do Dependabot `uv` (#481, 18

@@ -166,6 +166,21 @@ uv run pytest -k "config"                # tests matching a keyword
 GitHub Actions runs the same `make test` step on every PR (see
 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)).
 
+### Not everything is mocked — on purpose
+
+- **The IAP signature check runs for real.** `tests/test_iap_real_signature.py` serves an
+  ES256 key in IAP's own format (`{kid: PEM}`) from a loopback HTTP server and drives
+  `serving.iap.verify_iap_jwt` through google-auth → `cryptography`: one genuine token
+  accepted, five forged or stale ones refused. Every other IAP test mocks `verify_token`,
+  which is why the crypto stack that decides who authored a curation edit had never been
+  exercised — until v1.88.2 upgraded it. Still offline and credential-free.
+- **Some tests run a shell script under bash, and are SKIPPED on Windows** (CI is Linux, so
+  they always run there): `test_dbt_prod_vars.py` executes the `dbt build prod` step of the
+  workflow with `dbt` swapped for `printf`, `test_ingestion_deploy_env.py` runs
+  `deploy/ingestion/deploy.sh`'s own shell, and one test in `test_foreign_inflation_gate.py`
+  needs GNU make. "N skipped" locally on Windows is expected. A green local run is NOT
+  proof for them, only the CI run is.
+
 ### The two coverage layers, and why one number was not enough
 
 **Layer 1 — the absolute floor (`make test`, `--cov-fail-under=98`).** Its job is to stop
@@ -220,6 +235,34 @@ make dbt-build
 # Or run specific dbt command
 uv run dbt run --select silver_ibge_pevs
 ```
+
+A dev build can end with **exit code 2 after `Done. PASS=… ERROR=0`**: the `apply_dev_ttl`
+hook needs `bigquery.datasets.update` on `dbt_dev_*`, which the documented impersonation SA
+lacks. Read the `Done.` line. The fix is in [`docs/iam_setup.md`](iam_setup.md) §2.1.
+
+### Validating a dbt / BigQuery-adapter upgrade
+
+A green CI proves the project **compiles** under the new version. It does not prove the numbers
+are the same. For a `dbt-core` or `dbt-bigquery` bump (the adapter writes the SQL of every
+materialization), compare a full dev build against prod built from the SAME Bronze, before
+the merge. This is how #476 (dbt-core 1.12) and #481 (dbt-bigquery 1.12.1) were validated:
+
+1. Install the PR's lock (`gh pr checkout <n>` + `uv sync --frozen --all-extras`) and run a
+   full dev build with the prod vars in ONE mapping:
+   `bash scripts/dbt-with-env.sh build --target dev --vars '{enable_curation: true, enable_foreign_inflation: true}'`.
+   Make sure no ingestion ran between the last prod build and this one.
+2. **Metadata (free):** compare `row_count` / `size_bytes` of `dbt_dev_{silver,gold,serving}.__TABLES__`
+   against `{silver,gold,serving}.__TABLES__`. Tables present only in prod can be leftovers of
+   removed models (check that no file in `dbt/` still produces them).
+3. **Content:** per table, `SELECT BIT_XOR(FARM_FINGERPRINT(TO_JSON_STRING(t)))` over all
+   columns except `last_refresh`, on each side (~14 GiB billed for the whole project). Equal
+   fingerprints mean identical content.
+4. **For tables whose fingerprint differs:** join dev and prod on every non-FLOAT64 column,
+   and per FLOAT64 column take `max(abs(dev - prod) / abs(prod))`, counting rows above 1e-9
+   and nulls present on one side only. Expect differences around 1e-15 in the Gold facts and
+   marts. BigQuery's parallel AVG/SUM (the yearly FX mean, the mart aggregates) varies in the
+   last bit between ANY two builds, so that is noise. Anything above 1e-9, a row with no
+   partner, or a changed non-float column (e.g. `data_quality_flag`) is a real change.
 
 ### Test ingestion
 ```bash
