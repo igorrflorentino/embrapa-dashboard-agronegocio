@@ -2762,13 +2762,39 @@ body.sb-resizing .sidebar-resizer { background: color-mix(in srgb, var(--embrapa
 }
 .qa-flag-legend > summary::-webkit-details-marker { display: none; }
 .qa-flag-legend[open] > summary { border-bottom: 1px dashed var(--border-subtle); }
-.qa-flag-legend-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px 20px;
-  padding: 14px 16px;
+.qa-flag-legend-intro {
+  margin: 0;
+  padding: 12px 16px 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--fg-2);
 }
-.qa-flag-legend-item { display: flex; align-items: flex-start; gap: 8px; }
+/* Column FLOW, not a grid. In a 2-column grid both items of a row share the row's height,
+   so a short paragraph beside a long one left an empty gap below it. Columns stack each
+   item right under the previous one and balance the two heights on their own. */
+.qa-flag-legend-grid {
+  column-count: 2;
+  column-gap: 32px;
+  padding: 12px 16px 6px;
+}
+.qa-flag-legend-group {
+  margin: 0 0 8px;
+  padding-top: 4px;
+  font: 600 10.5px var(--font-body);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--fg-3);
+  break-after: avoid;
+}
+/* Margins collapse with the item's 12px, so this must clearly exceed it to read as a new group. */
+.qa-flag-legend-item + .qa-flag-legend-group { margin-top: 24px; }
+.qa-flag-legend-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 12px;
+  break-inside: avoid;
+}
 .qa-flag-legend-item .qa-dot { margin-top: 5px; flex: none; }
 .qa-flag-legend-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .qa-flag-legend-label {
@@ -2787,9 +2813,9 @@ body.sb-resizing .sidebar-resizer { background: color-mix(in srgb, var(--embrapa
   border-radius: 999px;
   padding: 1px 6px;
 }
-.qa-flag-legend-desc { line-height: 1.4; }
+.qa-flag-legend-desc { line-height: 1.5; }
 @media (max-width: 720px) {
-  .qa-flag-legend-grid { grid-template-columns: minmax(0, 1fr); }
+  .qa-flag-legend-grid { column-count: 1; }
 }
 
 @media (max-width: 1180px) {

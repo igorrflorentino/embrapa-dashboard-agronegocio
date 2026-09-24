@@ -100,9 +100,26 @@ describe('ViewQuality — renders the REAL Gold quality flags (H3 + P0 lock-in)'
     // The panel iterates the FULL registry, so a reserved 0-count flag is still explained.
     expect(legend.textContent).toContain('Quantidade inferida');
     expect(legend.textContent).toContain('reservada');
-    expect(legend.textContent).toContain('preenchimento automático futuro'); // the desc text
+    expect(legend.textContent).toContain('completaria automaticamente'); // the desc text
     // one legend item per registered flag (all documented, present or reserved)
     expect(legend.querySelectorAll('.qa-flag-legend-item')).toHaveLength(window.QUALITY_FLAGS.length);
+    // …organised under the plain-language group titles, in reading order
+    const titles = [...legend.querySelectorAll('.qa-flag-legend-group')].map((h) => h.textContent);
+    expect(titles).toEqual(window.QUALITY_FLAG_GROUPS.map((g) => g.title));
+  });
+
+  it('a flag that no group lists still appears in the legend, under "Outras marcas"', () => {
+    stubGlobals(FIXTURE);
+    const groups = window.QUALITY_FLAG_GROUPS;
+    window.QUALITY_FLAG_GROUPS = groups.map((g) => ({ ...g, ids: g.ids.filter((id) => id !== 'OK') }));
+    try {
+      const { container } = render(<ViewQuality summary={{}} database="ibge_pevs" />);
+      const legend = container.querySelector('.qa-flag-legend');
+      expect(legend.querySelectorAll('.qa-flag-legend-item')).toHaveLength(window.QUALITY_FLAGS.length);
+      expect(legend.textContent).toContain('Outras marcas');
+    } finally {
+      window.QUALITY_FLAG_GROUPS = groups;
+    }
   });
 
   it('shows the flag descriptions as hover tooltips on the KPI cards', () => {
