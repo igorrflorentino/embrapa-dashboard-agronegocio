@@ -45,12 +45,16 @@ with base_ppm as (
         any_value(city_name)            as city_name,
         product_code,
         any_value(product_description)  as product_description,
-        -- Per product there is one SIDRA table (3939 herd | 74 animal production) and
-        -- one physical unit → any_value/max lift them. `tabela` is part of the
-        -- produto's IDENTITY (banco, tabela, código); `measure_kind` is derived from it
-        -- upstream and rides along because it answers a different question — "does this
-        -- row have a price?" — that five views ask directly.
-        any_value(tabela)         as tabela,
+        -- `tabela` is part of the produto's IDENTITY (banco, tabela, código), so it is part
+        -- of the GRAIN — the same as gold_pevs_production and gold_pam_production. Until
+        -- v1.89.0 this lifted it with any_value(), which was exact only because no
+        -- (year, city, code) spans both tables (3939 herd | 74 animal production; 0 such
+        -- keys, measured 2026-09-24). Were one ever to, any_value would have merged a
+        -- headcount and a production quantity into one row under a single table id.
+        -- `measure_kind` is derived from the table upstream and rides along because it
+        -- answers a different question — "does this row have a price?" — that five views
+        -- ask directly.
+        tabela,
         any_value(measure_kind)         as measure_kind,
         max(family)                     as family,
         max(unit_native)                as unit_native,
@@ -60,7 +64,7 @@ with base_ppm as (
         max(case when is_monetary_value then numeric_value end) as val_raw,
         max(ingestion_timestamp)        as last_refresh
     from {{ ref('silver_ibge_ppm') }}
-    group by reference_year, state_acronym, city_code, product_code
+    group by reference_year, state_acronym, city_code, product_code, tabela
     having qty_native is not null
         or val_raw    is not null
 

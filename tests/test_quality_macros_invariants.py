@@ -23,6 +23,16 @@ def _macro(name: str) -> str:
     return (_DBT / "macros" / f"{name}.sql").read_text(encoding="utf-8")
 
 
+def _serving(name: str) -> str:
+    return (_DBT / "models" / "serving" / f"{name}.sql").read_text(encoding="utf-8")
+
+
+def _macro_body(sql: str, name: str) -> str:
+    """The text of one ``{% macro name(...) %}`` block, up to its ``endmacro``."""
+    start = sql.index(f"macro {name}(")
+    return sql[start : sql.index("endmacro", start)]
+
+
 @pytest.mark.parametrize("model", _IBGE_MODELS)
 def test_ibge_q1_scores_on_deflated_value_not_nominal(model):
     """IBGE implied-price scoring MUST use the DEFLATED value (val_real_ipca_brl). Nominal
@@ -70,3 +80,64 @@ def test_ppm_stock_rows_are_unscored_not_ok():
     # feature off still compiles to the previous OK/MISSING_QUANTITY pair.
     assert "enable_quality_outliers" in stock and "quality_unscored_scope" in stock
     assert "'OK'" in stock
+
+
+def test_problematic_attribution_is_null_safe_and_exhaustive():
+    """A row whose implied price is >= price_k x off must land in EXACTLY one PROBLEMATIC tier.
+
+    `_q_*_excess` is NULL when a measure's p75 equals its median, and a bare
+    `abs(NULL) >= abs(x)` is NULL — which failed BOTH attribution conditions, so a 1.000x price
+    anomaly fell through to 'OK'. 0 rows reached that on prod (2026-09-24), which is exactly the
+    kind of immunity-by-data this project keeps losing. The guard: both levels read the SAME
+    coalesced predicate, one as-is and one negated, so they are complements by construction.
+    """
+    macro = _macro("quality_outlier_ctes")
+    blame = _macro_body(macro, "_q_blame_value")
+    assert blame.count("coalesce(") == 2, "both excesses must be coalesced"
+    assert "_q_blame_value(value_expr, qty_expr) }} then 'problematic'" in _macro_body(
+        macro, "quality_val_level"
+    )
+    assert "not ({{ _q_blame_value(value_expr, qty_expr) }}) then 'problematic'" in _macro_body(
+        macro, "quality_qty_level"
+    )
+
+
+def test_sample_gate_counts_the_population_the_median_sees():
+    """`quality_min_obs` must count the prices the median is taken over — ln(v/q), which skips
+    value=0 rows — not v/q, which counts them. Otherwise a product can pass the sample gate on
+    prices its median never saw."""
+    bounds = _macro_body(_macro("quality_outlier_ctes"), "quality_scored_bounds")
+    assert "count(safe.ln(safe_divide(" in bounds
+    assert "percentile_cont(safe.ln(safe_divide(" in bounds
+
+
+def test_quality_value_share_weights_ibge_by_a_deflator_that_covers_every_row():
+    """The donut's value_share is the one number that says how much MONEY went unexamined, so
+    its weight must exist for every valued row. IPCA starts in 1980; PAM/PPM start in 1974, and
+    the rows it cannot reach are precisely the ones the detector cannot score. Weighting by
+    `coalesce(val_real_ipca_brl, 0)` priced them at R$ 0 and published 0,10% unexamined for a
+    PAM that was 8,98% unexamined (measured 2026-09-24). IGP-DI (from 1944) covers them all."""
+    mart = _serving("serving_quality_by_source")
+    body = mart[mart.index("with flags as") :]
+    assert "val_real_ipca_brl" not in body
+    assert body.count("coalesce(val_real_igpdi_brl, 0)") == len(_IBGE_MODELS)
+
+
+@pytest.mark.parametrize("model", _IBGE_MODELS)
+def test_ibge_detector_window_is_the_produto_identity(model):
+    """The detector's median is per produto, and a produto is (banco, tabela, código). All three
+    IBGE windows carry `tabela`, so none is correct only because today's code sets are disjoint."""
+    sql = _model(model)
+    window = sql[sql.index("window _qw as") :]
+    window = window[: window.index(")")]
+    assert "product_code" in window and "tabela" in window
+
+
+def test_ppm_groups_by_tabela_instead_of_lifting_it():
+    """gold_ppm_production lifted `tabela` with any_value() until v1.89.0 — exact only while no
+    (year, city, code) spans the herd and animal-production tables. Grouping by it makes a
+    collision two rows instead of one row that mixes a headcount with a production quantity."""
+    sql = _model("gold_ppm_production")
+    base = sql[sql.index("with base_ppm as") : sql.index("having")]
+    assert "any_value(tabela)" not in base
+    assert "group by reference_year, state_acronym, city_code, product_code, tabela" in base

@@ -7,6 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.89.0] - 2026-09-24
+
+Auditoria da lógica de qualidade dos dados (`data_quality_flag`): como o detector decide cada
+tag, quais tags existem e quem as emite, e dez achados, todos medidos em produção. Relatório
+com as consultas: `docs/audits/qualidade_dados_audit_2026-09-24.md`. Esta versão corrige o
+que **não muda nenhuma tag no Gold**, e isso foi provado: build de dev dos seis modelos
+tocados, lendo o mesmo Silver do prod, com impressão digital de `(chave, flag)` idêntica nos
+cinco Gold. Três mudanças que alteram tags foram aprovadas e vão num PR seguinte (abaixo).
+
+### Corrigido
+- **O donut de qualidade escondia o valor não examinado da PAM e da PPM.** O
+  `serving_quality_by_source` pesava o IBGE por `coalesce(val_real_ipca_brl, 0)`. O IPCA
+  começa em 1980, e as linhas de 1974–1979 entravam com R$ 0 — exatamente as que o detector
+  não consegue examinar, porque ele também escora pelo IPCA.
+  - A tela dizia que 0,10% do valor da PAM ficou sem exame; são **8,98%**. Na PPM, 0,28% →
+    **10,38%**. O PEVS quase não muda (0,70% → 0,74%, só o peso relativo dos anos).
+  - O peso passa a ser `val_real_igpdi_brl`, que cobre todas as linhas com valor nos três
+    bancos (0 lacunas, contra 355.644 do IPCA). O `coalesce` agora só zera o rebanho.
+  - Caíram as frases "mais de 99% do dinheiro em todo banco" (mart, `sql.py`) e "over 96%"
+    (README).
+- **Legendas das tags que descreviam o que o detector não faz** (`data.js`, `glossary.js`):
+  - `PROBLEMATIC_QUANTITY` dizia "bem acima do esperado"; 83% dessas linhas têm quantidade
+    **abaixo** da mediana (o peso = 1). Agora: "mais de 100× acima ou abaixo".
+  - `OUTLIER_*` dizia "preço coerente, válido"; coerente é "dentro de 100×", e 460 atípicos do
+    COMTRADE estão 10× ou mais fora. Agora a legenda diz isso, e que "atípico" é relativo à
+    história inteira do produto (na PAM, 2,5× mais atípicos depois de 2010).
+  - `UNSCORED` ganhou o 5º motivo (comércio sem peso líquido) e a fração de valor da PAM/PPM.
+  - `MISSING_VALUE` e `MISSING_WEIGHT` dizem onde essas situações aparecem de fato.
+  - O glossário dizia que o IGP-DI começa em 1980; neste acervo ele alcança 1974.
+
+### Alterado (sem mudar nenhuma tag — verificado)
+- **Atribuição do PROBLEMÁTICO à prova de NULL.** Se o p75 de uma medida fosse igual à
+  mediana, a comparação virava NULL e uma linha com preço 1.000× fora caía em `OK`. As duas
+  condições agora leem o mesmo predicado com `coalesce` (`_q_blame_value`), uma direta e outra
+  negada. 0 linhas afetadas hoje.
+- **A amostra mínima conta a mesma população da mediana** (`count(safe.ln(…))`, não
+  `count(safe_divide(…))`, que incluía valor zero). 0 linhas afetadas hoje.
+- **`gold_ppm_production` agrupa por `tabela`** em vez de levantá-la com `any_value()`, e a
+  janela do detector na PAM ganhou `tabela`. As três janelas do IBGE agora têm a mesma forma.
+
+### Documentação
+- `docs/audits/qualidade_dados_audit_2026-09-24.md` (novo).
+- As taxas de calibração no `dbt_project.yml` e na macro (PAM 0,03%, COMEX 0,19%…) não se
+  reproduziam, com diferença de 1 a 2 ordens de grandeza. Foram trocadas pelas medidas hoje,
+  com a data.
+- A macro documenta o lado cego do piso de materialidade: um valor que perdeu dígitos cai
+  abaixo do piso e nunca é examinado (COMTRADE 1.030 linhas, PEVS 24).
+- README e CLAUDE.md: as frações por valor corrigidas, e o fato de que as tags de ausência
+  nunca aparecem no IBGE (o `...` do SIDRA apaga a célula inteira, e o Gold a descarta).
+
+### Testes
+- Cinco invariantes novas em `tests/test_quality_macros_invariants.py`. Rodadas contra o
+  `dbt/` da v1.88.8, **falham lá**.
+
+### Aprovado para o PR seguinte (muda tags)
+- O detector do IBGE escora pelo IGP-DI: ~158 mil linhas de 1974–1979 passam a ser examinadas.
+- O piso de materialidade testa `greatest(valor, quantidade × preço mediano)`.
+- O COMTRADE emite `MISSING_WEIGHT` para as 79.536 linhas com valor e sem peso.
+
+---
+
 ## [1.88.8] - 2026-09-24
 
 Registra o endurecimento de IAM feito hoje pelo mantenedor, com a evidência que o

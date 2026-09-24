@@ -42,12 +42,12 @@ _SAO_PAULO = ZoneInfo("America/Sao_Paulo")
 _FAMILY_JS = {"massa": "mass", "volume": "volume", "contagem": "count"}
 
 # data_quality_flag id → the qualityTs contract key (contracts.js qualityTs).
-# These are the REAL Gold flags emitted by macros/data_quality_flag.sql
-# (OK/MISSING_VALUE/MISSING_QUANTITY/INCOMPLETE for PEVS/PAM/COMTRADE) plus the
-# COMEX-only MISSING_WEIGHT (gold_comex_flows.sql inline CASE). The earlier
+# These are the REAL Gold flags: the 13-value domain of macros/data_quality_flag.sql +
+# macros/quality_outlier_ctes.sql (ON in prod), the COMEX-only MISSING_WEIGHT
+# (gold_comex_flows.sql inline CASE) and the PAM-only AREA_INCONSISTENT. The earlier
 # ESTIMATED/OUTLIER/BOUNDARY_HISTORIC keys were the prototype's synthetic
-# taxonomy — Gold never emits them, so they silently dropped INCOMPLETE and
-# (for COMEX) MISSING_WEIGHT out of the quality charts.
+# taxonomy — Gold never emits them, so they silently dropped real rows out of the
+# quality charts.
 _FLAG_KEY = {
     "OK": "ok",
     "MISSING_VALUE": "missing_value",

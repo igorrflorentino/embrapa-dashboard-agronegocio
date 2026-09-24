@@ -7,9 +7,20 @@
     with an error. A pure magnitude fence can't make that distinction; this does:
       • PROBLEMÁTICO  — the implied price is >price_k× or <1/price_k× the product's median
                         price  ⇒  a value or quantity typo. Attributed to whichever measure
-                        is the more anomalous (|excess|). Validated rate: COMEX 0.19%, PEVS 0.003%.
-      • OUTLIER       — the measure is in the product's high tail AND the price is consistent
-                        ⇒  "bem acima do esperado mas válido" (a real big number).
+                        is the more anomalous (|excess|). Two-sided: 83% of the
+                        PROBLEMATIC_QUANTITY rows have a quantity BELOW the median (the
+                        weight=1 placeholder), measured 2026-09-24.
+      • OUTLIER       — the measure is in the product's high tail AND the price is within
+                        price_k× of the median ⇒ "bem acima do esperado mas válido" (a real
+                        big number). "High tail" is relative to the product's WHOLE history,
+                        so the tier tracks the product's secular trend (PAM: 0,92% of scored
+                        rows since 2010 vs 0,37% before).
+
+    Measured rates on prod, 2026-09-24 (PROBLEMÁTICO rows / all Gold rows): PAM 4 (0,0002%),
+    PEVS 20 (0,0015%), PPM 1, COMEX 20 (0,005%), COMTRADE 2.986 (0,145%). The rates this
+    header and dbt_project.yml carried until v1.89.0 (COMEX 0,19%, PAM 0,03%, …) came from
+    the 2026-06-26 validation and no longer reproduce; the cause was not investigated. See
+    docs/audits/qualidade_dados_audit_2026-09-24.md for the queries.
 
     The value MUST be DEFLATED for IBGE (val_real_ipca_brl) — nominal manufactures a fake 20%
     near-zero-price tail (pre-1995 hyperinflation). Trade uses nominal USD (no BR-inflation).
@@ -33,7 +44,11 @@
         percentile_cont(safe.ln({{ value_expr }}), 0.75) over _qw as _q_p75_val,
         percentile_cont(safe.ln({{ qty_expr }}), 0.5)    over _qw as _q_ln_med_qty,
         percentile_cont(safe.ln({{ qty_expr }}), 0.75)   over _qw as _q_p75_qty,
-        count(safe_divide({{ value_expr }}, {{ qty_expr }})) over _qw as _q_n
+        {#- The sample gate counts the SAME population the price median is taken over. It
+            counted safe_divide(v, q) until v1.89.0, which includes value=0 rows whose ln is
+            NULL — rows the median ignores — so a product could pass `quality_min_obs` on
+            prices the median never saw. 0 rows affected when changed (measured 2026-09-24). #}
+        count(safe.ln(safe_divide({{ value_expr }}, {{ qty_expr }}))) over _qw as _q_n
 {%- endmacro -%}
 
 {%- macro _q_price_dev(value_expr, qty_expr) -%}
@@ -51,13 +66,32 @@ safe_divide(safe.ln({{ qty_expr }}) - _q_ln_med_qty, nullif(_q_p75_qty - _q_ln_m
 {#- Guard shared by both level macros: need both measures positive, a price center, a sample big
     enough to trust the per-product distribution, AND a MATERIAL value. The magnitude floor is
     load-bearing — without it, tiny-municipality rounding (small value/qty → erratic implied price)
-    over-flags: validated on prod, PAM dropped 1.96% → 0.03% at the floor, PPM 1.65% → 0.002%, while
-    the real typos (weight=1 placeholders, dropped digits) stay flagged. Below the floor a row is
-    low-stakes, so it is never flagged. -#}
+    over-flags: validated on prod 2026-06-26, PAM dropped 1.96% → 0.03% at the floor, PPM 1.65% →
+    0.002%, while the weight=1 placeholders and digits dropped from the QUANTITY stay flagged.
+
+    KNOWN BLIND SIDE: the floor tests the REPORTED value, so a typo that SHRINKS the value (digits
+    dropped from it) pushes the row below the floor and it is never scored. Measured 2026-09-24:
+    rows under the floor whose price is ≤ 1/100 of the median while qty × median price clears it —
+    COMTRADE 1.030 (vs 2.986 flagged), PEVS 24 (vs 20 flagged), COMEX 5, PAM 2. Approved fix, in
+    the follow-up to v1.89.0: test greatest(value, qty × exp(_q_ln_med_price)) against the floor.
+    See docs/audits/qualidade_dados_audit_2026-09-24.md § A2. -#}
 {%- macro _q_guard(value_expr, qty_expr) -%}
 {{ value_expr }} is null or {{ value_expr }} <= 0 or {{ qty_expr }} is null or {{ qty_expr }} <= 0
        or _q_ln_med_price is null or _q_n < {{ var('quality_min_obs', 100) }}
        or {{ value_expr }} < {{ var('quality_value_floor', 100000) }}
+{%- endmacro -%}
+
+{#- Attribution of a PROBLEMÁTICO row to value vs quantity. The two conditions are exact
+    complements (>= vs >), so a row whose price is ≥ price_k× off ALWAYS lands in exactly one of
+    the two — and that must hold even when an excess is NULL. `_q_*_excess` is NULL when the
+    measure's p75 equals its median (a degenerate spread: nullif of a zero denominator), and a
+    bare `abs(NULL) >= abs(x)` is NULL, which fails BOTH conditions: the price anomaly was then
+    silently dropped and the row fell through to 'OK'. The coalesce reads "spread unknown" as
+    "not the anomalous side", so the blame goes to the other measure (to the value when both are
+    unknown). 0 rows reached this on 2026-09-24 in any banco — correct by data until v1.89.0,
+    correct by construction since. -#}
+{%- macro _q_blame_value(value_expr, qty_expr) -%}
+abs(coalesce({{ _q_val_excess(value_expr) }}, 0)) >= abs(coalesce({{ _q_qty_excess(qty_expr) }}, 0))
 {%- endmacro -%}
 
 {%- macro quality_val_level(value_expr, qty_expr) -%}
@@ -66,7 +100,7 @@ safe_divide(safe.ln({{ qty_expr }}) - _q_ln_med_qty, nullif(_q_p75_qty - _q_ln_m
 case
   when {{ _q_guard(value_expr, qty_expr) }} then null
   when {{ _q_price_dev(value_expr, qty_expr) }} >= ln({{ var('quality_price_k', 100) }})
-       and abs({{ _q_val_excess(value_expr) }}) >= abs({{ _q_qty_excess(qty_expr) }}) then 'problematic'
+       and {{ _q_blame_value(value_expr, qty_expr) }} then 'problematic'
   when {{ _q_val_excess(value_expr) }} >= {{ var('quality_outlier_k', 4.0) }} then 'outlier'
   else null
 end
@@ -79,7 +113,7 @@ end
 case
   when {{ _q_guard(value_expr, qty_expr) }} then null
   when {{ _q_price_dev(value_expr, qty_expr) }} >= ln({{ var('quality_price_k', 100) }})
-       and abs({{ _q_qty_excess(qty_expr) }}) > abs({{ _q_val_excess(value_expr) }}) then 'problematic'
+       and not ({{ _q_blame_value(value_expr, qty_expr) }}) then 'problematic'
   when {{ _q_qty_excess(qty_expr) }} >= {{ var('quality_outlier_k', 4.0) }} then 'outlier'
   else null
 end
