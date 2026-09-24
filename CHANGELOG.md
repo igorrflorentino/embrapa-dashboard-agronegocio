@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.88.7] - 2026-09-24
+
+O build de dev local volta a terminar com o código certo, sem dar permissão nova a ninguém,
+e a revisão de acesso da conta de desenvolvimento fica registrada.
+
+### Corrigido
+- **`apply_dev_ttl` passa a ser idempotente.** O hook `on-run-end` rodava
+  `ALTER SCHEMA dbt_dev_* SET OPTIONS (default_table_expiration_days = 7)` em todo build de
+  dev. Isso exige `bigquery.datasets.update`, que nenhuma das duas identidades de dev tem nos
+  `dbt_dev_*`: os datasets foram criados por uma pessoa, e nem o `dataEditor` nem o `WRITER`
+  incluem essa permissão. Então todo build local terminava com **código 2 DEPOIS de
+  `Done. PASS=… ERROR=0`**, com a expiração já aplicada.
+  - Agora a macro lê a expiração atual (`INFORMATION_SCHEMA.SCHEMATA_OPTIONS`, que só pede
+    `datasets.get`) e só altera o dataset em que ela falta ou é diferente.
+  - A alternativa era dar à conta a posse dos datasets de dev, um `GRANT`. Foi descartada
+    porque ampliaria permissão para refazer algo já feito, e só resolveria para uma das duas
+    contas.
+  - Medido nos quatro cenários: a macro sozinha termina com código 0 e "already 7 days"; um
+    build de dev real termina com `PASS=2 ERROR=0` e código 0; o `dbt parse` não registra
+    mais nada; e com uma expiração diferente (8 dias) ela continua tentando o `ALTER`, como
+    deve.
+  - O `dbt parse` também deixa de imprimir "→ 7 days" sem ter executado nada: a macro agora
+    só age com `execute` ligado.
+
+### Segurança (revisão, sem mudança aplicada)
+- **`sa-secret-reader-prod` não precisa de `roles/secretmanager.secretAccessor`, e hoje o
+  tem no projeto inteiro.** Ela é a ÚNICA conta com leitura de TODOS os segredos
+  (`bls-api-key`, `comtrade-un-key` e `feedback-github-token`). Duas pessoas podem se passar
+  por ela, e cada uma consegue ler os três. Nada depende disso:
+  - nenhum código em `src/` chama a API do Secret Manager;
+  - nenhum serviço, Job ou gatilho roda como ela;
+  - cada segredo já dá acesso ao seu consumidor real no próprio segredo: o Job para as
+    chaves de API e o painel para o token do GitHub;
+  - o conjunto de permissões documentado para a conta nunca incluiu esse papel.
+
+  O uso passado não pode ser descartado, porque o log de acesso a dados do Secret Manager
+  está desligado. A remoção é mudança de IAM e fica com o mantenedor. O comando está em
+  `docs/iam_setup.md` §2.1, e `docs/auth_architecture.md` agora diz explicitamente que o
+  papel não pertence à conta.
+
+---
+
 ## [1.88.6] - 2026-09-24
 
 Documentação alinhada ao que as versões 1.88.1 a 1.88.5 mudaram. Um trecho dela mandava

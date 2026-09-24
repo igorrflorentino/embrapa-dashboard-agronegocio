@@ -135,20 +135,40 @@ gcloud projects add-iam-policy-binding embrapa-dashboard-commodities \
 > decision to drop Secret Manager. The account is now purely an impersonation
 > target. Feel free to rename it in your IAM console if you prefer.
 
-> ⚠️ **With exactly these grants, a local dev `dbt build` exits 2 even when every node
-> passes** (observed 2026-09-24). The `on-run-end` hook `apply_dev_ttl` runs
-> `ALTER SCHEMA dbt_dev_* SET OPTIONS (default_table_expiration_days = 7)`, which needs
-> `bigquery.datasets.update`. `roles/bigquery.dataEditor` does not include it, and the SA
-> does not OWN the `dbt_dev_*` datasets (a human created them; the same premise fails for
-> `sa-claude-code-web-dev` in §2.5). The failure comes AFTER `Done. PASS=… ERROR=0`, so read that line
-> rather than the exit code. The TTL itself is already set on the three datasets.
-> To make the exit code honest, grant ownership of the three dev datasets only (a dataset-scoped
-> grant, not project-wide):
+> **No `bigquery.datasets.update` needed on the dev datasets (since v1.88.7).** The
+> `on-run-end` hook `apply_dev_ttl` used to run
+> `ALTER SCHEMA dbt_dev_* SET OPTIONS (default_table_expiration_days = 7)` on every dev
+> build. That needs `bigquery.datasets.update`, which neither `dataEditor` nor a dataset
+> `WRITER` entry grants, and this SA does not OWN the `dbt_dev_*` datasets (a human created
+> them; the same holds for `sa-claude-code-web-dev` in §2.5). So every local dev build
+> exited 2 AFTER `Done. PASS=… ERROR=0` (observed 2026-09-24). The hook now reads the
+> current TTL (`INFORMATION_SCHEMA.SCHEMATA_OPTIONS`, which needs only `datasets.get`) and
+> ALTERs only a dataset whose TTL is missing or different, so the fix needed no new
+> permission. If a dev build does exit 2 on that hook now, a TTL really had to change:
+> apply it once as the dataset owner, or grant `roles/bigquery.dataOwner` ON SCHEMA for
+> that dataset only.
 >
-> ```sql
-> GRANT `roles/bigquery.dataOwner` ON SCHEMA `embrapa-dashboard-commodities.dbt_dev_silver`
->   TO "serviceAccount:sa-secret-reader-prod@embrapa-dashboard-commodities.iam.gserviceaccount.com";
-> -- repeat for dbt_dev_gold and dbt_dev_serving
+> **It must NOT hold `roles/secretmanager.secretAccessor`** (reviewed 2026-09-24). A
+> project-level grant of that role was found on this SA, making it the ONLY principal able
+> to read EVERY secret in the project: `bls-api-key`, `comtrade-un-key` and
+> `feedback-github-token`. Two humans hold `iam.serviceAccountTokenCreator` on it, so each
+> of them could too. Nothing needs it:
+>
+> - no code in `src/` calls the Secret Manager API (local runs take `BLS_API_KEY` from the
+>   environment);
+> - no Cloud Run service, Job or Scheduler trigger runs as this SA, and no GitHub variable
+>   names it;
+> - every secret already grants its real consumer at the SECRET level: `bls-api-key` and
+>   `comtrade-un-key` → `sa-data-pipeline-prod` (the ingestion Job, which Cloud Run mounts
+>   them into); `feedback-github-token` → `sa-web-dashboard-prod`.
+>
+> Past use cannot be ruled out: Data Access audit logs are off for Secret Manager, so no
+> read by anyone is recorded. The name ("secret reader") is a leftover. The grant set above
+> never included the role. Check and remove:
+>
+> ```bash
+> gcloud projects get-iam-policy embrapa-dashboard-commodities --flatten=bindings --filter="bindings.role:roles/secretmanager.secretAccessor" --format="value(bindings.members)"
+> gcloud projects remove-iam-policy-binding embrapa-dashboard-commodities --member="serviceAccount:sa-secret-reader-prod@embrapa-dashboard-commodities.iam.gserviceaccount.com" --role="roles/secretmanager.secretAccessor" --condition=None
 > ```
 
 ### 2.2 Data Pipeline SA
