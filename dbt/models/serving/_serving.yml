@@ -280,3 +280,35 @@ models:
           weight must exist for every valued row: IPCA starts in 1980, and weighting by it
           priced the 1974–1979 rows (the very rows the detector cannot examine) at R$ 0
           until v1.89.0. NULL when a source's total value is zero (no base for a fraction).
+
+  - name: serving_quality_history
+    description: |
+      Append-only history of serving_quality_by_source: one copy of the donut per dbt
+      build, stamped with `built_at` and the dbt `invocation_id`. `embrapa doctor`
+      (quality-drift) compares consecutive builds and warns when a tag's share moves.
+      `full_refresh=false`: a `--full-refresh` build must not erase it — it is the one
+      table here that cannot be recomputed from the sources. Not read by the dashboard.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - invocation_id
+              - source
+              - data_quality_flag
+    columns:
+      - name: built_at
+        description: "When the build ran (current_timestamp() of the statement — one value per build)."
+        tests: [not_null]
+      - name: invocation_id
+        description: "The dbt invocation that appended these rows; the build's identity."
+        tests: [not_null]
+      - name: source
+        tests: [not_null]
+      - name: data_quality_flag
+        tests: [not_null]
+      - name: n_rows
+        tests: [not_null]
+      - name: share
+        description: "As in serving_quality_by_source at that build."
+      - name: value_share
+        description: "As in serving_quality_by_source at that build (NULL where it was NULL)."

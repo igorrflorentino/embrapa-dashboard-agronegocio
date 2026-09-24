@@ -188,6 +188,7 @@ dashboard scans MB not GB. They derive **from** Gold, they don't replace it.
 | `serving_comex_seasonality` | year × **month** × flow × NCM × UF | `gold_comex_flows` (joins `dim_date`; country + via dropped) | seasonality (the only mart keeping month) |
 | `serving_comtrade_annual` | year × flow × cmd × reporter × partner | `gold_comtrade_flows` (column-pruned) | partner / flow / market-share |
 | `serving_quality_by_source` | source × data_quality_flag (+ share) | all five Gold facts | quality donut |
+| `serving_quality_history` | build × source × data_quality_flag | `serving_quality_by_source`, appended each build | `embrapa doctor` quality-drift (not the BFF) |
 
 ## Value columns
 

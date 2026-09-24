@@ -332,6 +332,25 @@ GROUP BY f.y ORDER BY n DESC
 -- → 1985 · 219 · Soja (em grão) · 1000.0 · 1.0   (e 4 linhas esparsas de outros anos)
 ```
 
+### O alarme (v1.91.0)
+
+A lição do A6 não é o 1985 em si. É que uma mudança de 223 para 4 aconteceu sem que nada a
+visse, porque o donut é reconstruído a cada build e nenhum lugar guardava o que ele dizia antes.
+Desde a v1.91.0:
+
+- cada build acrescenta o donut a `serving_quality_history` (só acréscimo, `full_refresh=false`);
+- `embrapa doctor` (`quality-drift`) compara todos os pares de builds dos últimos 14 dias e avisa
+  quando uma tag de um banco muda a fração de linhas ou de valor em ≥ 2 p.p., muda a contagem em
+  ≥ 3× (com ≥ 20 linhas de diferença) ou aparece/some. A janela existe porque o `doctor` roda sob
+  demanda: um aviso que só olhasse o último par sumiria no primeiro build seguinte.
+
+**Backtest nos backups do Gold** (32 snapshots de 2026-07-05 a 2026-09-24, só contagem de linhas;
+~2 GB lidos): o alarme teria tocado em exatamente 4 pares — v1.17.0 (o `-` do SIDRA vira zero e
+as tags de ausência somem do IBGE), v1.49.0 (o `UNSCORED` nasce), v1.73.0 (o rebanho da PPM vira
+`UNSCORED`) e v1.90.0 — e em nenhum dos 27 intervalos em que só houve ingestão e rebuilds. O caso
+de 1985 é anterior ao primeiro snapshot com a Q1 ligada, mas é o caso-teste do limiar de contagem
+(`test_quality_drift_catches_a_rare_tag_collapsing_by_count`).
+
 ## 🟡 A7 — ATÍPICO é relativo à história inteira do produto
 
 A janela junta 50 anos, então a tag acompanha a tendência secular do produto. Taxa de
