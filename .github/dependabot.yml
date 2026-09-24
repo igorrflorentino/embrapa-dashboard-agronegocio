@@ -29,7 +29,15 @@ updates:
 
   # Python deps (pyproject.toml + uv.lock). Keeps the ingestion/transform/webapi
   # libraries current with security + feature bumps; grouped into one weekly PR.
-  - package-ecosystem: pip
+  #
+  # MUST be `uv`, not `pip`. Until v1.88.3 this said `pip`, which cannot read uv.lock:
+  # it only looks at the pyproject ranges (`dbt-core>=1.8`, …), which are open-ended and
+  # never fall behind, so it ran weekly, reported "success", and opened ZERO Python PRs
+  # in its whole life (measured 2026-09-23 — the only "python" PRs ever were Docker base
+  # images). Nothing moved the lock but a human, and five vulnerable transitive packages
+  # piled up unnoticed (fixed in v1.88.2). GitHub's security updates already use the `uv`
+  # ecosystem — the first one (#476) arrived the day alerts were switched on.
+  - package-ecosystem: uv
     directory: /
     schedule:
       interval: weekly
