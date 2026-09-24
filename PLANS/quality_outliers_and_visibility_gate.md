@@ -170,6 +170,13 @@ problemático rate **of all rows** (from `serving.serving_quality_by_source`):
 
 Spot-checked: the flagged rows are genuine typos (overwhelmingly trade `weight=1` placeholders, e.g.
 US$80M for 1 kg of plywood). `enable_quality_outliers` is therefore **true for all 5 sources** in prod.
+
+> **Correction (2026-09-24).** The PAM and PPM rows of this table were measured BEFORE the 1985
+> currency fix (`80464a3`, same day). 219 of PAM's 223 flagged rows were 1985 soybean, whose value
+> was 1.000× too small: IBGE labels 1985 "Mil Cruzeiros" at Cruzado magnitude. They were not typos;
+> they were the first pipeline defect this detector found. Once fixed, PAM fell to 4 rows (0,00036%)
+> and PPM to 1. PEVS/COMEX/COMTRADE are unaffected and reproduce from the 2026-07-05 backup.
+> Reconstruction: `docs/audits/qualidade_dados_audit_2026-09-24.md` § A6.
 *(The earlier "per-source threshold needed / ships OFF" conclusion is SUPERSEDED — it predated the floor.)*
 
 ## Operator runbook (prod)

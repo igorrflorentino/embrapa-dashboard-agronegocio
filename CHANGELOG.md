@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.90.2] - 2026-09-24
+
+Só comentários e documentação. Nenhum número muda: os arquivos de `dbt/` tocados são
+comentários, por isso esta versão não leva Release.
+
+### Documentação
+- **Explicada a "queda" das taxas de PROBLEMÁTICO** que a auditoria (A6) tinha deixado como
+  "causa não investigada". Reconstrução feita a partir dos backups do Gold, consultados direto
+  no GCS. **Não houve regressão no detector:** a macro ficou idêntica de 27/06 a 24/09.
+  - **COMEX, PEVS e COMTRADE:** o comentário do `dbt_project.yml` guardava as taxas medidas
+    **sem** o piso de materialidade (COMEX 0,193% e PEVS 0,003% se reproduzem exatamente no
+    backup de 05/07). Com o piso, que é como o Gold sempre rodou, os três são estáveis desde
+    julho.
+  - **PAM e PPM: a queda foi real, e foi o detector funcionando.** A validação de 26/06 rodou
+    antes da correção de 1985 (`80464a3`, no mesmo dia). O IBGE rotula o valor de 1985 como
+    "Mil Cruzeiros", mas em magnitude de Cruzados, e o ano inteiro ficava 1.000× pequeno.
+    Das 223 linhas que o detector marcou na PAM, 219 eram soja de 1985, com valor exatamente
+    1.000× menor que depois da correção. Corrigido, a PAM caiu para 4 linhas e a PPM de 8
+    para 1.
+- `docs/audits/qualidade_dados_audit_2026-09-24.md` § A6 traz a explicação e a consulta que a
+  prova. O `dbt_project.yml` e o cabeçalho de `quality_outlier_ctes.sql` deixam de dizer
+  "causa não investigada".
+- `PLANS/quality_outliers_and_visibility_gate.md`: nota de correção na tabela de validação.
+  Ela chamava de "*genuine typos*" as 223 linhas da PAM, que eram um erro de pipeline — o
+  primeiro que o detector encontrou.
+
+---
+
 ## [1.90.1] - 2026-09-24
 
 Só documentação, sem Release (política em `CONTRIBUTING.md`). Corrige um efeito colateral

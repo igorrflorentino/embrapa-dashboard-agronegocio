@@ -267,10 +267,70 @@ O `dbt_project.yml` e o cabeçalho da macro traziam as taxas de PROBLEMÁTICO da
 | PPM | 0,002% | 0,00003% (1) |
 
 Uma a duas ordens de grandeza de diferença, e aquele comentário era o único registro da
-calibração. A causa não foi investigada.
+calibração.
 
 **Corrigido na v1.89.0:** os dois comentários trazem os números medidos, a data e a
 origem dos números antigos.
+
+### A causa (investigada em 2026-09-24, depois da v1.90.1)
+
+**Não houve regressão no detector.** A macro ficou idêntica de 2026-06-27 (quando a Q1 foi
+ligada, `7e4ed87`) a 2026-09-24; a única mudança no meio (`ee8796f`, v1.49.0) acrescentou o
+`UNSCORED` sem tocar a regra do PROBLEMÁTICO. A "queda" tem duas causas diferentes.
+
+**1. COMEX, PEVS e COMTRADE: o comentário misturava taxas SEM o piso de materialidade.** A
+validação mediu cada banco duas vezes, antes e depois de criar o piso, e o comentário guardou a
+medição de antes para esses três. Reproduzido no backup de 2026-07-05:
+
+| banco | comentário | detector **sem** piso (07-05) | **com** piso (07-05) | tabela do PLAN (com piso) |
+|---|---|---|---|---|
+| COMEX | 0,19% | **0,193%** | 0,0057% | 0,0057% |
+| PEVS | 0,003% | **0,003%** | 0,0009% | 0,0009% |
+| COMTRADE | 0,43% | 0,91% | 0,151% | 0,15% |
+
+Com o piso, que é como o Gold sempre rodou, os três são estáveis de julho até hoje. O 0,43% do
+COMTRADE não se reproduz exatamente: foi medido no meio do backfill mundial (2,29 mi linhas),
+entre os dois snapshots que existem (572 mil em 06-13, 2,31 mi em 07-05). As taxas sem piso
+desses dois momentos (0,84% e 0,91%) estão na mesma ordem.
+
+**2. PAM e PPM: a queda foi real, e foi o detector funcionando.** No backup de 2026-06-13, com
+as mesmas 1.124.058 linhas da PAM, o detector dá **0,0198% (223 linhas)** com piso e **1,75%**
+sem piso — os números documentados. Das 223, **219 eram soja de 1985**, e no backup de 07-05 as
+mesmas linhas têm valor **exatamente 1.000× maior**, com a mesma quantidade. O IBGE rotula o
+valor de 1985 da PAM e da PPM como "Mil Cruzeiros", mas a magnitude é de Cruzados (a reforma de
+1986); o seed de moedas seguia o rótulo e deixava o ano 1.000× pequeno. O `80464a3`
+(2026-06-27, macro `ibge_1985_cruzado_correction`) corrigiu, e a própria mensagem do commit
+registra "*PAM problemático 223 -> 4, PPM 8 -> 1*". O "1,96% sem piso" do comentário do
+`_q_guard` era, na prática, o ano de 1985 inteiro (~22 mil linhas); com piso, só a soja, a maior
+lavoura, passava dos R$ 100 mil mesmo dividida por mil.
+
+Duas coisas ficaram erradas na documentação: as taxas de antes da correção foram parar nos
+comentários e na tabela do PLAN, e o PLAN descreve essas 223 linhas como "*genuine typos*".
+Eram um erro de pipeline, o primeiro que o detector encontrou. A assinatura é a mesma de
+`docs/divergencias_de_conteudo.md`: um erro sistemático se concentra (um produto, um ano, um
+fator exato), enquanto erros de digitação aparecem espalhados.
+
+```sql
+-- Os backups do Gold se consultam direto no GCS, sem restaurar nada: uma definição de tabela
+-- externa que vale só para a consulta (PowerShell 5.1: SQL numa linha só).
+-- bq query --location=us-central1 --nouse_legacy_sql
+--   "--external_table_definition=jun::@PARQUET=gs://embrapa-dashboard-commodities-datalake/backups/run=20260613T233002Z/gold_pam_production/*.parquet"
+--   "--external_table_definition=jul::@PARQUET=gs://embrapa-dashboard-commodities-datalake/backups/run=20260705T121705Z/gold_pam_production/*.parquet"
+WITH s AS (
+  SELECT reference_year y, city_code c, product_code p, product_description d,
+         val_yearfx_brl vn, val_real_ipca_brl v, qty_native q,
+         PERCENTILE_CONT(SAFE.LN(SAFE_DIVIDE(val_real_ipca_brl, qty_native)), 0.5)
+           OVER (PARTITION BY product_code, family) med_p
+  FROM jun),
+f AS (SELECT * FROM s WHERE v > 0 AND q > 0 AND v >= 100000
+                        AND ABS(SAFE.LN(SAFE_DIVIDE(v, q)) - med_p) >= LN(100))
+SELECT f.y, COUNT(*) n, ANY_VALUE(f.d) produto,
+       AVG(SAFE_DIVIDE(j.val_yearfx_brl, f.vn)) ratio_valor_jul_jun,
+       AVG(SAFE_DIVIDE(j.qty_native, f.q)) ratio_qtd_jul_jun
+FROM f LEFT JOIN jul j ON j.reference_year = f.y AND j.city_code = f.c AND j.product_code = f.p
+GROUP BY f.y ORDER BY n DESC
+-- → 1985 · 219 · Soja (em grão) · 1000.0 · 1.0   (e 4 linhas esparsas de outros anos)
+```
 
 ## 🟡 A7 — ATÍPICO é relativo à história inteira do produto
 
