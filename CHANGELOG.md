@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.88.2] - 2026-09-23
+
+Higiene de dependências, parte 2: auditoria das duas árvores com as versões TRAVADAS
+(`npm audit`, `pip-audit` sobre o `uv.lock` com todos os extras e grupos), porque o
+repositório está com os alertas e as atualizações de segurança do Dependabot desligados. O
+grupo semanal do Dependabot só sobe o que está DECLARADO; uma dependência indireta
+vulnerável não entra em PR nenhum. Foi assim que a falha crítica do maplibre aninhado no
+plotly passou despercebida, corrigida só por coincidência no #467.
+
+### Segurança
+- **Frontend: `npm audit` zerado** (6 falhas altas → 0). `brace-expansion` 1.1.15 → 1.1.21
+  (3 DoS: GHSA-3jxr-9vmj-r5cp, GHSA-mh99-v99m-4gvg, GHSA-rgw5-rvv9-x895) e `js-yaml`
+  4.2.0 → 4.3.2 (3 DoS de CPU quadrática: GHSA-52cp-r559-cp3m, GHSA-5p4m-2wfm-xmqj,
+  GHSA-2883-xcg3-v3hh), as duas só na cadeia do eslint (`minimatch`, `@eslint/eslintrc`).
+  A árvore de PRODUÇÃO (`npm ls --omit=dev`, 381 entradas) saiu idêntica: o bundle não muda.
+- **Python: 4 dos 5 pacotes vulneráveis atualizados**, só eles (`uv lock --upgrade-package`):
+  `cryptography` 49.0.0 → 50.0.1 e `pyasn1` 0.6.3 → 0.6.4 (o caminho da autenticação Google,
+  via `google-auth`, usado pelo painel e pelo Job), `anyio` 4.13.0 → 4.14.2 e `setuptools`
+  82.0.1 → 84.0.0 (os majors 83/84 só removem partes de compilação de extensões C do
+  distutils, que o projeto não usa). Medido: 2208 testes, `ruff` limpo, e o `pip-audit`
+  refeito sobre o lock novo aponta só o `sqlparse`.
+
+### Risco aceito, com condição de saída
+- **`sqlparse` 0.5.5 fica** (5 avisos: PYSEC-2026-3696/3697/3698/3699/3923). O `dbt-core`
+  1.11 só aceita a série 0.5; a 0.6.0 chega com o **dbt-core 1.12**, cuja resolução traz
+  `metricflow`, `sqlglot`, um parser experimental e troca o `dbt-semantic-interfaces`, uma
+  migração do build de produção que merece PR próprio e não carona num de segurança. A
+  exposição é nula na prática: 4 dos avisos são DoS que exigem SQL controlado por um
+  atacante, e o quinto é o gerador de trechos Python/PHP (`format(output_format=…)`), que o
+  dbt não usa. Aqui o `sqlparse` só lê o SQL do próprio repositório, e o código do projeto
+  nem o importa. **Sai quando o dbt-core subir para 1.12.**
+
+---
+
 ## [1.88.1] - 2026-09-23
 
 Higiene de dependências: o Vitest 5 chegou em **dois PRs que não podiam entrar em ordem
