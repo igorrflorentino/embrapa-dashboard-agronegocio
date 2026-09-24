@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.91.1] - 2026-09-24
+
+Documentação da investigação dos municípios sem extração no PEVS, e o segundo caso do
+registro de divergências de conteúdo. Nenhum número muda. A legenda de `MISSING_VALUE` fica em
+`frontend/src/`, então esta versão leva Release pela política do `CONTRIBUTING.md`.
+
+### Documentação
+- **O `...` de um município inteiro no PEVS quer dizer "nenhuma extração vegetal registrada no
+  ano".** Não é produção escondida nem falha de coleta:
+  - No total da tabela 289 do SIDRA, o IBGE publicou `-` (zero) para 2 municípios em 2000, 6
+    em 2010 e nenhum em 2020. Quem não extraiu nada aparece como `...`.
+  - Em 2020, são 1.948 municípios assim no nosso Silver e 1.948 no total do SIDRA.
+  - O crescimento de ~1.200 para ~1.960 por ano é real: a extração, sobretudo de lenha, saiu
+    de 77% dos municípios do Sudeste (427 → 1.178 entre 1997 e 2024) e de parte do Sul.
+  - Os totais do painel não têm viés, porque `...` e zero somam o mesmo.
+
+  Registrado no § A9 do relatório da auditoria, com a consulta. A legenda de `MISSING_VALUE` e
+  o README passam a dizer isso.
+- **`docs/divergencias_de_conteudo.md`: segundo caso.** Ortigueira e Telêmaco Borba (PR)
+  lançam madeira em tora na tabela da extração **nativa** só em 2011: 200.000 e 123.500 m³,
+  ambos a exatamente R$ 100/m³, com `...` antes e depois, enquanto a silvicultura dos dois soma
+  centenas de milhões todo ano.
+  - É provavelmente madeira plantada lançada na tabela errada, e está assim no próprio SIDRA.
+  - São **46,8% da madeira nativa do Paraná em 2011**: a série estadual salta de 351 mil m³
+    para 691 mil e volta a 313 mil.
+  - O detector de preço não marca, porque R$ 100/m³ é plausível. É o primeiro caso achado pela
+    série no tempo, e não pelo preço; a introdução do registro passa a descrever os dois
+    caminhos.
+
+---
+
 ## [1.91.0] - 2026-09-24
 
 O donut de qualidade passa a ser vigiado ao longo do tempo. A auditoria de hoje (§ A6) mostrou

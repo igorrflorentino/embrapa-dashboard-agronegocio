@@ -399,9 +399,57 @@ isso `MISSING_VALUE`, `MISSING_QUANTITY` e `INCOMPLETE` nunca aparecem no IBGE.
   nenhuma depois).
 - **PEVS:** **100%** dos `...` são de município-ano inteiro: o município não tem nenhum dado
   de extração naquele ano. Nenhum produto-ano é inteiramente nulo. O total cresce de ~1.200
-  municípios por ano (1985–89) para ~1.960 (2020+); a causa não foi investigada. (Uma
-  primeira leitura deste relatório atribuiu o crescimento a "produto que saiu da pesquisa";
-  a medição a refutou.)
+  municípios por ano (1985–89) para ~1.960 (2020+). (Uma primeira leitura deste relatório
+  atribuiu o crescimento a "produto que saiu da pesquisa"; a medição a refutou.) A causa foi
+  investigada depois — abaixo.
+
+### Os municípios sem extração no PEVS (investigado em 2026-09-24, depois da v1.91.0)
+
+**O `...` de um município inteiro é a forma do IBGE dizer "este município não registrou
+nenhuma extração vegetal neste ano".** Não é produção escondida nem falha de coleta:
+
+- **O IBGE praticamente não publica zero para um município inteiro.** No total da tabela 289
+  (a categoria `0`, somando os 64 produtos), consultado na API do SIDRA: 2 municípios com `-`
+  em 2000, 6 em 2010, **nenhum em 2020**. Quem não extraiu nada aparece como `...`.
+- **O nosso dado bate com o do IBGE.** O universo da tabela no SIDRA é o mesmo do nosso Silver:
+  5.362 municípios, e todos têm dado em algum ano (os 208 municípios atuais que faltam nunca
+  aparecem na tabela). Em 2020, são 1.948 municípios "tudo `...`" nos 7 produtos ingeridos e
+  1.948 `...` no total do SIDRA. Os 3.414 com número no total são 3.030 com algum dos 7
+  produtos mais 384 que extraem só outros produtos — os que no nosso dado aparecem "só zeros".
+  Em 6 municípios amostrados, o `...` cobre as 64 categorias da tabela, não só as 7 nossas.
+- **Quem sai eram produtores marginais.** Desde 1996, o município que passa a "tudo `...`"
+  produzia no ano anterior, em mediana, 0,11× o produtor típico daquele ano. E há muito vai e
+  volta: 4.918 entradas e 4.444 retornos.
+
+**O crescimento é real: a extração vegetal está sumindo do Centro-Sul.** Municípios sem extração
+por região, 1997 → 2024: Sudeste 427 → **1.178 (77% da região)**, Sul 218 → 432, Centro-Oeste
+41 → 155, Nordeste 64 → 173, Norte 4 → 33. No ano anterior a sair, 64% produziam lenha, 24%
+madeira em tora e 17% carvão vegetal. O total de municípios com alguma extração no SIDRA caiu
+de 4.409 (2000) para 3.414 (2020).
+
+**Não há viés nos totais do painel**: `...` e zero somam o mesmo, então as séries nacionais e
+estaduais estão certas. O que o Gold descarta é só o registro "este município saiu da
+atividade", que pode interessar como indicador da contração geográfica da extração.
+
+**Um achado à parte, registrado em `docs/divergencias_de_conteudo.md`:** Ortigueira e Telêmaco
+Borba (PR) registram madeira em tora **nativa** só em 2011 (200.000 e 123.500 m³, ambos a
+exatamente R$ 100/m³), com `...` antes e depois, enquanto a silvicultura dos dois soma centenas
+de milhões todo ano. É provavelmente madeira plantada lançada na tabela da extração, e
+responde por 46,8% da madeira nativa do Paraná em 2011. O detector de preço não marca (R$ 100/m³
+é plausível): é o primeiro caso achado pelo tempo, e não pelo preço.
+
+```sql
+-- municípios por situação, ano a ano (PEVS, 7 produtos ingeridos)
+WITH c AS (SELECT reference_year y, city_code, COUNTIF(numeric_value IS NULL) n_null,
+                  COUNTIF(numeric_value > 0) n_pos, COUNT(*) n
+           FROM `embrapa-dashboard-commodities.silver.silver_ibge_pevs`
+           WHERE variable_code = '145' GROUP BY 1, 2)
+SELECT y, COUNT(*) municipios, COUNTIF(n_null = n) todo_indisponivel,
+       COUNTIF(n_pos > 0) com_producao, COUNTIF(n_null = 0 AND n_pos = 0) so_zeros
+FROM c GROUP BY y ORDER BY y
+-- o total do SIDRA, para comparar:
+-- https://apisidra.ibge.gov.br/values/t/289/p/2020/v/145/n6/all/c193/0
+```
 
 Mas a legenda de `MISSING_VALUE` ("veio em branco na fonte") não descrevia nenhum caso real
 do IBGE.

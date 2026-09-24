@@ -15,11 +15,19 @@ corretos; o que está errado é o código sob o qual a fonte os declarou. O que 
 (a) registrar aqui, (b) separar o agrupamento para que o preço implícito de cada lado volte a
 significar algo, e (c) não fingir que o código isolado é confiável.
 
-**Como estas coisas aparecem.** Nenhuma foi procurada: o detector de preço implícito
-(`data_quality_flag`) marcou as linhas, e alguém leu a saída. Um código cujo preço implícito
-se afasta da mediana por ordens de grandeza, de forma SISTEMÁTICA e não esparsa, é o
-sintoma — erro de digitação é esparso; classificação errada é concentrada. A consulta que
-encontra um caso novo está em `PLANS/quality_outliers_and_visibility_gate.md`.
+**Como estas coisas aparecem.** Por dois caminhos, e o segundo existe porque o primeiro é cego
+a uma forma de erro.
+
+- **Pelo preço.** O detector de preço implícito (`data_quality_flag`) marca as linhas, e alguém
+  lê a saída. Um código cujo preço implícito se afasta da mediana por ordens de grandeza, de
+  forma SISTEMÁTICA e não esparsa, é o sintoma — erro de digitação é esparso; classificação
+  errada é concentrada. A consulta que encontra um caso novo está em
+  `PLANS/quality_outliers_and_visibility_gate.md`. Foi assim com o `1005 10`.
+- **Pelo tempo.** Quando o produto foi lançado na tabela errada mas com preço de mercado, o
+  detector não vê nada: o preço está certo. O sintoma passa a ser a série — um valor grande
+  num ano só, cercado de anos sem registro. Foi assim com Ortigueira e Telêmaco Borba, achados
+  ao investigar os municípios sem extração do PEVS (`docs/audits/qualidade_dados_audit_2026-09-24.md`
+  § A9); nenhum detector automático cobre esse padrão hoje.
 
 ---
 
@@ -67,3 +75,64 @@ arruma o agrupamento; não arruma o dado do reportante. Ao analisar esse agrupam
 - o lado **COMEX** é confiável (10,8% de contaminação);
 - o lado **COMTRADE** não é — trate o volume como teto e o preço como piso;
 - **não** compare os dois lados como se medissem a mesma coisa.
+
+---
+
+## `289 · 3435` — madeira de floresta plantada, provavelmente, na tabela da extração nativa (Ortigueira e Telêmaco Borba, PR, 2011)
+
+**Medido em 2026-09-24**, e conferido na API do SIDRA: o IBGE publica exatamente estes
+números, então a divergência é da fonte, não do nosso pipeline.
+
+Dois municípios **vizinhos** dos Campos Gerais, polo de floresta plantada, registram madeira em
+tora na tabela da **extração nativa** (SIDRA 289) em **um único ano**:
+
+| município | 2010 (t289) | **2011 (t289)** | 2012 (t289) | silvicultura (t291), 2009–2015 |
+|---|---|---|---|---|
+| Ortigueira | `...` | **200.000 m³ · R$ 20,00 mi** | `...` | R$ 34–89 mi/ano, contínua |
+| Telêmaco Borba | `...` | **123.500 m³ · R$ 12,35 mi** | `...` | R$ 165–338 mi/ano, contínua |
+
+**Por que "provavelmente" e por que classificação, e não digitação.** Não temos o questionário
+do IBGE, e uma supressão legal de mata nativa num ano só explicaria um dos municípios. Não
+explica a assinatura dos dois juntos:
+
+- o mesmo ano e o mesmo produto em municípios vizinhos;
+- valores redondos e o **mesmo preço exato, R$ 100/m³**;
+- nada antes e nada depois na extração nativa, enquanto a silvicultura dos dois soma centenas
+  de milhões todo ano.
+
+É concentrado, não esparso — o padrão de classificação errada descrito acima. São também, de
+longe, os maiores "anos isolados" do PEVS desde 1995 (valor 196× e 121× o do produtor mediano
+do ano; o terceiro maior caso é 27×).
+
+**O impacto.** Os dois registros são **46,8% da madeira em tora nativa do Paraná em 2011**
+(323.500 de 690.863 m³). A série estadual vai de 351 mil m³ (2010) para 691 mil (2011) e volta
+a 313 mil (2012); sem eles, 2011 fica em 367 mil e acompanha a queda. No Brasil, pesam 2,3%
+(14,1 mi m³).
+
+**Por que o detector de qualidade não marcou.** As duas linhas saem `OK`: R$ 100/m³ é um preço
+plausível para madeira, e o detector julga o preço, não a série no tempo.
+
+### O que fazer ao analisar
+
+- Na série de madeira em tora **nativa do Paraná**, trate 2011 como inflado por estes dois
+  registros: exclua-os ou declare o salto. Na série nacional o efeito é pequeno.
+- Some a extração nativa (t289) e a silvicultura (t291) desses municípios com cuidado: se a
+  hipótese estiver certa, a mesma madeira pode ter entrado nas duas tabelas em 2011.
+- Nenhum conserto no pipeline (regra do projeto: marcar a anomalia, nunca substituir o dado).
+
+```sql
+-- os "anos isolados" do PEVS: valor num ano, `...` no anterior e no seguinte
+WITH c AS (SELECT reference_year y, city_code, ANY_VALUE(city_name) city,
+                  COUNTIF(numeric_value IS NULL) = COUNT(*) all_null, SUM(numeric_value) v
+           FROM `embrapa-dashboard-commodities.silver.silver_ibge_pevs`
+           WHERE variable_code = '145' AND reference_year >= 1995 GROUP BY 1, 2),
+t AS (SELECT c.*, LAG(all_null) OVER w prev_null, LEAD(all_null) OVER w next_null
+      FROM c WINDOW w AS (PARTITION BY city_code ORDER BY y)),
+med AS (SELECT y, APPROX_QUANTILES(v, 100)[OFFSET(50)] med_y FROM c
+        WHERE NOT all_null AND v > 0 GROUP BY y)
+SELECT t.y, t.city, t.v, ROUND(t.v / m.med_y) x_mediana
+FROM t JOIN med m USING (y)
+WHERE NOT all_null AND prev_null AND next_null AND t.v >= 10 * m.med_y
+ORDER BY x_mediana DESC
+-- → 9 casos desde 1995; Ortigueira 2011 (196×) e Telêmaco Borba 2011 (121×) à frente
+```
