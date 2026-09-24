@@ -204,7 +204,7 @@ Role on sa-secret-reader-prod:
 
 | Service Account | Roles | Purpose |
 |---|---|---|
-| `sa-secret-reader-prod` | `roles/bigquery.dataEditor`<br/>`roles/bigquery.jobUser`<br/>`roles/storage.objectViewer` | Impersonation target for developers (dbt + ad-hoc queries) |
+| `sa-secret-reader-prod` | `roles/bigquery.dataEditor`<br/>`roles/bigquery.jobUser`<br/>`roles/storage.objectViewer`<br/>**NOT** `secretmanager.secretAccessor`, despite the name ([iam_setup §2.1](iam_setup.md)) | Impersonation target for developers (dbt + ad-hoc queries) |
 | `sa-data-pipeline-prod` | `roles/storage.objectCreator`<br/>`roles/bigquery.dataEditor`<br/>`roles/bigquery.jobUser` | Ingest data (IBGE, BCB) |
 | `sa-web-dashboard-prod` | `roles/bigquery.dataViewer` **on `serving`**<br/>`roles/bigquery.dataEditor` **on `research_inputs`**<br/>`roles/bigquery.jobUser` (project) | Dataset-scoped least privilege for the Cloud Run dashboard: read marts, append curation log — **not** project-wide on Gold. Looker Studio uses end-user OAuth, not this SA. |
 | `sa-ai-agent-admin-prod` | `roles/bigquery.dataViewer` (project, read-only)<br/>`roles/bigquery.jobUser` (project)<br/>`roles/bigquery.dataEditor` **on one sandbox dataset only**<br/>`roles/storage.objectCreator` | Read-only analysis; writes confined to a report sandbox (never Gold prod / the curation log) |

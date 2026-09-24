@@ -236,9 +236,11 @@ make dbt-build
 uv run dbt run --select silver_ibge_pevs
 ```
 
-A dev build can end with **exit code 2 after `Done. PASS=… ERROR=0`**: the `apply_dev_ttl`
-hook needs `bigquery.datasets.update` on `dbt_dev_*`, which the documented impersonation SA
-lacks. Read the `Done.` line. The fix is in [`docs/iam_setup.md`](iam_setup.md) §2.1.
+Until v1.88.7 a dev build ended with **exit code 2 after `Done. PASS=… ERROR=0`**: the
+`apply_dev_ttl` hook ALTERed the `dbt_dev_*` datasets unconditionally, which needs a
+permission the dev identities lack. It now only ALTERs a dataset whose TTL is missing or
+different, so a clean build exits 0, and an exit 2 means something really failed (see
+[`docs/iam_setup.md`](iam_setup.md) §2.1).
 
 ### Validating a dbt / BigQuery-adapter upgrade
 
