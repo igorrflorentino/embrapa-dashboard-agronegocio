@@ -51,7 +51,7 @@ A summary of the implemented practices. Full technical details in [`ARCHITECTURE
 - **Authentication**: Service Account Impersonation (OAuth 2.0) — no distributed JSON keyfile in the data pipeline or dashboard runtime. Details in [`docs/auth_architecture.md`](docs/auth_architecture.md). **Single accepted exception:** the `sa-claude-code-web-dev` sandbox SA ([`scripts/setup-claude-code-web-sa.sh`](scripts/setup-claude-code-web-sa.sh)) uses a long-lived JSON key, scoped read-only to data plus a dev-only write sandbox (no prod write). Rotate it at least every 90 days (delete the old key, re-run the setup script).
 - **Credential protection**: gitleaks in pre-commit, a comprehensive `.gitignore`, sensitive variables filtered out of the logs.
 - **Infrastructure**: Cloud Run with mandatory IAM, 4 Service Accounts with minimal roles, budget alerts.
-- **Dependencies**: deterministic lockfile (`uv.lock`), `--frozen` in CI, dev/runtime separation.
+- **Dependencies**: deterministic lockfiles (`uv.lock`, `frontend/package-lock.json`), `--frozen` / `npm ci` in CI, dev/runtime separation. Dependabot alerts and security updates are enabled (since 2026-09-23), covering transitive dependencies too. Weekly version updates run for Python (`uv`), npm, GitHub Actions and the Docker base images; every action is SHA-pinned.
 
 ---
 

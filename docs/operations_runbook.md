@@ -343,40 +343,41 @@ Operator steps (one-time per deployment):
 Details: `src/embrapa_dashboard/serving/iap.py` and
 [`docs/auth_architecture.md`](auth_architecture.md).
 
-## Activating curation in prod (one-time) and keeping it built
+## Curation in the prod build (`enable_curation`)
 
-> ⚠️ **FROZEN — Curadoria postponed to the "Versão Futura" roadmap phase (2026-06).**
-> The curation/enrichment feature is partially built, not yet validated, and **hidden
-> from the dashboard UI** (its topnav perspectives in `frontend/src/ui/views.js` and the
-> "Engenharia de atributos" sidebar editor in `AppShell.jsx` are commented out behind
-> FROZEN banners). The app runs fully decoupled from it. **Do not activate it in prod**
-> until the feature is revived and validated — the steps below are kept for that future
-> reactivation.
+> **Status (2026-09-24): LIVE.** The per-code *Nível de industrialização* curation has been
+> active in prod since 2026-07-05 (#218 unfroze it). `dbt_project.yml` sets
+> `enable_curation: true`, so EVERY build — CI, the scheduled/dispatched `dbt-build-prod`
+> workflow, `make dbt-build-prod`, `make reconcile`, a plain local `dbt build` — builds
+> `dim_code_industrialization_scd2`. Only the *Tipo de mercado* axis is still FROZEN, and
+> it is data-blocked rather than gated by this var (see CLAUDE.md, "Engenharia de
+> Atributos"). An earlier version of this section said the whole curation was frozen and
+> must not be activated; that stopped being true in July.
 
-The SCD2 curation view (`dim_code_industrialization_scd2`) is gated by
-`var('enable_curation', false)` so a fresh project builds green before the
-curation log tables exist. Activating curation in prod is therefore two steps:
+The var still exists for a **fresh** project, where the curation log tables are not there
+yet and the SCD2 model would fail on its missing source: build it with
+`enable_curation: false` until `make ensure-curation` provisions the logs (the per-code
+log also auto-creates on the first editor write).
 
-1. **One-time prod build with the var** (creates the view in the prod dataset;
-   needs the curation log tables to exist first — `make ensure-curation`
-   provisions them, though the per-code and flow-market logs also auto-create on
-   first write):
+The repo variable `DBT_ENABLE_CURATION=true` makes the `dbt-build-prod` workflow also put
+`enable_curation: true` in its `--vars` mapping. Because the project default is already
+true, the variable only reasserts it — **unsetting it does NOT turn curation off**; that
+takes the project default.
 
-   ```bash
-   cd dbt && uv run dbt build --target prod --vars 'enable_curation: true'
-   ```
-
-2. **Flip the repo variable `DBT_ENABLE_CURATION` to `true`** (GitHub →
-   Settings → Secrets and variables → Actions → Variables). The
-   `dbt-build-prod` workflow adds `--vars 'enable_curation: true'` to every
-   push-triggered, scheduled, and manual build when this variable is `true` —
-   without the flip, merged changes to the SCD2 view (and its schema tests)
-   are silently skipped by the automated builds and the prod view drifts from
-   `main`.
-
-Local prod builds after activation should also carry the var (e.g. the
-`make reconcile` chained build runs plain `dbt build --target prod` — re-run
-the command from step 1 afterwards if a curation-view change is pending).
+> ⚠️ **One `--vars` per command — dbt keeps only the LAST one.** It does not merge them:
+> `--vars 'enable_curation: false' --vars 'enable_foreign_inflation: true'` compiles
+> `enable_curation` as the project default (measured on dbt 1.11.10 and 1.12.5, v1.88.4).
+> Until v1.88.4 the workflow itself passed one flag per repo variable, so the curation flag
+> never reached dbt. And a direct prod build must carry the foreign-deflator gate too, or
+> every `val_real_{cpi,hicp}_*` column is rebuilt NULL without any error. So, for a direct
+> prod build, one mapping with both:
+>
+> ```bash
+> bash scripts/dbt-with-env.sh build --target prod --vars '{enable_curation: true, enable_foreign_inflation: true}'
+> ```
+>
+> Prefer `make dbt-build-prod` (or `gh workflow run dbt-build-prod.yml --ref main`), which
+> already pass the right vars.
 
 ## Triaging user feedback ("Reportar problema")
 

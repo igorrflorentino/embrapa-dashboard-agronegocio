@@ -143,7 +143,12 @@ contagem — porque a Fase 3 já garante que C00 e breakdown são mutuamente exc
 
 `seam_attribute_engineering.py` está `FROZEN` (Versão Futura, PRs #168/#169). Reativar:
 - Un-comentar os entry points de UI (views.js + AppShell.jsx) para "Engenharia de Atributos".
-- `dbt build --vars 'enable_curation: true'` (o SCD2 gated) — **operator, prod**.
+- O SCD2 gated já é construído em todo build: `enable_curation: true` no `dbt_project.yml`
+  desde 2026-07-05. Basta um build de prod normal (`make dbt-build-prod` ou
+  `gh workflow run dbt-build-prod.yml --ref main`) — **operator, prod**. Nunca um
+  `dbt build --target prod` só com `--vars 'enable_curation: true'`: sem o gate
+  `enable_foreign_inflation` ele reconstrói o Gold com os deflatores estrangeiros NULL, e o
+  dbt guarda só o ÚLTIMO `--vars` (ver `docs/operations_runbook.md`).
 - O mapa `(customsCode × flowCode) → mercado` depende da Fase 3 (regime preservado) + curadoria
   do pesquisador (append-log `research_inputs`). Sem curadoria, o eixo fica vazio (honesto).
 
@@ -157,7 +162,7 @@ contagem — porque a Fase 3 já garante que C00 e breakdown são mutuamente exc
 2. **Rebuild Gold** (Fases 3–5): `make dbt-build-prod-with-backup` (preservável). `silver_comtrade_flows`
    é `table` (full window), então rebuild completo. Validar grão e ausência de dupla contagem
    (SUM por flow com/sem regime deve bater).
-3. **Descongelar** (Fase 8): `dbt build --vars 'enable_curation: true'` + deploy webapi (image-only)
+3. **Descongelar** (Fase 8): build de prod normal (`make dbt-build-prod`; ver Fase 8) + deploy webapi (image-only)
    + re-habilitar entry points de UI.
 4. **Deploy**: `gcloud builds submit --config deploy/webapi/cloudbuild.yaml` + `gcloud run deploy
    --image` (image-only, preserva env/IAP/SA).

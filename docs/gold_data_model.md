@@ -146,9 +146,10 @@ erDiagram
 - **Brazilian geography** → join `state_acronym` to `dim_geo_br` for
   `state_name` / `region` / `region_abbrev`. (COMTRADE is country↔country — no UF.)
 - **Curated industrialization level** (bruta/processada) → `dim_code_industrialization_scd2`
-  on `(source, code)` filtered to `is_current`. A VIEW **gated** behind
-  `dbt build --vars 'enable_curation: true'` (absent on a fresh project — LEFT
-  JOIN so rows survive without a classification).
+  on `(source, code)` filtered to `is_current`. A VIEW **gated** by the var
+  `enable_curation` — `true` in `dbt_project.yml` since the curation went live, so every
+  build has it; a fresh project without the curation log sets it `false` (LEFT JOIN so
+  rows survive without a classification).
 - **Calendar labels** (pt-BR month names) → the serving marts join `dim_date` on
   the month; the Gold facts already carry `reference_date` inline.
 

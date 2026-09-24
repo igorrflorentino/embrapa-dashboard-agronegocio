@@ -135,6 +135,22 @@ gcloud projects add-iam-policy-binding embrapa-dashboard-commodities \
 > decision to drop Secret Manager. The account is now purely an impersonation
 > target. Feel free to rename it in your IAM console if you prefer.
 
+> ⚠️ **With exactly these grants, a local dev `dbt build` exits 2 even when every node
+> passes** (observed 2026-09-24). The `on-run-end` hook `apply_dev_ttl` runs
+> `ALTER SCHEMA dbt_dev_* SET OPTIONS (default_table_expiration_days = 7)`, which needs
+> `bigquery.datasets.update`. `roles/bigquery.dataEditor` does not include it, and the SA
+> does not OWN the `dbt_dev_*` datasets (a human created them; the same premise fails for
+> `sa-claude-code-web-dev` in §2.5). The failure comes AFTER `Done. PASS=… ERROR=0`, so read that line
+> rather than the exit code. The TTL itself is already set on the three datasets.
+> To make the exit code honest, grant ownership of the three dev datasets only (a dataset-scoped
+> grant, not project-wide):
+>
+> ```sql
+> GRANT `roles/bigquery.dataOwner` ON SCHEMA `embrapa-dashboard-commodities.dbt_dev_silver`
+>   TO "serviceAccount:sa-secret-reader-prod@embrapa-dashboard-commodities.iam.gserviceaccount.com";
+> -- repeat for dbt_dev_gold and dbt_dev_serving
+> ```
+
 ### 2.2 Data Pipeline SA
 
 ```bash
