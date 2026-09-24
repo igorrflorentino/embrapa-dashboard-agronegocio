@@ -66,6 +66,7 @@ def certs_url():
     threading.Thread(target=server.serve_forever, daemon=True).start()
     yield f"http://127.0.0.1:{server.server_port}/public_key"
     server.shutdown()
+    server.server_close()  # shutdown() only stops the loop; this releases the socket
 
 
 @pytest.fixture(autouse=True)

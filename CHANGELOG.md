@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.88.5] - 2026-09-24
+
+Prepara o terreno para o primeiro PR agrupado de Python do Dependabot `uv` (#481, 18
+atualizações), que reprovou no lint antes de os testes rodarem.
+
+### Corrigido
+- **Compatível com o ruff 0.16** (o #481 sobe de 0.15.13 para 0.16.8), e continua passando no
+  0.15:
+  - a regra RUF036 exige `None` no fim de uma união de tipos:
+    `serializers._APP_RELEASE_LABEL` passa a `str | object | None`;
+  - o 0.16 passou a formatar blocos de código Python dentro de Markdown: o exemplo do
+    `.claude/skills/lint-and-test/SKILL.md` ganha a linha em branco antes do decorador.
+- `tests/test_iap_real_signature.py` fecha o socket do servidor de chaves
+  (`server_close()`): o `shutdown()` só para o laço, e o `ResourceWarning` aparecia com
+  `-W default`.
+
+### Validação do #481 (antes do merge)
+- Com a correção acima, no ambiente do #481: `ruff` 0.16.8 limpo, 2214 testes passando e
+  `uv lock --check` sem divergência.
+- **`dbt-bigquery` 1.11.1 → 1.12.1.** O adaptador gera o SQL de todas as materializações,
+  então repeti o build de dev completo e a comparação com a produção (dbt-core 1.12.5 com o
+  adaptador 1.11.1, mesmo Bronze):
+  - 400 nós, sem erro;
+  - 39 tabelas com as mesmas linhas e os mesmos bytes;
+  - conteúdo idêntico em 27;
+  - nas 12 restantes, diferença relativa máxima de 9,16 × 10⁻¹⁵, sem nenhuma linha sem par
+    e sem nenhum nulo divergente.
+- **`google-cloud-bigquery` 3.45, `pandas` 3.0.6 e pyarrow 25:** a sonda de escrita do
+  Parquet do Bronze e de leitura do serving (tipos, valores e checksum) saiu idêntica à de
+  referência.
+- Avisos novos, nenhum é falha:
+  - **`google-auth` 2.58** avisa que o `grpcio` abaixo de 1.83 não tem criptografia
+    pós-quântica e que o mínimo sobe em outubro de 2026. O lock está no grpcio 1.80, e a
+    1.84 resolve sem conflito. Não foi antecipado porque nada em produção usa gRPC: as
+    consultas e cargas vão pela API REST, e o painel usa `create_bqstorage_client=False`.
+    O PR do Dependabot que trouxer o novo mínimo sobe o grpcio junto.
+  - **`flask-caching` 2.5** avisa quando se usa o `NullCache`, que é o fallback proposital
+    exercitado por 4 testes.
+
+---
+
 ## [1.88.4] - 2026-09-24
 
 Fecha a higiene de dependências da v1.88.2: o dbt 1.12 foi validado contra a produção e
