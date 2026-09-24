@@ -326,7 +326,16 @@ refreshed automatically by gcloud. There is no static secret to expire.
 
 ### GCP Audit Logs
 
-Every operation is logged with:
+**What is recorded — and what is not.** Admin Activity logs (IAM changes, secret creation,
+deploys…) are always on. Data Access logs are OFF by default in GCP. In this project they
+are on for **BigQuery** (the GCP default) and for **Secret Manager** (ADMIN_READ, DATA_READ,
+DATA_WRITE, turned on 2026-09-24, so every read of a secret VALUE, `AccessSecretVersion`,
+is attributable). Reads from GCS and other services are NOT logged. Cost was checked before
+turning Secret Manager on: the project ingests ~1.8 GiB of logs/month against Cloud
+Logging's 50 GiB free allotment, and the new entries are well under 1 MB/month. See
+[iam_setup §2.1](iam_setup.md) for the "who read which secret" query.
+
+Each recorded entry carries:
 - **Who:** Developer's email (from OAuth token) + impersonated SA
 - **What:** API call, resource modified, data read
 - **When:** Timestamp with millisecond precision
