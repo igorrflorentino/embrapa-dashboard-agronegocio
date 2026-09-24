@@ -237,11 +237,10 @@ models:
     description: |
       data_quality_flag breakdown per source (id, count, share, value_share) for the
       quality donut. Tiny pre-counted table; both shares sum to 1 within each source.
-      `value_share` weights the same breakdown by MONEY — measured on prod 2026-09-24,
-      PEVS is 81,7% UNSCORED by rows and 0,7% by value, so the row count alone reads as
-      an alarm the subject does not justify. PAM and PPM are the exception: their
-      1974–1979 rows predate the IPCA the detector scores on, and hold 8,98% / 10,38% of
-      the value (measured by IGP-DI, 2026-09-24).
+      `value_share` weights the same breakdown by MONEY — measured 2026-09-24 with the
+      v1.90.0 detector, UNSCORED is 58–85% of the rows in every banco and at most 0,43% of
+      the value (PEVS), so the row count alone reads as an alarm the subject does not
+      justify.
     tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
@@ -257,8 +256,9 @@ models:
                 values: ["ibge_pevs", "ibge_pam", "ibge_ppm", "mdic_comex", "un_comtrade"]
       - name: data_quality_flag
         description: >
-          The union of every banco's flag domain — MISSING_WEIGHT is COMEX-only and
-          AREA_INCONSISTENT is PAM-only, so no single source emits all of these.
+          The union of every banco's flag domain — MISSING_WEIGHT is trade-only (COMEX,
+          and COMTRADE since v1.90.0) and AREA_INCONSISTENT is PAM-only, so no single
+          source emits all of these.
         tests:
           - not_null
           # As cinco tabelas Gold têm esta guarda; o mart, que é o que a tela LÊ, não

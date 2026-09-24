@@ -248,8 +248,8 @@ select
     fob_value_usd                                          as val_fob_usd,
 
     -- ── Quality + provenance ─────────────────────────────────────────────────
-    -- "Has a quantity" = any of native qty / net weight present (chapter 44
-    -- frequently reports neither → MISSING_QUANTITY, which is expected).
+    -- "Has a quantity" = any of native qty / net weight present — for the legacy (Q1-off)
+    -- flag. With Q1 on, a value with no weight is MISSING_WEIGHT first (below).
     -- Value presence is tested on primary_value_usd — the PRE-FX source value —
     -- not val_nominal_brl (post-FX). A year with no PTAX rate yields NULL
     -- val_nominal_brl while the source value is fully present; flagging that as
@@ -258,15 +258,33 @@ select
     -- NOTE: completeness coalesces qty_native+net_weight_kg ("has a quantity"), but Q1 SCORING
     -- uses net_weight_kg ONLY. qty_native mixes units across an HS code (kg / litres / items), so
     -- value/qty_native is not a comparable implied price, while value/net_weight_kg (USD/kg) is. A
-    -- weight-null but qty-present row is therefore "complete" yet impossible to score, rather
-    -- than risk a mixed-unit false PROBLEMATIC — a deliberate conservative gap (mostly chapter-44
-    -- wood in non-mass units; revisit only with a per-unit-normalised quantity).
-    -- Those rows used to fall through to OK; since quality_unscored_scope='all' they carry
-    -- UNSCORED, which is what they are — 53.898 of them, measured on prod 2026-09-08.
-    {{ data_quality_flag('coalesce(qty_native, net_weight_kg)', 'primary_value_usd',
+    -- weight-null row therefore cannot be scored even when it carries a qty_native, rather than
+    -- risk a mixed-unit false PROBLEMATIC — a deliberate conservative gap (91,8% of these rows
+    -- are chapter-44 wood in non-mass units, measured 2026-09-24; revisit only with a
+    -- per-unit-normalised quantity).
+    --
+    -- MISSING_WEIGHT (v1.90.0) — a value with no net weight gets the tag that names it, the
+    -- same one gold_comex_flows uses. Until v1.90.0 the same fact landed in two other tags
+    -- depending on an irrelevant detail: MISSING_QUANTITY when qty_native was absent too
+    -- (25.638 rows) and UNSCORED when it was present in some non-kg unit (53.898), while
+    -- MISSING_WEIGHT existed only in COMEX, which has 0 such rows. 33.091 of the 79.536 carry
+    -- more than US$ 100k (measured 2026-09-24). It supersedes MISSING_QUANTITY here, which
+    -- therefore no longer occurs in this banco: "no weight" already implies "no coalesced
+    -- quantity". A missing VALUE still wins (the macro's INCOMPLETE / MISSING_VALUE), as in
+    -- COMEX. Gated with the rest of the Q1 taxonomy: with the feature off, the model emits
+    -- the bare macro expression it emitted before, and no MISSING_WEIGHT.
+    {%- set base_flag = data_quality_flag('coalesce(qty_native, net_weight_kg)', 'primary_value_usd',
          quality_qty_level('primary_value_usd', 'net_weight_kg'),
          quality_val_level('primary_value_usd', 'net_weight_kg'),
-         quality_scored('primary_value_usd', 'net_weight_kg')) }} as data_quality_flag,
+         quality_scored('primary_value_usd', 'net_weight_kg')) %}
+    {% if var('enable_quality_outliers', false) -%}
+    case
+        when primary_value_usd is not null and net_weight_kg is null then 'MISSING_WEIGHT'
+        else {{ base_flag }}
+    end
+    {%- else -%}
+    {{ base_flag }}
+    {%- endif %}                                             as data_quality_flag,
     source_rows,
     last_refresh
 

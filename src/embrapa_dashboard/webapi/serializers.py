@@ -43,8 +43,8 @@ _FAMILY_JS = {"massa": "mass", "volume": "volume", "contagem": "count"}
 
 # data_quality_flag id → the qualityTs contract key (contracts.js qualityTs).
 # These are the REAL Gold flags: the 13-value domain of macros/data_quality_flag.sql +
-# macros/quality_outlier_ctes.sql (ON in prod), the COMEX-only MISSING_WEIGHT
-# (gold_comex_flows.sql inline CASE) and the PAM-only AREA_INCONSISTENT. The earlier
+# macros/quality_outlier_ctes.sql (ON in prod), the trade-only MISSING_WEIGHT
+# (COMEX inline CASE; COMTRADE since v1.90.0) and the PAM-only AREA_INCONSISTENT. The earlier
 # ESTIMATED/OUTLIER/BOUNDARY_HISTORIC keys were the prototype's synthetic
 # taxonomy — Gold never emits them, so they silently dropped real rows out of the
 # quality charts.

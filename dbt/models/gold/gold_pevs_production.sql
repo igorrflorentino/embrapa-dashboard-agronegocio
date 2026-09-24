@@ -251,18 +251,19 @@ select
     val_real_hicp_eur                                        as val_real_hicp_eur,
 
     -- ── Quality + provenance ─────────────────────────────────────────────────
-    -- Outlier/problemático detection (off by default) reads the DEFLATED value
-    -- (val_real_ipca_brl) for a stable implied price; the missing-check keeps val_raw.
+    -- Outlier/problemático detection (ON in prod) reads the DEFLATED value for a stable
+    -- implied price — by IGP-DI, the index that reaches every IBGE year (IPCA until v1.90.0;
+    -- see macros/quality_outlier_ctes.sql). The missing-check keeps val_raw.
     {{ data_quality_flag('qty_native', 'val_raw',
-         quality_qty_level('val_real_ipca_brl', 'qty_native'),
-         quality_val_level('val_real_ipca_brl', 'qty_native'),
-         quality_scored('val_real_ipca_brl', 'qty_native')) }} as data_quality_flag,
+         quality_qty_level('val_real_igpdi_brl', 'qty_native'),
+         quality_val_level('val_real_igpdi_brl', 'qty_native'),
+         quality_scored('val_real_igpdi_brl', 'qty_native')) }} as data_quality_flag,
     last_refresh
 
 from {% if var('enable_quality_outliers', false) -%}
 (
     select e.*,
-{{ quality_scored_bounds('val_real_ipca_brl', 'qty_native') }}
+{{ quality_scored_bounds('val_real_igpdi_brl', 'qty_native') }}
     from enriched e
     -- A janela é o grão da IDENTIDADE do produto — (banco, TABELA, código) — mais a
     -- família. Sem a `tabela`, dois produtos de metades diferentes que dividissem um

@@ -8,19 +8,21 @@
 -- tally flags. `share` sums to 1 within each source.
 --
 -- `value_share` (v1.56.0) is the same breakdown weighted by MONEY, and it exists
--- because the row count alone reads as alarm. Measured on prod 2026-09-24: PEVS is
--- 81,7% UNSCORED by ROWS and 0,7% by VALUE. Most of the rows the detector skips are
+-- because the row count alone reads as alarm. Measured after the v1.90.0 detector
+-- changes (dev build over prod Silver, 2026-09-24): UNSCORED is 58–85% of the ROWS in
+-- every banco and at most 0,43% of the VALUE (PEVS). The rows the detector skips are
 -- numerous and economically negligible: in the IBGE bancos, empty cube cells (SIDRA
 -- publishes a `-` row for every município × produto × ano that had no production), and
--- in the trade bancos, shipments under the US$ 100k materiality floor. Showing only the
--- row share tells the researcher the data is two-thirds unexamined, which is true of the
--- ROWS and false of the SUBJECT.
+-- in the trade bancos, shipments small by both value and weight. Showing only the row
+-- share tells the researcher the data is mostly unexamined, which is true of the ROWS
+-- and false of the SUBJECT.
 --
--- It is NOT "over 99% of the money in every banco", which is what this header said until
--- v1.89.0. PAM and PPM carry 1974–1979, the years before the IPCA exists, and the detector
--- (which scores on val_real_ipca_brl) cannot examine them. Those rows hold 8,98% of PAM's
--- value and 10,38% of PPM's (measured 2026-09-24), so the money examined there is ~91%
--- and ~90%. See docs/audits/qualidade_dados_audit_2026-09-24.md § A1.
+-- That "at most 0,43%" is earned, not a property of the mart. Until v1.89.0 this header
+-- claimed "over 99% of the money in every banco" while PAM/PPM 1974–1979 — the years
+-- before the IPCA the detector then scored on — held 8,98% / 10,38% of the value and
+-- could not be examined; the mart hid them by pricing them at R$ 0 (see below). v1.89.0
+-- fixed the weight, v1.90.0 moved the detector to IGP-DI and those years are examined
+-- now. See docs/audits/qualidade_dados_audit_2026-09-24.md § A1 and § A5.
 --
 -- ── Why the IBGE weight is IGP-DI, not IPCA ─────────────────────────────────
 -- The weight has to be a value that EXISTS for every row that has one. Weighting by

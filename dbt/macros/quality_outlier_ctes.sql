@@ -7,23 +7,28 @@
     with an error. A pure magnitude fence can't make that distinction; this does:
       • PROBLEMÁTICO  — the implied price is >price_k× or <1/price_k× the product's median
                         price  ⇒  a value or quantity typo. Attributed to whichever measure
-                        is the more anomalous (|excess|). Two-sided: 83% of the
+                        is the more anomalous (|excess|). Two-sided: 57% of the
                         PROBLEMATIC_QUANTITY rows have a quantity BELOW the median (the
-                        weight=1 placeholder), measured 2026-09-24.
+                        weight=1 placeholder), the rest above (a weight with extra digits),
+                        measured 2026-09-24 with the v1.90.0 floor.
       • OUTLIER       — the measure is in the product's high tail AND the price is within
                         price_k× of the median ⇒ "bem acima do esperado mas válido" (a real
                         big number). "High tail" is relative to the product's WHOLE history,
                         so the tier tracks the product's secular trend (PAM: 0,92% of scored
                         rows since 2010 vs 0,37% before).
 
-    Measured rates on prod, 2026-09-24 (PROBLEMÁTICO rows / all Gold rows): PAM 4 (0,0002%),
-    PEVS 20 (0,0015%), PPM 1, COMEX 20 (0,005%), COMTRADE 2.986 (0,145%). The rates this
-    header and dbt_project.yml carried until v1.89.0 (COMEX 0,19%, PAM 0,03%, …) came from
-    the 2026-06-26 validation and no longer reproduce; the cause was not investigated. See
-    docs/audits/qualidade_dados_audit_2026-09-24.md for the queries.
+    Measured rates, 2026-09-24, with the v1.90.0 detector (PROBLEMÁTICO rows / all Gold rows):
+    PAM 6 (0,0002%), PEVS 30 (0,0022%), PPM 1, COMEX 25 (0,006%), COMTRADE 4.016 (0,195%).
+    The rates this header and dbt_project.yml carried until v1.89.0 (COMEX 0,19%, PAM 0,03%, …)
+    came from the 2026-06-26 validation and no longer reproduced; the cause was not
+    investigated. See docs/audits/qualidade_dados_audit_2026-09-24.md for the queries.
 
-    The value MUST be DEFLATED for IBGE (val_real_ipca_brl) — nominal manufactures a fake 20%
-    near-zero-price tail (pre-1995 hyperinflation). Trade uses nominal USD (no BR-inflation).
+    The value MUST be DEFLATED for IBGE — nominal manufactures a fake 20% near-zero-price tail
+    (pre-1995 hyperinflation) — and by IGP-DI (val_real_igpdi_brl), the one BCB index that
+    reaches every IBGE year. It was IPCA until v1.90.0; IPCA starts in 1980, so PAM/PPM 1974–1979
+    (355.644 rows) could never be scored. One index for the whole window, never a coalesce of
+    two: mixing IPCA and IGP-DI years would bend the very median the price is judged against.
+    Trade uses nominal USD (no BR-inflation).
 
     Wiring per gold model (gated by var enable_quality_outliers, default false → these emit
     `cast(null as string)` and the data_quality_flag off-branch yields the legacy taxonomy):
@@ -64,21 +69,25 @@ safe_divide(safe.ln({{ qty_expr }}) - _q_ln_med_qty, nullif(_q_p75_qty - _q_ln_m
 {%- endmacro -%}
 
 {#- Guard shared by both level macros: need both measures positive, a price center, a sample big
-    enough to trust the per-product distribution, AND a MATERIAL value. The magnitude floor is
+    enough to trust the per-product distribution, AND a MATERIAL row. The magnitude floor is
     load-bearing — without it, tiny-municipality rounding (small value/qty → erratic implied price)
     over-flags: validated on prod 2026-06-26, PAM dropped 1.96% → 0.03% at the floor, PPM 1.65% →
-    0.002%, while the weight=1 placeholders and digits dropped from the QUANTITY stay flagged.
+    0.002%.
 
-    KNOWN BLIND SIDE: the floor tests the REPORTED value, so a typo that SHRINKS the value (digits
-    dropped from it) pushes the row below the floor and it is never scored. Measured 2026-09-24:
-    rows under the floor whose price is ≤ 1/100 of the median while qty × median price clears it —
-    COMTRADE 1.030 (vs 2.986 flagged), PEVS 24 (vs 20 flagged), COMEX 5, PAM 2. Approved fix, in
-    the follow-up to v1.89.0: test greatest(value, qty × exp(_q_ln_med_price)) against the floor.
-    See docs/audits/qualidade_dados_audit_2026-09-24.md § A2. -#}
+    MATERIAL BY EITHER MEASURE (v1.90.0). The floor tests the larger of the reported value and the
+    EXPECTED value — the quantity priced at the product's median, q × exp(median ln price). Until
+    v1.90.0 it tested the reported value alone, which made it blind to one side of the error it
+    exists to catch: a typo that SHRINKS the value (digits dropped from it, or a weight inflated
+    against a small value) pushed the row below the floor, and it was never scored. Measured
+    2026-09-24, rows under the old floor with a price ≤ 1/100 of the median while their quantity
+    was material: COMTRADE 1.030 (against 2.986 flagged), PEVS 24 (against 20 flagged).
+    What this does NOT reopen is the rounding noise the floor was built for: rounding a small value
+    moves the price by a fraction, never by the price_k× that PROBLEMÁTICO requires. Most of the
+    rows it admits are simply examined and cleared ('OK') — the price is compared, and it holds. -#}
 {%- macro _q_guard(value_expr, qty_expr) -%}
 {{ value_expr }} is null or {{ value_expr }} <= 0 or {{ qty_expr }} is null or {{ qty_expr }} <= 0
        or _q_ln_med_price is null or _q_n < {{ var('quality_min_obs', 100) }}
-       or {{ value_expr }} < {{ var('quality_value_floor', 100000) }}
+       or greatest({{ value_expr }}, {{ qty_expr }} * exp(_q_ln_med_price)) < {{ var('quality_value_floor', 100000) }}
 {%- endmacro -%}
 
 {#- Attribution of a PROBLEMÁTICO row to value vs quantity. The two conditions are exact
@@ -129,12 +138,12 @@ end
     produção 2026-09-06 na PAM: das 2.511.800 linhas "OK", apenas 844.250 (33,6%) tinham
     passado pelo detector. As outras eram célula vazia do cubo (valor e quantidade zero),
     valor abaixo do piso de materialidade, ou o próprio valor deflacionado AUSENTE
-    (1974–1979, que o IPCA não alcança) — todas apresentadas como verificadas.
+    (1974–1979, que o IPCA não alcançava) — todas apresentadas como verificadas.
 
     `quality_unscored_scope` escolhe o QUANTO disso vira uma marca própria:
       • 'absent' (padrão) — só a linha cujo valor escorado NÃO EXISTE. É a lacuna de
-        infraestrutura: nem o detector nem o pesquisador têm o número. 355.644 linhas
-        em PAM+PPM.
+        infraestrutura: nem o detector nem o pesquisador têm o número. Eram 355.644 linhas
+        em PAM+PPM enquanto o IBGE era escorado pelo IPCA; pelo IGP-DI (v1.90.0), 0.
       • 'all' — toda linha que a guarda bloqueou, incluindo o piso de materialidade e
         as células zeradas. Mais honesto e MUITO mais visível: move ~66% da PAM.
       • false — desliga (taxonomia anterior, `OK` como estava).
