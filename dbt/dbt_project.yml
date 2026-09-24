@@ -165,11 +165,13 @@ vars:
   # Problemático rows with the v1.90.0 detector (IGP-DI scoring, floor on the expected value),
   # measured 2026-09-24 on a dev build over prod Silver (rows / share of ALL Gold rows):
   # PAM 6 (0,0002%) · PEVS 30 (0,0022%) · PPM 1 · COMEX 25 (0,006%) · COMTRADE 4.016 (0,195%).
-  # Under v1.89.0 they were 4 / 20 / 1 / 20 / 2.986. This comment carried the 2026-06-26 rates
-  # until v1.89.0 (PEVS 0.003% / COMEX 0.19% / PAM 0.03% / PPM 0.002% / COMTRADE 0.43%); they
-  # no longer reproduced and the cause was not investigated. A calibration record is only
-  # worth its date: re-measure with the queries in
-  # docs/audits/qualidade_dados_audit_2026-09-24.md before quoting a rate.
+  # Under v1.89.0 they were 4 / 20 / 1 / 20 / 2.986. This comment carried other rates until
+  # v1.89.0 (PEVS 0.003% / COMEX 0.19% / PAM 0.03% / PPM 0.002% / COMTRADE 0.43%), and they
+  # were never what the Gold produced: PEVS/COMEX/COMTRADE were measured WITHOUT the floor, and
+  # PAM/PPM before the 1985 currency fix (80464a3), when that whole year was 1.000× too small
+  # and the detector flagged it — 223 → 4 rows once fixed. Full reconstruction, from the Gold
+  # backups: docs/audits/qualidade_dados_audit_2026-09-24.md § A6. A calibration record is
+  # only worth its date: re-measure with the queries there before quoting a rate.
   enable_quality_outliers: true
   quality_price_k: 100        # implied price >price_k× or <1/price_k× the product median = typo
   quality_outlier_k: 4.0      # magnitude log-fence for the OUTLIER (valid-but-large) tier

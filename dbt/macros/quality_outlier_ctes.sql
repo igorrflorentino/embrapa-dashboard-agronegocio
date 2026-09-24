@@ -20,8 +20,11 @@
     Measured rates, 2026-09-24, with the v1.90.0 detector (PROBLEMÁTICO rows / all Gold rows):
     PAM 6 (0,0002%), PEVS 30 (0,0022%), PPM 1, COMEX 25 (0,006%), COMTRADE 4.016 (0,195%).
     The rates this header and dbt_project.yml carried until v1.89.0 (COMEX 0,19%, PAM 0,03%, …)
-    came from the 2026-06-26 validation and no longer reproduced; the cause was not
-    investigated. See docs/audits/qualidade_dados_audit_2026-09-24.md for the queries.
+    were never what this macro produced: COMEX/PEVS/COMTRADE were measured without the floor,
+    and PAM/PPM before the 1985 currency fix (80464a3), when that year was 1.000× too small —
+    the first defect this detector found (223 → 4 PAM rows once fixed), and a pipeline error,
+    not a typo. Reconstructed from the Gold backups in
+    docs/audits/qualidade_dados_audit_2026-09-24.md § A6.
 
     The value MUST be DEFLATED for IBGE — nominal manufactures a fake 20% near-zero-price tail
     (pre-1995 hyperinflation) — and by IGP-DI (val_real_igpdi_brl), the one BCB index that
