@@ -148,11 +148,12 @@ gcloud projects add-iam-policy-binding embrapa-dashboard-commodities \
 > apply it once as the dataset owner, or grant `roles/bigquery.dataOwner` ON SCHEMA for
 > that dataset only.
 >
-> **It must NOT hold `roles/secretmanager.secretAccessor`** (reviewed 2026-09-24). A
-> project-level grant of that role was found on this SA, making it the ONLY principal able
-> to read EVERY secret in the project: `bls-api-key`, `comtrade-un-key` and
-> `feedback-github-token`. Two humans hold `iam.serviceAccountTokenCreator` on it, so each
-> of them could too. Nothing needs it:
+> **It must NOT hold `roles/secretmanager.secretAccessor`** — REMOVED 2026-09-24. A
+> project-level grant of that role had made it the ONLY principal able to read EVERY
+> secret in the project (`bls-api-key`, `comtrade-un-key`, `feedback-github-token`). Two
+> humans hold `iam.serviceAccountTokenCreator` on it, so each of them could too. After the
+> removal, `testIamPermissions` called AS this SA returns nothing on all three secrets,
+> and local dbt through it still works. Nothing needed the role:
 >
 > - no code in `src/` calls the Secret Manager API (local runs take `BLS_API_KEY` from the
 >   environment);
@@ -162,14 +163,24 @@ gcloud projects add-iam-policy-binding embrapa-dashboard-commodities \
 >   `comtrade-un-key` → `sa-data-pipeline-prod` (the ingestion Job, which Cloud Run mounts
 >   them into); `feedback-github-token` → `sa-web-dashboard-prod`.
 >
-> Past use cannot be ruled out: Data Access audit logs are off for Secret Manager, so no
-> read by anyone is recorded. The name ("secret reader") is a leftover. The grant set above
-> never included the role. Check and remove:
+> Past use cannot be ruled out: until 2026-09-24 the Data Access audit logs were off for
+> Secret Manager, so no read by anyone was recorded. They are ON now (ADMIN_READ,
+> DATA_READ, DATA_WRITE), so every read from here on is attributable. The name ("secret
+> reader") is a leftover, and the grant set above never included the role. Nobody should
+> hold `secretAccessor` at project level; this must print nothing:
 >
 > ```bash
 > gcloud projects get-iam-policy embrapa-dashboard-commodities --flatten=bindings --filter="bindings.role:roles/secretmanager.secretAccessor" --format="value(bindings.members)"
-> gcloud projects remove-iam-policy-binding embrapa-dashboard-commodities --member="serviceAccount:sa-secret-reader-prod@embrapa-dashboard-commodities.iam.gserviceaccount.com" --role="roles/secretmanager.secretAccessor" --condition=None
 > ```
+>
+> Who read which secret value:
+>
+> ```bash
+> gcloud logging read 'logName:"cloudaudit.googleapis.com%2Fdata_access" AND protoPayload.serviceName="secretmanager.googleapis.com" AND protoPayload.methodName:"AccessSecretVersion"' --project embrapa-dashboard-commodities --freshness=7d --format='value(timestamp,protoPayload.authenticationInfo.principalEmail,protoPayload.resourceName)'
+> ```
+>
+> Only `sa-data-pipeline-prod` (the two API keys, at each Job execution) and
+> `sa-web-dashboard-prod` (the feedback token, at instance start) should appear.
 
 ### 2.2 Data Pipeline SA
 
@@ -434,7 +445,43 @@ gcloud storage buckets add-iam-policy-binding "$BUCKET" \
 > authenticate keylessly through the WIF pool. Until the sandbox can do the same, treat the
 > key as the highest-value secret in the project and rotate it on a schedule.
 
-### 2.6 Verify Service Accounts Created
+### 2.6 Default Compute SA — the Cloud Build builder (`roles/run.builder` only)
+
+`1085662235842-compute@developer.gserviceaccount.com` is created by GCP, not by this guide.
+Its only job here is being the **default Cloud Build service account**
+(`gcloud builds get-default-service-account`). Cloud Build runs as it when an operator
+deploys by hand: `make ingest-job-deploy` / `make webapi-deploy` → `deploy.sh` →
+`gcloud builds submit --config deploy/*/cloudbuild.yaml`. Those builds only
+`docker build` and push the image. The deploy itself (`gcloud run … deploy`) runs
+afterwards as the OPERATOR, outside the build. The CI deploy workflows do not use it: they
+build in GitHub Actions and push with their own keyless SAs. No Cloud Run service, Job,
+Scheduler trigger or VM runs as it (checked 2026-09-24).
+
+**It holds `roles/run.builder` and nothing else** (since 2026-09-24). Until then it held the
+GCP default, `roles/editor`: about 12,000 permissions, so any build step could modify
+almost anything in the project. The IAM recommender measured 4 permissions actually used
+in 90 days:
+
+- `storage.objects.get` (download the uploaded source);
+- `artifactregistry.repositories.uploadArtifacts` and `downloadArtifacts` (push the image,
+  pull cached layers);
+- `logging.logEntries.create` (the configs set `logging: CLOUD_LOGGING_ONLY`).
+
+All four are in `roles/run.builder` (6 permissions). Verified after the change with a real
+throwaway build (busybox image pushed to `embrapa-jobs`, then deleted): SUCCESS, 31 log
+lines in Cloud Logging.
+
+⚠️ If a future `cloudbuild.yaml` step needs more — a `gcloud run deploy` INSIDE the build,
+a secret, a different logging mode (a GCS logs bucket needs `storage.objects.create`) —
+it will fail with a permission error. Grant that permission narrowly, or keep the step
+outside the build as `deploy.sh` does today. Do NOT hand `roles/editor` back.
+
+```bash
+gcloud projects get-iam-policy embrapa-dashboard-commodities --flatten=bindings --filter="bindings.members:serviceAccount:1085662235842-compute@developer.gserviceaccount.com" --format="value(bindings.role)"
+# expected: roles/run.builder
+```
+
+### 2.7 Verify Service Accounts Created
 
 ```bash
 gcloud iam service-accounts list --filter="displayName:*Prod"

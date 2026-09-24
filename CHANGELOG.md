@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.88.8] - 2026-09-24
+
+Registra o endurecimento de IAM feito hoje pelo mantenedor, com a evidência que o
+sustentou. Nenhuma mudança de código.
+
+### Segurança (aplicado pelo mantenedor, verificado em seguida)
+- **Nenhuma conta lê o Secret Manager no nível do projeto.** Saiu o
+  `roles/secretmanager.secretAccessor` da `sa-secret-reader-prod` (ver [1.88.7]). Verificado:
+  - `testIamPermissions`, chamado como a própria conta, não devolve nenhuma permissão nos
+    três segredos;
+  - o dbt local, que usa a conta, continua funcionando;
+  - cada segredo manteve o seu consumidor real.
+- **Conta padrão do Compute Engine: de `roles/editor` para `roles/run.builder`.** Ela só é
+  usada como conta padrão do Cloud Build, nos deploys manuais do operador. Nenhum serviço,
+  Job, gatilho ou VM roda com ela, e o CI não a usa.
+  - O recomendador de IAM mediu 4 permissões usadas em 90 dias, todas no `run.builder`
+    (6 permissões, contra cerca de 12 mil do `editor`).
+  - Build de teste real depois da troca: `SUCCESS`, imagem enviada ao Artifact Registry e
+    31 linhas de log no Cloud Logging. A imagem descartável foi apagada.
+- **Log de acesso a dados do Secret Manager ligado** (ADMIN_READ, DATA_READ, DATA_WRITE).
+  Antes, nenhuma leitura de segredo ficava registrada, de ninguém.
+  - Custo zero: o projeto ingere 1,8 GiB de log por mês, contra a franquia gratuita de
+    50 GiB, e o volume novo fica abaixo de 1 MB/mês.
+  - Verificado com uma leitura de metadados (`GetSecret`), que apareceu no log. A primeira
+    tentativa, feita segundos depois de salvar, ainda não foi registrada: a configuração
+    leva alguns minutos para propagar.
+
+### Documentação
+- `docs/iam_setup.md`:
+  - §2.1 registra a remoção e traz a consulta "quem leu qual segredo";
+  - **§2.6 nova**, sobre a conta padrão do Compute: o que ela faz, por que o `run.builder`
+    basta e o que fazer se um `cloudbuild.yaml` futuro precisar de mais. A seção
+    "Verify" passa a ser a §2.7.
+- `docs/auth_architecture.md` dizia que "toda operação" era registrada, "inclusive leitura
+  de dados". Agora diz o que de fato é registrado: log de atividade administrativa sempre;
+  acesso a dados só no BigQuery e no Secret Manager; o GCS não.
+- `SECURITY.md`: as duas práticas novas.
+
+---
+
 ## [1.88.7] - 2026-09-24
 
 O build de dev local volta a terminar com o código certo, sem dar permissão nova a ninguém,
