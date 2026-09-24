@@ -172,3 +172,18 @@ def test_ppm_groups_by_tabela_instead_of_lifting_it():
     base = sql[sql.index("with base_ppm as") : sql.index("having")]
     assert "any_value(tabela)" not in base
     assert "group by reference_year, state_acronym, city_code, product_code, tabela" in base
+
+
+def test_quality_history_is_append_only_and_survives_full_refresh():
+    """serving_quality_history is the one table in this project that cannot be recomputed from
+    the sources: it is what the donut SAID at each build. An incremental model with a
+    unique_key would overwrite rows, and one without `full_refresh=false` would be wiped by the
+    prod workflow's --full-refresh input — either way `doctor`'s quality-drift check would lose
+    the baseline it compares against, which is exactly how the 1985 fix (223 → 4 PAM rows)
+    went unnoticed in 2026-06."""
+    sql = _serving("serving_quality_history")
+    config = sql[: sql.index("}}")]
+    assert "materialized='incremental'" in config
+    assert "full_refresh=false" in config
+    assert "unique_key" not in config
+    assert "ref('serving_quality_by_source')" in sql

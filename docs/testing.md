@@ -83,6 +83,8 @@ legacy keyfile mode):
   - COMEX Stat (MDIC) reachable ✓
   - UN Comtrade API reachable ✓
   - Bronze tables present ✓
+  - Quality-tag drift ✓ — a warning (⚠, not a failure) names every quality tag whose share
+    moved between two builds in the last 14 days, read from `serving_quality_history`
 
 ### 9️⃣ BigQuery Connection (1 test)
 - ✅ `dbt debug` succeeds:

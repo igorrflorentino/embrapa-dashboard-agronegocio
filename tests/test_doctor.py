@@ -633,7 +633,7 @@ def test_check_serving_marts_all_present_and_populated(settings: Settings) -> No
 
 def test_check_serving_marts_reports_missing(settings: Settings) -> None:
     with patch("embrapa_dashboard.doctor.bigquery.Client") as bq_cls:
-        # First seven marts present; gold_source_metadata (the 8th target) missing.
+        # First eight targets present; gold_source_metadata (the 9th target) missing.
         bq_cls.return_value.get_table.side_effect = [
             MagicMock(num_rows=10),
             MagicMock(num_rows=10),
@@ -642,6 +642,7 @@ def test_check_serving_marts_reports_missing(settings: Settings) -> None:
             MagicMock(num_rows=10),
             MagicMock(num_rows=10),
             MagicMock(num_rows=10),
+            MagicMock(num_rows=10),  # serving_quality_history
             NotFound("nope"),
         ]
         result = doctor._check_serving_marts(settings)
@@ -662,6 +663,7 @@ def test_check_serving_marts_flags_empty_mart(settings: Settings) -> None:
             MagicMock(num_rows=10, table_type="TABLE"),
             MagicMock(num_rows=10, table_type="TABLE"),
             MagicMock(num_rows=10, table_type="TABLE"),
+            MagicMock(num_rows=10, table_type="TABLE"),  # serving_quality_history
             MagicMock(num_rows=0, table_type="VIEW"),
         ]
         result = doctor._check_serving_marts(settings)
@@ -681,6 +683,7 @@ def test_check_serving_marts_view_with_zero_num_rows_is_not_empty(settings: Sett
             MagicMock(num_rows=10, table_type="TABLE"),
             MagicMock(num_rows=10, table_type="TABLE"),
             MagicMock(num_rows=10, table_type="TABLE"),
+            MagicMock(num_rows=10, table_type="TABLE"),  # serving_quality_history
             MagicMock(num_rows=0, table_type="VIEW"),  # gold_source_metadata
         ]
         result = doctor._check_serving_marts(settings)
@@ -900,6 +903,7 @@ def test_run_all_executes_every_probe(settings: Settings) -> None:
         "COMTRADE reachable",
         "Bronze tables",
         "Serving marts",
+        "Quality-tag drift",
         "Catalog↔env product codes",
         "Curation backup coverage",
         "Curation referential integrity",
@@ -2099,3 +2103,168 @@ def test_no_check_returns_a_literal_green_from_a_broad_except() -> None:
         "`_skip_ou_quebra`, que separa falta de dado (verde) de check quebrado "
         "(vermelho):\n  " + "\n  ".join(infratores)
     )
+
+
+# ── Quality-tag drift ────────────────────────────────────────────────────────
+# The fixtures are the three moves the audit of 2026-09-24 measured, so each threshold is
+# tested against the case that justified it rather than against a made-up number.
+
+
+def test_quality_drift_ignores_an_identical_build() -> None:
+    build = {("ibge_pam", "OK"): (843_735, 0.335, 0.916)}
+    assert doctor._quality_drifts(build, dict(build)) == []
+
+
+def test_quality_drift_catches_a_rare_tag_collapsing_by_count() -> None:
+    """The 1985 currency fix: PAM PROBLEMÁTICO 223 → 4. Its share moved 0,02 p.p. — no
+    share threshold would ever see it — so the count test is the one that must."""
+    before = {("ibge_pam", "PROBLEMATIC_VALUE"): (223, 223 / 1_124_058, 0.0005)}
+    after = {("ibge_pam", "PROBLEMATIC_VALUE"): (4, 4 / 1_124_058, 0.00005)}
+    (line,) = doctor._quality_drifts(before, after)
+    assert "ibge_pam PROBLEMATIC_VALUE" in line and "223 → 4" in line
+
+
+def test_quality_drift_does_not_cry_over_a_handful_of_rows() -> None:
+    """v1.90.0 moved PAM PROBLEMÁTICO 4 → 6: ×1,5 over two rows is noise, not a signal."""
+    before = {("ibge_pam", "PROBLEMATIC_VALUE"): (4, 4e-6, 0.00005)}
+    after = {("ibge_pam", "PROBLEMATIC_VALUE"): (6, 6e-6, 0.00006)}
+    assert doctor._quality_drifts(before, after) == []
+    # And ×3 with fewer than QUALITY_DRIFT_MIN_ROWS rows of difference stays quiet too.
+    assert (
+        doctor._quality_drifts(
+            {("x", "PROBLEMATIC_VALUE"): (2, 1e-6, None)},
+            {("x", "PROBLEMATIC_VALUE"): (9, 4e-6, None)},
+        )
+        == []
+    )
+
+
+def test_quality_drift_catches_a_common_tag_moving_by_share() -> None:
+    """v1.90.0: PAM OK 843.735 → 1.029.948 rows, only ×1,2, but 33,5% → 40,9% of the banco."""
+    before = {("ibge_pam", "OK"): (843_735, 0.335, 0.916)}
+    after = {("ibge_pam", "OK"): (1_029_948, 0.409, 0.930)}
+    (line,) = doctor._quality_drifts(before, after)
+    assert "rows 843,735 → 1,029,948 (33.5% → 40.9%)" in line
+
+
+def test_quality_drift_catches_a_move_in_value_alone() -> None:
+    """v1.89.0 changed no tag, only the value weight: PAM UNSCORED 0,10% → 8,98% of the money."""
+    before = {("ibge_pam", "UNSCORED"): (1_668_065, 0.6628, 0.00101)}
+    after = {("ibge_pam", "UNSCORED"): (1_668_065, 0.6628, 0.08975)}
+    (line,) = doctor._quality_drifts(before, after)
+    assert "value 0.1% → 9.0%" in line and "rows" not in line
+
+
+def test_quality_drift_reports_a_tag_appearing_and_vanishing() -> None:
+    """v1.90.0 in COMTRADE: MISSING_WEIGHT appeared (79.536) and MISSING_QUANTITY vanished."""
+    before = {("un_comtrade", "MISSING_QUANTITY"): (25_638, 0.0125, 0.0089)}
+    after = {("un_comtrade", "MISSING_WEIGHT"): (79_536, 0.0387, 0.0383)}
+    lines = doctor._quality_drifts(before, after)
+    assert any("MISSING_WEIGHT appeared (79,536 rows" in line for line in lines)
+    assert any("MISSING_QUANTITY vanished (was 25,638 rows" in line for line in lines)
+    # A tag born with a couple of rows is not news.
+    assert doctor._quality_drifts({}, {("ibge_pam", "PROBLEMATIC_VALUE"): (2, 1e-6, None)}) == []
+
+
+def test_quality_drift_does_not_read_an_absent_value_share_as_zero() -> None:
+    """value_share is NULL for a banco with no money; that is no base for a shift."""
+    before = {("ibge_ppm", "UNSCORED"): (100, 0.5, None)}
+    after = {("ibge_ppm", "UNSCORED"): (100, 0.5, 0.40)}
+    assert doctor._quality_drifts(before, after) == []
+
+
+def _history(*builds):
+    """Rows of serving_quality_history: each build is (built_at, {(source, tag): stats})."""
+    rows = []
+    for i, (built_at, flags) in enumerate(builds):
+        for (source, tag), (n, share, value_share) in flags.items():
+            rows.append(
+                SimpleNamespace(
+                    invocation_id=f"inv-{i}",
+                    built_at=built_at,
+                    source=source,
+                    data_quality_flag=tag,
+                    n_rows=n,
+                    share=share,
+                    value_share=value_share,
+                )
+            )
+    return rows
+
+
+def _patch_history(rows):
+    client = MagicMock()
+    client.query.return_value.result.return_value = rows
+    return patch("embrapa_dashboard.doctor.bigquery.Client", return_value=client)
+
+
+def test_quality_drift_check_needs_two_builds(settings: Settings) -> None:
+    now = datetime.now(UTC)
+    with _patch_history(_history((now, {("ibge_pam", "OK"): (10, 1.0, 1.0)}))):
+        result = doctor._check_quality_drift(settings)
+    assert result.ok is True and "nothing to compare yet" in result.detail
+
+
+def test_quality_drift_check_warns_with_the_build_that_moved(settings: Settings) -> None:
+    now = datetime.now(UTC)
+    rows = _history(
+        (now - timedelta(days=3), {("ibge_pam", "PROBLEMATIC_VALUE"): (223, 0.0002, 0.0005)}),
+        (now - timedelta(days=1), {("ibge_pam", "PROBLEMATIC_VALUE"): (4, 0.000004, 0.00005)}),
+    )
+    with _patch_history(rows):
+        result = doctor._check_quality_drift(settings)
+    assert result.ok is True  # a warning: the move can be the point of a release
+    assert result.detail.startswith("⚠")
+    assert f"{now - timedelta(days=1):%Y-%m-%d}" in result.detail and "223 → 4" in result.detail
+
+
+def test_quality_drift_keeps_reporting_after_a_quiet_build(settings: Settings) -> None:
+    """The reason for the window: doctor runs ad hoc. A move two builds ago must still be
+    visible after a later build changed nothing."""
+    now = datetime.now(UTC)
+    before = {("ibge_pam", "OK"): (843_735, 0.335, 0.916)}
+    after = {("ibge_pam", "OK"): (1_029_948, 0.409, 0.930)}
+    rows = _history(
+        (now - timedelta(days=5), before),
+        (now - timedelta(days=4), after),
+        (now - timedelta(days=1), after),
+    )
+    with _patch_history(rows):
+        result = doctor._check_quality_drift(settings)
+    assert "⚠" in result.detail and "ibge_pam OK" in result.detail
+
+
+def test_quality_drift_lets_an_old_move_age_out(settings: Settings) -> None:
+    now = datetime.now(UTC)
+    old = now - timedelta(days=doctor.QUALITY_DRIFT_LOOKBACK_DAYS + 5)
+    rows = _history(
+        (old - timedelta(days=1), {("ibge_pam", "OK"): (843_735, 0.335, 0.916)}),
+        (old, {("ibge_pam", "OK"): (1_029_948, 0.409, 0.930)}),
+        (now - timedelta(days=1), {("ibge_pam", "OK"): (1_029_948, 0.409, 0.930)}),
+    )
+    with _patch_history(rows):
+        result = doctor._check_quality_drift(settings)
+    assert "⚠" not in result.detail and "no tag moved across 1 build pair" in result.detail
+
+
+def test_quality_drift_says_so_when_no_build_is_recent(settings: Settings) -> None:
+    old = datetime.now(UTC) - timedelta(days=doctor.QUALITY_DRIFT_LOOKBACK_DAYS + 10)
+    rows = _history(
+        (old - timedelta(days=1), {("ibge_pam", "OK"): (10, 1.0, 1.0)}),
+        (old, {("ibge_pam", "OK"): (10, 1.0, 1.0)}),
+    )
+    with _patch_history(rows):
+        result = doctor._check_quality_drift(settings)
+    assert result.ok is True and "no build in the last" in result.detail
+
+
+def test_quality_drift_skips_before_the_history_table_exists(settings: Settings) -> None:
+    client = MagicMock()
+    client.query.side_effect = NotFound("serving_quality_history")
+    with patch("embrapa_dashboard.doctor.bigquery.Client", return_value=client):
+        result = doctor._check_quality_drift(settings)
+    assert result.ok is True and result.detail.startswith("skipped:")
+
+
+def test_quality_drift_is_registered() -> None:
+    assert ("quality-drift", doctor._check_quality_drift) in doctor.CHECKS

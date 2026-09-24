@@ -7,22 +7,24 @@ connectivity issues surface immediately instead of mid-run.
 **Cost, stated honestly.** A healthy run takes a few seconds. A BROKEN one does
 not: the source probes are sequential and issue 10–11 HTTP requests at
 ``PROBE_TIMEOUT_S`` each, so an unreachable network costs around 100s. The
-BigQuery-backed checks add ~362 MB of scan (measured on prod, 2026-09-17), all of
-it capped by ``_bq_job_config``. The docstrings promised "~10 seconds … even when
-something is broken" for a long time, which was wrong by an order of magnitude in
-exactly the case an operator sits watching the clock.
+BigQuery-backed checks add ~362 MB of scan (measured on prod, 2026-09-17), plus
+10 MB — BigQuery's per-query billing minimum over a table of kilobytes — for
+quality-drift since v1.91.0, all of it capped by ``_bq_job_config``. The docstrings
+promised "~10 seconds … even when something is broken" for a long time, which was
+wrong by an order of magnitude in exactly the case an operator sits watching the clock.
 """
 
 from __future__ import annotations
 
 import csv
 import io
+import itertools
 import json
 import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 import google.auth
 import requests
@@ -975,6 +977,9 @@ SERVING_TARGETS: list[tuple[str, str]] = [
     ("bq_serving_dataset", "serving_comex_seasonality"),
     ("bq_serving_dataset", "serving_comtrade_annual"),
     ("bq_serving_dataset", "serving_quality_by_source"),
+    # Not read by the BFF: the history `quality-drift` compares builds against. Listed so
+    # the gate reports it missing/empty like any mart the build is supposed to produce.
+    ("bq_serving_dataset", "serving_quality_history"),
     ("bq_gold_dataset", "gold_source_metadata"),
 ]
 
@@ -1035,6 +1040,161 @@ def _classify_serving_marts(client, settings: Settings) -> tuple[list[str], list
         if tbl.num_rows == 0:  # 0 means an actually-empty materialized mart
             empty.append(table)
     return present, missing, empty
+
+
+# ── Quality-tag drift ────────────────────────────────────────────────────────
+# The window is the point, not a detail: doctor runs ad hoc, never on a schedule, so a
+# check that only compared the LAST two builds would go quiet on the next identical build
+# — and an operator who ran doctor three days later would never see the change. Every
+# build pair inside the window is compared, so a shift stays reported until it ages out.
+QUALITY_DRIFT_LOOKBACK_DAYS = 14
+# A tag's share (of the banco's rows, or of its value) moving by this much between two
+# builds. 2 p.p. is well above what an ingestion moves: a new PAM year adds ~2% rows,
+# spread across every tag in proportion.
+QUALITY_DRIFT_SHARE_PP = 0.02
+# ...or its row count changing by this factor, for the tags too rare to move a share —
+# PROBLEMÁTICO is 0,0002% of PAM, and 223 → 4 rows moved its share by 0,02 p.p.
+QUALITY_DRIFT_FACTOR = 3.0
+# Below this many rows a count is noise (PAM PROBLEMÁTICO went 4 → 6 in v1.90.0). Also the
+# floor for a tag appearing or vanishing to count.
+QUALITY_DRIFT_MIN_ROWS = 20
+# How many builds to read. Two prod builds a week plus merges that touch dbt/ stay far
+# below this inside the window; the cap only bounds the read.
+_QUALITY_DRIFT_MAX_BUILDS = 60
+_QUALITY_DRIFT_MAX_LINES = 8
+
+_FlagStats = tuple[int, float, float | None]  # (n_rows, share, value_share)
+
+
+def _quality_drifts(
+    before: dict[tuple[str, str], _FlagStats], after: dict[tuple[str, str], _FlagStats]
+) -> list[str]:
+    """The (source, tag) pairs that moved between two builds, one line each.
+
+    Three ways to move, because the tags live at very different scales. A share test alone
+    misses the rare tags: the 1985 currency fix took PAM's PROBLEMÁTICO from 223 rows to 4,
+    a 55× change that moved its share by 0,02 p.p. A count test alone misses the common
+    ones: v1.90.0 moved PAM's OK from 843.735 to 1.029.948 rows, ×1,2, but 7,4 p.p. of the
+    banco. And a tag can appear or vanish, which neither ratio expresses.
+    """
+    out: list[str] = []
+    for key in sorted(set(before) | set(after)):
+        n0, s0, v0 = before.get(key, (0, 0.0, None))
+        n1, s1, v1 = after.get(key, (0, 0.0, None))
+        label = f"{key[0]} {key[1]}"
+        if n0 == 0 and n1 >= QUALITY_DRIFT_MIN_ROWS:
+            out.append(f"{label} appeared ({n1:,} rows, {s1:.1%})")
+            continue
+        if n1 == 0 and n0 >= QUALITY_DRIFT_MIN_ROWS:
+            out.append(f"{label} vanished (was {n0:,} rows, {s0:.1%})")
+            continue
+        reasons: list[str] = []
+        if abs(s1 - s0) >= QUALITY_DRIFT_SHARE_PP:
+            reasons.append(f"rows {n0:,} → {n1:,} ({s0:.1%} → {s1:.1%})")
+        elif (
+            min(n0, n1) > 0
+            and max(n0, n1) / min(n0, n1) >= QUALITY_DRIFT_FACTOR
+            and abs(n1 - n0) >= QUALITY_DRIFT_MIN_ROWS
+        ):
+            reasons.append(f"rows {n0:,} → {n1:,} (×{max(n0, n1) / min(n0, n1):.0f})")
+        # value_share is NULL for a banco with no money at all; an absent side has no
+        # base for a shift, so it is not read as a move from or to zero.
+        if v0 is not None and v1 is not None and abs(v1 - v0) >= QUALITY_DRIFT_SHARE_PP:
+            reasons.append(f"value {v0:.1%} → {v1:.1%}")
+        if reasons:
+            out.append(f"{label} " + ", ".join(reasons))
+    return out
+
+
+def _check_quality_drift(settings: Settings) -> CheckResult:
+    """Did the quality donut move between two builds in the last two weeks?
+
+    The detector's output was never watched over time, and it cost three months of wrong
+    documentation: the 2026-06-26 calibration rates stayed in comments after the 1985
+    currency fix (80464a3) moved PAM's PROBLEMÁTICO rows from 223 to 4 on 2026-06-27 —
+    the detector doing its job, and nothing kept the 223 to compare against. Each build now
+    appends the donut to `serving_quality_history`; this compares every consecutive pair
+    of builds inside ``QUALITY_DRIFT_LOOKBACK_DAYS``.
+
+    A warning, never a failure: the move can be the point of a release (v1.90.0 moved
+    493.259 rows on purpose). What it guarantees is that a move is SEEN — a fix, a
+    regression, or an ingestion that changed more than it should — instead of being found
+    months later by someone rereading a comment.
+    """
+    name = "Quality-tag drift"
+    try:
+        client = bigquery.Client(
+            project=settings.gcp_project_id,
+            location=settings.bq_location,
+            credentials=get_credentials(settings),
+        )
+        fqn = f"{settings.gcp_project_id}.{settings.bq_serving_dataset}.serving_quality_history"
+        sql = f"""
+            with builds as (
+                select invocation_id, max(built_at) as built_at
+                from `{fqn}`
+                group by invocation_id
+                order by built_at desc
+                limit {_QUALITY_DRIFT_MAX_BUILDS}
+            )
+            select b.invocation_id, b.built_at, h.source, h.data_quality_flag,
+                   h.n_rows, h.share, h.value_share
+            from `{fqn}` h
+            join builds b using (invocation_id)
+        """
+        rows = client.query(sql, job_config=_bq_job_config(settings)).result()
+        builds: dict[str, tuple[datetime, dict[tuple[str, str], _FlagStats]]] = {}
+        for row in rows:
+            _, flags = builds.setdefault(row.invocation_id, (row.built_at, {}))
+            flags[(row.source, row.data_quality_flag)] = (
+                int(row.n_rows),
+                float(row.share or 0.0),
+                None if row.value_share is None else float(row.value_share),
+            )
+        ordered = sorted(builds.values(), key=lambda build: build[0])
+        if len(ordered) < 2:
+            return CheckResult(
+                name,
+                True,
+                f"{len(ordered)} build(s) in serving_quality_history — nothing to compare yet",
+            )
+
+        since = datetime.now(UTC) - timedelta(days=QUALITY_DRIFT_LOOKBACK_DAYS)
+        findings: list[str] = []
+        compared = 0
+        for (_, before), (built_at, after) in itertools.pairwise(ordered):
+            if built_at < since:
+                continue
+            compared += 1
+            stamp = f"{built_at:%Y-%m-%d %H:%M} UTC"
+            findings += [f"{stamp} {drift}" for drift in _quality_drifts(before, after)]
+
+        janela = (
+            f"last {QUALITY_DRIFT_LOOKBACK_DAYS} days; moves of ≥{QUALITY_DRIFT_SHARE_PP:.0%} "
+            f"share, or ×{QUALITY_DRIFT_FACTOR:.0f} with ≥{QUALITY_DRIFT_MIN_ROWS} rows"
+        )
+        if compared == 0:
+            return CheckResult(
+                name,
+                True,
+                f"no build in the last {QUALITY_DRIFT_LOOKBACK_DAYS} days to compare "
+                f"(latest {ordered[-1][0]:%Y-%m-%d})",
+            )
+        if findings:
+            shown = findings[:_QUALITY_DRIFT_MAX_LINES]
+            more = len(findings) - len(shown)
+            return CheckResult(
+                name,
+                True,  # warn, not fail — a move can be the point of a release
+                "⚠ "
+                + "; ".join(shown)
+                + (f"; +{more} more" if more else "")
+                + f" ({janela}). If the move was intended — a release that touched the "
+                "detector or the data — say so in the CHANGELOG; it ages out of the window.",
+            )
+        return CheckResult(name, True, f"no tag moved across {compared} build pair(s) ({janela})")
+    except Exception as exc:  # sem dado → verde; check quebrado → vermelho
+        return _skip_ou_quebra(name, exc)
 
 
 # `embrapa backup-gold` lays down prefixes shaped `backups/run=YYYYMMDDTHHMMSSZ/...`.
@@ -1792,6 +1952,7 @@ def _check_shared_code_across_tables(settings: Settings) -> CheckResult:
 _POSTCHECKS: list[tuple[str, Callable[[Settings], CheckResult]]] = [
     ("bronze", _check_bronze_tables),
     ("serving", _check_serving_marts),
+    ("quality-drift", _check_quality_drift),
     ("catalog-parity", _check_catalog_resolver_parity),
     ("curation-backup", _check_curation_backup),
     ("curation-integrity", _check_curation_referential_integrity),

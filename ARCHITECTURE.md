@@ -183,7 +183,8 @@ embrapa-dashboard-commodities/
 │   │       ├── serving_comex_annual.sql
 │   │       ├── serving_comex_seasonality.sql
 │   │       ├── serving_comtrade_annual.sql
-│   │       └── serving_quality_by_source.sql
+│   │       ├── serving_quality_by_source.sql
+│   │       └── serving_quality_history.sql     # append-only, one donut per build (doctor quality-drift)
 │   ├── macros/
 │   │   ├── generate_schema_name.sql  # Dev/prod schema separation
 │   │   ├── safe_numeric.sql          # Safe conversion (no-data placeholders → NULL; SIDRA '-' exact-zero → 0)
@@ -416,6 +417,7 @@ materialized pre-aggregation, partitioned by year and clustered by the filters.
 | `serving_comex_seasonality` | year × month × flow × NCM × UF | monthlyData / sazonalidade (dual-metric value\|weight) |
 | `serving_comtrade_annual` | year × flow × cmd × reporter × partner | partner · flow · market-share (COMTRADE) |
 | `serving_quality_by_source` | source × data_quality_flag | quality donut |
+| `serving_quality_history` | build × source × data_quality_flag | not read by the BFF — append-only history the `doctor` `quality-drift` check compares builds against (`full_refresh=false`) |
 
 **Conformed dimensions** (`dbt/models/core/`): `dim_date` (month grain, pt-BR
 labels, quarter/semester), `dim_geo_br` (27 UFs → name / region / abbreviation

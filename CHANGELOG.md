@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.91.0] - 2026-09-24
+
+O donut de qualidade passa a ser vigiado ao longo do tempo. A auditoria de hoje (§ A6) mostrou
+que a correção de 1985 levou os PROBLEMÁTICOS da PAM de 223 para 4 em 27/06 sem que nada
+notasse, porque o donut é reconstruído a cada build e nenhum lugar guardava o que ele dizia
+antes. Por três meses, a documentação carregou os números antigos.
+
+### Adicionado
+- **`serving_quality_history`**: a cada build, uma cópia de `serving_quality_by_source`,
+  carimbada com `built_at` e o `invocation_id` do dbt (~31 linhas por build).
+  - É só de acréscimo: incremental sem `unique_key`, e com `full_refresh=false` para que o
+    `--full-refresh` do workflow de prod nunca o apague. É a única tabela do projeto que não se
+    recomputa a partir das fontes.
+  - Verificado em dev: três builds seguidos, o último com `--full-refresh`, deram três cópias.
+- **Check `quality-drift` no `embrapa doctor`.** Avisa (⚠, nunca falha) quando uma tag de um
+  banco, entre dois builds:
+  - muda a fração de linhas ou de valor em ≥ 2 p.p.;
+  - muda a contagem em ≥ 3×, com ≥ 20 linhas de diferença (o critério que pega as tags raras:
+    223 → 4 moveu a fração em só 0,02 p.p.);
+  - ou aparece/some com ≥ 20 linhas.
+
+  Compara **todos os pares de builds dos últimos 14 dias**, e não só o último: o `doctor` roda
+  sob demanda, e um aviso que só olhasse o último par sumiria no build seguinte.
+- **Backtest nos 32 backups do Gold** (05/07 a 24/09, contagem de linhas): o alarme teria
+  tocado exatamente nas 4 releases que mudaram a taxonomia (v1.17.0, v1.49.0, v1.73.0 e
+  v1.90.0) e em nenhum dos 27 intervalos de só ingestão.
+
+### Documentação
+- CLAUDE.md, ARCHITECTURE.md, `docs/gold_data_model.md`, `docs/testing.md` e a seção A6 do
+  relatório da auditoria.
+
+### Testes
+- 14 testes do check, com as mudanças medidas como casos: a queda de 1985, a v1.89.0 só no
+  valor, a v1.90.0 nas frações, e tags que aparecem e somem. Mais a invariante de que o
+  histórico é só de acréscimo e sobrevive a `--full-refresh`.
+
+---
+
 ## [1.90.2] - 2026-09-24
 
 Só comentários e documentação. Nenhum número muda: os arquivos de `dbt/` tocados são
