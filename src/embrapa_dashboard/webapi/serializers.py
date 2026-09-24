@@ -65,6 +65,9 @@ _FLAG_KEY = {
     "INFERRED_VALUE": "inferred_value",
     # PAM-only: planted < harvested area (a SIDRA source error). Emitted by gold_pam_production.
     "AREA_INCONSISTENT": "area_inconsistent",
+    # IBGE bancos (v1.92.0, macros/isolated_spike.sql): a large value in ONE year that makes
+    # its state's series jump — what the price detector cannot see.
+    "ISOLATED_SPIKE": "isolated_spike",
     # The detector could not RUN on the row (macros/quality_outlier_ctes.sql ·
     # quality_scored). Kept apart from "ok" because "examined and cleared" and "never
     # examined" are different claims — and on PAM only 33,6% of the OK rows had actually
@@ -95,6 +98,8 @@ _FLAG_LABEL_PT = {
     "INFERRED_VALUE": "Valor financeiro inferido",
     # PAM-only: área plantada < área colhida (erro de fonte do SIDRA, agronomicamente impossível).
     "AREA_INCONSISTENT": "Área inconsistente (plantada < colhida)",
+    # Valor grande num ano só, que faz a série do estado saltar (ver data.js · QUALITY_FLAGS).
+    "ISOLATED_SPIKE": "Pico isolado no tempo",
     # Sem base para avaliar — não é defeito do registro (ver data.js · QUALITY_FLAGS).
     "UNSCORED": "Não avaliada",
 }

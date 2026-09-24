@@ -438,6 +438,21 @@ de milhões todo ano. É provavelmente madeira plantada lançada na tabela da ex
 responde por 46,8% da madeira nativa do Paraná em 2011. O detector de preço não marca (R$ 100/m³
 é plausível): é o primeiro caso achado pelo tempo, e não pelo preço.
 
+**Virou detector na v1.92.0: a tag `ISOLATED_SPIKE`** (`macros/isolated_spike.sql`). A regra foi
+medida antes de ser escrita. Marca-se a linha isolada no tempo (valor num ano, nada no anterior
+nem no seguinte, no mesmo município e produto), ≥ R$ 100 mil, quando o total do estado naquele
+ano é ≥ 1,5× a média dos dois anos vizinhos (ambos com produção) e os registros isolados daquele
+estado e ano, **somados**, explicam ≥ metade do excesso. A soma é o que pega os dois municípios
+juntos: sozinhos, Ortigueira explica 56% do salto do Paraná e Telêmaco Borba 34%.
+
+- **O que pega:** 138 linhas em 60 saltos estaduais (PEVS 81, PAM 52, PPM 5). Entre elas: 5
+  municípios de Pernambuco com exatamente 1.500 de abacaxi em 2010, e 1.000.000 m³ de lenha em
+  Paragominas em 2002.
+- **O que deixa de fora:** o critério de "série estabelecida" separa isso da soja plantada num ano
+  só no Ceará. Lá a série do estado é esporádica, e dominá-la não quer dizer nada.
+- **Verificação:** o build de dev mudou exatamente as 137 linhas previstas; a 138ª já era
+  `PROBLEMATIC_VALUE` (a banana de Tacima, 1995) e manteve a tag, que tem precedência.
+
 ```sql
 -- municípios por situação, ano a ano (PEVS, 7 produtos ingeridos)
 WITH c AS (SELECT reference_year y, city_code, COUNTIF(numeric_value IS NULL) n_null,

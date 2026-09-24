@@ -187,3 +187,60 @@ def test_quality_history_is_append_only_and_survives_full_refresh():
     assert "full_refresh=false" in config
     assert "unique_key" not in config
     assert "ref('serving_quality_by_source')" in sql
+
+
+def test_isolated_spike_sits_between_problematic_and_outlier():
+    """ISOLATED_SPIKE comes after the two PROBLEMÁTICO tiers — a price 100× off is the stronger
+    evidence and keeps its name (Tacima 1995 banana stays PROBLEMATIC_VALUE) — and before the
+    OUTLIER tiers, because "large and plausibly priced" is exactly how an isolated spike looks to
+    the price detector (two PEVS spikes were OUTLIER_VALUE before v1.92.0)."""
+    flag = _macro("data_quality_flag")
+    on_branch = flag[flag.index("{%- else -%}") :]
+    order = [
+        "THEN 'PROBLEMATIC_QUANTITY'",
+        "THEN 'ISOLATED_SPIKE'",
+        "THEN 'OUTLIER_VALUE'",
+        "THEN 'UNSCORED'",
+    ]
+    positions = [on_branch.index(tier) for tier in order]
+    assert positions == sorted(positions), order
+    # The legacy (Q1-off) CASE must not know the tier at all (the header comment may name it).
+    start = flag.index("{%- if not var('enable_quality_outliers'")
+    assert "ISOLATED_SPIKE" not in flag[start : flag.index("{%- else -%}")]
+
+
+@pytest.mark.parametrize("model", _IBGE_MODELS)
+def test_isolated_spike_is_wired_into_every_ibge_model(model):
+    """The three IBGE Gold models compute the spike on the same deflated value the price
+    detector uses, join it back, and hand it to the flag. A model that computed the CTEs but
+    forgot `spike=` would silently never emit the tier."""
+    sql = _model(model)
+    assert "{{ isolated_spike_ctes('val_real_igpdi_brl') }}" in sql
+    assert "{{ isolated_spike_select() }}" in sql
+    assert "{{ isolated_spike_join('e') }}" in sql
+    assert "spike='_q_isolated_spike'" in sql
+
+
+@pytest.mark.parametrize("model", ("gold_comex_flows", "gold_comtrade_flows"))
+def test_trade_models_do_not_flag_isolated_spikes(model):
+    """A shipment in one month and none in the next is how trade works, not an anomaly."""
+    assert "isolated_spike" not in _model(model)
+
+
+def test_isolated_spike_rule_is_the_measured_one():
+    """The rule that was measured before it was written (138 rows, 60 state-year jumps, both
+    halves of the Ortigueira/Telêmaco Borba 2011 case). Each clause is load-bearing:
+    both neighbour years must have production (a sporadic state series cannot jump — that is
+    how soy planted once in Ceará stays unflagged), and the isolated rows are SUMMED per
+    state-year before being compared with the excess (Ortigueira alone explains 56% of Paraná's
+    2011 jump and Telêmaco Borba 34%; only together do they cross the bar)."""
+    macro = _macro("isolated_spike")
+    assert "prv._tot > 0" in macro and "nxt._tot > 0" in macro
+    assert "sum(case when _isolated then _v else 0 end) as _iso_tot" in macro
+    assert "var('quality_spike_jump', 1.5)" in macro
+    assert "var('quality_spike_explained', 0.5)" in macro
+    assert "var('quality_value_floor', 100000)" in macro
+    # A first or last survey year has no neighbour on one side: never isolated.
+    assert "reference_year > _y0" in macro and "reference_year < _y1" in macro
+    # Gated with the Q1 taxonomy, and switchable on its own.
+    assert "var('enable_quality_outliers', false) and var('quality_isolated_spike', true)" in macro

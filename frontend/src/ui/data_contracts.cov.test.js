@@ -31,7 +31,7 @@ describe('data.js — registries', () => {
     expect(window.UF_DATA.every((u) => u.uf && u.region && Number.isInteger(u.col))).toBe(true);
     // the 12-value taxonomy (5 base + 4 outlier/problemático + 2 reserved inferred tiers
     // + UNSCORED, que separa "examinada e aprovada" de "nunca examinada")
-    expect(window.QUALITY_FLAGS).toHaveLength(13); // 12 shared + AREA_INCONSISTENT (PAM-only)
+    expect(window.QUALITY_FLAGS).toHaveLength(14); // 12 shared + AREA_INCONSISTENT (PAM-only) + ISOLATED_SPIKE (IBGE)
     expect(window.QUALITY_FLAGS.find((f) => f.id === 'OK').label).toBe('Normais');
     expect(window.QUALITY_FLAGS.find((f) => f.id === 'UNSCORED').label).toBe('Não avaliada');
     // every flag now carries a plain-pt-BR legend description

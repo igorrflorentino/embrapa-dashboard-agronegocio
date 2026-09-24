@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.92.0] - 2026-09-24
+
+Um segundo detector de qualidade, que olha a **série no tempo** em vez do preço. O caso que o
+motivou está em `docs/divergencias_de_conteudo.md`: Ortigueira e Telêmaco Borba (PR) registram
+madeira em tora nativa só em 2011, a exatamente R$ 100/m³. As duas linhas eram `OK`, porque o
+preço é plausível, e juntas fazem 46,8% da madeira nativa do Paraná naquele ano.
+
+### Adicionado
+- **Tag `ISOLATED_SPIKE`, "Pico isolado no tempo"** (IBGE: PAM, PEVS, PPM;
+  `macros/isolated_spike.sql`). Marca a linha que cumpre as quatro condições:
+  - tem valor num ano só, sem produção no ano anterior nem no seguinte, no mesmo município e
+    produto;
+  - vale ≥ R$ 100 mil;
+  - o total do seu estado naquele ano é ≥ 1,5× a média dos dois anos vizinhos, e ambos têm
+    produção;
+  - os registros isolados daquele estado e ano, **somados**, explicam ≥ metade do excesso.
+
+  A soma é o que pega municípios vizinhos errando juntos: sozinho, Ortigueira explica 56% do
+  salto do Paraná e Telêmaco Borba 34%. A "série estabelecida" deixa de fora a soja plantada
+  num ano só no Ceará, onde dominar o estado não significa nada.
+- **Posição na cascata:** depois de `PROBLEMATIC_*` e antes de `OUTLIER_*`. Um preço 100×
+  fora é evidência mais forte e mantém o nome.
+- **Regra medida antes de escrita:** 138 linhas em 60 saltos estaduais (PEVS 81, PAM 52,
+  PPM 5). Entre elas, 5 municípios de Pernambuco com exatamente 1.500 de abacaxi em 2010, e
+  1.000.000 m³ de lenha em Paragominas em 2002.
+- **Variáveis:** `quality_isolated_spike` (liga/desliga só esta tag), `quality_spike_jump`
+  (1,5) e `quality_spike_explained` (0,5). A tag fica sob o mesmo gate da Q1, então o modo
+  legado não muda.
+- **A taxonomia passa de 13 para 14 tags:** rótulo pt-BR, legenda, cor e série temporal na
+  tela de Qualidade, glossário, `accepted_values`, README, contrato de dados e CLAUDE.md.
+
+### Verificação
+- Antes do código, a regra foi rodada sobre o Gold de prod e deu o gabarito: 137 linhas
+  mudariam de tag (PAM 51 `OK`, PEVS 79 `OK` + 2 `OUTLIER_VALUE`, PPM 5 `OK`). A 138ª, a
+  banana de Tacima (1995), já é `PROBLEMATIC_VALUE` e mantém a tag.
+- O build de dev (`--defer` sobre o Silver de prod) mudou **exatamente essas 137 linhas**,
+  sem nenhuma outra mudança e sem linha criada ou perdida.
+- Os 2 testes unitários do PEVS, que executam o SQL novo, passam.
+- Depois do merge, o alarme `quality-drift` vai registrar a tag nova aparecendo. É a mudança
+  deliberada desta versão.
+
+---
+
 ## [1.91.1] - 2026-09-24
 
 Documentação da investigação dos municípios sem extração no PEVS, e o segundo caso do

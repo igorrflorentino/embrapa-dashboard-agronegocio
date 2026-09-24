@@ -173,6 +173,7 @@ enriched as (
     cross join fx_latest         fxl
 
 )
+{{ isolated_spike_ctes('val_real_igpdi_brl') }}
 
 select
     -- ── Time ─────────────────────────────────────────────────────────────────
@@ -257,14 +258,17 @@ select
     {{ data_quality_flag('qty_native', 'val_raw',
          quality_qty_level('val_real_igpdi_brl', 'qty_native'),
          quality_val_level('val_real_igpdi_brl', 'qty_native'),
-         quality_scored('val_real_igpdi_brl', 'qty_native')) }} as data_quality_flag,
+         quality_scored('val_real_igpdi_brl', 'qty_native'),
+             spike='_q_isolated_spike') }} as data_quality_flag,
     last_refresh
 
 from {% if var('enable_quality_outliers', false) -%}
 (
     select e.*,
-{{ quality_scored_bounds('val_real_igpdi_brl', 'qty_native') }}
+{{ quality_scored_bounds('val_real_igpdi_brl', 'qty_native') }},
+        {{ isolated_spike_select() }}
     from enriched e
+    {{ isolated_spike_join('e') }}
     -- A janela é o grão da IDENTIDADE do produto — (banco, TABELA, código) — mais a
     -- família. Sem a `tabela`, dois produtos de metades diferentes que dividissem um
     -- código compartilhariam a mediana de preço, e o detector escoraria um contra a

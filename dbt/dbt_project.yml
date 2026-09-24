@@ -187,6 +187,17 @@ vars:
   # Changing this requires a Gold rebuild — the flag is materialized.
   quality_unscored_scope: all
 
+  # ISOLATED_SPIKE (v1.92.0, macros/isolated_spike.sql) — IBGE bancos only. A row with a
+  # value in ONE year (none the year before or after) is flagged when its state's series
+  # jumps that year and the isolated rows explain the jump. The price detector cannot see
+  # this: a product booked in the wrong table at a market price has a good price. Measured
+  # on prod 2026-09-24 with these settings: 138 rows in 60 state-year jumps (PEVS 81, PAM
+  # 52, PPM 5), including both halves of the Ortigueira/Telêmaco Borba 2011 case that
+  # motivated it. Rides enable_quality_outliers; false here drops only this tier.
+  quality_isolated_spike: true
+  quality_spike_jump: 1.5       # state total ≥ this × the average of the year before and after
+  quality_spike_explained: 0.5  # isolated rows, summed, ≥ this share of that excess
+
   # COMTRADE totals-only floor. silver_comtrade_flows drops any Bronze row with
   # reference_year below this, so a re-anchored ingest window (config.comtrade_start_year
   # = 2000) doesn't keep stale pre-2000 rows the delta ingest no longer refreshes. Keep in

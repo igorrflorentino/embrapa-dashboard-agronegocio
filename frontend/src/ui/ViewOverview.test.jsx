@@ -63,7 +63,7 @@ function stubGlobals(filtered) {
 let ViewOverview;
 
 beforeEach(async () => {
-  await import('./data.js'); // sets window.QUALITY_FLAGS to the REAL 13-flag taxonomy
+  await import('./data.js'); // sets window.QUALITY_FLAGS to the REAL 14-flag taxonomy
   await import('./ViewOverview.jsx'); // registers window.ViewOverview
   ViewOverview = window.ViewOverview;
 });
@@ -109,11 +109,11 @@ describe('ViewOverview — KPI strip + quality digest (H3 + P0 lock-in)', () => 
     const { container } = render(
       <ViewOverview families={['mass']} summary={{}} database="ibge_pevs" conventions={{}} />
     );
-    // "{qualityFlags.length} de {QUALITY_FLAGS.length} flags" → "2 de 13 flags". 13 = the 5
+    // "{qualityFlags.length} de {QUALITY_FLAGS.length} flags" → "2 de 14 flags". 14 = the 5
     // base flags + the 4 outlier/problemático tiers + the 2 reserved inferred tiers + the
-    // PAM-only AREA_INCONSISTENT + UNSCORED (all in the registry regardless of the dbt var /
-    // pipeline state).
-    expect(container.textContent).toContain('de 13 flags');
+    // PAM-only AREA_INCONSISTENT + UNSCORED + the IBGE ISOLATED_SPIKE (all in the registry
+    // regardless of the dbt var / pipeline state).
+    expect(container.textContent).toContain('de 14 flags');
     expect(container.textContent).not.toContain('de 6 flags'); // the old prototype count
   });
 
