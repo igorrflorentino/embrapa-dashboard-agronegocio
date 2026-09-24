@@ -119,6 +119,7 @@ enriched as (
     cross join fx_latest         fxl
 
 )
+{{ isolated_spike_ctes('val_real_igpdi_brl') }}
 
 select
     -- A TABELA da fonte, carregada do Silver (que a carimba). Fecha o trio
@@ -204,15 +205,18 @@ select
         else {{ data_quality_flag('qty_native', 'val_raw',
              quality_qty_level('val_real_igpdi_brl', 'qty_native'),
              quality_val_level('val_real_igpdi_brl', 'qty_native'),
-             quality_scored('val_real_igpdi_brl', 'qty_native')) }}
+             quality_scored('val_real_igpdi_brl', 'qty_native'),
+             spike='_q_isolated_spike') }}
     end as data_quality_flag,
     last_refresh
 
 from {% if var('enable_quality_outliers', false) -%}
 (
     select e.*,
-{{ quality_scored_bounds('val_real_igpdi_brl', 'qty_native') }}
+{{ quality_scored_bounds('val_real_igpdi_brl', 'qty_native') }},
+        {{ isolated_spike_select() }}
     from enriched e
+    {{ isolated_spike_join('e') }}
     -- The produto's identity (banco, tabela, código) + family — the same window as
     -- gold_pevs_production / gold_ppm_production. PAM has one table, so `tabela` changes no
     -- number here; it is here so the three IBGE windows are one shape and none is correct

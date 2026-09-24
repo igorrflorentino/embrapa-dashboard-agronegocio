@@ -257,8 +257,8 @@ models:
       - name: data_quality_flag
         description: >
           The union of every banco's flag domain — MISSING_WEIGHT is trade-only (COMEX,
-          and COMTRADE since v1.90.0) and AREA_INCONSISTENT is PAM-only, so no single
-          source emits all of these.
+          and COMTRADE since v1.90.0) AREA_INCONSISTENT is PAM-only and ISOLATED_SPIKE
+          is IBGE-only, so no single source emits all of these.
         tests:
           - not_null
           # As cinco tabelas Gold têm esta guarda; o mart, que é o que a tela LÊ, não
@@ -268,7 +268,7 @@ models:
           # o build é mais barato que descobrir isso em produção.
           - accepted_values:
               arguments:
-                values: ["OK", "MISSING_VALUE", "MISSING_QUANTITY", "MISSING_WEIGHT", "INCOMPLETE", "OUTLIER_QUANTITY", "PROBLEMATIC_QUANTITY", "OUTLIER_VALUE", "PROBLEMATIC_VALUE", "INFERRED_QUANTITY", "INFERRED_VALUE", "AREA_INCONSISTENT", "UNSCORED"]
+                values: ["OK", "MISSING_VALUE", "MISSING_QUANTITY", "MISSING_WEIGHT", "INCOMPLETE", "OUTLIER_QUANTITY", "PROBLEMATIC_QUANTITY", "OUTLIER_VALUE", "PROBLEMATIC_VALUE", "INFERRED_QUANTITY", "INFERRED_VALUE", "AREA_INCONSISTENT", "ISOLATED_SPIKE", "UNSCORED"]
       - name: share
         description: "count ÷ source total; sums to 1 within a source."
       - name: value_share

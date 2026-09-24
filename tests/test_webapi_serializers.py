@@ -469,6 +469,7 @@ def test_quality_ts_pivots_to_per_year_shares():
         "inferred_quantity",
         "inferred_value",
         "area_inconsistent",  # PAM-only (planted < harvested area)
+        "isolated_spike",  # IBGE: a one-year value that makes the state's series jump
         # "não avaliada": o detector não pôde rodar na linha — distinta de "ok", que
         # passa a significar examinada E aprovada.
         "unscored",

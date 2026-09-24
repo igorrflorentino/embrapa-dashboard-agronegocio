@@ -22,6 +22,8 @@ const QTS_KEY = {
   INFERRED_VALUE: 'inferred_value', INFERRED_QUANTITY: 'inferred_quantity',
   // PAM-only: planted < harvested area (a SIDRA source error surfaced in-product).
   AREA_INCONSISTENT: 'area_inconsistent',
+  // IBGE bancos: a large value in one year that makes the state's series jump (v1.92.0).
+  ISOLATED_SPIKE: 'isolated_spike',
   // The row the implied-price detector could not examine. It was MISSING from this map
   // and only resolved through the `f.id.toLowerCase()` fallback below — which happens to
   // be right for every key, and so quietly voided the "add a new flag deliberately"

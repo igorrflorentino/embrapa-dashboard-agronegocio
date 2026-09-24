@@ -27,7 +27,8 @@ a uma forma de erro.
   detector não vê nada: o preço está certo. O sintoma passa a ser a série — um valor grande
   num ano só, cercado de anos sem registro. Foi assim com Ortigueira e Telêmaco Borba, achados
   ao investigar os municípios sem extração do PEVS (`docs/audits/qualidade_dados_audit_2026-09-24.md`
-  § A9); nenhum detector automático cobre esse padrão hoje.
+  § A9). Desde a v1.92.0 esse padrão tem detector: a tag `ISOLATED_SPIKE`
+  (`macros/isolated_spike.sql`) marca o registro isolado que faz a série do estado saltar.
 
 ---
 
@@ -109,8 +110,9 @@ do ano; o terceiro maior caso é 27×).
 a 313 mil (2012); sem eles, 2011 fica em 367 mil e acompanha a queda. No Brasil, pesam 2,3%
 (14,1 mi m³).
 
-**Por que o detector de qualidade não marcou.** As duas linhas saem `OK`: R$ 100/m³ é um preço
-plausível para madeira, e o detector julga o preço, não a série no tempo.
+**Por que o detector de qualidade não marcou.** As duas linhas saíam `OK`: R$ 100/m³ é um preço
+plausível para madeira, e o detector julga o preço, não a série no tempo. Desde a v1.92.0 as
+duas são `ISOLATED_SPIKE`, a tag criada a partir deste caso.
 
 ### O que fazer ao analisar
 
