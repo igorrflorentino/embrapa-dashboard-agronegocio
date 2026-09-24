@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.90.0] - 2026-09-24
+
+As três mudanças do detector de qualidade que a auditoria de hoje propôs e o mantenedor
+aprovou (`docs/audits/qualidade_dados_audit_2026-09-24.md`, § A2, A4 e A5). Diferente da
+v1.89.0, esta **muda tags de propósito**. A prova é que o diff bateu com uma previsão feita
+antes do código: a reconstrução do detector com as três mudanças sobre o Gold de prod deu uma
+matriz "tag antiga → tag nova"; o build de dev, comparado com o prod linha a linha, reproduziu
+as 37 transições uma a uma, sem nenhuma linha criada ou perdida.
+
+### Alterado
+- **O detector do IBGE escora pelo IGP-DI, não mais pelo IPCA** (A5). O IPCA começa em 1980, e
+  as 355.644 linhas de 1974–1979 da PAM e da PPM ficavam `UNSCORED` por construção. Agora
+  158.610 delas são examinadas. Um índice só para toda a janela: misturar dois índices
+  entortaria a mesma mediana contra a qual o preço é julgado.
+- **O piso de materialidade olha as duas medidas** (A2): testa
+  `greatest(valor, quantidade × preço mediano)`. Testar só o valor escondia todo erro que
+  ENCOLHE o valor, porque a linha caía abaixo do piso e nunca era examinada.
+  - Novos `PROBLEMATIC`: COMTRADE 1.030, PEVS 11, COMEX 5, PAM 2.
+  - Efeito colateral, maior e esperado: linhas de valor pequeno e quantidade material, antes
+    `UNSCORED`, passam a ser examinadas e quase todas saem `OK` (COMTRADE 77.053, PAM 37.636,
+    PEVS 25.179, PPM 17.997, COMEX 13.349). O ruído de arredondamento que o piso barra não
+    volta: arredondar um valor pequeno não produz os 100× que PROBLEMÁTICO exige.
+- **O COMTRADE marca `MISSING_WEIGHT`** (A4). As 79.536 linhas com valor e sem peso (91,8% do
+  capítulo 44, madeira) caíam em `MISSING_QUANTITY` ou `UNSCORED` conforme um detalhe
+  irrelevante; agora ganham a tag que o COMEX já usava. `MISSING_QUANTITY` deixa de ocorrer
+  no COMTRADE. Sob o mesmo gate da taxonomia Q1.
+
+### O donut depois desta versão (medido 2026-09-24)
+| banco | `UNSCORED` linhas / valor (antes → agora) | valor examinado |
+|---|---|---|
+| PAM | 66,3% / 8,98% → **58,9% / 0,06%** | 91,0% → **99,9%** |
+| PPM | 87,2% / 10,38% → **84,7% / 0,16%** | 89,6% → **99,8%** |
+| PEVS | 81,7% / 0,74% → **78,4% / 0,43%** | 99,3% → **99,6%** |
+| COMEX | 65,2% / 0,48% → **61,8% / 0,39%** | 99,5% → **99,6%** |
+| COMTRADE | 64,6% / 3,17% → **58,3% / 0,19%** (+ `MISSING_WEIGHT` 3,83%) | 95,9% → **96,0%** |
+
+### Documentação e legendas
+- Legendas (`data.js`, `glossary.js`): `UNSCORED` perde o motivo "ano sem deflator" e o do
+  comércio sem peso (que agora é `MISSING_WEIGHT`); `PROBLEMATIC_QUANTITY` diz "pouco mais da
+  metade abaixo" (57%, antes 83%: os novos casos são pesos com dígitos a mais);
+  `MISSING_QUANTITY` e `MISSING_WEIGHT` dizem onde aparecem.
+- Relatório da auditoria marcado como histórico, com a verificação desta versão; README,
+  CLAUDE.md, contrato de dados do frontend, `dbt_project.yml` e os comentários dos modelos
+  com os números novos.
+
+### Testes
+- `test_ibge_q1_scores_on_deflated_value_not_nominal` exige IGP-DI nas quatro chamadas do
+  detector; novos `test_magnitude_floor_is_material_by_either_measure` e
+  `test_comtrade_names_a_missing_weight`.
+
+---
+
 ## [1.89.0] - 2026-09-24
 
 Auditoria da lógica de qualidade dos dados (`data_quality_flag`): como o detector decide cada

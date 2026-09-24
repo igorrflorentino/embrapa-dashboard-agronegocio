@@ -35,12 +35,20 @@ def _macro_body(sql: str, name: str) -> str:
 
 @pytest.mark.parametrize("model", _IBGE_MODELS)
 def test_ibge_q1_scores_on_deflated_value_not_nominal(model):
-    """IBGE implied-price scoring MUST use the DEFLATED value (val_real_ipca_brl). Nominal
-    val_yearfx_brl manufactures a fake pre-1995 hyperinflation tail (66k+ near-zero-price rows) —
-    the single most important Q1 invariant."""
+    """IBGE implied-price scoring MUST use a DEFLATED value. Nominal val_yearfx_brl manufactures a
+    fake pre-1995 hyperinflation tail (66k+ near-zero-price rows) — the single most important Q1
+    invariant.
+
+    And the deflator must be IGP-DI, the only BCB index that reaches every IBGE year. Scoring by
+    IPCA (until v1.90.0) left PAM/PPM 1974–1979 — 355.644 rows — unscoreable by construction. All
+    four detector calls read the SAME column: a window that mixed two indices would bend the very
+    median the price is judged against."""
     sql = _model(model)
-    assert "quality_scored_bounds('val_real_ipca_brl'" in sql
+    calls = ("quality_scored_bounds", "quality_qty_level", "quality_val_level", "quality_scored")
+    for call in calls:
+        assert f"{call}('val_real_igpdi_brl', 'qty_native')" in sql, call
     assert "quality_scored_bounds('val_yearfx_brl'" not in sql
+    assert "'val_real_ipca_brl', 'qty_native'" not in sql
 
 
 def test_trade_q1_scores_on_usd_value():
@@ -54,6 +62,29 @@ def test_magnitude_floor_is_wired_into_the_guard():
     """The magnitude floor (quality_value_floor) is what lets a single global price_k work across
     all 5 sources — without it, tiny-municipality rounding noise over-flags PAM/PPM at ~2%."""
     assert "quality_value_floor" in _macro("quality_outlier_ctes")
+
+
+def test_magnitude_floor_is_material_by_either_measure():
+    """The floor tests the larger of the reported value and the EXPECTED one (quantity × median
+    price). Testing the reported value alone made it blind to the typo that SHRINKS the value:
+    the row fell under the floor and was never scored — 1.030 such rows in COMTRADE against 2.986
+    flagged, and in PEVS more hidden (24) than flagged (20), measured 2026-09-24."""
+    guard = _macro_body(_macro("quality_outlier_ctes"), "_q_guard")
+    assert "greatest({{ value_expr }}, {{ qty_expr }} * exp(_q_ln_med_price))" in guard
+    assert "or {{ value_expr }} < {{ var('quality_value_floor'" not in guard
+
+
+def test_comtrade_names_a_missing_weight():
+    """A COMTRADE value with no net weight is MISSING_WEIGHT — the tag COMEX already used — not
+    MISSING_QUANTITY or UNSCORED depending on whether some non-kg quantity happened to be there
+    (79.536 rows split 25.638 / 53.898 until v1.90.0). A missing VALUE must still win, so the
+    branch requires the value present; and it rides the Q1 gate like the rest of the taxonomy."""
+    sql = _model("gold_comtrade_flows")
+    branch = "when primary_value_usd is not null and net_weight_kg is null then 'MISSING_WEIGHT'"
+    assert branch in sql
+    gate = sql.rindex("{% if var('enable_quality_outliers', false)", 0, sql.index(branch))
+    assert "{%- else -%}" in sql[sql.index(branch) :]
+    assert sql.index(branch) - gate < 200, "the MISSING_WEIGHT branch must sit inside the Q1 gate"
 
 
 def test_problematic_takes_precedence_over_outlier():

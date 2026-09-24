@@ -620,9 +620,12 @@ models:
       - name: data_quality_flag
         tests:
           - not_null
+          # MISSING_WEIGHT since v1.90.0: a value with no net weight (the detector prices per
+          # kilo). MISSING_QUANTITY stays accepted for the legacy (Q1-off) flag, where it is
+          # still how a weightless row is named.
           - accepted_values:
               arguments:
-                values: ["OK", "MISSING_VALUE", "MISSING_QUANTITY", "INCOMPLETE", "OUTLIER_QUANTITY", "PROBLEMATIC_QUANTITY", "OUTLIER_VALUE", "PROBLEMATIC_VALUE", "INFERRED_QUANTITY", "INFERRED_VALUE", "UNSCORED"]
+                values: ["OK", "MISSING_VALUE", "MISSING_QUANTITY", "MISSING_WEIGHT", "INCOMPLETE", "OUTLIER_QUANTITY", "PROBLEMATIC_QUANTITY", "OUTLIER_VALUE", "PROBLEMATIC_VALUE", "INFERRED_QUANTITY", "INFERRED_VALUE", "UNSCORED"]
       - name: last_refresh
         description: "Max ingestion_timestamp across the source rows aggregated into this record."
         tests: [not_null]

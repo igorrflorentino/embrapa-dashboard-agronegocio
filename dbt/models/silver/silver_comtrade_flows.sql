@@ -50,7 +50,9 @@
 
     Quantity sentinels: chapter-44 rows routinely report qty = netWgt = '0.0'
     (quantity not collected). 0 is mapped to NULL so it reads as "no reading"
-    (→ qty_base NULL, data_quality_flag MISSING_QUANTITY) rather than a real zero.
+    (→ qty_base NULL, data_quality_flag MISSING_WEIGHT since v1.90.0) rather than a real zero.
+    COMEX does NOT do this — its KG_LIQUIDO '0' stays 0.0 and the row is UNSCORED; the two
+    sources name the same fact differently (docs/audits/qualidade_dados_audit_2026-09-24.md § A4).
 
     Dedup is TWO-staged, because re-downloads replace whole chunks: ingestion
     lands one (year × reporter-batch) chunk per Bronze load, every row sharing

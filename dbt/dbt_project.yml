@@ -162,18 +162,20 @@ vars:
   # threshold work — without it, tiny-municipality rounding over-flagged PAM/PPM at ~2%.
   # Set false to revert to the legacy 4-value flag (compiled byte-identical).
   #
-  # Problemático rows on prod, measured 2026-09-24 (rows / share of ALL Gold rows):
-  # PAM 4 (0,0002%) · PEVS 20 (0,0015%) · PPM 1 · COMEX 20 (0,005%) · COMTRADE 2.986 (0,145%),
-  # overwhelmingly weight=1 placeholders. This comment carried the 2026-06-26 rates until
-  # v1.89.0 (PEVS 0.003% / COMEX 0.19% / PAM 0.03% / PPM 0.002% / COMTRADE 0.43%); they no
-  # longer reproduce — 1 to 2 orders of magnitude off — and the cause was not investigated.
-  # A calibration record is only worth its date: re-measure with the queries in
+  # Problemático rows with the v1.90.0 detector (IGP-DI scoring, floor on the expected value),
+  # measured 2026-09-24 on a dev build over prod Silver (rows / share of ALL Gold rows):
+  # PAM 6 (0,0002%) · PEVS 30 (0,0022%) · PPM 1 · COMEX 25 (0,006%) · COMTRADE 4.016 (0,195%).
+  # Under v1.89.0 they were 4 / 20 / 1 / 20 / 2.986. This comment carried the 2026-06-26 rates
+  # until v1.89.0 (PEVS 0.003% / COMEX 0.19% / PAM 0.03% / PPM 0.002% / COMTRADE 0.43%); they
+  # no longer reproduced and the cause was not investigated. A calibration record is only
+  # worth its date: re-measure with the queries in
   # docs/audits/qualidade_dados_audit_2026-09-24.md before quoting a rate.
   enable_quality_outliers: true
   quality_price_k: 100        # implied price >price_k× or <1/price_k× the product median = typo
   quality_outlier_k: 4.0      # magnitude log-fence for the OUTLIER (valid-but-large) tier
   quality_min_obs: 100        # per-product sample floor — fewer rows ⇒ never flag (untrustworthy)
-  quality_value_floor: 100000 # skip rows below this (deflated BRL / USD) — low-stakes rounding noise
+  quality_value_floor: 100000 # skip rows whose value AND expected value (qty × median price) are
+                              # both below this (deflated BRL / USD) — low-stakes rounding noise
   # Which rows the detector could NOT score get their own flag instead of falling into 'OK'
   # (macros/quality_outlier_ctes.sql · quality_scored). 'all' marks EVERY guard-blocked row:
   # value absent (the deflator gap), value/qty non-positive (the empty cube cells), and the

@@ -1,12 +1,13 @@
 # Auditoria da lógica de qualidade dos dados — 2026-09-24 (v1.88.8)
 
-> **STATUS — PARCIALMENTE CORRIGIDO.** A1, A3, A6, A7, A8, A9 e A10 foram corrigidos na
-> v1.89.0, no mesmo PR que trouxe este relatório, **sem mudar nenhuma tag no Gold** (provado
-> abaixo, em § Verificação). A2, A4 e A5 mudam tags e foram **aprovados pelo mantenedor em
-> 2026-09-24 para um PR seguinte**, separado de propósito: o primeiro PR tinha que deixar o
-> Gold idêntico, e só assim isso pode ser verificado; o segundo muda tags de propósito, e o
-> diff dele se mede contra os contrafactuais deste relatório. Juntos, um mascararia o outro.
-> As MEDIÇÕES são o retrato de 2026-09-24.
+> **STATUS — HISTORICAL: todos os dez achados foram corrigidos, em duas versões.** A1, A3,
+> A6, A7, A8, A9 e A10 na v1.89.0, no PR que trouxe este relatório, **sem mudar nenhuma tag
+> no Gold** (§ Verificação da v1.89.0). A2, A4 e A5 mudam tags, foram aprovados pelo
+> mantenedor em 2026-09-24 e entraram na v1.90.0, num PR separado de propósito: o primeiro
+> tinha que deixar o Gold idêntico, e só assim isso pode ser verificado; o segundo muda tags
+> de propósito, e o diff dele bateu, transição por transição, com o contrafactual medido
+> antes de escrever o código (§ Verificação da v1.90.0). Juntos, um mascararia o outro.
+> As MEDIÇÕES dos achados são o retrato de 2026-09-24, antes das correções.
 
 Auditoria pedida sobre **a lógica que decide a qualidade de cada linha do acervo**, com dois
 objetivos: achar erros, bugs e inconsistências, e explicar como a lógica é construída, quais
@@ -36,6 +37,11 @@ ela são confiáveis.
 ---
 
 ## Como a lógica é construída
+
+> Descrição da lógica como ela estava na v1.88.8, quando a auditoria foi feita. Desde a
+> v1.90.0: o IBGE escora `val_real_igpdi_brl` (não mais o IPCA); o piso testa
+> `greatest(valor, quantidade × preço mediano)` (não mais só o valor); e o COMTRADE emite
+> `MISSING_WEIGHT` antes da cascata, para todo valor sem peso. O resto segue como abaixo.
 
 ### O detector
 
@@ -176,9 +182,16 @@ COUNTIF(v > 0 AND v < 100000 AND q > 0 AND n >= 100
         AND dev <= -LN(100) AND EXP(med_p) * q >= 100000)
 ```
 
-**Aprovado para o PR seguinte:** a guarda passa a testar
-`greatest(valor, quantidade × exp(mediana de ln preço))` contra o piso, ou seja, "material
-por qualquer das duas medidas". O comentário da macro já descreve o lado cego.
+**Corrigido na v1.90.0:** a guarda testa `greatest(valor, quantidade × exp(mediana de ln
+preço))` contra o piso, ou seja, "material por qualquer das duas medidas". Efeito medido:
+1.030 `PROBLEMATIC` novos no COMTRADE (756 na quantidade, 274 no valor), 11 no PEVS, 5 no
+COMEX, 2 na PAM. **E um efeito maior, que não estava no enunciado do achado:** o piso novo
+também examina linhas legítimas — valor pequeno com quantidade material, preço abaixo da
+mediana mas dentro de 100× — que ficavam `UNSCORED` e agora são, quase todas, `OK`: PAM
+37.636, PEVS 25.179, PPM 17.997, COMEX 13.349, COMTRADE 77.053. O ruído de arredondamento
+que o piso existe para barrar não volta com elas: arredondar um valor pequeno move o preço
+por uma fração, nunca pelos 100× que PROBLEMÁTICO exige, e os números acima (11 no PEVS,
+0 na PPM) mostram isso.
 
 ## 🟠 A3 — As legendas descreviam o que o detector não faz
 
@@ -198,7 +211,9 @@ COUNTIF(f LIKE 'OUTLIER%' AND ABS(dev) >= LN(10))               -- atípico com 
 ```
 
 **Corrigido na v1.89.0:** as legendas dizem "mais de 100× acima ou abaixo", nomeiam o caso
-típico (quantidade abaixo) e dizem que "dentro de 100×" é uma faixa larga.
+típico (quantidade abaixo) e dizem que "dentro de 100×" é uma faixa larga. Com o piso da
+v1.90.0 (A2), os novos casos do COMTRADE são pesos com dígitos a mais, e a fração abaixo da
+mediana caiu para **57% (1.359 de 2.401)**; a legenda passou a dizer "pouco mais da metade".
 
 ## 🟡 A4 — Comércio sem peso: a mesma situação ganha três tags
 
@@ -216,19 +231,27 @@ FROM `embrapa-dashboard-commodities.gold.gold_comtrade_flows` GROUP BY 1
 -- → MISSING_QUANTITY 25.638 / 8.932 · UNSCORED 53.898 / 24.159
 ```
 
-**Corrigido na v1.89.0 (texto):** a legenda de `UNSCORED` ganhou o 5º motivo e a de
-`MISSING_WEIGHT` diz onde o COMTRADE põe essas linhas. **Aprovado para o PR seguinte
-(tags):** o COMTRADE emite `MISSING_WEIGHT` quando há valor e o peso é nulo.
+**Corrigido na v1.89.0 (texto)** — a legenda de `UNSCORED` ganhou o motivo que faltava — **e
+na v1.90.0 (tags):** o COMTRADE emite `MISSING_WEIGHT` quando há valor e o peso é nulo, antes
+da cascata, sob o mesmo gate da taxonomia Q1. As 79.536 linhas saem de `MISSING_QUANTITY`
+(25.638) e `UNSCORED` (53.898); 91,8% delas são do capítulo 44 (madeira, quantidade em outras
+unidades). `MISSING_QUANTITY` deixa de ocorrer no COMTRADE. O peso "0" do COMEX (2.633 linhas,
+`UNSCORED`) ficou como está: não estava no escopo aprovado, e a divergência está anotada no
+Silver do COMTRADE.
 
 ## 🟡 A5 — O detector do IBGE escora pelo IPCA, que começa em 1980
 
 213.336 linhas da PAM e 142.308 da PPM (1974–1979) são `UNSCORED` por construção. Pelo
 IGP-DI, 109.475 + 48.735 delas passariam do piso e seriam examinadas.
 
-**Aprovado para o PR seguinte:** as três macros escoram `val_real_igpdi_brl` em todos os anos
-(um índice só na janela; misturar IPCA e IGP-DI distorceria a mediana), o teste
-`test_ibge_q1_scores_on_deflated_value_not_nominal` passa a exigir o IGP-DI, e as legendas
-que citam "antes de 1980" mudam junto.
+**Corrigido na v1.90.0:** as três macros escoram `val_real_igpdi_brl` em todos os anos (um
+índice só na janela; misturar IPCA e IGP-DI distorceria a mediana), e
+`test_ibge_q1_scores_on_deflated_value_not_nominal` exige o IGP-DI nas quatro chamadas. Efeito
+medido nas linhas que deixam de ser `UNSCORED`: 109.837 da PAM e 48.773 da PPM por causa da
+lacuna do IPCA, e mais 39.552 / 20.596 / 19.605 (PAM / PPM / PEVS) porque o valor corrigido
+pelo IGP-DI é maior que pelo IPCA e cruza o piso de R$ 100 mil. Trocar o índice também move
+as medianas, e algumas centenas de linhas por banco trocam entre `OK`, `OUTLIER_VALUE` e
+`OUTLIER_QUANTITY` (PAM: 363 atípicos viram `OK` e 205 `OK` viram atípicos, por exemplo).
 
 ## 🟡 A6 — As taxas de calibração documentadas não se reproduziam
 
@@ -357,3 +380,33 @@ COMEX e do COMTRADE também; só o do IBGE muda, para os valores de A1 (PAM `UNS
 Os testes novos foram rodados contra o `dbt/` da v1.88.8 e **falham lá** (5 de 7; os outros
 2 são as janelas do PEVS e do PPM, que já tinham `tabela`), então guardam o que dizem
 guardar.
+
+## Verificação da v1.90.0
+
+A v1.90.0 muda tags de propósito, então a prova é outra: **antes** de escrever o código, a
+reconstrução de § Método foi rodada com as três mudanças (IGP-DI, piso pelo valor esperado,
+`MISSING_WEIGHT` no COMTRADE) sobre o Gold de prod, dando uma matriz "tag antiga → tag nova"
+por banco. Depois, o build de dev dos mesmos seis modelos (mesmo `--defer --favor-state` sobre
+o Silver de prod) foi comparado com o prod linha a linha, juntando pela chave de cada Gold.
+
+**As 37 transições bateram uma a uma com a matriz prevista**, e nenhuma linha ficou sem par
+(nenhuma criada, nenhuma perdida). Build: 112 PASS, 2 WARN (os de sempre), 0 ERROR. As
+maiores transições:
+
+| banco | `UNSCORED` → `OK` | outras |
+|---|---|---|
+| PAM | 186.667 | 612 `OK` → `UNSCORED`; ~1.300 entre `OK` e atípicos; 2 → `PROBLEMATIC_VALUE` |
+| PEVS | 44.773 | 365 `OK` → `UNSCORED`; 11 → `PROBLEMATIC_*`; 1 `PROBLEMATIC_VALUE` → `OK` |
+| PPM | 86.558 | 346 `OK` → `UNSCORED`; ~2.400 entre `OK` e atípicos |
+| COMEX | 12.854 | 490 → atípicos; 5 → `PROBLEMATIC_*` |
+| COMTRADE | 76.023 | 79.536 → `MISSING_WEIGHT`; 1.030 → `PROBLEMATIC_*` |
+
+O donut depois da v1.90.0 (mart de dev, 2026-09-24):
+
+| banco | `UNSCORED` linhas / valor | valor examinado | `PROBLEMATIC_*` no Gold |
+|---|---|---|---|
+| PAM | 58,9% / 0,06% | 99,9% | 6 |
+| PPM | 84,7% / 0,16% | 99,8% | 1 |
+| PEVS | 78,4% / 0,43% | 99,6% | 30 |
+| COMEX | 61,8% / 0,39% | 99,6% | 25 |
+| COMTRADE | 58,3% / 0,19% (+ `MISSING_WEIGHT` 3,83%) | 96,0% | 4.016 |

@@ -420,13 +420,13 @@ The flags the macro emits (the frontend color map must cover **these**). The las
 |---|---|---|
 | `OK` | has quantity + value, and the detector EXAMINED the row and found the implied price plausible | all |
 | `MISSING_VALUE` | quantity but no monetary value | all |
-| `MISSING_QUANTITY` | value but no quantity (common in COMTRADE ch.44) | PEVS, COMTRADE |
-| `MISSING_WEIGHT` | value but no net weight | COMEX |
+| `MISSING_QUANTITY` | value but no quantity (0 rows today: IBGE absences blank the whole cell and are dropped; trade marks the missing weight) | PEVS, PAM, PPM, COMTRADE (legacy flag) |
+| `MISSING_WEIGHT` | value but no net weight — the detector prices trade per kilo (COMTRADE since v1.90.0: 79.536 rows, 92% chapter 44) | COMEX, COMTRADE |
 | `INCOMPLETE` | neither | all |
 | `OUTLIER_VALUE` / `OUTLIER_QUANTITY` | high-magnitude but price-consistent — a valid large value | all (gated) |
 | `PROBLEMATIC_VALUE` / `PROBLEMATIC_QUANTITY` | implied price >100× or <1/100× the product median ⇒ likely typo | all (gated) |
 | `INFERRED_QUANTITY` / `INFERRED_VALUE` | **reserved** auto-fill tiers (accepted-but-absent) — plumbed through `contracts.js` / `_gold.yml` but always 0 today; no Gold CASE emits them yet | all (gated) |
-| `UNSCORED` | the detector had **no basis to examine** the row: value/qty non-positive (a measured zero — SIDRA's `-`), below the materiality floor, value absent (the deflator gap), fewer than `quality_min_obs` rows for the product, or (PPM herd) a stock that has no price to score at all. **Not a defect** — until v1.49.0 these fell into `OK` and were indistinguishable from rows actually cleared (PAM: only 33,6% of `OK` had been scored). Display it as "Não avaliada", never as damage | all (gated) |
+| `UNSCORED` | the detector had **no basis to examine** the row: value/qty non-positive (a measured zero — SIDRA's `-`, or a COMEX weight of 0), small by both measures (value and quantity × median price below the materiality floor), fewer than `quality_min_obs` rows for the product, or (PPM herd) a stock that has no price to score at all. (Until v1.90.0 also "value absent": PAM/PPM 1974–1979, before the IPCA the IBGE detector scored on; it scores on IGP-DI now.) **Not a defect** — until v1.49.0 these fell into `OK` and were indistinguishable from rows actually cleared (PAM: only 33,6% of `OK` had been scored). Display it as "Não avaliada", never as damage | all (gated) |
 
 ### 7.3 `region` — Gold is full names
 Gold `region` ∈ {Norte, Nordeste, Centro-Oeste, Sudeste, Sul}. The brief's `ufData`
