@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.88.3] - 2026-09-23
+
+Higiene de dependências, parte 3: o Dependabot **nunca atualizou uma dependência Python**.
+
+### Corrigido
+- **`.github/dependabot.yml`: o updater Python passa de `pip` para `uv`.** O ecossistema
+  `pip` não lê o `uv.lock`. Ele só olha as faixas do `pyproject.toml` (`dbt-core>=1.8`,
+  `google-auth…`), abertas para cima, que nunca ficam para trás. Por isso rodava toda
+  semana, terminava em "success" e **não abriu um único PR de Python na vida**: medido em
+  2026-09-23, os dois únicos PRs com "python" no histórico (#159, #160) eram da imagem
+  Docker. Só um humano movia o lock, e foi assim que os cinco pacotes indiretos
+  vulneráveis da v1.88.2 se acumularam sem aviso. As atualizações de segurança do GitHub,
+  ligadas no mesmo dia, já usam o ecossistema `uv`: a primeira (#476) chegou em minutos.
+  O grupo `python` (minor/patch) e o prefixo `build` não mudam.
+- **Efeito esperado no primeiro ciclo:** um PR agrupado grande, porque é a primeira vez
+  que as dependências Python são atualizadas automaticamente. Ele deve ser revisado como
+  qualquer PR do grupo: CI verde, e atenção redobrada a `google-*`, `dbt-*` e `pandas*`,
+  que tocam o build de produção e a autenticação.
+
+---
+
 ## [1.88.2] - 2026-09-23
 
 Higiene de dependências, parte 2: auditoria das duas árvores com as versões TRAVADAS
