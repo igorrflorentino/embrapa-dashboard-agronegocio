@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.92.1] - 2026-09-24
+
+O bloco "O que significa cada flag?" da tela de Qualidade ficou mais fácil de ler e deixou de
+desperdiçar espaço.
+
+### Alterado
+- **Os textos das 14 marcas foram reescritos em linguagem simples**, como parágrafo corrido,
+  sem travessões e sem listas com dois-pontos. Saíram termos como "preço implícito",
+  "mediana" e "piso de materialidade"; no lugar entram "preço por unidade", "preço típico do
+  produto" e "registro pequeno demais". O conjunto encolheu de 1.067 para 684 palavras, e a
+  explicação mais longa ("Não avaliada") caiu de 180 para 90, o que deixa os tamanhos mais
+  parecidos. Um teste impede que um travessão ou dois-pontos volte a uma legenda.
+- **As marcas foram organizadas em quatro grupos**, cada um com um título: "Conferidas pelo
+  sistema", "Sem como conferir", "Dados que faltam ou não batem na fonte" e "Reservadas para
+  o futuro". Uma frase de introdução explica o que as marcas dizem.
+  - Os grupos vêm de `window.QUALITY_FLAG_GROUPS` (`data.js`), e um teste exige que cada marca
+    esteja em exatamente um grupo.
+  - Uma marca que nenhum grupo liste aparece em "Outras marcas", em vez de sumir da legenda.
+- **Colunas de fluxo contínuo no lugar da grade de duas colunas.** Na grade, os dois itens de
+  uma mesma linha dividiam a altura, e um parágrafo curto ao lado de um longo deixava um vão
+  embaixo. Agora cada item encaixa logo abaixo do anterior. Medido no navegador: 12 px entre
+  itens, 24 px entre grupos e nenhum vão no meio. No celular, fica uma coluna só.
+
+---
+
 ## [1.92.0] - 2026-09-24
 
 Um segundo detector de qualidade, que olha a **série no tempo** em vez do preço. O caso que o

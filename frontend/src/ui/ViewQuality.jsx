@@ -56,6 +56,23 @@ function ViewQuality({ summary, database }) {
   // + the always-on legend panel below. Empty string when a flag has no desc.
   const flagDesc = (id) => (window.QUALITY_FLAGS.find(x => x.id === id) || {}).desc || '';
 
+  // The legend's groups (QUALITY_FLAG_GROUPS in data.js) resolved to registry entries. A flag
+  // that no group lists lands in a trailing "Outras marcas" group instead of vanishing from
+  // the one place that explains every flag.
+  const legendGroups = (() => {
+    const byId = new Map(window.QUALITY_FLAGS.map(f => [f.id, f]));
+    const listed = new Set();
+    const groups = (window.QUALITY_FLAG_GROUPS || [])
+      .map(g => ({
+        title: g.title,
+        flags: g.ids.map(id => { listed.add(id); return byId.get(id); }).filter(Boolean),
+      }))
+      .filter(g => g.flags.length > 0);
+    const rest = window.QUALITY_FLAGS.filter(f => !listed.has(f.id));
+    if (rest.length > 0) groups.push({ title: 'Outras marcas', flags: rest });
+    return groups;
+  })();
+
   const flagSet = new Set(flags.map(f => f.id));
   // Restrict per-product breakdown to selected products AND selected flags.
   // We zero out unselected flag columns and re-normalize each row.
@@ -140,18 +157,29 @@ function ViewQuality({ summary, database }) {
           <span>O que significa cada flag?</span>
           <span className="caption">{window.QUALITY_FLAGS.length} marcas de qualidade</span>
         </summary>
+        <p className="qa-flag-legend-intro">
+          Cada linha da base recebe uma destas marcas. Elas dizem se o sistema conseguiu
+          conferir o registro e, quando conseguiu, o que encontrou.
+        </p>
+        {/* Fluxo em colunas (CSS columns), não grade: numa grade, os dois itens de uma linha
+            dividem a mesma altura, e o parágrafo curto ao lado de um longo deixava um vão. */}
         <div className="qa-flag-legend-grid">
-          {window.QUALITY_FLAGS.map(f => (
-            <div key={f.id} className="qa-flag-legend-item">
-              <span className="qa-dot" style={{ background: f.color }}></span>
-              <div className="qa-flag-legend-text">
-                <span className="qa-flag-legend-label">
-                  {f.label}
-                  {f.reserved && <span className="qa-flag-legend-badge">reservada</span>}
-                </span>
-                <span className="qa-flag-legend-desc caption">{f.desc}</span>
-              </div>
-            </div>
+          {legendGroups.map(g => (
+            <React.Fragment key={g.title}>
+              <h4 className="qa-flag-legend-group">{g.title}</h4>
+              {g.flags.map(f => (
+                <div key={f.id} className="qa-flag-legend-item">
+                  <span className="qa-dot" style={{ background: f.color }}></span>
+                  <div className="qa-flag-legend-text">
+                    <span className="qa-flag-legend-label">
+                      {f.label}
+                      {f.reserved && <span className="qa-flag-legend-badge">reservada</span>}
+                    </span>
+                    <span className="qa-flag-legend-desc caption">{f.desc}</span>
+                  </div>
+                </div>
+              ))}
+            </React.Fragment>
           ))}
         </div>
       </details>

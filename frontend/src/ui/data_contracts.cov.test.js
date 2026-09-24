@@ -41,6 +41,14 @@ describe('data.js — registries', () => {
       'INFERRED_QUANTITY',
       'INFERRED_VALUE',
     ]);
+    // every flag sits in EXACTLY one legend group, and no group names an unknown flag
+    const grouped = window.QUALITY_FLAG_GROUPS.flatMap((g) => g.ids);
+    expect(new Set(grouped).size).toBe(grouped.length);
+    expect([...grouped].sort()).toEqual(window.QUALITY_FLAGS.map((f) => f.id).sort());
+    // the legend reads as plain running prose: no em dashes, no colon-led lists
+    for (const f of window.QUALITY_FLAGS) {
+      expect(f.desc, f.id).not.toMatch(/—|:/);
+    }
   });
 });
 
