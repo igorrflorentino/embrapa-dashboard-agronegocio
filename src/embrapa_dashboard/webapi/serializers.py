@@ -29,7 +29,7 @@ from . import measures
 
 # Sentinel so a genuine "no release date" (None) is cached instead of re-read forever.
 _UNRESOLVED = object()
-_APP_RELEASE_LABEL: str | None | object = _UNRESOLVED
+_APP_RELEASE_LABEL: str | object | None = _UNRESOLVED
 
 # Gold timestamps are UTC; the dashboard provenance stamp is displayed in
 # Brasília time (e.g. "28 mai 2026 · 04:30 BRT").

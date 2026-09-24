@@ -54,6 +54,7 @@ Tests use the `responses` library to mock HTTP clients. Pattern:
 import responses
 import pytest
 
+
 @responses.activate
 def test_something():
     responses.add(
