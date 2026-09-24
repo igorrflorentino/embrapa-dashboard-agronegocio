@@ -1639,8 +1639,10 @@ def quality_by_source(
     """data_quality_flag breakdown from ``serving_quality_by_source`` (backs quality).
 
     ``value_share`` weights the same breakdown by MONEY. It exists because the row
-    count alone misleads: measured on prod 2026-09-07, PEVS is 81,6% UNSCORED by rows
-    and 0,7% by value.
+    count alone misleads: measured on prod 2026-09-24, PEVS is 81,7% UNSCORED by rows
+    and 0,7% by value. (PAM and PPM are 8,98% / 10,38% UNSCORED by value: their
+    1974–1979 rows predate the IPCA the detector scores on. The mart weights IBGE by
+    IGP-DI so that those rows count; see ``serving_quality_by_source.sql``.)
     """
     conditions: list[str] = []
     params: list = []

@@ -237,9 +237,11 @@ models:
     description: |
       data_quality_flag breakdown per source (id, count, share, value_share) for the
       quality donut. Tiny pre-counted table; both shares sum to 1 within each source.
-      `value_share` weights the same breakdown by MONEY — measured on prod 2026-09-07,
-      PEVS is 81,6% UNSCORED by rows and 0,7% by value, so the row count alone reads as
-      an alarm the subject does not justify.
+      `value_share` weights the same breakdown by MONEY — measured on prod 2026-09-24,
+      PEVS is 81,7% UNSCORED by rows and 0,7% by value, so the row count alone reads as
+      an alarm the subject does not justify. PAM and PPM are the exception: their
+      1974–1979 rows predate the IPCA the detector scores on, and hold 8,98% / 10,38% of
+      the value (measured by IGP-DI, 2026-09-24).
     tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
@@ -272,6 +274,9 @@ models:
       - name: value_share
         description: >
           Monetary weight of the flag: the flag's value ÷ the source total, summing to 1
-          within a source. The value column differs per banco (BRL for IBGE, USD for
-          trade) and that is fine — this is a ratio WITHIN a source, never compared
-          across them. NULL when a source's total value is zero (no base for a fraction).
+          within a source. The value column differs per banco (IGP-DI-deflated BRL for
+          IBGE, nominal USD for trade) and that is fine — this is a ratio WITHIN a source,
+          never compared across them. IBGE is weighted by IGP-DI, not IPCA, because the
+          weight must exist for every valued row: IPCA starts in 1980, and weighting by it
+          priced the 1974–1979 rows (the very rows the detector cannot examine) at R$ 0
+          until v1.89.0. NULL when a source's total value is zero (no base for a fraction).

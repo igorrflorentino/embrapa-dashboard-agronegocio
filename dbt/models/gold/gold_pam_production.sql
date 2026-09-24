@@ -213,7 +213,11 @@ from {% if var('enable_quality_outliers', false) -%}
     select e.*,
 {{ quality_scored_bounds('val_real_ipca_brl', 'qty_native') }}
     from enriched e
-    window _qw as (partition by product_code, family)
+    -- The produto's identity (banco, tabela, código) + family — the same window as
+    -- gold_pevs_production / gold_ppm_production. PAM has one table, so `tabela` changes no
+    -- number here; it is here so the three IBGE windows are one shape and none is correct
+    -- only by accident.
+    window _qw as (partition by product_code, tabela, family)
 ) enriched
 {%- else -%}
 enriched

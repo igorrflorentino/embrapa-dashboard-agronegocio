@@ -188,25 +188,25 @@ window.UF_DATA = [
 // Quality dimension — flag taxonomy (id → label + colour). The per-flag
 // COUNTS come from the API (snapshot.quality); this is just the display map.
 // ────────────────────────────────────────────────────────────────────
-// The REAL Gold data_quality_flag taxonomy (dbt/macros/data_quality_flag.sql
-// emits OK/MISSING_VALUE/MISSING_QUANTITY/INCOMPLETE for PEVS/PAM/COMTRADE; the
-// COMEX inline CASE in gold_comex_flows.sql adds MISSING_WEIGHT). Labels mirror
-// the backend's _FLAG_LABEL_PT (serializers.py) so the donut/legend stays pt-BR.
-// The earlier ESTIMATED/BOUNDARY_HISTORIC/OUTLIER ids were the prototype's
-// synthetic taxonomy — Gold never emits them, and listing them here silently
-// dropped the real INCOMPLETE/MISSING_WEIGHT rows out of the quality charts and
-// the quality filter. Keep this in sync with serializers._FLAG_LABEL_PT.
+// The REAL Gold data_quality_flag taxonomy: dbt/macros/data_quality_flag.sql (the
+// cascade) + dbt/macros/quality_outlier_ctes.sql (the implied-price detector, ON in
+// prod via enable_quality_outliers), plus two per-banco extras — MISSING_WEIGHT in the
+// COMEX inline CASE and AREA_INCONSISTENT in gold_pam_production. Labels mirror the
+// backend's _FLAG_LABEL_PT (serializers.py) so the donut/legend stays pt-BR.
+// The earlier ESTIMATED/BOUNDARY_HISTORIC/OUTLIER ids were the prototype's synthetic
+// taxonomy — Gold never emits them, and listing them here silently dropped real rows out
+// of the quality charts and the quality filter. Keep this in sync with
+// serializers._FLAG_LABEL_PT.
 // Labels follow the "Contrato de Dados" spreadsheet's pt-BR "Qualidade dos dados"
-// wording: the healthy row is "Normais" (not the English "OK"); the missing-value
-// rung is split quantidade vs financeiro. The outlier/problemático tiers are emitted
-// by Gold only when the dbt var enable_quality_outliers is on (implied-price detection,
-// data_quality_flag.sql + quality_outlier_ctes.sql) — off by default, so they're
-// accepted-but-absent until an operator validates per source. The Sheet's "inferidos"
-// (auto-preenchido) tier is RESERVED for a future auto-fill pipeline: the two INFERRED_*
-// flags below are accepted-but-absent (render 0 today, exactly like a Gold flag with no
-// rows), so the structure is ready when such a pipeline is built — nothing emits them yet.
-// `desc` is the plain-pt-BR legend shown in the Qualidade window ("O que significa cada flag?").
-// Keep labels + desc in sync with serializers._FLAG_LABEL_PT.
+// wording: the healthy row is "Normais" (not the English "OK"); the missing-value rung is
+// split quantidade vs financeiro. The Sheet's "inferidos" (auto-preenchido) tier is
+// RESERVED for a future auto-fill pipeline: the two INFERRED_* flags below are
+// accepted-but-absent (render 0 today, exactly like a Gold flag with no rows).
+// `desc` is the plain-pt-BR legend shown in the Qualidade window ("O que significa cada
+// flag?"). Every claim in a `desc` was checked against the detector's SQL and measured on
+// prod in docs/audits/qualidade_dados_audit_2026-09-24.md — until v1.89.0 the
+// PROBLEMATIC_QUANTITY legend said "bem acima do esperado" while 83% of those rows were
+// BELOW it. Re-measure before changing a number here.
 window.QUALITY_FLAGS = [
   { id: 'OK',                   label: 'Normais',                                 color: 'var(--ok)',     desc: 'Todas as dimensões do registro (quantidade e valor) estão preenchidas, e o detector de preço implícito EXAMINOU a linha e não encontrou nada fora do esperado. É uma afirmação estreita e literal: só recebe esta marca a linha que o detector conseguiu examinar. O que ele não pôde examinar fica em "Não avaliada", e o que ele examinou e marcou fica nas marcas de atípico ou problemático.' },
   // A distinção que faltava: "examinada e aprovada" ≠ "nunca examinada". Até a v1.49.0
@@ -215,15 +215,15 @@ window.QUALITY_FLAGS = [
   // A descrição enumera os MOTIVOS porque a versão anterior citava só a lacuna do
   // deflator — 12,8% dos casos na PAM, medido em 2026-09-08. O motivo dominante (70%)
   // é o zero medido, e a legenda oficial "o que significa cada flag" não o mencionava.
-  { id: 'UNSCORED',             label: 'Não avaliada',                            color: 'var(--fg-4)',   desc: 'O detector de preço implícito não teve base para examinar esta linha. São quatro situações: (1) o município mediu produção ZERO no ano — o "-" do IBGE, um zero de verdade, e sem quantidade não há preço a conferir; (2) o valor está abaixo do piso de materialidade (R$ 100 mil / US$ 100 mil), onde o arredondamento domina o preço; (3) o valor deflacionado não existe para o ano (antes de 1980 na PAM/PPM, que o IPCA não alcança); (4) o produto tem menos de 100 observações, amostra pequena demais para confiar na mediana. No rebanho (efetivo, em cabeças) o motivo é estrutural: um estoque não tem valor, logo não tem preço. Não é um defeito do registro — é a ausência de base para avaliá-lo. Distinta de "Normais", que significa examinada e aprovada. Costuma ser a marca da MAIORIA das linhas e de quase nada do valor: no PEVS, 81,7% das linhas e 0,7% do dinheiro.' },
-  { id: 'MISSING_VALUE',        label: 'Valor financeiro ausente',                color: 'var(--warn)',   desc: 'O valor financeiro do registro (FOB, vendas, faturamento, etc.) veio em branco na fonte; a quantidade existe.' },
-  { id: 'MISSING_QUANTITY',     label: 'Quantidade ausente',                      color: 'var(--info)',   desc: 'A quantidade do registro (m³, kg, saca, cabeças, etc.) veio em branco na fonte; o valor existe.' },
-  { id: 'MISSING_WEIGHT',       label: 'Peso ausente',                            color: 'var(--viz-4)',  desc: 'Registro de comércio exterior sem peso líquido — impede o cálculo de preço médio por quilo (US$/kg).' },
+  { id: 'UNSCORED',             label: 'Não avaliada',                            color: 'var(--fg-4)',   desc: 'O detector de preço implícito não teve base para examinar esta linha. São cinco situações: (1) o município mediu produção ZERO no ano — o "-" do IBGE, um zero de verdade, e sem quantidade não há preço a conferir; (2) o valor está abaixo do piso de materialidade (R$ 100 mil / US$ 100 mil), onde o arredondamento domina o preço; (3) o valor deflacionado não existe para o ano (antes de 1980 na PAM/PPM, que o IPCA não alcança); (4) o produto tem menos de 100 observações, amostra pequena demais para confiar na mediana; (5) no comércio exterior, o registro tem valor mas não tem peso líquido (ou o peso é zero), e o preço é conferido em US$/kg. No rebanho (efetivo, em cabeças) o motivo é estrutural: um estoque não tem valor, logo não tem preço. Não é um defeito do registro — é a ausência de base para avaliá-lo. Distinta de "Normais", que significa examinada e aprovada. Costuma ser a marca da MAIORIA das linhas e de pouco do valor: no PEVS, 81,7% das linhas e 0,7% do dinheiro. Na PAM e na PPM a fração do valor é maior, cerca de 9% e 10%, porque os anos de 1974 a 1979 ficam inteiros de fora pelo motivo (3).' },
+  { id: 'MISSING_VALUE',        label: 'Valor financeiro ausente',                color: 'var(--warn)',   desc: 'O valor financeiro do registro (FOB, vendas, faturamento, etc.) veio em branco na fonte; a quantidade existe. Nas pesquisas do IBGE esta marca não aparece: quando o SIDRA não tem o dado ("..."), falta a célula inteira — quantidade e valor juntos — e a linha não entra no acervo. Na PAM, em geral é um município que ainda não existia no ano, ou um produto que a pesquisa não cobria naquele ano; no PEVS, um município sem nenhum dado de extração no ano.' },
+  { id: 'MISSING_QUANTITY',     label: 'Quantidade ausente',                      color: 'var(--info)',   desc: 'A quantidade do registro (m³, kg, saca, cabeças, etc.) veio em branco na fonte; o valor existe. Na prática aparece no COMTRADE: registros com valor e sem quantidade nem peso líquido.' },
+  { id: 'MISSING_WEIGHT',       label: 'Peso ausente',                            color: 'var(--viz-4)',  desc: 'Registro de comércio exterior sem peso líquido — impede o cálculo de preço médio por quilo (US$/kg). Só o COMEX usa esta marca. No COMTRADE, o registro sem peso aparece como "Quantidade ausente" (quando também não tem quantidade) ou "Não avaliada" (quando tem quantidade em outra unidade).' },
   { id: 'INCOMPLETE',           label: 'Incompleto',                              color: 'var(--viz-7)',  desc: 'O registro veio sem quantidade e sem valor — não há grandeza mensurável para analisar.' },
-  { id: 'OUTLIER_QUANTITY',     label: 'Quantidade atípica (válida)',             color: 'var(--viz-3)',  desc: 'Quantidade bem acima do esperado, mas com preço implícito coerente — considerada válida, não um erro.' },
-  { id: 'PROBLEMATIC_QUANTITY', label: 'Quantidade problemática (provável erro)', color: 'var(--viz-9)',  desc: 'Quantidade bem acima do esperado e com preço implícito (valor÷quantidade) muito fora da mediana do produto — provável erro de digitação ou inserção.' },
-  { id: 'OUTLIER_VALUE',        label: 'Valor atípico (válido)',                  color: 'var(--viz-5)',  desc: 'Valor financeiro bem acima do esperado, mas com preço implícito coerente — considerado válido, não um erro.' },
-  { id: 'PROBLEMATIC_VALUE',    label: 'Valor problemático (provável erro)',      color: 'var(--err)',    desc: 'Valor financeiro bem acima do esperado e com preço implícito muito fora da mediana do produto — provável erro de digitação ou inserção.' },
+  { id: 'OUTLIER_QUANTITY',     label: 'Quantidade atípica (válida)',             color: 'var(--viz-3)',  desc: 'Quantidade muito acima do que o produto costuma registrar, com preço implícito (valor÷quantidade) dentro de 100× da mediana do produto — por isso tratada como um número grande de verdade, não como erro. Duas ressalvas. "O que o produto costuma registrar" é medido sobre TODA a história do produto, então a marca acompanha a tendência: um produto que cresceu tem mais atípicos nos anos recentes. E "dentro de 100×" é uma faixa larga: parte dos atípicos tem preço 10× ou mais fora da mediana e merece um olhar antes de servir de referência.' },
+  { id: 'PROBLEMATIC_QUANTITY', label: 'Quantidade problemática (provável erro)', color: 'var(--viz-9)',  desc: 'O preço implícito (valor÷quantidade) está mais de 100× acima ou abaixo da mediana do produto, e a quantidade é a medida mais fora do padrão — provável erro de digitação ou inserção. Na maioria dos casos a quantidade está ABAIXO do esperado: o caso típico é o peso lançado como 1 kg numa carga de alto valor.' },
+  { id: 'OUTLIER_VALUE',        label: 'Valor atípico (válido)',                  color: 'var(--viz-5)',  desc: 'Valor financeiro muito acima do que o produto costuma registrar, com preço implícito (valor÷quantidade) dentro de 100× da mediana do produto — por isso tratado como um número grande de verdade, não como erro. Duas ressalvas. "O que o produto costuma registrar" é medido sobre TODA a história do produto, então a marca acompanha a tendência: um produto que cresceu tem mais atípicos nos anos recentes. E "dentro de 100×" é uma faixa larga: parte dos atípicos tem preço 10× ou mais fora da mediana e merece um olhar antes de servir de referência.' },
+  { id: 'PROBLEMATIC_VALUE',    label: 'Valor problemático (provável erro)',      color: 'var(--err)',    desc: 'O preço implícito (valor÷quantidade) está mais de 100× acima ou abaixo da mediana do produto, e o valor é a medida mais fora do padrão — provável erro de digitação ou inserção, como um valor com dígitos a mais. Um valor que PERDEU dígitos tende a cair abaixo do piso de materialidade e aparece como "Não avaliada", não aqui.' },
   // PAM-only: a SIDRA source error preserved faithfully and now surfaced in-product.
   { id: 'AREA_INCONSISTENT',    label: 'Área inconsistente (plantada < colhida)', color: 'var(--viz-6)',  desc: 'A área plantada reportada pelo IBGE é menor que a área colhida — agronomicamente impossível (não se colhe mais terra do que se planta). É um erro da fonte (SIDRA), preservado fielmente e sinalizado aqui em vez de silenciosamente corrigido. Ocorre apenas em lavouras (PAM).' },
   // Reserved for a FUTURE auto-fill pipeline (accepted-but-absent — render 0 today).

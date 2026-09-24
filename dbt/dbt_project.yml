@@ -157,12 +157,18 @@ vars:
   # in append-only Bronze never leaks into Silver.
   currency_series: "{{ env_var('BCB_CURRENCY_SERIES', '1:USD,21619:EUR') }}"
 
-  # Q1 quality outlier/problemático detection (implied-price consistency). ON: validated on
-  # live prod across ALL 5 sources — with the magnitude floor below, the problemático rate is
-  # PEVS 0.003% / COMEX 0.19% / PAM 0.03% / PPM 0.002% / COMTRADE 0.43% (all genuine typos,
-  # overwhelmingly weight=1 placeholders + dropped digits; spot-checked). The floor is what
-  # makes a single global threshold work — without it, tiny-municipality rounding over-flagged
-  # PAM/PPM at ~2%. Set false to revert to the legacy 4-value flag (compiled byte-identical).
+  # Q1 quality outlier/problemático detection (implied-price consistency). ON since the
+  # 2026-06-26 validation across all 5 sources. The floor is what makes a single global
+  # threshold work — without it, tiny-municipality rounding over-flagged PAM/PPM at ~2%.
+  # Set false to revert to the legacy 4-value flag (compiled byte-identical).
+  #
+  # Problemático rows on prod, measured 2026-09-24 (rows / share of ALL Gold rows):
+  # PAM 4 (0,0002%) · PEVS 20 (0,0015%) · PPM 1 · COMEX 20 (0,005%) · COMTRADE 2.986 (0,145%),
+  # overwhelmingly weight=1 placeholders. This comment carried the 2026-06-26 rates until
+  # v1.89.0 (PEVS 0.003% / COMEX 0.19% / PAM 0.03% / PPM 0.002% / COMTRADE 0.43%); they no
+  # longer reproduce — 1 to 2 orders of magnitude off — and the cause was not investigated.
+  # A calibration record is only worth its date: re-measure with the queries in
+  # docs/audits/qualidade_dados_audit_2026-09-24.md before quoting a rate.
   enable_quality_outliers: true
   quality_price_k: 100        # implied price >price_k× or <1/price_k× the product median = typo
   quality_outlier_k: 4.0      # magnitude log-fence for the OUTLIER (valid-but-large) tier
