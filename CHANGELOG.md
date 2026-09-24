@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.90.1] - 2026-09-24
+
+Só documentação, sem Release (política em `CONTRIBUTING.md`). Corrige um efeito colateral
+da v1.90.0 num texto que ela não tocou.
+
+### Documentação
+- **O filtro padrão recomendado para o Looker Studio passou a descartar valor legítimo.**
+  `docs/looker_studio_setup.md` mandava excluir `MISSING_WEIGHT` (e as demais tags de
+  ausência). Até a v1.89.0 isso não tirava nada, porque só o COMEX usava a tag e tinha 0
+  linhas. Desde a v1.90.0 ele tira as 79.536 linhas do COMTRADE com valor e sem peso, que são
+  **3,83% do valor** do banco: o valor está certo, só não dá para calcular o preço por quilo.
+  - A recomendação passa a ser a do README: excluir só `PROBLEMATIC_VALUE` e
+    `PROBLEMATIC_QUANTITY`. Os dois documentos se contradiziam desde a v1.72.0.
+  - A mesma seção deixa de dizer que filtrar `= OK` corta os anos antes de 1980 (o detector
+    os examina desde a v1.90.0) e troca o 66,3% da PAM pelo 58,9% atual.
+  - Quem tem um relatório montado com o filtro antigo deve revisá-lo.
+- Skill `dbt-workflow`: a macro `data_quality_flag` estava descrita com a taxonomia de 4
+  valores anterior à Q1; ganhou a descrição atual e uma linha para `quality_outlier_ctes`.
+
+### Operação
+- Snapshot do Gold e do `research_inputs` depois da v1.90.0, como o CLAUDE.md pede a cada
+  release que muda o Gold: `gs://embrapa-dashboard-commodities-datalake/backups/run=20260924T181218Z/`.
+  São 6 tabelas do Gold e 12 de curadoria (~534 MB), mesma estrutura do anterior. O snapshot
+  de 2026-09-23 18:00 UTC continua disponível como ponto de retorno para antes das v1.89.0 e
+  v1.90.0.
+
+---
+
 ## [1.90.0] - 2026-09-24
 
 As três mudanças do detector de qualidade que a auditoria de hoje propôs e o mantenedor
