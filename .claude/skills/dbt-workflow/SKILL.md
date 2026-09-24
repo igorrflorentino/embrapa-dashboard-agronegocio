@@ -79,7 +79,8 @@ The macro `dbt/macros/generate_schema_name.sql` enforces:
 | `generate_schema_name` | Dev/prod schema routing |
 | `apply_dev_ttl` | Auto-expire dev tables after N days |
 | `safe_numeric` | Parse string to numeric, handling nulls |
-| `data_quality_flag` | Classify row quality (OK / MISSING_VALUE / MISSING_QUANTITY / INCOMPLETE) |
+| `data_quality_flag` | Classify row quality — the 13-value cascade (absences → `PROBLEMATIC_*` → `OUTLIER_*` → `UNSCORED` → `OK`); PAM adds `AREA_INCONSISTENT`, trade adds `MISSING_WEIGHT`, `INFERRED_*` are reserved. Legacy 4-value flag when `enable_quality_outliers` is off |
+| `quality_outlier_ctes` | The implied-price detector behind the flag: per-product median of ln(value ÷ qty), the materiality floor (value OR qty × median price ≥ 100k), NULL-safe attribution. IBGE scores `val_real_igpdi_brl`, trade nominal US$ ÷ `net_weight_kg`. Audit: `docs/audits/qualidade_dados_audit_2026-09-24.md` |
 | `state_name` | State acronym → full state name (in `state_dimensions.sql`) |
 | `state_region` | State acronym → region (in `state_dimensions.sql`) |
 

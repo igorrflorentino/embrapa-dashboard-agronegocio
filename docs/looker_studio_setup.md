@@ -102,20 +102,29 @@ On the data source configuration screen, adjust:
 Add a **report filter** for exploratory analyses:
 
 - Field: `data_quality_flag`
-- Condition: **Exclude** — `MISSING_VALUE`, `MISSING_QUANTITY`, `MISSING_WEIGHT`, `INCOMPLETE`,
-  `PROBLEMATIC_VALUE`, `PROBLEMATIC_QUANTITY`
+- Condition: **Exclude** — `PROBLEMATIC_VALUE`, `PROBLEMATIC_QUANTITY`
 
-This drops the rows with an actual defect: the ones where IBGE published no monetary value
-(e.g. Pinheiro brasileiro) and the ones whose implied price says a digit was mistyped.
+This drops only the likely typos: the rows whose implied price (value ÷ quantity) is more than
+100× away from the product's median. It is the same default the README recommends.
 
-> ⚠️ **Do NOT use `Equal to OK` — it was the recommendation here until v1.49.0 and it now
-> throws away most of your data.** `OK` used to mean "nothing wrong was found"; since the
-> `UNSCORED` tier (v1.49.0) it means "the outlier detector EXAMINED this row and cleared it",
-> and everything it had no basis to examine moved out of `OK`. On PAM that is **66,3% of the
-> table** — every row before 1980 (which the IPCA does not reach), every empty cube cell
-> (município × produto that simply has no production), and everything under the materiality
-> floor. None of those are defects. Filtering `= OK` would silently cut a 1974–2024 series
-> down to 1980–2024 and drop most municípios, with nothing on the report to say so.
+> ⚠️ **Do not exclude the absence tags (`MISSING_*`, `INCOMPLETE`) in a default filter.** This
+> page recommended it until v1.90.1, and since v1.90.0 it silently drops real trade value. A
+> `MISSING_WEIGHT` row is a COMTRADE record with a correct value and no net weight: the value
+> is fine, only a price per kilo cannot be computed from it. Excluding the tag removes 79.536
+> rows and **3,83% of COMTRADE's value** from every total on the report (measured 2026-09-24).
+> The other absence tags exclude nothing today — 0 rows in every banco: when SIDRA has no data
+> the whole cell is blank, and it never reaches Gold. Exclude `MISSING_WEIGHT` only on a page
+> that computes a price per kilo, and say so on that page.
+
+> ⚠️ **Do NOT use `Equal to OK` — it was the recommendation here until v1.49.0 and it throws
+> away most of your data.** `OK` used to mean "nothing wrong was found"; since the `UNSCORED`
+> tier (v1.49.0) it means "the outlier detector EXAMINED this row and cleared it", and
+> everything it had no basis to examine moved out of `OK`. On PAM that is **58,9% of the
+> table** (measured 2026-09-24) — every empty cube cell (município × produto that simply has
+> no production) and everything small by both value and quantity. None of those are defects.
+> Filtering `= OK` would silently drop most municípios, with nothing on the report to say so.
+> (Until v1.90.0 it also cut every year before 1980, which the detector could not examine
+> while it scored on the IPCA.)
 >
 > If you have an EXISTING report built from the old recommendation, fix the filter — the
 > numbers in it changed the moment prod Gold was rebuilt (2026-09-07), without the report
