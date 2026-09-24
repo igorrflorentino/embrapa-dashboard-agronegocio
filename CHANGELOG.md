@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.88.4] - 2026-09-24
+
+Fecha a higiene de dependências da v1.88.2: o dbt 1.12 foi validado contra a produção e
+entrou (#476), e a validação expôs um defeito no build de produção, que só funcionava por
+coincidência.
+
+### Corrigido
+- **`dbt-build-prod.yml` passa ao dbt UM mapa `--vars`.** O dbt guarda só o ÚLTIMO
+  `--vars`, sem juntar. Medido no dbt 1.11.10 e no 1.12.5, com
+  `--vars 'enable_curation: false' --vars 'enable_foreign_inflation: true'`: o
+  `var('enable_curation')` compilado sai `True` (o padrão do projeto), não `false`. Com um
+  mapa, `{enable_curation: false, enable_foreign_inflation: true}`, sai `False`. O
+  workflow acrescentava um `--vars` por variável de repositório, então, com as duas
+  ligadas (produção desde 2026-09-23), o `enable_curation` nunca chegou ao dbt. **Nada
+  quebrou só porque o `dbt_project.yml` também diz `enable_curation: true`**: a variável
+  de repositório era um interruptor ligado a nada, e desligá-la não mudaria nada. Agora
+  as duas chegam, e o comentário do workflow deixa de dizer que desligar a variável
+  desliga a curadoria. Quem manda nisso é o padrão do projeto.
+  `tests/test_dbt_prod_vars.py` roda o próprio script do passo no bash, com o `dbt` trocado
+  por um `printf`, e confere o comando que o workflow monta de fato.
+
+### Testes
+- **`tests/test_iap_real_signature.py`: a verificação do IAP roda de verdade.** Todos os
+  outros testes de IAP simulam `verify_token`, então a assinatura que identifica o autor
+  de cada edição de curadoria nunca passava pela pilha de criptografia de que depende
+  (`google-auth` → `google.auth.crypt.es256` → `cryptography`). Justo a pilha que a
+  v1.88.2 atualizou. O teste serve uma chave ES256 no formato do IAP (`{kid: PEM}`) a
+  partir de um servidor local e passa tokens pela função real: aceita o legítimo e
+  recusa assinatura adulterada, outra chave com o mesmo `kid`, token expirado, audiência
+  errada e emissor errado. Não depende de rede.
+
+### Validação do dbt 1.12 (#476, entrou sem versão própria)
+- O PR de segurança do Dependabot para o `sqlparse` 0.6.0 subiu, para chegar lá, o
+  **dbt-core 1.11.10 → 1.12.5** (dbt-adapters 1.24.5, mais `metricflow`, `sqlglot` e o
+  parser experimental), mantendo o dbt-bigquery 1.11.1, que declara `dbt-core>=1.11.6,<2.0`.
+- **Build de dev completo com o 1.12, comparado com a produção feita pelo 1.11 a partir do
+  mesmo Bronze:**
+  - os 400 nós passaram (398 PASS e 2 WARN já conhecidos: as 2 linhas `AREA_INCONSISTENT`
+    da PAM e 1 caso de curadoria);
+  - 39 tabelas com o mesmo número de linhas e os mesmos bytes;
+  - impressão digital do conteúdo (`BIT_XOR(FARM_FINGERPRINT(TO_JSON_STRING(linha)))`,
+    sem `last_refresh`) idêntica em 27, incluindo todo o Silver;
+  - nas 12 restantes (fatos do Gold e marts), cruzadas linha a linha por todas as colunas
+    que não são FLOAT64: nenhuma linha sobrando ou faltando, nenhum nulo divergente,
+    **diferença relativa máxima de 9,16 × 10⁻¹⁵** e nenhuma linha acima de 10⁻⁹. É o
+    último bit das médias e somas paralelas do BigQuery (câmbio anual médio), o mesmo
+    ruído entre dois builds quaisquer da mesma versão. Nenhum `data_quality_flag` mudou.
+- As *behavior flags* que o 1.12 liga por padrão não afetam o projeto: não há
+  `on-run-start`, o hook `apply_dev_ttl` não faz nada fora de dev (e a checagem de
+  freshness roda em prod), e nenhum workflow usa `--warn-error` ou `--state`.
+- **Fecha o risco aceito da v1.88.2:** `sqlparse` 0.6.0; `pip-audit` e os alertas do
+  Dependabot zerados.
+
+---
+
 ## [1.88.3] - 2026-09-23
 
 Higiene de dependências, parte 3: o Dependabot **nunca atualizou uma dependência Python**.

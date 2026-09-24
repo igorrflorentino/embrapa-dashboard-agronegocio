@@ -71,18 +71,20 @@
 #       BQ_LOCATION                     = e.g. us-central1 (falls back to us-central1 if unset)
 #       GCP_DBT_BUILD_SERVICE_ACCOUNT   = sa-dbt-build-ci@${GCP_PROJECT_ID}.iam.gserviceaccount.com
 #       DBT_ENABLE_CURATION             = "true" AFTER the one-time prod curation
-#                                         activation (docs/operations_runbook.md);
-#                                         unset/anything else = off. Adds
-#                                         --vars 'enable_curation: true' so the
-#                                         gated SCD2 curation views keep being
-#                                         rebuilt + tested by every push-triggered
-#                                         and scheduled build.
+#                                         activation (docs/operations_runbook.md).
+#                                         Adds enable_curation: true to the build's
+#                                         --vars. NOTE: dbt_project.yml has ALSO
+#                                         defaulted enable_curation to true since the
+#                                         curation went live, so unsetting this does
+#                                         NOT turn it off — that takes the project
+#                                         default.
 #       DBT_ENABLE_FOREIGN_INFLATION    = "true" AFTER the first
 #                                         `embrapa ingest foreign-inflation --full`
 #                                         (PLANS/correcao_inflacionaria_multimoeda.md);
 #                                         unset/anything else = off. Adds
-#                                         --vars 'enable_foreign_inflation: true' so the
-#                                         US CPI / euro-area HICP deflators reach Gold.
+#                                         enable_foreign_inflation: true to the build's
+#                                         --vars so the US CPI / euro-area HICP
+#                                         deflators reach Gold.
 #                                         It is a BUILD-ORDER gate: silver_foreign_inflation
 #                                         reads a Bronze table that 404s before that first
 #                                         ingest, and the failure would cascade into every
@@ -275,13 +277,22 @@ jobs:
             echo "::notice::Running with --full-refresh (incremental models will rebuild from scratch)"
             ARGS+=(--full-refresh)
           fi
+          # ONE --vars mapping for every switch. dbt keeps only the LAST --vars flag (it
+          # does not merge them), so one flag per switch silently dropped all but the
+          # last: with both variables true, enable_curation never reached dbt (measured
+          # 2026-09-24; tests/test_dbt_prod_vars.py runs this script to prove the fix).
+          VARS=()
           if [ "${{ vars.DBT_ENABLE_CURATION }}" = "true" ]; then
             echo "::notice::DBT_ENABLE_CURATION=true — building the gated SCD2 curation views"
-            ARGS+=(--vars 'enable_curation: true')
+            VARS+=("enable_curation: true")
           fi
           if [ "${{ vars.DBT_ENABLE_FOREIGN_INFLATION }}" = "true" ]; then
             echo "::notice::DBT_ENABLE_FOREIGN_INFLATION=true — building the foreign deflators (CPI/HICP)"
-            ARGS+=(--vars 'enable_foreign_inflation: true')
+            VARS+=("enable_foreign_inflation: true")
+          fi
+          if [ ${#VARS[@]} -gt 0 ]; then
+            joined=$(printf '%s, ' "${VARS[@]}")
+            ARGS+=(--vars "{${joined%, }}")
           fi
           uv run dbt "${ARGS[@]}"
 
