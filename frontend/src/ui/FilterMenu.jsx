@@ -993,7 +993,10 @@ function FilterMenu({ open = false, banco = 'ibge_pevs', value, onClose, onApply
         basket:    fullOrNull(products, PRODS.length),
         flags:     fullOrNull(flags, QUALITY.length),
         nations:   [...nations],
-        regions:   [...regions],
+        // All five regions = Brasil, i.e. no region narrowing. Emitting the full list made
+        // Geografia read "a region is selected" and drop from the regions map to the states
+        // map on an "Aplicar" with nothing changed (reported 2026-09-25, v1.93.8).
+        regions:   fullOrNull(regions, FM_REGIONS.length),
         states:    fullOrNull(states, STATES.length),
         // The four sub-UF levels (two parallel IBGE divisions) + município, all
         // CODE-keyed off the mesh — dataFilters rolls the município cube up to the
