@@ -1,7 +1,7 @@
 // FilterTriggerBar — active-filter chip row that opens the FilterMenu modal.
 // Replaces the legacy <FilterBar> dropdown row.
 
-function FilterTriggerBar({ summary, onOpen, live = true, banco = null }) {
+function FilterTriggerBar({ summary, onOpen, live = true, banco = null, view = null, territoryCompare = null }) {
   // Soon banco → slim preview trigger (no real filters/data to export yet).
   if (!live) {
     return (
@@ -30,7 +30,8 @@ function FilterTriggerBar({ summary, onOpen, live = true, banco = null }) {
   // que fazia desta faixa o único lugar capaz de dizer qual é o recorte — e a janela de
   // confirmação do CSV precisa dizer a MESMA coisa. Duas cópias da regra é como as duas
   // superfícies passam a descrever uma seleção só de dois jeitos.
-  const chips = window.activeFilterChips ? window.activeFilterChips(summary, banco) : [];
+  const chips = window.activeFilterChips
+    ? window.activeFilterChips(summary, banco, { view, territoryCompare }) : [];
 
   // Duas áreas, não uma fila só: os chips ficam num contêiner que quebra sozinho e a ação
   // num contêiner que não quebra. Antes tudo era irmão numa `flex-wrap`, então quando os

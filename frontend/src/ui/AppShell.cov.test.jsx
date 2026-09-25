@@ -637,6 +637,31 @@ describe('AppShell — mobile topbar: util overflow menu (⋯)', () => {
     } finally { delete window.prepareTableCSV; }
   });
 
+  it('no comparativo entre territórios, o arquivo leva os lugares escolhidos — e só lá', () => {
+    // Os lugares são escolhidos na tela, não no filtro: sem eles o CSV não saberia o que
+    // comparar. O permalink grava tc/tm/tx só nessa view, e o arquivo segue a mesma regra.
+    const montagens = [];
+    window.prepareTableCSV = (arg) => {
+      montagens.push(arg);
+      return { erro: false, arquivo: 'x.csv', banco: 'B', assunto: 'A', colunas: ['ano'], linhas: 1,
+               bytes: 10, baixar: () => {} };
+    };
+    const escolha = { items: [{ level: 'regiao', code: 'N' }], metric: 'value', mode: 'abs' };
+    const exportar = (c) => fireEvent.click([...c.querySelectorAll('.util-action')]
+      .find((b) => b.textContent.includes('Exportar CSV')));
+    try {
+      const { container, unmount } = render(
+        <AppShell {...baseProps()} view="territory_compare" territoryCompare={escolha} />);
+      exportar(container);
+      expect(montagens[0].territoryCompare).toBe(escolha);
+      unmount();
+
+      render(<AppShell {...baseProps()} territoryCompare={escolha} />);   // overview
+      exportar(document.body);
+      expect(montagens[1]).not.toHaveProperty('territoryCompare');
+    } finally { delete window.prepareTableCSV; }
+  });
+
   it('"Cancelar" fecha sem baixar nada', () => {
     let baixou = 0;
     window.prepareTableCSV = () => ({ erro: false, arquivo: 'x.csv', banco: 'B', assunto: 'A',
@@ -1194,6 +1219,49 @@ describe('citação — o eixo comércio faz parte do recorte', () => {
   it('declara território quando a dimensão realmente se aplica', () => {
     const { container } = render(
       <AppShell {...tradeProps({ geo: 'Brasil · 27 UFs', geoApplies: true })} />);
+    expect(openAndPick(container, 'Consulta detalhada')).toContain('Território: Brasil · 27 UFs');
+  });
+});
+
+// ---------------------------------------------------------------------------------
+// Comparativo entre territórios: the geography FILTER does not apply there (the places
+// are chosen on the screen), so the reference names the places compared, never the
+// filter's "Território: Brasil · 27 UFs" beside a file holding Norte and Pará.
+describe('AppShell — citação do comparativo entre territórios', () => {
+  beforeEach(async () => { await import('./territoryCompare.js'); });
+
+  const openAndPick = (container, label) => {
+    fireEvent.click([...container.querySelectorAll('.util-action')]
+      .find((b) => b.textContent.includes('Citar painel')));
+    [...container.querySelectorAll('.cite-level')]
+      .find((l) => l.textContent.includes(label)).querySelector('input').click();
+    return [...container.querySelectorAll('.cite-text')]
+      .find((n) => !n.classList.contains('cite-text-inline')).textContent;
+  };
+  const props = (view, territoryCompare) => ({
+    ...baseProps(),
+    view,
+    territoryCompare,
+    summary: { startDate: '2010', endDate: '2024', products: 'Todos (7)', geo: 'Brasil · 27 UFs', geoApplies: true },
+  });
+  const escolha = { items: [{ level: 'regiao', code: 'N' }, { level: 'uf', code: 'PA' }] };
+
+  it('nomeia os territórios comparados, e não o filtro de geografia', () => {
+    const { container } = render(<AppShell {...props('territory_compare', escolha)} />);
+    const txt = openAndPick(container, 'Consulta detalhada');
+    expect(txt).toContain('Territórios comparados: Norte, Pará');
+    expect(txt).not.toContain('Território: Brasil');
+  });
+
+  it('com nenhum território escolhido, não afirma recorte algum', () => {
+    const { container } = render(<AppShell {...props('territory_compare', { items: [] })} />);
+    const txt = openAndPick(container, 'Consulta detalhada');
+    expect(txt).not.toContain('Territórios comparados');
+    expect(txt).not.toContain('Território:');
+  });
+
+  it('as outras telas seguem citando o filtro de geografia', () => {
+    const { container } = render(<AppShell {...props('overview', escolha)} />);
     expect(openAndPick(container, 'Consulta detalhada')).toContain('Território: Brasil · 27 UFs');
   });
 });

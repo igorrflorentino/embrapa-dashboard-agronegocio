@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // stubbing it would let the test and the product disagree about what the file says.
 import './geoDrill.js';
 import './filtersSchema.js';
+import './territoryCompare.js';
 
 // ── Capture harness for the download() side-effect ───────────────────────────
 let lastCsv;
@@ -613,5 +614,67 @@ describe('exportActiveTableCSV — o recorte sub-UF viaja junto com o arquivo', 
     window.geoMesh = () => MESH;
     window.exportActiveTableCSV({ view: 'geo', summary: {}, database: 'ibge_pevs' });
     expect(lastCsv.split('\n')[1]).toContain('sem recorte sub-UF');
+  });
+});
+
+// ── Comparativo entre territórios (v1.94.0) ──────────────────────────────────
+describe('exportActiveTableCSV — comparativo entre territórios', () => {
+  // Norte = Pará + Amazonas. 2021 has no deflator (value null) but measured tonnes.
+  const UF_ROWS = [
+    { year: 2020, uf: 'PA', value: 2, q_mass: 3, q_vol: 0.5, q_count: 0 },
+    { year: 2020, uf: 'AM', value: 1, q_mass: 1, q_vol: 0, q_count: 0 },
+    { year: 2021, uf: 'PA', value: null, q_mass: 4, q_vol: 0, q_count: 0 },
+  ];
+  const MESH = [{ cityCode: 1501402, cityName: 'Belém', uf: 'PA', region: 'N' }];
+  const ctx = (items) => ({
+    view: 'territory_compare', database: 'ibge_pevs', summary: {}, conventions: CONV,
+    territoryCompare: { items },
+  });
+
+  beforeEach(() => {
+    stubRegistry({ products: PRODUCTS, yearStart: 2020, yearEnd: 2021 });
+    window.dataStore = { get: () => ({ ufYearly: UF_ROWS, products: PRODUCTS }) };
+    window.geoLevelFor = () => 'municipio';
+    window.geoMesh = () => MESH;
+    window.municipioYearly = () => [{ year: 2021, cityCode: '1501402', uf: 'PA', value: 0.5, q_mass: 1 }];
+  });
+  afterEach(() => {
+    for (const k of ['dataStore', 'geoLevelFor', 'geoMesh', 'municipioYearly']) delete window[k];
+  });
+
+  it('one row per year and território, every metric in its base unit', () => {
+    window.exportActiveTableCSV(ctx([{ level: 'regiao', code: 'N' }, { level: 'municipio', code: '1501402' }]));
+    const lines = lastCsv.replace('﻿', '').split('\n');
+    // PEVS has two halves, so the file names which one it covers, like every PEVS export.
+    expect(lines[0]).toBe('ano;territorio;nivel;codigo;valor_BRL;massa_t;volume_m3;contagem_un;tabela_sidra');
+    expect(lines.slice(1)).toEqual([
+      '2020;Norte;região;N;3000000;4000;500000;0;ambas as metades',
+      // The deflator gap leaves the value cell EMPTY, not 0; the tonnes were measured.
+      '2021;Norte;região;N;;4000;0;0;ambas as metades',
+      // No row for Belém in 2020: the cube is sparse, so that is a measured 0.
+      '2020;Belém (PA);município;1501402;0;0;0;0;ambas as metades',
+      '2021;Belém (PA);município;1501402;500000;1000;0;0;ambas as metades',
+    ]);
+    expect(lastDownloadName).toBe('ibge_pevs_comparativo_territorios_2020-2021.csv');
+  });
+
+  it('names what the file holds in the confirmation', () => {
+    const p = window.prepareTableCSV(ctx([{ level: 'uf', code: 'PA' }]));
+    expect(p.erro).toBe(false);
+    expect(p.assunto).toBe('Série anual por território comparado');
+  });
+
+  it('refuses with its own reason when nothing is chosen', () => {
+    // The generic "sem linhas" would tell the researcher to widen the geography, which
+    // does nothing here: the places are chosen on the screen.
+    const p = window.prepareTableCSV(ctx([]));
+    expect(p).toMatchObject({ erro: true, motivo: 'sem-territorios' });
+  });
+
+  it('refuses while a território is still loading, instead of leaving it out', () => {
+    window.municipioYearly = () => null;
+    const p = window.prepareTableCSV(ctx([{ level: 'uf', code: 'PA' }, { level: 'municipio', code: '1501402' }]));
+    expect(p).toMatchObject({ erro: true, motivo: 'carregando' });
+    expect(lastDownloadName).toBeUndefined();
   });
 });

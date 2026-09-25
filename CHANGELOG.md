@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.94.0] - 2026-09-25
+
+Nova perspectiva: **Comparativo entre territórios**. Até aqui o painel respondia "o que este
+lugar tem" (o raio-x) e "como estes produtos se comparam" (o comparativo de produtos), mas não
+"como estes lugares se comparam".
+
+### Adicionado
+- **Comparativo entre territórios.** Coloca lado a lado até 8 territórios de qualquer nível, na
+  mesma tela: regiões, estados e municípios misturados (Norte ao lado de Pará e de Portel, por
+  exemplo). Os lugares são escolhidos na própria tela, com seletores próprios (chips de região,
+  lista de estados e busca de município que ignora acentos), e não no filtro de geografia. O
+  filtro diz sobre o que é o painel, e aqui é preciso poder pôr um município de outro estado na
+  comparação sem estreitar o resto. Os filtros de produto, período, tabela SIDRA e nível de
+  industrialização, a moeda e a correção valem normalmente. A tela mostra:
+  - a evolução em valores ou em índice (base 100 num ano comum), em valor ou em quantidade, e só
+    nas famílias que a cesta tem (toneladas e m³ nunca se somam);
+  - uma tabela com o último ano, a variação acumulada, o crescimento médio ao ano e a
+    participação no Brasil;
+  - a correlação entre as variações anuais.
+
+  Misturar níveis é permitido, e a tela avisa o que isso implica: a diferença de escala (com a
+  sugestão do índice) e cada caso em que uma linha contém outra ("Pará está dentro de Norte: a
+  linha de Norte já inclui a de Pará"). O município só é oferecido nos bancos que têm esse grão
+  (as três pesquisas do IBGE). No COMEX a tela diz "Este banco não tem dados por município." Sem
+  escolha, ela abre com os três maiores estados do banco (PEVS: Minas Gerais, Paraná e São
+  Paulo; COMEX: Mato Grosso, Paraná e Goiás).
+- **A seleção viaja no link** (`tc`, `tm`, `tx`), então recarregar ou compartilhar reabre a mesma
+  comparação. "Nenhum ainda" e "esvaziei de propósito" são estados diferentes: o segundo grava
+  `tc=-` e recarrega vazio, em vez de trazer os três estados padrão de volta.
+- **CSV do comparativo:** uma linha por ano e território, com todas as métricas na unidade base
+  (valor, t, m³, un), para o arquivo não depender de qual botão estava ligado. A lacuna do
+  deflator sai como célula vazia, nunca como 0.
+
+### Corrigido antes de chegar à tela (medido no servidor local, com dados de produção)
+- **Valores nominais atravessando reformas monetárias.** A primeira versão publicava
+  "+3.265.734.304.470% desde 1986" no PEVS sem correção, uma razão entre cruzados e reais.
+  Agora o índice, a variação acumulada, o crescimento médio e a correlação partem do primeiro
+  ano da moeda atual (1994), e a tela diz por quê: Minas Gerais passa a +2.452% desde 1994.
+  As quantidades não têm moeda e ficam de fora da regra, e numa correção pela inflação não há
+  corte (IGP-DI: base 1986, Norte −71%). A regra está em `currentEraStart`, ao lado do
+  `spanComparable`, que já recusava a mesma razão nas outras telas.
+- **Ano parcial.** No COMEX, 2026 cobre 8 meses. Segue a regra do Visão geral: a tabela usa a
+  janela escolhida, marca "Em 2026 (parcial)" e explica que a comparação com anos completos não
+  é direta. A participação no Brasil não é afetada, porque todos os territórios cobrem os mesmos
+  meses.
+- **A faixa "Filtros ativos", a confirmação do CSV e a citação ABNT diziam "Geografia: Brasil"**
+  numa tela em que o filtro de geografia não vale. As três agora nomeiam os territórios
+  comparados ("Territórios: Mato Grosso, Paraná, Goiás"), lidos de uma função só
+  (`selectionLabels`).
+- **A confirmação do CSV ganhou dois motivos de recusa:** nenhum território escolhido (o
+  genérico mandaria "ampliar a geografia", o que aqui não faz nada) e território ainda
+  carregando (o arquivo sairia sem ele, calado).
+
+Contraprova: cinco regras quebradas de propósito (contenção, ausência somada como zero,
+participação sobre o ano errado, seleção esvaziada perdida no link, CSV com lugar carregando),
+e cada uma derruba ao menos um teste.
+
+---
+
 ## [1.93.8] - 2026-09-25
 
 ### Corrigido

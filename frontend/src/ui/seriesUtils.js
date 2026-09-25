@@ -166,6 +166,16 @@ window.spanComparable = (y0, yT, breaks) => {
     : `moeda mudou ${cortes.length}× (${de}–${ate}) — valores nominais não são comparáveis`;
 };
 
+// O primeiro ano da ÚLTIMA moeda dentro da janela [y0, yT], ou null quando nenhuma
+// reforma a corta. spanComparable recusa uma razão que atravessa a reforma; uma tela que
+// precisa de um ano-base (índice 100, variação acumulada, crescimento médio, correlação)
+// parte daqui em vez de recusar tudo, e diz que partiu. `breaks` vem vazio em convenção
+// deflacionada ou em moeda estrangeira, então isto só age em valores nominais em R$.
+window.currentEraStart = (y0, yT, breaks) => {
+  const cortes = (breaks || []).filter((b) => Number.isFinite(y0) && Number.isFinite(yT) && y0 < b && b <= yT);
+  return cortes.length ? Math.max(...cortes) : null;
+};
+
 // Os cortes de moeda do banco ativo, lidos do snapshot já carregado. Um banco ainda
 // sem snapshot devolve [] — sem checagem é o comportamento antigo (permissivo), nunca
 // um KPI em branco por causa de um dado auxiliar que não chegou.

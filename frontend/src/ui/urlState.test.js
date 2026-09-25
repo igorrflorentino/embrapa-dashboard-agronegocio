@@ -6,6 +6,7 @@
 import { describe, expect, it } from 'vitest';
 
 import './urlState.js';
+import './territoryCompare.js';
 
 describe('urlState — array codec', () => {
   it('encodes null→"" (all), []→"-" (explicit none), subset→csv', () => {
@@ -127,5 +128,45 @@ describe('urlState — a região viaja na URL (v1.93.7)', () => {
     const q = new URLSearchParams(window.urlEncodeState({ rg: rg(['N']), st: 'PA' }));
     expect(window.urlDecodeArr(q, 'rg')).toEqual(['N']);
     expect(window.urlDecodeArr(q, 'st')).toEqual(['PA']);
+  });
+});
+
+describe('urlState — o comparativo entre territórios viaja na URL (v1.94.0)', () => {
+  const tcState = (territoryCompare, view = 'territory_compare') =>
+    window.buildUrlState({ view, summary: {}, territoryCompare });
+
+  it('grava os lugares, a métrica e a escala', () => {
+    const out = tcState({
+      items: [{ level: 'regiao', code: 'N' }, { level: 'uf', code: 'PA' }, { level: 'municipio', code: '1501402' }],
+      metric: 'mass', mode: 'index',
+    });
+    expect(out.tc).toBe('R:N,U:PA,M:1501402');
+    expect(out.tm).toBe('mass');
+    expect(out.tx).toBe('index');
+    expect(window.URL_STATE_KEYS).toEqual(expect.arrayContaining(['tc', 'tm', 'tx']));
+  });
+
+  it('os padrões não sujam a URL: valor e valores absolutos são o ponto de partida', () => {
+    const out = tcState({ items: [{ level: 'uf', code: 'PA' }], metric: 'value', mode: 'abs' });
+    expect([out.tm, out.tx]).toEqual(['', '']);
+  });
+
+  it('distingue "ainda não escolheu" de "esvaziou de propósito"', () => {
+    // null → nada gravado, a tela mostra os 3 maiores. [] → '-', e a leitura devolve []:
+    // recarregar mantém a tela vazia em vez de trazer o padrão de volta.
+    expect(tcState({ items: null }).tc).toBe('');
+    expect(tcState({ items: [] }).tc).toBe('-');
+    expect(window.territoryCompare.decode('-')).toEqual([]);
+  });
+
+  it('só a tela do comparativo grava essas chaves', () => {
+    const out = tcState({ items: [{ level: 'uf', code: 'PA' }], metric: 'mass', mode: 'index' }, 'geo');
+    expect([out.tc, out.tm, out.tx]).toEqual(['', '', '']);
+  });
+
+  it('a seleção gravada volta igual', () => {
+    const items = [{ level: 'uf', code: 'SP' }, { level: 'municipio', code: '3550308' }];
+    const q = new URLSearchParams(window.urlEncodeState(tcState({ items })));
+    expect(window.territoryCompare.decode(q.get('tc'))).toEqual(items);
   });
 });

@@ -87,6 +87,7 @@ function AppShell({
   summary,
   conventions,
   crossState,
+  territoryCompare = null,
   mode = 'single', setMode,
   // "há dado em tela?" — calculado uma vez em main.jsx (isDataView) e passado para cá, em
   // vez de recalculado, para não existirem duas cópias da regra. Default `true` para não
@@ -257,7 +258,7 @@ function AppShell({
     // the write-back did not → the two "permalinks" disagreed; H1). Município cap +
     // the value-range omission both live in buildUrlState now.
     const state = window.buildUrlState({
-      view, database, infoPage, conventions, summary, crossState, isCross: isCrossView,
+      view, database, infoPage, conventions, summary, crossState, isCross: isCrossView, territoryCompare,
     });
     return `${location.origin}${location.pathname}?${window.urlEncodeState(state)}`;
   };
@@ -305,7 +306,16 @@ function AppShell({
   // "Território: Não se aplica" directly beside a Brasil→China country pair, and on a
   // still-loading banco it turned a loading state into a claim. A dimension that does
   // not apply, or is not known yet, says nothing.
-  if (summary?.geoApplies && summary?.geo) scopeBits.push(`Território: ${summary.geo}`);
+  // On the territory comparison the geography filter does not apply (the places are
+  // chosen on the screen), so the reference names the places compared, from the same
+  // function the chip strip and the CSV confirmation read.
+  const _tcm = view === 'territory_compare' ? window.territoryCompare : null;
+  const _comparados = _tcm && database ? _tcm.selectionLabels(territoryCompare, database, summary || {}) : null;
+  if (_comparados) {
+    if (_comparados.length) scopeBits.push(`Territórios comparados: ${_comparados.join(', ')}`);
+  } else if (summary?.geoApplies && summary?.geo) {
+    scopeBits.push(`Território: ${summary.geo}`);
+  }
   if (summary?.flags && summary.flags.length && summary.quality) scopeBits.push(`Qualidade: ${summary.quality}`);
   const scopeStr = scopeBits.length ? `${scopeBits.join('. ')}. ` : '';
 
@@ -425,7 +435,12 @@ function AppShell({
   const [csvPreview, setCsvPreview] = React.useState(null);
   const onExport = () => {
     if (!window.prepareTableCSV) return;
-    setCsvPreview(window.prepareTableCSV({ view, database, summary, conventions }));
+    // The same state the permalink encodes: the territory selection travels only on the
+    // view that has one, exactly as buildUrlState writes tc/tm/tx only there.
+    setCsvPreview(window.prepareTableCSV({
+      view, database, summary, conventions,
+      ...(view === 'territory_compare' ? { territoryCompare } : {}),
+    }));
   };
   const onShare = async () => {
     // Reuse the SAME permalink builder the citation uses (buildPermalink, above) —
@@ -807,7 +822,8 @@ function AppShell({
           // O recorte vem do MESMO resolvedor que desenha a faixa de chips na tela; a janela
           // não relê o estado por conta própria, senão poderia contradizer a faixa acima dela.
           chips={window.activeFilterChips
-            ? window.activeFilterChips(summary, window.bancoById && window.bancoById(database))
+            ? window.activeFilterChips(summary, window.bancoById && window.bancoById(database),
+                { view, territoryCompare })
             : []}
           conventions={conventions}
           onClose={() => setCsvPreview(null)}
