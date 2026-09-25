@@ -142,6 +142,8 @@ function readStateFromURL() {
     basket: window.urlDecodeArr(q, 'pb'),
     flags: window.urlDecodeArr(q, 'fl'),
     states: window.urlDecodeArr(q, 'st'),
+    // A região viaja desde a v1.93.7 (ver urlState.buildUrlState); ausente = sem recorte.
+    regions: window.urlDecodeArr(q, 'rg'),
     // Sub-UF / município geography (v1.5.2); absent → null = "all" (no narrowing).
     mesos: window.urlDecodeArr(q, 'me'),
     micros: window.urlDecodeArr(q, 'mc'),

@@ -105,3 +105,27 @@ describe('urlState — full geo share round-trip (RVC-1)', () => {
     expect(window.urlDecodeArr(q, 'mn')).toEqual(['3550308', '3304557']);
   });
 });
+
+describe('urlState — a região viaja na URL (v1.93.7)', () => {
+  // Without it, reloading or sharing "Brasil › Norte › Pará" came back as "Brasil › Pará":
+  // the URL kept the state and lost the rung above it.
+  const rg = (regions) => window.buildUrlState({ summary: { regions } }).rg;
+
+  it('grava uma região escolhida', () => {
+    expect(rg(['N'])).toBe('N');
+    expect(window.URL_STATE_KEYS).toContain('rg');
+  });
+
+  it('não grava nada quando não há recorte de região', () => {
+    expect(rg(null)).toBe('');
+    expect(rg(undefined)).toBe('');
+    expect(rg([])).toBe('');
+    expect(rg(['N', 'NE', 'CO', 'SE', 'S'])).toBe('');  // todas = sem recorte
+  });
+
+  it('a região gravada volta pela mesma decodificação dos outros eixos', () => {
+    const q = new URLSearchParams(window.urlEncodeState({ rg: rg(['N']), st: 'PA' }));
+    expect(window.urlDecodeArr(q, 'rg')).toEqual(['N']);
+    expect(window.urlDecodeArr(q, 'st')).toEqual(['PA']);
+  });
+});

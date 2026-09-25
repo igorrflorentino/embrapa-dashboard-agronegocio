@@ -532,6 +532,25 @@ describe('ViewGeography — the Perfil do território shortcut', () => {
     expect(window.goToView).toHaveBeenCalledWith('territory_profile');
   });
 
+  it('abre o raio-x com TODOS os produtos, mantendo o lugar (v1.93.7)', () => {
+    // O raio-x responde "o que este lugar tem". Herdando uma cesta de 1 produto, ele dizia
+    // que o Pará produz 1 produto.
+    stubGlobals(fullFixture({ ufYearlySeries: UF_YEARLY }));
+    window.goToView = vi.fn();
+    window.patchFilter.mockClear();
+    const { container } = render(
+      <ViewGeography families={['mass']}
+                     summary={{ states: ['PA'], basket: ['3403'], tabela: '289', niveis: ['A'] }}
+                     database="ibge_pevs" conventions={{ autoScale: true }} />,
+    );
+    const btn = [...container.querySelectorAll('button')].find((b) => /raio-x/i.test(b.textContent));
+    btn.click();
+    expect(window.patchFilter).toHaveBeenCalledWith({ basket: null, tabela: null, niveis: null });
+    const patch = window.patchFilter.mock.calls.at(-1)[0];
+    expect(patch).not.toHaveProperty('states');  // a geografia não muda
+    expect(window.goToView).toHaveBeenCalledWith('territory_profile');
+  });
+
   it('stays unnamed when nothing is narrowed — it must not claim a place it lacks', () => {
     stubGlobals(fullFixture({ ufYearlySeries: UF_YEARLY }));
     window.goToView = vi.fn();

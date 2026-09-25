@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.93.7] - 2026-09-25
+
+A trilha "Brasil › região › estado" da Geografia deixa de mudar sozinha, e o "Ver raio-x"
+passa a mostrar tudo o que o lugar tem.
+
+### Corrigido
+- **"Editar filtros → Aplicar", sem mudar nada, alterava a geografia.** O menu decidia se uma
+  subdivisão (mesorregião, microrregião, região intermediária, imediata, município) era um
+  recorte comparando a seleção com o Brasil inteiro. Todas as 6 mesorregiões do Pará são
+  menos que as 137 do país, então viravam recorte. Reproduzido com cliques, no servidor de
+  desenvolvimento e no build de produção: "Brasil › Norte › Pará" virava "Brasil › Norte › Pará
+  › 56 recortes › 144 municípios", e "Brasil › Norte" virava "… › 168 recortes › 450
+  municípios", com todas as listas gravadas na URL. Agora um recorte só existe quando deixa de
+  fora algo que os estados escolhidos poderiam mostrar. A mesma regra vale para o selo "recorte
+  ativo", para o cabeçalho do menu e para o que ele devolve.
+- **Recarregar a página ou abrir um link perdia a região.** A URL guardava o estado (`st=PA`),
+  mas não a região, e "Brasil › Norte › Pará" voltava como "Brasil › Pará", exatamente a tela
+  relatada. A região agora viaja na URL (`rg`), e todas as regiões juntas continuam sem
+  aparecer (não são recorte). Verificado no navegador: recarregada, a trilha continua "Brasil ›
+  Norte › Pará", e aplicar sem mudanças também a mantém.
+- **Um "Aplicar" num banco do IBGE gravava `rp=ALL` (país reporter = mundo) na URL.** O filtro de
+  país só existe no COMTRADE. Nos outros bancos, o universo de países fica vazio, e o "Brasil"
+  padrão do rascunho virava "mundo". Hoje era inofensivo (trocar de banco zera o filtro), mas é
+  o mesmo defeito: aplicar sem mudar não pode alterar nada. O menu agora devolve o valor que
+  recebeu.
+
+### Alterado
+- **"Ver raio-x" abre o Perfil do território com todos os produtos.** O raio-x responde "o que
+  este lugar tem", e herdava a cesta da Geografia: com um produto filtrado, dizia que o Pará
+  produz um produto. O botão agora limpa os três filtros que restringem produtos (cesta, tabela
+  SIDRA e nível de industrialização) e mantém a geografia. Abrir o Perfil do território pelo
+  menu lateral continua respeitando o filtro escolhido, porque ali o filtro é o universo da
+  análise.
+
+### Testes
+- Aplicar sem mudanças em "Brasil › Norte › Pará" devolve a mesma região e o mesmo estado, sem
+  subdivisões nem municípios. Um recorte de verdade continua sendo gravado. Nenhum `rp` aparece
+  num banco sem esse eixo. A região vai e volta pela URL, e o raio-x limpa os produtos e mantém
+  o lugar. Contraprova: 6 dos 7 testes novos falham no código anterior (o sétimo protege o que
+  não podia mudar).
+
+---
+
 ## [1.93.6] - 2026-09-25
 
 ### Alterado

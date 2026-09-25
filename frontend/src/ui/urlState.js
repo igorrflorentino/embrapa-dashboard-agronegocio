@@ -12,7 +12,7 @@
 // so unrelated params like ?t=… stay inert).
 window.URL_STATE_KEYS = [
   'v', 'b', 'ip', 'cur', 'corr', 'mu', 'vu', 'as',
-  'pb', 'fl', 'st', 'vmn', 'vmx', 'sd', 'ed', 'fx', 'cx', 'mk', 'or', 'ni',
+  'pb', 'fl', 'st', 'rg', 'vmn', 'vmx', 'sd', 'ed', 'fx', 'cx', 'mk', 'or', 'ni',
   // COMTRADE país reporter (rp) / país parceiro (pt). rp is 3-state: 'ALL' = mundo, a CSV
   // of ISO codes, or absent = Brasil (default). pt is the standard array encoding (all/subset).
   'rp', 'pt',
@@ -94,6 +94,13 @@ window.buildUrlState = ({ view, database, infoPage, conventions, summary, crossS
     pb: arr(s.basket),
     fl: arr(s.flags),
     st: arr(s.states),
+    // A região (v1.93.7). O mapa da Geografia é uma trilha Brasil › região › estado, e a
+    // região só aparece nela quando o filtro traz UMA região. Sem esta chave, recarregar a
+    // página ou abrir um link compartilhado em "Brasil › Norte › Pará" voltava como
+    // "Brasil › Pará": a URL guardava o estado e perdia o degrau. Todas as regiões = sem
+    // recorte, então não viaja (a URL não cresce à toa).
+    rg: Array.isArray(s.regions) && s.regions.length
+      && s.regions.length < ((window.REGIONS || []).length || 5) ? arr(s.regions) : '',
     // Sub-UF / município geography (v1.5.2). null = "all" → arr yields '' → dropped.
     me: arr(s.mesos),
     mc: arr(s.micros),
