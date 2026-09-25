@@ -4252,3 +4252,36 @@ body.sb-resizing .sidebar-resizer { background: color-mix(in srgb, var(--embrapa
 /* The current level is not a link — it is where you already are. */
 .geo-crumb.on { color: var(--fg-1); cursor: default; font-weight: 600; }
 .geo-crumb:disabled { cursor: default; }
+
+/* ── Comparativo entre territórios (v1.94.0) ─────────────────────────────── */
+/* The chosen places sit on top as removable chips in their line colour; below, three
+   ways to add one (regiões as chips, estados as a select, municípios by search). */
+.tc-selected { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 16px; min-height: 30px; align-items: center; }
+.tc-sel-chip {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 5px 6px 5px 11px;
+  border: 1.5px solid var(--border-strong); border-radius: 999px;
+  background: var(--bg-surface); color: var(--fg-1);
+  font: 500 12.5px var(--font-body);
+}
+.tc-level { color: var(--fg-3); font-weight: 400; }
+.tc-sel-remove {
+  border: 0; background: transparent; color: var(--fg-3);
+  font-size: 16px; line-height: 1; padding: 0 5px; cursor: pointer; border-radius: 999px;
+}
+.tc-sel-remove:hover { background: var(--bg-surface-2); color: var(--fg-1); }
+.tc-add { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1.4fr); gap: 20px; align-items: start; }
+.tc-add-group { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.tc-select, .tc-input {
+  width: 100%; padding: 7px 10px;
+  border: 1px solid var(--border-strong); border-radius: 8px;
+  background: var(--bg-surface); color: var(--fg-1);
+  font: 400 13px var(--font-body);
+}
+.tc-matches { display: flex; flex-wrap: wrap; gap: 6px; max-height: 150px; overflow-y: auto; }
+.tc-controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.tc-note { margin: 8px 2px 0; }
+@media (max-width: 900px) {
+  .tc-add { grid-template-columns: 1fr; }
+  .tc-controls { justify-content: flex-start; }
+}

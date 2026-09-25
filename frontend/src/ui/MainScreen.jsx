@@ -7,7 +7,7 @@
 // page) — bad for heading navigation and tab order, and it pushed the hero far down. main.jsx
 // still owns their state/wiring and their render conditions; this component only places them.
 // Rendered in every branch that showed them before, so their visibility is unchanged.
-function MainScreen({ filters, view = 'overview', database = 'ibge_pevs', infoPage = null, basket = null, conventions = null, setDatabase = null, crossState = null, setCrossState = null, controls = null }) {
+function MainScreen({ filters, view = 'overview', database = 'ibge_pevs', infoPage = null, basket = null, conventions = null, setDatabase = null, crossState = null, setCrossState = null, territoryCompare = null, setTerritoryCompare = null, controls = null }) {
   const VIEW_LABEL = Object.fromEntries(
     (window.VIEW_GROUPS || []).flatMap(g => g.views.map(v => [v.id, v.label]))
   );
@@ -532,6 +532,9 @@ function MainScreen({ filters, view = 'overview', database = 'ibge_pevs', infoPa
         summary={filters}
         database={database}
         conventions={conventions || window.DEFAULT_CONVENTIONS}
+        // Only ViewTerritoryCompare reads these; the other views ignore them.
+        territoryCompare={territoryCompare}
+        setTerritoryCompare={setTerritoryCompare}
       />
     </div>
   );

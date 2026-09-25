@@ -126,6 +126,44 @@
         });
         return { headers, rows, subject: 'series_por_produto' };
       }
+      case 'territory_compare': {
+        // The comparison's OWN places (chosen on the screen, not the geography filter),
+        // from main.jsx's state; the default three when nothing was chosen, like the screen.
+        // Every metric in one file, each in its base unit, so the file does not depend on
+        // which toggle happened to be on.
+        const tcm = window.territoryCompare;
+        const sel = tcm ? tcm.selectionOf(ctx.territoryCompare, database, summary) : [];
+        const headers = ['ano', 'territorio', 'nivel', 'codigo', `valor_${conv.currency}`,
+          'massa_t', 'volume_m3', 'contagem_un']
+          .concat(origem ? ['tabela_sidra'] : []).concat(nivel ? ['nivel_industrializacao'] : []);
+        // Two refusals the generic "sem linhas" would explain wrongly: nothing chosen (its
+        // advice to widen the geography does nothing here), and a place still loading
+        // (the file would silently leave it out while the screen is about to show it).
+        if (!tcm || !sel.length) {
+          return { headers, rows: [], subject: 'comparativo_territorios', motivo: 'sem-territorios' };
+        }
+        const by = Object.fromEntries(['value', 'mass', 'volume', 'count'].map((m) => (
+          [m, tcm.build({ database, summary, selection: sel, metric: m })])));
+        if (Object.values(by).some((b) => b.loading)) {
+          return { headers, rows: [], subject: 'comparativo_territorios', motivo: 'carregando' };
+        }
+        const rows = [];
+        by.value.items.forEach((it, i) => {
+          if (it.loading || it.unavailable) return;
+          it.points.forEach((pt, j) => {
+            const q = (m) => ((by[m].items[i].points[j] || {}).v);
+            rows.push([
+              pt.y, it.label, it.levelLabel, it.code,
+              celulaValor(pt.v, 1e6),
+              Math.round((q('mass') || 0) * 1e3),     // mil t → t
+              Math.round((q('volume') || 0) * 1e6),   // mi m³ → m³
+              Math.round((q('count') || 0) * 1e6),    // mi un → un
+              ...(origem ? [origem] : []), ...(nivel ? [nivel] : []),
+            ]);
+          });
+        });
+        return { headers, rows, subject: 'comparativo_territorios' };
+      }
       case 'geo': {
         // The geo snapshot is a SINGLE year (ufLatestYear), not the whole window, and
         // the basket may not be applied to the map (notFilteredByBasket → all-products).
@@ -218,6 +256,7 @@
     distribuicao_por_municipio: 'Distribuição por município',
     concentracao: 'Concentração por UF, da maior para a menor',
     qualidade: 'Contagem de linhas por marca de qualidade',
+    comparativo_territorios: 'Série anual por território comparado',
   };
 
   /**
@@ -267,6 +306,10 @@
       return { erro: true, motivo: 'banco-indisponivel', banco: banco ? banco.short : ctx.database };
     }
     const built = buildRows(ctx);
+    // A view may say WHY it has nothing to give, when the generic reason would mislead.
+    if (built && built.motivo) {
+      return { erro: true, motivo: built.motivo, banco: banco.short };
+    }
     if (!built || !built.rows.length) {
       console.warn('[csv] nothing to export for view', ctx.view);
       return { erro: true, motivo: 'sem-linhas', banco: banco.short };

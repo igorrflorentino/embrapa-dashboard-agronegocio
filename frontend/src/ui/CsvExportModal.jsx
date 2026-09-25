@@ -23,9 +23,13 @@ function CsvExportModal({ preview, chips, conventions, onClose }) {
   // Dizer isso é mais útil que um botão que não faz nada (o comportamento anterior era
   // apenas um console.warn, invisível para quem usa).
   if (preview.erro) {
-    const msg = preview.motivo === 'sem-linhas'
-      ? 'O recorte atual não deixou nenhuma linha. Amplie o período, os produtos ou a geografia e tente de novo.'
-      : `O banco ${preview.banco} ainda não está liberado, então não há dados para baixar.`;
+    const MSG = {
+      'sem-linhas': 'O recorte atual não deixou nenhuma linha. Amplie o período, os produtos ou a geografia e tente de novo.',
+      'sem-territorios': 'Nenhum território foi escolhido para comparar. Adicione ao menos um e tente de novo.',
+      'carregando': 'Parte dos territórios ainda está carregando. Espere o gráfico terminar e tente de novo, para o arquivo sair completo.',
+    };
+    const msg = MSG[preview.motivo]
+      || `O banco ${preview.banco} ainda não está liberado, então não há dados para baixar.`;
     return (
       <div className="cite-backdrop" onClick={onClose}>
         <div className="cite-modal csv-modal" onClick={(e) => e.stopPropagation()}

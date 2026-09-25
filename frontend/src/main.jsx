@@ -28,6 +28,7 @@ import './ui/geoSelect.js';
 import './ui/geoDrill.js';
 import './ui/useGeoCascade.js';
 import './ui/seriesUtils.js';
+import './ui/territoryCompare.js'; // data layer of "Comparativo entre territórios"
 import './ui/dataFilters.js';
 import './ui/csvExport.js';
 import './ui/MetricConventions.jsx';
@@ -89,6 +90,7 @@ import './ui/ViewReferencias.jsx'; // read-only seed reference consultation ("Re
 import './ui/ViewCadastroProdutos.jsx'; // Curadoria — the editable commodity catalog
 import './ui/ViewProductProfile.jsx';
 import './ui/ViewTerritoryProfile.jsx';
+import './ui/ViewTerritoryCompare.jsx';
 import './ui/ViewProductCompare.jsx';
 import './ui/ViewRebanho.jsx';
 import './ui/ViewProductivity.jsx';
@@ -179,6 +181,16 @@ function readStateFromURL() {
       y1: window.urlDecodeNum(q, 'xy1'),
     };
   }
+  // Comparativo entre territórios: the places, the metric and the scale travel in the URL
+  // (tc / tm / tx), so a reload or a shared link reopens the same comparison. Absent `tc`
+  // = no choice yet (the view shows its default); `tc=-` = emptied on purpose, which
+  // decode() reads as [] (the '-' is no valid entry), so the screen stays empty.
+  const territoryCompare = {
+    items: q.get('tc') != null && window.territoryCompare
+      ? window.territoryCompare.decode(q.get('tc')) : null,
+    metric: q.get('tm') || null,
+    mode: q.get('tx') || null,
+  };
   // Validate the deep-linked view id against the LIVE menu. An unknown / stale id (e.g.
   // ?v=curated_market_nature — a frozen, de-listed view — or a typo) must NOT resolve a
   // component: it would render with an empty title and the wrong banco's filter bar. Fall
@@ -215,6 +227,7 @@ function readStateFromURL() {
     conventions: conv,
     summary,
     crossState,
+    territoryCompare,
     mode: isCross ? 'multi' : 'single',
   };
 }
@@ -416,6 +429,7 @@ function Dashboard() {
   const [summary, setSummary] = useState(initial.summary || {});
   const [conventions, setConventions] = useState(initial.conventions || window.DEFAULT_CONVENTIONS);
   const [crossState, setCrossState] = useState(initial.crossState || window.DEFAULT_CROSS_STATE);
+  const [territoryCompare, setTerritoryCompare] = useState(initial.territoryCompare || {});
   const [mode, setMode] = useState(initial.mode || 'single');
   const [filterOpen, setFilterOpen] = useState(false);
   // Lifted above DataGate for the same reason as filterOpen: every conventions onChange
@@ -587,10 +601,10 @@ function Dashboard() {
     // so the address-bar URL and the shared URL can never encode the SAME state
     // differently (the H1 drift, where the write-back dropped me/mc/it/im/mn).
     const qs = window.urlEncodeState(
-      window.buildUrlState({ view, database, infoPage, conventions, summary, crossState, isCross }),
+      window.buildUrlState({ view, database, infoPage, conventions, summary, crossState, isCross, territoryCompare }),
     );
     window.history.replaceState(null, '', qs ? `${location.pathname}?${qs}` : location.pathname);
-  }, [view, database, infoPage, summary, conventions, crossState]);
+  }, [view, database, infoPage, summary, conventions, crossState, territoryCompare]);
 
   // The filter bar/menu apply only to per-banco DATA views (not info pages or
   // the cross-banco perspectives, which have no single-banco filter surface).
@@ -622,6 +636,8 @@ function Dashboard() {
           onOpen={() => setFilterOpen(true)}
           live={banco.status === 'live'}
           banco={banco}
+          view={view}
+          territoryCompare={territoryCompare}
         />
       )}
       {/* Convenções métricas strip: the ONLY UI path to change currency ×
@@ -657,6 +673,7 @@ function Dashboard() {
       summary={displaySummary}
       conventions={conventions}
       crossState={crossState}
+      territoryCompare={territoryCompare}
       mode={mode}
       setMode={changeMode}
       dataView={isDataView}
@@ -673,6 +690,8 @@ function Dashboard() {
             setDatabase={changeDatabase}
             crossState={crossState}
             setCrossState={setCrossState}
+            territoryCompare={territoryCompare}
+            setTerritoryCompare={setTerritoryCompare}
             controls={viewControls}
           />
         </ViewErrorBoundary>

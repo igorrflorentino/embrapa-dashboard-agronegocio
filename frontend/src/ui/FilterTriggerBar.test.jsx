@@ -121,3 +121,33 @@ describe('FilterTriggerBar — capability-driven chips', () => {
     expect(container.querySelectorAll('.fm-tb-acoes button')).toHaveLength(1);
   });
 });
+
+// ── Comparativo entre territórios: the geography filter does not apply there ─────────
+describe('FilterTriggerBar — on the territory comparison, the chip names the places compared', () => {
+  // The places are chosen on the screen, so "Geografia: Brasil" would describe a cut the
+  // numbers do not have. The CSV confirmation reads the same resolver.
+  const banco = { id: 'ibge_pevs', short: 'IBGE PEVS', provides: ['product', 'geo', 'quality'] };
+
+  beforeEach(async () => { await import('./territoryCompare.js'); });
+
+  it('replaces Geografia with the territories, in the order chosen', () => {
+    const territoryCompare = { items: [{ level: 'regiao', code: 'N' }, { level: 'uf', code: 'PA' }] };
+    const { container } = render(<FilterTriggerBar summary={SUMMARY} banco={banco} live
+                                                   view="territory_compare" territoryCompare={territoryCompare} />);
+    expect(chipKeys(container)).toEqual(['Produtos', 'Período', 'Territórios', 'Qualidade']);
+    expect(container.textContent).toContain('Norte, Pará');
+  });
+
+  it('says when none is chosen, instead of falling back to the filter', () => {
+    const { container } = render(<FilterTriggerBar summary={SUMMARY} banco={banco} live
+                                                   view="territory_compare" territoryCompare={{ items: [] }} />);
+    expect(container.textContent).toContain('nenhum escolhido');
+    expect(chipKeys(container)).not.toContain('Geografia');
+  });
+
+  it('every other view keeps the Geografia chip', () => {
+    const { container } = render(<FilterTriggerBar summary={SUMMARY} banco={banco} live view="geo"
+                                                   territoryCompare={{ items: [{ level: 'uf', code: 'PA' }] }} />);
+    expect(chipKeys(container)).toContain('Geografia');
+  });
+});

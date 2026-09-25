@@ -70,6 +70,10 @@ window.VIEW_GROUPS = [
       { id: 'territory_profile', label: 'Perfil do território', status: 'live', exportable: false, requires: ['geo'],
         desc: 'Raio-x de um território: o que uma UF ou um município produz, a trajetória do lugar, sua composição por produto, seu peso no país e a qualidade do dado ali.',
         planned: ['Composição por produto do território', 'Trajetória histórica do lugar', 'Peso e posição no ranking nacional', 'Principais municípios (quando o banco tem grão municipal)'] },
+      // The pair of 'product_compare': that one compares produtos over a fixed place, this
+      // one compares PLACES over a fixed set of produtos, at any mix of levels.
+      { id: 'territory_compare', label: 'Comparativo entre territórios', status: 'live', exportable: true, requires: ['geo'],
+        desc: 'Coloque lado a lado até 8 territórios de qualquer nível (regiões, estados e municípios): evolução em valores ou em índice, crescimento, participação no país e correlação.' },
       { id: 'concentration', label: 'Concentração e desigualdade', status: 'live', exportable: true, requires: [],
         desc: 'Quão concentrada é a atividade: curva de Lorenz, índice de Gini e HHI (Herfindahl-Hirschman) por geografia e por produto.',
         planned: ['Curva de Lorenz', 'Índice de Gini ao longo do tempo', 'HHI por UF e por produto', 'Participação dos top-5 produtores'] },
@@ -185,6 +189,7 @@ window.VIEW_COMPONENTS = {
   flows_partners:        'ViewPartners',
   geo:                   'ViewGeography',
   territory_profile:     'ViewTerritoryProfile',
+  territory_compare:     'ViewTerritoryCompare',
   concentration:         'ViewConcentration',
   seasonality:           'ViewSeasonality',
   quality:               'ViewQuality',

@@ -607,6 +607,16 @@ VIEW_GROUPS: list[ViewGroup] = [
                 "espalha ENTRE lugares'; esta responde 'o que acontece NESTE'.",
             ),
             View(
+                "territory_compare",
+                "Comparativo entre territórios",
+                "live",
+                requires=("geo",),
+                exportable=True,
+                desc="Até 8 territórios de qualquer nível (regiões, estados e municípios) "
+                "lado a lado: evolução em valores ou em índice, crescimento, participação "
+                "no país e correlação.",
+            ),
+            View(
                 "concentration",
                 "Concentração e desigualdade",
                 "live",

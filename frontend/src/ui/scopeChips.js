@@ -98,11 +98,23 @@
    * nomear um filtro que aquele banco não usa. "Faixa de valor" fica de fora de propósito —
    * não tem caminho de filtro por trás, então é escondida em vez de mostrada inerte.
    */
-  window.activeFilterChips = function (summary, banco) {
+  window.activeFilterChips = function (summary, banco, ctx = {}) {
     const s = summary || {};
     const provides = (banco && banco.provides) || [];
     const has = (c) => provides.includes(c);
     const t = window.axisScopeChips ? window.axisScopeChips(s, banco) : {};
+    // On "Comparativo entre territórios" the geography filter does not apply: the places
+    // are chosen on the screen (territoryCompare.js). A chip reading "Geografia: SP" there
+    // would describe a cut the numbers do not have, while the file holds MT, PR and GO;
+    // so the chip names the places actually compared. `ctx` = { view, territoryCompare }.
+    const geoChip = () => {
+      const tcm = window.territoryCompare;
+      if (ctx.view === 'territory_compare' && tcm && banco) {
+        const nomes = tcm.selectionLabels(ctx.territoryCompare, banco.id, s);
+        return { k: 'Territórios', v: nomes.length ? nomes.join(', ') : 'nenhum escolhido' };
+      }
+      return { k: 'Geografia', v: s.geo };
+    };
     return [
       has('product') && { k: 'Produtos', v: s.products },
       { k: 'Período', v: s.period },
@@ -113,7 +125,7 @@
       t.mercado && { k: 'Mercado', v: t.mercado.label },
       t.reporter && { k: 'Reporter', v: t.reporter.label },
       t.parceiro && { k: 'Parceiro', v: t.parceiro.label },
-      has('geo') && { k: 'Geografia', v: s.geo },
+      has('geo') && geoChip(),
       has('quality') && { k: 'Qualidade', v: s.quality },
     ].filter(Boolean);
   };

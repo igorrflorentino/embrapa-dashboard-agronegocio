@@ -180,4 +180,16 @@ describe('reforma monetária — o número existe e mesmo assim não responde', 
     // (1993, 2024] contém 1994 — a janela atravessa a troca.
     expect(window.spanComparable(1993, 2024, CORTES_BRL_NOMINAL)).toContain('1994');
   });
+
+  it('currentEraStart: o ano-base possível é o primeiro da moeda ATUAL, com a mesma borda', () => {
+    // PEVS em nominal, 1986–2024: cinco cortes dentro da janela, e o que vale é o último.
+    expect(window.currentEraStart(1986, 2024, CORTES_BRL_NOMINAL)).toBe(1994);
+    expect(window.currentEraStart(1993, 2024, CORTES_BRL_NOMINAL)).toBe(1994);
+    // Mesma borda do spanComparable: uma janela que já começa na era nova não é cortada.
+    expect(window.currentEraStart(1994, 2024, CORTES_BRL_NOMINAL)).toBeNull();
+    expect(window.currentEraStart(1974, 1985, CORTES_BRL_NOMINAL)).toBeNull();
+    // Deflacionado ou em moeda estrangeira: sem cortes, sem recorte.
+    expect(window.currentEraStart(1974, 2024, [])).toBeNull();
+    expect(window.currentEraStart(null, 2024, CORTES_BRL_NOMINAL)).toBeNull();
+  });
 });

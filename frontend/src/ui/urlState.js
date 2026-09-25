@@ -23,6 +23,9 @@ window.URL_STATE_KEYS = [
   // 414-safe counterpart to the POST /api/municipio-yearly query path).
   'me', 'mc', 'it', 'im', 'mn',
   'xs', 'xm', 'xy0', 'xy1',
+  // Comparativo entre territórios (v1.94.0): the places (tc), the metric (tm) and the
+  // scale (tx). Written only on that view, so no other view's URL carries them.
+  'tc', 'tm', 'tx',
 ];
 
 // Array dimension → param. null = "no filter" (omitted → all on restore); an
@@ -75,7 +78,7 @@ window.MN_URL_CAP = 200;
 // caller runs urlEncodeState() on it. Value-range (vmn/vmx) is INTENTIONALLY not
 // emitted here: it has no backend filter path, so persisting it would let a stale
 // URL re-assert a phantom "Faixa de valor" in the citation.
-window.buildUrlState = ({ view, database, infoPage, conventions, summary, crossState, isCross }) => {
+window.buildUrlState = ({ view, database, infoPage, conventions, summary, crossState, isCross, territoryCompare }) => {
   const arr = window.urlEncodeArr || (() => '');
   const conv = conventions || {};
   const s = summary || {};
@@ -135,5 +138,19 @@ window.buildUrlState = ({ view, database, infoPage, conventions, summary, crossS
     xm: isCross ? crossState?.mode || '' : '',
     xy0: isCross && crossState?.y0 ? crossState.y0 : '',
     xy1: isCross && crossState?.y1 ? crossState.y1 : '',
+    ...(() => {
+      const onTc = view === 'territory_compare' && territoryCompare && window.territoryCompare;
+      if (!onTc) return { tc: '', tm: '', tx: '' };
+      // null items = no choice yet → nothing to write; the view shows its default.
+      // [] = emptied ON PURPOSE → '-', the array codec's "explicit none", so a reload
+      // keeps it empty instead of bringing the default three back.
+      const items = territoryCompare.items;
+      const tcOf = () => (items.length ? window.territoryCompare.encode(items) : '-');
+      return {
+        tc: Array.isArray(items) ? tcOf() : '',
+        tm: territoryCompare.metric && territoryCompare.metric !== 'value' ? territoryCompare.metric : '',
+        tx: territoryCompare.mode === 'index' ? 'index' : '',
+      };
+    })(),
   };
 };
