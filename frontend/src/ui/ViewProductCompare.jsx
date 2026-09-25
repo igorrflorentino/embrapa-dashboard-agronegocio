@@ -105,6 +105,11 @@ function ViewProductCompare({ summary, conventions, database }) {
     it.cagr = window.cagrPct(it.m0, it.mT, (it.pT && p0) ? (it.pT.y - p0.y) || 1 : 1);
   });
 
+  // O ano mais recente pode estar incompleto (o COMEX em setembro cobre 8 meses) e a tabela
+  // o tratava como um ano cheio. Mesma regra do Visão geral (window.anoParcial): magnitude,
+  // variação e CAGR seguem a janela escolhida, e a tela marca o ano e diz por quê.
+  const parcial = window.anoParcial(database, yearEnd);
+
   // Pairwise Pearson correlation on YoY growth, aligned BY YEAR (not array index): a
   // product with an internal year gap would otherwise correlate mismatched years.
   // Correlate on headcount for an all-herd basket, on value otherwise.
@@ -194,7 +199,7 @@ function ViewProductCompare({ summary, conventions, database }) {
             <thead>
               <tr>
                 <th>Produto</th>
-                <th className="num">Magnitude ({yearEnd})</th>
+                <th className="num">Magnitude ({yearEnd}{parcial ? ', parcial' : ''})</th>
                 <th className="num">Variação acumulada{baseYear ? ` (desde ${baseYear})` : ''}</th>
                 <th className="num">CAGR (a.a.)</th>
                 <th className="num">Família</th>
@@ -222,6 +227,15 @@ function ViewProductCompare({ summary, conventions, database }) {
             </tbody>
           </table>
         </div>
+        {parcial && (
+          <p className="caption" style={{ margin: '8px 2px 0' }}>
+            <strong>{parcial.ano} (parcial):</strong> o ano mais recente cobre apenas{' '}
+            {parcial.meses ? `${parcial.meses} ${parcial.meses === 1 ? 'mês' : 'meses'}` : 'parte do ano'}.
+            A magnitude desse ano, a variação acumulada e o CAGR refletem esse ano parcial,
+            conforme o período que você selecionou, então a comparação com os anos completos não
+            é direta.
+          </p>
+        )}
       </div>
 
       {/* Correlation matrix */}

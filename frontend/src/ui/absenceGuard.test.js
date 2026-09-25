@@ -428,3 +428,154 @@ describe('varredura: coerção da ausência para zero', () => {
     }
   });
 });
+
+// ── A QUINTA FAMÍLIA: campo anulável zerado por `|| 0`, sem Number(…) ────────────
+//
+// A quarta família só pega a coerção embrulhada em Number(…). A forma nua,
+// `pts[n]?.v || 0`, passou por todas: no Cruzamento de fontes ela zerava o último ponto
+// ausente e a tabela publicava "−100%" de variação e de CAGR (v1.94.1); no Fluxos,
+// "US$ 0" como valor da maior origem; no perfil do território, a trajetória descia a zero
+// nos anos que a correção não alcança (v1.95.1). Foram todas achadas por leitura, uma a
+// uma, que é justamente o que a varredura existe para evitar.
+//
+// Uma linha de ORDENAÇÃO (`.sort(`) é isenta por construção: ali a ausência só decide a
+// posição (vai para o fim), e nenhum número sai para a tela.
+const CAMPO_ZERADO = new RegExp(`\\.(?:${_campos})\\s*\\|\\|\\s*0(?![.0-9])`);
+
+const PERMITIDOS_CAMPO_ZERADO = [
+  {
+    trecho: '.map(c => ({ c, v: filtered.allProductTS[c].slice(-1)[0]?.v || 0 }))',
+    razao: 'Comparativo e Perfil do produto: é a CHAVE que escolhe os produtos padrão, e a ' +
+           'linha seguinte ordena por ela. Um produto sem valor no último ano vai para o fim ' +
+           'da escolha; nenhum número desta linha aparece na tela.',
+  },
+  {
+    trecho: '|| Object.values(filtered.productTS).some(s => (s[s.length - 1]?.v || 0) > 0);',
+    razao: 'Concentração: a pergunta é "algum produto tem valor positivo no último ano". ' +
+           'Ausente e zero respondem igual (nenhum dos dois é > 0), então o `|| 0` não muda ' +
+           'o resultado e nenhum número sai daqui.',
+  },
+  {
+    trecho: 'acc.set(r.uf, (acc.get(r.uf) || 0) + (r.value || 0));',
+    razao: 'Perfil do território: total de cada UF na janela, para a participação e a ' +
+           'posição. A lacuna do deflator é por ANO e vale igual para toda UF, então as ' +
+           'duas metades da participação cobrem as mesmas linhas; se a janela inteira cai na ' +
+           'lacuna, o total nacional dá 0 e a participação já recusa (`nationalTotal ?`).',
+  },
+];
+
+describe('varredura: campo anulável zerado por || 0', () => {
+  const arquivos = [...fontes(join(SRC, 'ui')), ...fontes(join(SRC, 'charts')), ...fontes(join(SRC, 'data'))];
+
+  it.each([
+    ['const vT = pts[pts.length - 1]?.v || 0;', true],
+    ['sub={fmt(topOrigin?.value || 0)}', true],
+    ['msPct(bottom?.coefPct || 0)', true],
+    ['const v0 = pts[0]?.v ?? null;', false],
+    ['const t = d.v || 0.5;', false],            // um piso não-zero é outra coisa
+    ['const n = row.count || 0;', false],        // contagem não é campo anulável
+  ])('a regex reconhece %s → %s', (linha, pega) => {
+    expect(CAMPO_ZERADO.test(linha)).toBe(pega);
+  });
+
+  it('nenhuma medida anulável vira zero por `|| 0`', () => {
+    const achados = [];
+    for (const caminho of arquivos) {
+      readFileSync(caminho, 'utf-8').split('\n').forEach((linha, i) => {
+        const t = linha.trimStart();
+        if (t.startsWith('//') || t.startsWith('*') || t.startsWith('/*')) return;
+        const codigo = linha.replace(/\/\/.*$/, '');
+        if (!CAMPO_ZERADO.test(codigo)) return;
+        if (codigo.includes('.sort(')) return;   // ordenação: a ausência só decide a posição
+        if (PERMITIDOS_CAMPO_ZERADO.some((p) => linha.includes(p.trecho))) return;
+        achados.push(`${relative(SRC, caminho)}:${i + 1}\n      ${linha.trim()}`);
+      });
+    }
+    expect(achados, [
+      '`<medida>?.v || 0` transforma a ausência em zero, e o zero vira "−100%", "US$ 0" ou',
+      'uma linha descendo a zero. Preserve a ausência (`?? null`, addPresent, deltaPctIn) e',
+      "deixe o formatador escrever '—'. Se o zero aqui for MEDIDO, ou se o valor só decide",
+      'uma ordem ou um teste booleano, registre em PERMITIDOS_CAMPO_ZERADO com a razão.',
+      '', ...achados,
+    ].join('\n')).toEqual([]);
+  });
+
+  it('cada permissão declara uma razão de verdade e ainda corresponde a código', () => {
+    const todo = arquivos.map((c) => readFileSync(c, 'utf-8')).join('\n');
+    for (const p of PERMITIDOS_CAMPO_ZERADO) {
+      expect(p.razao.length, `sem razão: ${p.trecho}`).toBeGreaterThan(60);
+      expect(p.razao).not.toMatch(/não deu problema|por enquanto|TODO/i);
+      expect(todo, `permissão obsoleta, remova: ${p.trecho}`).toContain(p.trecho);
+    }
+  });
+});
+
+// ── A SEXTA FAMÍLIA: cor decidida pelo sinal, fora do deltaColor ──────────────────
+//
+// A terceira família guarda a SETA (deltaPositive → deltaUp). A cor tem a mesma
+// armadilha e passava ao lado: `accum >= 0 ? 'var(--ok)' : 'var(--err)'` pintava de
+// verde o "—" de uma variação que não existe, porque `null >= 0` é true (Cruzamento de
+// fontes, v1.94.1; barras de variação anual, v1.95.1). window.deltaColor é a resposta:
+// neutro para a ausência, verde/vermelho para o que existe.
+const COR_POR_SINAL = /(?:>=|<=|>|<)\s*0\s*\?\s*(?:['"`]var\(--(?:ok|err)\)['"`]|(?:ok|err|pos|neg)\b)/;
+
+const PERMITIDOS_COR = [
+  {
+    trecho: "(!Number.isFinite(v) ? 'var(--fg-4)' : v >= 0 ? 'var(--ok)' : 'var(--err)');",
+    razao: 'É o próprio window.deltaColor, o lugar sancionado da regra: a ausência é ' +
+           'desviada para o neutro na MESMA linha, antes de o sinal ser consultado.',
+  },
+  {
+    trecho: "const token = r >= 0 ? 'var(--ok)' : 'var(--err)';",
+    razao: 'window.corrColor: a linha anterior devolve o neutro quando a correlação não é ' +
+           'finita, então aqui r é sempre um número. É o gêmeo do deltaColor para a matriz.',
+  },
+  {
+    trecho: 'hasBest && d.lag === best.lag ? green : d.corr >= 0 ? pos : neg,',
+    razao: 'LagBars: é a cor de uma barra cuja ALTURA é o mesmo d.corr. Uma correlação ' +
+           'ausente não desenha barra no Plotly, então a cor escolhida para ela nunca aparece ' +
+           'na tela, e o número exibido (o hover) só existe onde a barra existe.',
+  },
+];
+
+describe('varredura: a cor de uma variação ausente não pode ser verde', () => {
+  const arquivos = [...fontes(join(SRC, 'ui')), ...fontes(join(SRC, 'charts')), ...fontes(join(SRC, 'data'))];
+
+  it.each([
+    ["style={{ color: it.accum >= 0 ? 'var(--ok)' : 'var(--err)' }}", true],
+    ['marker: { color: bars.map((d) => (d.pct >= 0 ? ok : err)) }', true],
+    ['const c = d.corr >= 0 ? pos : neg;', true],
+    ['style={{ color: window.deltaColor(it.accum) }}', false],
+    ["return i < 0 ? 'var(--heat-0)' : STOPS[i];", false],   // índice de faixa, não sinal de medida
+  ])('a regex reconhece %s → %s', (linha, pega) => {
+    expect(COR_POR_SINAL.test(linha)).toBe(pega);
+  });
+
+  it('toda cor decidida pelo sinal passa por deltaColor (ou tem razão registrada)', () => {
+    const achados = [];
+    for (const caminho of arquivos) {
+      readFileSync(caminho, 'utf-8').split('\n').forEach((linha, i) => {
+        const t = linha.trimStart();
+        if (t.startsWith('//') || t.startsWith('*') || t.startsWith('/*')) return;
+        if (!COR_POR_SINAL.test(linha.replace(/\/\/.*$/, ''))) return;
+        if (PERMITIDOS_COR.some((p) => linha.includes(p.trecho))) return;
+        achados.push(`${relative(SRC, caminho)}:${i + 1}\n      ${linha.trim()}`);
+      });
+    }
+    expect(achados, [
+      'A cor saiu do sinal por conta própria. `null >= 0` é true, então a variação AUSENTE',
+      "sai verde, ao lado do '—' que a declara ausente. Use window.deltaColor(v): neutro",
+      'para a ausência, verde/vermelho para o que existe.',
+      '', ...achados,
+    ].join('\n')).toEqual([]);
+  });
+
+  it('cada permissão declara uma razão de verdade e ainda corresponde a código', () => {
+    const todo = arquivos.map((c) => readFileSync(c, 'utf-8')).join('\n');
+    for (const p of PERMITIDOS_COR) {
+      expect(p.razao.length, `sem razão: ${p.trecho}`).toBeGreaterThan(60);
+      expect(p.razao).not.toMatch(/não deu problema|por enquanto|TODO/i);
+      expect(todo, `permissão obsoleta, remova: ${p.trecho}`).toContain(p.trecho);
+    }
+  });
+});

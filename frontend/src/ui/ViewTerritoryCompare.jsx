@@ -79,14 +79,12 @@ function ViewTerritoryCompare({ summary, conventions, database, territoryCompare
   }));
   const brasilLast = (data.brasil.find((d) => d.y === lastYear) || {}).v;
   // A monthly banco's current year is incomplete (COMEX in September covers 8 months).
-  // Same rule as the Overview: the numbers keep the selected window, latest year
-  // included, and the screen MARKS that year and says the comparison is not direct.
-  // The share is unaffected: every território covers the same months.
-  const latestMeta = (window.dataStore && window.dataStore.meta
-    ? (window.dataStore.meta(database) || {}).latest : null) || null;
-  const partialLatest = !!latestMeta && latestMeta.yearComplete === false && lastYear != null
-    && (latestMeta.completeYear == null || lastYear > latestMeta.completeYear);
-  const monthsLatest = partialLatest && latestMeta.monthsInLatestYear;
+  // Same rule as the Overview (window.anoParcial): the numbers keep the selected window,
+  // latest year included, and the screen MARKS that year and says the comparison is not
+  // direct. The share is unaffected: every território covers the same months.
+  const parcial = window.anoParcial(database, lastYear);
+  const partialLatest = !!parcial;
+  const monthsLatest = parcial ? parcial.meses : null;
   ready.forEach((it) => {
     const pT = it.points.find((d) => d.y === lastYear) || null;
     const p0 = baseYear != null ? it.points.find((d) => d.y === baseYear) || null : null;

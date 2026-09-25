@@ -140,7 +140,7 @@ function ViewExportCoef() {
         <window.KpiCardSpark label={uf ? `Coeficiente · ${uf}` : 'Coeficiente nacional'} value={data.national.coefPct == null ? '—' : msPct(data.national.coefPct)} sub={`acumulado ${coefWindow} · do produzido vai p/ exportação`} />
         <window.KpiCardSpark label="UF mais exportadora" value={top?.uf || '—'} sub={top ? `${msPct(top.coefPct)} da produção` : '—'} />
         {ranked.length > 1
-          ? <window.KpiCardSpark label="UF mais interna" value={bottom?.uf || '—'} sub={`${msPct(bottom?.coefPct || 0)} exportado`} />
+          ? <window.KpiCardSpark label="UF mais interna" value={bottom?.uf || '—'} sub={bottom?.coefPct == null ? '—' : `${msPct(bottom.coefPct)} exportado`} />
           : <window.KpiCardSpark label="UF mais interna" value="—" sub="produção concentrada em 1 UF" />}
         {/* As DUAS metades do denominador. A composição é separável e é o que o
             pesquisador quer ver; a RAZÃO não é — dividir todas as exportações por só
