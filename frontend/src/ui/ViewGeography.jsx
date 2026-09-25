@@ -67,7 +67,7 @@ function fmtCompact(v) {
   return (v || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 });
 }
 
-function ViewGeography({ families, conventions, summary, database }) {
+function ViewGeography({ families, conventions, summary, database, territoryCompare = null, setTerritoryCompare = null }) {
   const conv     = conventions || window.DEFAULT_CONVENTIONS;
   // UF_DATA.value is in the banco's OWN base currency (mi) internally — scale by
   // 1e6 to absolute, then convert base→display through the base-aware factor.
@@ -479,6 +479,26 @@ function ViewGeography({ families, conventions, summary, database }) {
   // selection the region's own expansion?" the SAME way — they read it from here, never
   // each from its own derivation, which is how the two came to disagree before (v1.33.2).
   const activeRegionUfs = selectedRegion ? ufsOfRegion(selectedRegion) : null;
+  // "Comparar com outros": what is selected here opens the comparison, where the
+  // researcher adds the other places (territoryCompare.fromMapFocus). The metric and scale
+  // chosen there before are kept; the places are replaced, because the button names them.
+  // Unlike the raio-x, the product filters STAY: the point is to compare places over the
+  // same basket the map is showing.
+  const tcm = window.territoryCompare;
+  const compareItems = tcm ? tcm.fromMapFocus({
+    cities: summary && summary.munis,
+    ufs: summary && summary.states,
+    region: selectedRegion,
+    regionUfs: activeRegionUfs,
+  }) : [];
+  const compareNames = tcm ? compareItems.map(tcm.labelOf).join(', ') : '';
+  // Every item shares one level by construction, so the plural names it: "as 5 regiões",
+  // "os 2 estados".
+  const compareLevel = compareItems.length ? compareItems[0].level : null;
+  const compareText = compareItems.length === 1
+    ? 'Comparar com outros'
+    : `Comparar ${compareLevel === 'regiao' ? 'as' : 'os'} ${compareItems.length} ${
+      { regiao: 'regiões', uf: 'estados', municipio: 'municípios' }[compareLevel]}`;
   const drillTrail = window.drillTrail(summary, {
     subUfLabel,
     regionUfs: activeRegionUfs,
@@ -672,27 +692,45 @@ function ViewGeography({ families, conventions, summary, database }) {
           // was clickable. The icon says "this opens a detailed read", which the label
           // alone does not.
           action={window.goToView ? (
-            <button
-              type="button"
-              className="btn-secondary gx-xray-btn"
-              // The raio-x answers "what does THIS place have". Opened with a product filter
-              // inherited from Geografia, it listed only the basket, so a session narrowed to
-              // one produto profiled Pará as producing one produto (v1.93.7). Through THIS
-              // button the product filters go back to "all" — basket, SIDRA table and
-              // industrialization level, the three that restrict which produtos count — and
-              // the geography stays. Opening Perfil do território from the sidebar still keeps
-              // whatever filter the researcher chose: there the filter is the universe.
-              onClick={() => {
-                if (window.patchFilter) window.patchFilter({ basket: null, tabela: null, niveis: null });
-                window.goToView('territory_profile');
-              }}
-              title={xrayScope
-                ? `Abrir o perfil de ${xrayScope} com todos os produtos, em Perfil do território`
-                : 'Abrir Perfil do território com todos os produtos'}
-            >
-              <window.Icon name="fact_check" size={14} />
-              Ver raio-x{xrayScope ? ` de ${xrayScope}` : ''}
-            </button>
+            <div className="gx-actions">
+              {setTerritoryCompare && compareItems.length > 0 && (
+                <button
+                  type="button"
+                  className="btn-secondary gx-xray-btn"
+                  onClick={() => {
+                    setTerritoryCompare({ ...(territoryCompare || {}), items: compareItems });
+                    window.goToView('territory_compare');
+                  }}
+                  title={compareItems.length === 1
+                    ? `Abrir o Comparativo entre territórios com ${compareNames}, para acrescentar outros lugares`
+                    : `Abrir o Comparativo entre territórios com ${compareNames}`}
+                >
+                  <window.Icon name="compare_arrows" size={14} />
+                  {compareText}
+                </button>
+              )}
+              <button
+                type="button"
+                className="btn-secondary gx-xray-btn"
+                // The raio-x answers "what does THIS place have". Opened with a product filter
+                // inherited from Geografia, it listed only the basket, so a session narrowed to
+                // one produto profiled Pará as producing one produto (v1.93.7). Through THIS
+                // button the product filters go back to "all" — basket, SIDRA table and
+                // industrialization level, the three that restrict which produtos count — and
+                // the geography stays. Opening Perfil do território from the sidebar still keeps
+                // whatever filter the researcher chose: there the filter is the universe.
+                onClick={() => {
+                  if (window.patchFilter) window.patchFilter({ basket: null, tabela: null, niveis: null });
+                  window.goToView('territory_profile');
+                }}
+                title={xrayScope
+                  ? `Abrir o perfil de ${xrayScope} com todos os produtos, em Perfil do território`
+                  : 'Abrir Perfil do território com todos os produtos'}
+              >
+                <window.Icon name="fact_check" size={14} />
+                Ver raio-x{xrayScope ? ` de ${xrayScope}` : ''}
+              </button>
+            </div>
           ) : null}
         />
         {scope === 'region' && (

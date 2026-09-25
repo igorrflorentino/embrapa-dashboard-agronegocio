@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.95.0] - 2026-09-25
+
+### Adicionado
+- **"Comparar com outros" na Geografia**, ao lado do "Ver raio-x". O botão leva o que está
+  selecionado no mapa para o Comparativo entre territórios, onde o pesquisador acrescenta os
+  outros lugares. Antes, a comparação só se descobria pelo menu. O que o botão entrega:
+  - município selecionado → o município; estado → o estado; região → **a região**, e não os
+    7 ou 9 estados que entrar nela grava no filtro;
+  - vários estados ou municípios marcados no filtro → todos eles ("Comparar os 2 estados");
+  - no Brasil, sem nada selecionado → as 5 regiões que o mapa mostra ("Comparar as 5
+    regiões");
+  - uma lista acima do limite de 8 não é cortada (isso descartaria lugares calado): o botão
+    entrega o nível acima.
+
+  Diferente do raio-x, os filtros de produto ficam, porque o ponto é comparar lugares com a
+  mesma cesta do mapa. A métrica e a escala escolhidas antes no comparativo também ficam; só
+  os lugares são trocados. A regra está em `territoryCompare.fromMapFocus`, testada à parte.
+  Verificado com dados de produção no servidor local, nos quatro níveis (Brasil, Norte, Pará,
+  Portel), e em 375 px, onde os dois botões quebram em duas linhas sem estourar o card.
+
+---
+
 ## [1.94.1] - 2026-09-25
 
 ### Corrigido
