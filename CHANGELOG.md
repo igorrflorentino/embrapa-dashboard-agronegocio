@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.93.2] - 2026-09-25
+
+O backup passa a cobrir a única tabela do pipeline que nenhum build consegue recriar.
+
+### Corrigido
+- **`serving_quality_history` ficava fora de todo backup.** A tabela (v1.91.0) acumula o donut
+  de qualidade de cada build (`full_refresh=false`), e é contra ela que o alarme
+  `quality-drift` do `doctor` compara os builds. O Gold se reconstrói com um `dbt build`, a
+  curadoria já estava coberta, mas uma linha perdida desta tabela é um build perdido. O
+  snapshot de 2026-09-25 02:30 UTC tinha o Gold e as 12 tabelas da curadoria, e não ela.
+  Agora o `backup-gold` copia as tabelas de `backup.HISTORY_TABLES` para `_history/`, e o
+  manifesto registra `history_table_count`.
+
+### Adicionado
+- **Checagem `history-backup` no `doctor`**, com o mesmo contrato da `curation-backup`: falha
+  quando o snapshot mais recente é anterior à cobertura (chave ausente), e aceita 0 como
+  "coberto, vazio". As duas passam a ler o manifesto pela mesma função.
+- **Teste estrutural**: todo modelo dbt com `full_refresh=false` tem de estar em
+  `HISTORY_TABLES`. Foi a falta dessa regra que deixou a tabela um dia sem proteção.
+
+---
+
 ## [1.93.1] - 2026-09-24
 
 Os mapas (UF e município) ficaram mais robustos e mais leves, e os testes deles deixaram de

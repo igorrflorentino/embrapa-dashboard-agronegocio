@@ -125,7 +125,7 @@ waits until Monday. To publish a backfill or one-off ingest now, dispatch it:
 `ingestion_timestamp`), so a revised old year flows all the way to Gold on a
 plain build.
 
-Cold-storage backup of the prod Gold tables **and of `research_inputs`** — the researcher-authored curation data (catálogo, agrupamentos, classificações, allowlists). Gold is DERIVABLE (losing it costs a `dbt build`); `research_inputs` is not recomputable from any source, and until v1.36.0 it was the one dataset with no snapshot. `embrapa doctor` fails (`curation-backup`) if the newest snapshot predates that coverage. **The recommended prod path
+Cold-storage backup of the prod Gold tables **and of `research_inputs`** — the researcher-authored curation data (catálogo, agrupamentos, classificações, allowlists). Gold is DERIVABLE (losing it costs a `dbt build`); `research_inputs` is not recomputable from any source, and until v1.36.0 it was the one dataset with no snapshot. `embrapa doctor` fails (`curation-backup`) if the newest snapshot predates that coverage. Since v1.93.2 it also takes the **append-only serving tables** (`backup.HISTORY_TABLES` — today `serving_quality_history`, the build-by-build donut the quality-drift check reads, which no build can recreate) under `_history/`, with `history-backup` as the matching doctor check; a test fails if a dbt model declares `full_refresh=false` without being in that list. **The recommended prod path
 bundles build + snapshot in one target — reach for this instead of bare
 `dbt-build-prod` whenever the run is preservation-worthy:**
 

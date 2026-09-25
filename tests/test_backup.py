@@ -305,3 +305,83 @@ def test_manifest_declares_curation_coverage(settings: Settings) -> None:
     assert manifesto["curation_table_count"] == 1
     assert manifesto["curation_tables"] == ["produto_catalog_log"]
     assert manifesto["curation_dataset"] == settings.bq_research_inputs_dataset
+
+
+# ── append-only serving tables: the rows no build can recreate (v1.93.2) ───────
+def _list_tables_com_serving(gold: list, curadoria: list, serving: list):
+    def _dispatch(dataset_ref, *a, **k):
+        if dataset_ref.endswith(".gold"):
+            return gold
+        if dataset_ref.endswith(".serving"):
+            return serving
+        return curadoria
+
+    return _dispatch
+
+
+def test_run_snapshots_the_append_only_quality_history(settings: Settings) -> None:
+    """serving_quality_history accumulates one donut per build (full_refresh=false). Gold
+    and every other serving mart can be rebuilt; its rows cannot. Only the listed table is
+    taken — the derivable marts next to it are not."""
+    with (
+        patch("embrapa_dashboard.gcp.clients.bigquery.Client") as bq_cls,
+        patch("embrapa_dashboard.gcp.clients.storage.Client") as gcs_cls,
+        patch("embrapa_dashboard.backup.ensure_bucket"),
+    ):
+        client = bq_cls.return_value
+        client.list_tables.side_effect = _list_tables_com_serving(
+            [_fake_table("gold_pevs_production")],
+            [],
+            [_fake_table("serving_quality_history"), _fake_table("serving_pevs_annual")],
+        )
+        client.extract_table.return_value.result.return_value = None
+
+        run_id, uris = backup.run(settings)
+        corpo = gcs_cls.return_value.bucket.return_value.blob.return_value
+        manifesto = json.loads(corpo.upload_from_string.call_args.args[0])
+
+    historico = [u for u in uris if f"/{backup.HISTORY_DIR}/" in u]
+    assert historico == [
+        f"gs://test-bucket/backups/run={run_id}/{backup.HISTORY_DIR}/"
+        "serving_quality_history/serving_quality_history-*.parquet"
+    ]
+    assert not any("serving_pevs_annual" in u for u in uris)
+    assert manifesto["history_table_count"] == 1
+    assert manifesto["history_tables"] == ["serving_quality_history"]
+
+
+def test_missing_serving_dataset_records_zero_history(settings: Settings) -> None:
+    """A cold install has no serving dataset: the backup still runs and says so."""
+    with (
+        patch("embrapa_dashboard.gcp.clients.bigquery.Client") as bq_cls,
+        patch("embrapa_dashboard.gcp.clients.storage.Client") as gcs_cls,
+        patch("embrapa_dashboard.backup.ensure_bucket"),
+    ):
+        client = bq_cls.return_value
+        client.list_tables.side_effect = _list_tables_por_dataset(
+            [_fake_table("gold_pevs_production")], None
+        )
+        client.extract_table.return_value.result.return_value = None
+
+        backup.run(settings)
+        corpo = gcs_cls.return_value.bucket.return_value.blob.return_value
+        manifesto = json.loads(corpo.upload_from_string.call_args.args[0])
+
+    assert manifesto["history_table_count"] == 0
+
+
+def test_every_append_only_dbt_model_is_backed_up() -> None:
+    """The list is a contract, not a copy: a dbt model declaring full_refresh=false keeps
+    rows no build can recreate, so it must be in HISTORY_TABLES. Adding one without
+    updating the list is how serving_quality_history went a day unprotected."""
+    import re
+    from pathlib import Path
+
+    models = Path(__file__).resolve().parents[1] / "dbt" / "models"
+    append_only = sorted(
+        p.stem
+        for p in models.rglob("*.sql")
+        if re.search(r"full_refresh\s*=\s*false", p.read_text(encoding="utf-8"))
+    )
+    assert append_only, "the scan found nothing — the glob or the regex broke"
+    assert sorted(backup.HISTORY_TABLES) == append_only

@@ -511,7 +511,14 @@ post-hoc: they validate the built output, so they only re-fire once Silver is re
 ## Backing up prod Gold from a local / dev machine
 
 `embrapa backup-gold` snapshots the Gold tables to
-`gs://<bucket>/backups/run=<ts>/`. Two gotchas when running it **locally**
+`gs://<bucket>/backups/run=<ts>/`, plus the two things no build can recreate:
+the authored `research_inputs` tables under `_curation/`, and the append-only
+serving tables (`backup.HISTORY_TABLES`, today `serving_quality_history`) under
+`_history/` (since v1.93.2). The `_SUCCESS` manifest lists all three groups, and
+`embrapa doctor` fails `curation-backup` / `history-backup` when the newest snapshot
+predates either coverage. Check which dataset a run copied with
+`gcloud storage cat gs://<bucket>/backups/run=<ts>/_SUCCESS` (`"dataset": "gold"`
+is prod). Two gotchas when running it **locally**
 (outside the prod-targeted CI / Makefile path):
 
 1. **It targets the DEV gold dataset by default** — a local `.env` resolves
