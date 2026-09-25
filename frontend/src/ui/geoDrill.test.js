@@ -520,3 +520,18 @@ describe('subUfChipText — the recorte as it leaves the screen', () => {
     expect(subUfChipText({ mesos: [] }, MESH)).toBeNull();
   });
 });
+
+// ── Todas as regiões = Brasil (v1.93.8) ──────────────────────────────────────
+// Reported 2026-09-25: at Brasil, "Editar filtros → Aplicar" with nothing changed dropped the
+// map from regions to states. The menu handed back all five macrorregiões, and any region in
+// the filter meant "go to UF level".
+describe('drillLevel — as cinco regiões juntas são o Brasil', () => {
+  it('fica no mapa de regiões quando o filtro traz todas as cinco', () => {
+    expect(drillLevel({ regions: ['N', 'NE', 'CO', 'SE', 'S'] })).toBe('region');
+  });
+
+  it('desce para os estados quando as regiões de fato recortam', () => {
+    expect(drillLevel({ regions: ['N'] })).toBe('uf');
+    expect(drillLevel({ regions: ['N', 'NE', 'CO', 'SE'] })).toBe('uf');
+  });
+});

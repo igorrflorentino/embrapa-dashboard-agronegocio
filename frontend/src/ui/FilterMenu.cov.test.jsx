@@ -652,6 +652,19 @@ describe('FilterMenu — Aplicar sem mudanças devolve a mesma geografia', () =>
     }
   });
 
+  it('no Brasil, sem nada escolhido, devolve "sem recorte de região" e não as cinco (v1.93.8)', () => {
+    // The five regions came back as a list, and Geografia read "a region is selected" and
+    // dropped from the regions map to the states map.
+    const out = apply(null);
+    expect(out.regions).toBeNull();
+    expect(out.states).toBeNull();
+  });
+
+  it('um recorte de regiões continua sendo gravado', () => {
+    const out = apply({ regions: ['N', 'NE'] });
+    expect(out.regions).toEqual(['N', 'NE']);
+  });
+
   it('um recorte de verdade continua sendo gravado', () => {
     // Pará and São Paulo selected, only Pará's mesorregião kept: that excludes São Paulo's,
     // so it IS a narrowing and must travel.

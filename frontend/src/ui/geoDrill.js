@@ -27,6 +27,10 @@
  *  selected at once (from the filter menu, not by clicking) sit at UF level — there is
  *  no single municipal mesh to drill into, and pretending otherwise would either show
  *  one state's cities or silently pick one. */
+// IBGE's macrorregiões: N, NE, CO, SE, S. Fixed by the IBGE division itself, so a
+// constant here is safer than reading a registry that a test or a partial load could empty.
+const BR_REGION_COUNT = 5;
+
 export function drillLevel(summary, muniCapable = true, subUfNarrowed = false) {
   const s = summary || {};
   const states = Array.isArray(s.states) ? s.states : [];
@@ -56,7 +60,10 @@ export function drillLevel(summary, muniCapable = true, subUfNarrowed = false) {
   if (subUfNarrowed) return muniCapable ? 'municipio' : 'uf';
   if (states.length === 1) return muniCapable ? 'municipio' : 'uf';
   if (states.length > 1) return 'uf';
-  if (regions.length >= 1) return 'uf';
+  // A region selection moves the map to UF level only when it NARROWS: all five
+  // macrorregiões are Brasil. The filter menu used to hand back all five on an
+  // "Aplicar" with nothing changed, and the map dropped from regions to states (v1.93.8).
+  if (regions.length >= 1 && regions.length < BR_REGION_COUNT) return 'uf';
   return 'region';
 }
 

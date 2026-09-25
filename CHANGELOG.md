@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.93.8] - 2026-09-25
+
+### Corrigido
+- **No Brasil, "Editar filtros → Aplicar" sem mudar nada trocava o mapa de regiões pelo de
+  estados.** Relatado passo a passo e reproduzido na mesma sequência (abrir o painel, escolher
+  o IBGE PEVS, a Geografia, "Editar filtros", "Aplicar"): o mapa passava de "Distribuição por
+  região" para "Distribuição por UF", com a trilha ainda em "Brasil". O menu devolvia as cinco
+  regiões como uma lista, e a Geografia decide o nível do mapa com a regra "há região no
+  filtro, então mostre os estados". Cinco regiões são o Brasil inteiro. Duas correções:
+  - o menu devolve "sem recorte de região" quando todas estão marcadas, como já fazia com os
+    estados e os produtos (a fonte do defeito);
+  - o nível do mapa trata as cinco regiões como Brasil, uma defesa para qualquer outro caminho
+    que produza a mesma lista.
+
+  Recortes de verdade não mudam: uma ou quatro regiões continuam levando ao mapa de estados.
+  A v1.93.7 corrigiu o mesmo "Aplicar" dentro de uma região e de um estado, mas não tinha sido
+  testada a partir do Brasil, e era dali que o relato partia. Contraprova: os 2 testes do
+  defeito falham no código anterior.
+
+---
+
 ## [1.93.7] - 2026-09-25
 
 A trilha "Brasil › região › estado" da Geografia deixa de mudar sozinha, e o "Ver raio-x"
