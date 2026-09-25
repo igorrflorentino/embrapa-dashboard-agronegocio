@@ -187,7 +187,9 @@
         return { headers, rows, subject: 'concentracao' };
       }
       case 'quality': {
-        const headers = ['flag', 'descricao', 'linhas', 'participacao'];
+        // 'marca' (era 'flag' até a v1.93.6): o nome que a tela usa desde a v1.93.0. A coluna
+        // traz o código técnico da marca (OK, UNSCORED…), e 'descricao' o rótulo em português.
+        const headers = ['marca', 'descricao', 'linhas', 'participacao'];
         // Célula VAZIA quando a participação não existe, como celulaValor já faz acima:
         // `q.share` é anulável desde a v1.61.0 (ratioPresent recusa denominador não
         // positivo — acontece quando o filtro seleciona só flags sem linha no recorte),
