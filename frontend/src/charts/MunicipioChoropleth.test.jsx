@@ -36,7 +36,7 @@ class FakeMap {
   }
   isStyleLoaded() { return true; }
   getLayer(id) { return this.layers.has(id) ? { id } : undefined; }
-  setPaintProperty(l, p, v) { this.paintProps[`${l}.${p}`] = v; }
+  setPaintProperty(l, p, v) { this.paintCalls = (this.paintCalls || 0) + 1; this.paintProps[`${l}.${p}`] = v; }
   setFilter(l, f) { this.filters[l] = f; }
   get fill() { return this.paintProps['mun-fill.fill-color']; }
   addSource() {}
@@ -70,9 +70,13 @@ beforeEach(async () => {
   vi.resetModules();
   fakeMap = new FakeMap();
   window.autoScaleNum = (v) => (Math.abs(v) >= 1e6 ? { factor: 1e6, suffix: 'mi' } : { factor: 1, suffix: '' });
+  // CSS mocked for the same reason as in BrazilChoropleth.test.jsx: transformed afresh
+  // after every resetModules, it could outlast waitFor under a loaded full-suite run.
+  vi.doMock('maplibre-gl/dist/maplibre-gl.css', () => ({}));
   vi.doMock('maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url', () => ({ default: '/w.js' }));
   vi.doMock('maplibre-gl', () => ({
-    Map: function Map() { return fakeMap; },
+    // An Error stands for a browser without WebGL: maplibre throws from the constructor.
+    Map: function Map() { if (fakeMap instanceof Error) throw fakeMap; return fakeMap; },
     Popup: function Popup() { return stubPopup(); },
     NavigationControl: function NavigationControl() {},
     setWorkerUrl: () => {},
@@ -86,6 +90,7 @@ beforeEach(async () => {
 afterEach(() => {
   cleanup();
   vi.doUnmock('maplibre-gl');
+  vi.doUnmock('maplibre-gl/dist/maplibre-gl.css');
   vi.doUnmock('maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url');
   delete window.autoScaleNum;
 });
@@ -99,7 +104,8 @@ async function renderMap(props = {}) {
   const r = render(
     <MunicipioChoropleth uf="PA" data={DATA} valueKey="value" label="R$" {...props} />,
   );
-  await waitFor(() => expect(fakeMap.loadHandler).toBeTypeOf('function'));
+  // Waiting on module loading (mesh fetch + maplibre), so give it real headroom.
+  await waitFor(() => expect(fakeMap.loadHandler).toBeTypeOf('function'), { timeout: 5000 });
   await fakeMap.fireLoad();
   return r;
 }
@@ -216,7 +222,7 @@ describe('MunicipioChoropleth — tally invariants over mesh × data', () => {
   const render1 = async (props) => {
     const uf = `U${ufSeq++}`;
     const r = render(<MunicipioChoropleth uf={uf} valueKey="value" label="R$" {...props} />);
-    await waitFor(() => expect(fakeMap.loadHandler).toBeTypeOf('function'));
+    await waitFor(() => expect(fakeMap.loadHandler).toBeTypeOf('function'), { timeout: 5000 });
     await fakeMap.fireLoad();
     return r;
   };
@@ -307,7 +313,7 @@ describe('MunicipioChoropleth — focusCity', () => {
   it('filters both layers down to the focused município', async () => {
     render(<MunicipioChoropleth uf="PA" data={DATA} valueKey="value" label="R$"
                                 focusCity="1500107" />);
-    await waitFor(() => expect(fakeMap.loadHandler).toBeTypeOf('function'));
+    await waitFor(() => expect(fakeMap.loadHandler).toBeTypeOf('function'), { timeout: 5000 });
     await fakeMap.fireLoad();
     await waitFor(() => expect(fakeMap.filters['mun-fill']).toBeTruthy());
     for (const layer of ['mun-fill', 'mun-line']) {
@@ -317,7 +323,7 @@ describe('MunicipioChoropleth — focusCity', () => {
 
   it('brings the whole state back when the focus clears', async () => {
     render(<MunicipioChoropleth uf="PA" data={DATA} valueKey="value" label="R$" />);
-    await waitFor(() => expect(fakeMap.loadHandler).toBeTypeOf('function'));
+    await waitFor(() => expect(fakeMap.loadHandler).toBeTypeOf('function'), { timeout: 5000 });
     await fakeMap.fireLoad();
     await waitFor(() => expect(fakeMap.paintProps['mun-fill.fill-color']).toBeTruthy());
     expect(fakeMap.filters['mun-fill']).toBeNull();
@@ -330,7 +336,7 @@ describe('MunicipioChoropleth — focusCity', () => {
     // which looks exactly like "this município has no polygon".
     render(<MunicipioChoropleth uf="PA" data={DATA} valueKey="value" label="R$"
                                 focusCity={1500107} />);
-    await waitFor(() => expect(fakeMap.loadHandler).toBeTypeOf('function'));
+    await waitFor(() => expect(fakeMap.loadHandler).toBeTypeOf('function'), { timeout: 5000 });
     await fakeMap.fireLoad();
     await waitFor(() => expect(fakeMap.filters['mun-fill']).toBeTruthy());
     expect(fakeMap.filters['mun-fill'][2]).toBe('1500107');
@@ -347,7 +353,7 @@ describe('MunicipioChoropleth — the tally goes quiet when one município is fo
     const { container } = render(
       <MunicipioChoropleth uf="PA" data={DATA} valueKey="value" label="R$" focusCity="1500107" />,
     );
-    await waitFor(() => expect(fakeMap.loadHandler).toBeTypeOf('function'));
+    await waitFor(() => expect(fakeMap.loadHandler).toBeTypeOf('function'), { timeout: 5000 });
     await fakeMap.fireLoad();
     expect(container.textContent).not.toMatch(/em cinza/);
   });
@@ -360,7 +366,7 @@ describe('MunicipioChoropleth — the tally goes quiet when one município is fo
     const { container } = render(
       <MunicipioChoropleth uf="PA" data={DATA} valueKey="value" label="R$" />,
     );
-    await waitFor(() => expect(fakeMap.loadHandler).toBeTypeOf('function'));
+    await waitFor(() => expect(fakeMap.loadHandler).toBeTypeOf('function'), { timeout: 5000 });
     await fakeMap.fireLoad();
     expect(container.textContent).toMatch(/em cinza/);
   });
@@ -406,5 +412,51 @@ describe('MunicipioChoropleth — o popup nomeia o município do próprio políg
     const html = await hover('9999999');
     expect(html).toContain('sem produção registrada');
     expect(html).not.toMatch(/\bmi\b|\bbi\b/);   // nenhum número atribuído a ele
+  });
+});
+
+// ── Robustez e eficiência (v1.93.1) ──────────────────────────────────────────
+describe('MunicipioChoropleth — robustez e eficiência', () => {
+  it('mostra o aviso quando o navegador não cria o mapa (sem WebGL)', async () => {
+    // The catch blocks called `setFailed`, which this component never declared: the
+    // ReferenceError escaped as an unhandled rejection and the map area stayed BLANK.
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    fakeMap = new Error('Failed to initialize WebGL');
+    const { container } = render(
+      <MunicipioChoropleth uf="PA" data={DATA} valueKey="value" label="R$" />,
+    );
+    await waitFor(() => expect(container.textContent).toContain('Mapa indisponível neste navegador.'),
+      { timeout: 5000 });
+    console.error.mockRestore();
+  });
+
+  it('uma linha com valor ausente diz "sem dado", não "0"', async () => {
+    await renderMap({ data: [{ cityCode: '1500107', city: 'Abaetetuba', value: null }] });
+    await fakeMap.fire('mun-fill', 'mousemove',
+      { features: [{ properties: { codarea: '1500107' } }], lngLat: { lng: 0, lat: 0 } });
+    expect(popupHtml).toContain('Abaetetuba');
+    expect(popupHtml).toContain('sem dado');
+    expect(popupHtml).not.toContain('sem produção registrada'); // there IS a record
+  });
+
+  it('não repinta quando o mesmo dado chega num array novo', async () => {
+    // Geografia passes `scaledMunis.filter(…)`, fresh every render. Keyed on identity, each
+    // re-render re-sent maplibre a match with one entry per município (853 in MG).
+    const { rerender } = await renderMap();
+    await waitFor(() => expect(Array.isArray(fakeMap.fill)).toBe(true));
+    const before = fakeMap.paintCalls;
+    rerender(<MunicipioChoropleth uf="PA" data={DATA.map((d) => ({ ...d }))} valueKey="value" label="R$" />);
+    expect(fakeMap.paintCalls).toBe(before);
+    rerender(<MunicipioChoropleth uf="PA" data={[{ cityCode: '1500206', city: 'X', value: 1 }]}
+                                  valueKey="value" label="R$" />);
+    expect(fakeMap.paintCalls).toBeGreaterThan(before);
+    expect(fakeMap.fill).toContain('1500206');
+  });
+
+  it('escapa o nome no popup', async () => {
+    await renderMap({ data: [{ cityCode: '1500107', city: 'A & <B>', value: 1 }] });
+    await fakeMap.fire('mun-fill', 'mousemove',
+      { features: [{ properties: { codarea: '1500107' } }], lngLat: { lng: 0, lat: 0 } });
+    expect(popupHtml).toContain('A &amp; &lt;B&gt;');
   });
 });

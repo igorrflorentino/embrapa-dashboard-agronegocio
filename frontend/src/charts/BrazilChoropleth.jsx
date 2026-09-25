@@ -6,15 +6,22 @@
 // 2-letter sigla). `onSelect(uf)` fires on a state click (filter-by-click);
 // `selectedUf` highlights the active selection and re-frames the view to it.
 //
-// maplibre-gl (~250KB gz) is LAZY-loaded via dynamic import() on mount, so it's
-// fetched only when a researcher actually opens this map — not on first paint of
-// the app. Vite code-splits it into its own chunk.
+// maplibre-gl (~250KB gz) is LAZY-loaded on mount through maplibreLoader, so it's
+// fetched only when a researcher actually opens a map — not on first paint of the app.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import brazilUfGeo from './brazilUfGeo';
-import { NODATA, fillColorExpression, ufColorScaleQuantile } from './choroplethScale';
+import {
+  NODATA, escapeHtml, fillColorExpression, fmtMapValue, presentValue, rowsSignature,
+  ufColorScaleQuantile,
+} from './choroplethScale';
 import { sanitizeFeatureCollection } from './geoSanitize';
+import { loadMaplibre, trackContainerSize } from './maplibreLoader';
+
+// Maps with an 'idle' retry already queued. One is enough: the retry reads the LATEST
+// paint through a ref, so queuing one per render only replayed stale closures.
+const IDLE_WAIT = new WeakSet();
 
 // brazilUfGeo ships empty `[]` sub-polygons that crash maplibre's geojson-vt worker
 // and blank the map (FINDING #5); sanitize once at module load into valid GeoJSON.
@@ -49,15 +56,9 @@ UF_GEO.features.forEach((f) => {
   if (f.properties && f.properties.uf) UF_BOUNDS[f.properties.uf] = bboxOfFeature(f);
 });
 
-// Per-value compact magnitude (e.g. 2_900_918_362 → "2,9 bi") — shared by the
-// hover popup AND the legend, so both read the same format the tile map/legend
-// use elsewhere in Geografia.
-function fmtCompact(v) {
-  const mp = window.autoScaleNum && v ? window.autoScaleNum(v) : { factor: 1, suffix: '' };
-  const s = v / mp.factor;
-  const t = s.toLocaleString('pt-BR', { maximumFractionDigits: Math.abs(s) < 10 ? 1 : 0 });
-  return mp.suffix ? `${t} ${mp.suffix}` : t;
-}
+// Per-value compact magnitude (e.g. 2_900_918_362 → "2,9 bi") for the legend. The
+// popup uses fmtMapValue directly, because an absent value needs words, not a "0".
+const fmtCompact = (v) => fmtMapValue(v) ?? '—';
 
 // A maplibre IControl (plain duck-typed interface — no maplibre import needed)
 // that re-frames the map to all of Brazil. maplibre's own NavigationControl only
@@ -117,7 +118,15 @@ export function BrazilChoropleth({
   // collapses whenever a couple of UFs dominate the total (measured: 23 of 27
   // states landing in the SAME lightest bucket for PEVS 2024). Computed once here
   // so BOTH paint() and the legend render from the identical bucket assignment.
-  const scale = useMemo(() => ufColorScaleQuantile(data, valueKey), [data, valueKey]);
+  // Keyed on the CONTENT, not the array: Geografia rebuilds `data` on every render, and
+  // keyed on identity each unrelated re-render recomputed the bins and repainted.
+  const dataSig = rowsSignature(data, 'uf', valueKey);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const scale = useMemo(() => ufColorScaleQuantile(data, valueKey), [dataSig, valueKey]);
+  // Same for the focus: the view passes `ufsOfRegion(r)`, a fresh array each render, and
+  // with the array as a dependency every re-render restarted the fitBounds animation.
+  const focusKey = Array.isArray(focusUfs) && focusUfs.length ? focusUfs.join(',') : '';
+  const focusList = useMemo(() => (focusKey ? focusKey.split(',') : null), [focusKey]);
 
   // uf -> { name, value, label } for the hover popup, kept in a ref so the map's
   // event handlers always read the latest data without re-binding listeners.
@@ -126,11 +135,12 @@ export function BrazilChoropleth({
   // that makes that number a FRACTION of the state has to be legible right there. Held
   // in a ref for the same reason as the lookup: the handlers are bound once.
   const recorteRef = useRef(null);
-  recorteRef.current = recorte;
+  useEffect(() => { recorteRef.current = recorte; }, [recorte]);
   useEffect(() => {
     const idx = {};
     (data || []).forEach((d) => {
-      idx[d.uf] = { name: d.name, value: Number(d[valueKey]) || 0, label,
+      // presentValue, not `Number(v) || 0`: an absent value read "0" in the popup.
+      idx[d.uf] = { name: d.name, value: presentValue(d[valueKey]), label,
                     displayCode: d.displayCode, displayName: d.displayName };
     });
     lookupRef.current = idx;
@@ -151,38 +161,14 @@ export function BrazilChoropleth({
     let cancelled = false;
     let map = null;
     let popup = null;
+    let stopTracking = () => {};
 
     (async () => {
       let maplibregl;
       try {
-        // NAMESPACE import, never `.default`. maplibre 5+ ships pure ESM with ~85 NAMED
-        // exports and NO default, so `(await import(…)).default` is undefined and
-        // `maplibregl.Map` throws "Cannot read properties of undefined (reading 'Map')".
-        // What makes that trap nasty is that it fails ONLY in the build: with nothing but a
-        // non-existent export referenced, Rollup tree-shakes the whole library away (the
-        // chunk collapsed 786 kB → 514 bytes) while the dev server, which serves modules
-        // directly, kept rendering fine. That is exactly how the first 4→6 attempt passed
-        // tests, lint and `vite build` and still broke production (see v1.24.22).
-        maplibregl = await import('maplibre-gl');
-        await import('maplibre-gl/dist/maplibre-gl.css');
-        // maplibre 5+ runs geojson-vt in a MODULE WORKER shipped as a separate file, and
-        // resolves it at runtime as a sibling of its own `import.meta.url`. That URL is
-        // invisible to the bundler, so Vite never emitted the file: the request fell through
-        // to the SPA's index.html fallback and died on strict MIME checking. The worker then
-        // never started, so no source ever finished loading — `isStyleLoaded()` and
-        // `loaded()` stayed false forever and NO 'idle' event ever fired.
-        // `?worker&url` makes Vite BUNDLE the worker and hand back its URL. It has to be
-        // `?worker&url`, not a plain `?url`: the published worker is an ES module that
-        // imports a sibling, `./maplibre-gl-shared.mjs`. A plain `?url` copies that one file
-        // verbatim, so the relative import resolves to an asset Vite never emitted and the
-        // module worker dies on load. `?worker&url` follows the import graph and emits one
-        // self-contained worker instead.
-        // `setWorkerUrl` is maplibre's supported override (it takes priority over the
-        // import.meta.url guess) and must run BEFORE the first `new Map()`, which is what
-        // spins up the worker pool.
-        maplibregl.setWorkerUrl(
-          (await import('maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url')).default,
-        );
+        // Namespace import, CSS and the bundled worker, once per session. The notes on
+        // why `.default` and a plain `?url` both break live in maplibreLoader.js.
+        maplibregl = await loadMaplibre();
       } catch (err) {
         console.error('[choropleth] maplibre failed to load:', err);
         if (!cancelled) setFailed(true);
@@ -211,6 +197,7 @@ export function BrazilChoropleth({
         return;
       }
       mapRef.current = map;
+      stopTracking = trackContainerSize(map, ref.current);
       // Surface any maplibre-internal error under our own prefix (maplibre's default
       // handler logs a stackless console.error) — diagnostic only, never blanks the map.
       map.on('error', (e) => {
@@ -266,7 +253,9 @@ export function BrazilChoropleth({
         if (!f) return;
         const uf = f.properties.uf;
         const hit = lookupRef.current[uf];
-        const val = hit ? fmtCompact(hit.value) : '—';
+        // A UF with no row, or a row whose value is absent, has no number to show. It used
+        // to read "0" (the value had been coerced with `|| 0`), which states a measurement.
+        const val = hit ? fmtMapValue(hit.value) : null;
         // A row may represent something COARSER than the polygon it is painted on: in
         // região mode every UF carries its region's total, so the popup must name the
         // region. Whoever builds the row says what it represents (displayCode/displayName);
@@ -274,17 +263,18 @@ export function BrazilChoropleth({
         const code = (hit && hit.displayCode) || uf;
         const name = (hit && (hit.displayName || hit.name)) || f.properties.name || uf;
         const unit = (hit && hit.label) || '';
+        const body = val == null ? 'sem dado' : `${val} ${unit}`;
         popup
           .setLngLat(e.lngLat)
           .setHTML(
             // max-width + word-wrap so a long UF name ("Rio Grande do Sul") can't
             // stretch the popup past a narrow/mobile map edge (audit POPUP-1, defensive).
             `<div style="max-width:180px;overflow-wrap:anywhere">` +
-              `<div style="font:600 12px var(--font-body,sans-serif)">${code} · ${name}</div>` +
-              `<div style="font:11px var(--font-body,sans-serif);color:#555">${val} ${unit}</div>` +
+              `<div style="font:600 12px var(--font-body,sans-serif)">${escapeHtml(code)} · ${escapeHtml(name)}</div>` +
+              `<div style="font:11px var(--font-body,sans-serif);color:#555">${escapeHtml(body)}</div>` +
               (recorteRef.current
                 ? `<div style="font:10px var(--font-body,sans-serif);color:#777;margin-top:2px">`
-                  + `recorte: ${recorteRef.current}</div>`
+                  + `recorte: ${escapeHtml(recorteRef.current)}</div>`
                 : '') +
             `</div>`,
           )
@@ -303,6 +293,7 @@ export function BrazilChoropleth({
 
     return () => {
       cancelled = true;
+      stopTracking();
       if (popup) popup.remove();
       if (map) map.remove();
       mapRef.current = null;
@@ -318,6 +309,10 @@ export function BrazilChoropleth({
   // malformed paint expression degrades to the no-data fill instead of throwing
   // "Cannot read properties of undefined (reading 'length')" up to the view and
   // blanking the choropleth without the WebGL fallback (FINDING #5).
+  // The 'idle' retry reads the latest paint through this ref. Updated after every commit
+  // (no dependency list), which is before any 'idle' can fire for that render's data.
+  const paintRef = useRef(null);
+  useEffect(() => { paintRef.current = paint; });
   function paint() {
     const map = mapRef.current;
     if (!map || typeof map.getLayer !== 'function') return;
@@ -328,12 +323,20 @@ export function BrazilChoropleth({
     // researcher happened to change a metric, which re-fired the effect once everything
     // had settled. That workaround was the only reason the map ever showed colour.
     // 'idle' fires when the map has finished loading and rendering, and `once` removes
-    // itself, so this retries exactly as often as needed and never stacks handlers.
+    // itself. Only ONE wait per map, and it runs the LATEST paint through paintRef: it
+    // used to queue this render's `paint`, so a burst of renders before 'idle' replayed
+    // every stale closure in order, repainting old data before the current one.
     const notReady =
       (typeof map.isStyleLoaded === 'function' && !map.isStyleLoaded()) ||
       !map.getLayer('uf-fill');
     if (notReady) {
-      if (typeof map.once === 'function') map.once('idle', paint);
+      if (typeof map.once === 'function' && !IDLE_WAIT.has(map)) {
+        IDLE_WAIT.add(map);
+        map.once('idle', () => {
+          IDLE_WAIT.delete(map);
+          if (mapRef.current === map) paintRef.current();
+        });
+      }
       return;
     }
     try {
@@ -352,8 +355,8 @@ export function BrazilChoropleth({
       // drawn invites reading them as part of the answer, and at região level they
       // carry another region's colour entirely.
       if (typeof map.setFilter === 'function') {
-        const only = Array.isArray(focusUfs) && focusUfs.length
-          ? ['in', ['get', 'uf'], ['literal', focusUfs]]
+        const only = focusList
+          ? ['in', ['get', 'uf'], ['literal', focusList]]
           : null;
         for (const id of ['uf-fill', 'uf-line']) {
           if (map.getLayer(id)) map.setFilter(id, only);
@@ -375,7 +378,7 @@ export function BrazilChoropleth({
   useEffect(() => {
     paint();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scale, selectedUf, layerReady, seamless, focusUfs]);
+  }, [scale, selectedUf, layerReady, seamless, focusList]);
 
   // Re-frame the viewport to the active selection (or back to all of Brazil once
   // cleared). A no-op until the map has actually loaded; harmless to also fire once
@@ -395,10 +398,10 @@ export function BrazilChoropleth({
         [Math.max(acc[1][0], b[1][0]), Math.max(acc[1][1], b[1][1])],
       ];
     }, null);
-    const focused = Array.isArray(focusUfs) && focusUfs.length ? union(focusUfs) : null;
+    const focused = focusList ? union(focusList) : null;
     const bounds = (selectedUf && UF_BOUNDS[selectedUf]) || focused || BRAZIL_BOUNDS;
     map.fitBounds(bounds, { padding: 32, duration: 500 });
-  }, [selectedUf, layerReady, focusUfs]);
+  }, [selectedUf, layerReady, focusList]);
 
   if (failed) {
     return (

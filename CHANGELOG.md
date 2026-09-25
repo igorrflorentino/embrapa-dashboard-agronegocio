@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.93.1] - 2026-09-24
+
+Os mapas (UF e município) ficaram mais robustos e mais leves, e os testes deles deixaram de
+falhar de vez em quando.
+
+### Corrigido
+- **O mapa de municípios ficava em branco num navegador sem WebGL.** Os dois `catch` que
+  deveriam mostrar "Mapa indisponível neste navegador." chamavam `setFailed`, uma função que
+  esse componente nunca declarou. O `ReferenceError` escapava como promessa rejeitada e a
+  área do mapa ficava vazia, sem aviso, justamente no caso para o qual o aviso existe.
+- **A legenda mostrava faixas que nenhum polígono usava.** Ela distribuía os valores pela
+  posição no array ordenado, enquanto a cor vinha de `indexOf`, que dá a todos os valores
+  empatados a faixa do primeiro. Com empates, comuns entre municípios pequenos (muitos
+  registram R$ 1 mil ou R$ 2 mil), a legenda listava faixas vazias e punha valores numa
+  faixa cuja cor eles não tinham. Agora a legenda usa a mesma função que pinta.
+- **Os popups mostravam "0" para um valor ausente.** `Number(v) || 0` transformava a ausência
+  em zero, a regra "ausência não é zero" de novo. Agora uma UF ou um município com registro e
+  sem valor diz "sem dado". Um zero medido continua zero.
+- **Os testes dos mapas falhavam de vez em quando na suíte completa.** Cada teste reimportava
+  o CSS do maplibre, que o Vite transformava de novo, dentro de uma espera de 1 s. Com a
+  máquina carregada, a espera estourava. O CSS agora é simulado nos testes, e as esperas por
+  carregamento de módulo têm folga de 5 s. Três rodadas completas seguidas passaram (1.339
+  testes cada).
+
+### Alterado
+- **Os mapas não repintam mais quando nada mudou.** A tela de Geografia reconstrói os dados
+  num array novo a cada render, e os mapas recalculavam as faixas e reenviavam ao maplibre
+  uma expressão de cor com uma entrada por município (853 em MG), redesenhando a camada
+  inteira. A escala agora depende do conteúdo (código e valor de cada linha), não da
+  identidade do array. Pelo mesmo motivo, a lista de UFs em foco deixou de reiniciar a
+  animação de enquadramento a cada render.
+- **O maplibre é carregado uma vez por sessão** (`charts/maplibreLoader.js`), e não a cada
+  mapa montado. As notas sobre por que `.default` e `?url` quebram a produção foram junto.
+- **O mapa acompanha o tamanho do contêiner**, e não só o da janela. Abrir o painel de
+  filtros ou refluir o card deixava o canvas no tamanho antigo, esticado ou cortado, com o
+  clique caindo no polígono errado.
+- **Uma só espera pelo `idle` do mapa**, que pinta os dados mais recentes. Antes, cada render
+  antes do mapa assentar enfileirava a própria pintura, e todas rodavam em ordem.
+- Os nomes nos popups são escapados antes de ir para o HTML.
+
+---
+
 ## [1.93.0] - 2026-09-24
 
 As marcas de qualidade ganham nomes que dizem o que a linha é, sem precisar de tradução.
