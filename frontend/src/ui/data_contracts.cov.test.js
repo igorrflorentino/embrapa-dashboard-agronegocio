@@ -50,6 +50,18 @@ describe('data.js — registries', () => {
       expect(f.desc, f.id).not.toMatch(/—|:/);
     }
   });
+
+  it('the outlier texts keep the caveat a simplification once dropped (v1.92.1)', () => {
+    // The detector only asks that the price stay within 100× of the median. "Dentro do
+    // esperado" promised more than that, and 0,1% (PPM) to 9,8% (COMTRADE) of the outliers
+    // sit 10× or more away (measured 2026-09-24). Shortening the text must not cut this.
+    for (const id of ['OUTLIER_VALUE', 'OUTLIER_QUANTITY']) {
+      const { desc } = window.QUALITY_FLAGS.find((f) => f.id === id);
+      expect(desc, id).toContain('100 vezes');
+      expect(desc, id).toContain('10 vezes ou mais');
+      expect(desc, id).not.toContain('dentro do esperado');
+    }
+  });
 });
 
 describe('data.js — unit-family helpers', () => {

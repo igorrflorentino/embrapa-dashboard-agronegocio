@@ -107,6 +107,15 @@ Add a **report filter** for exploratory analyses:
 This drops only the likely typos: the rows whose implied price (value ÷ quantity) is more than
 100× away from the product's median. It is the same default the README recommends.
 
+> **Keep `ISOLATED_SPIKE` in the default filter too.** It marks a value in a single year, with
+> none the year before or after, that makes its STATE's series jump (IBGE only, since v1.92.0;
+> 138 rows when it shipped). It is a prompt to look, not proof of an error: the price is often
+> plausible, which is exactly why the price detector misses these rows. Excluding the tag
+> would drop values that may be real. On a page that plots a state's series, expose
+> `data_quality_flag` as a filter control instead, so the reader can see the jump with and
+> without those rows. The case that motivated the tag is Ortigueira and Telêmaco Borba (PR) in
+> 2011, 46,8% of Paraná's native timber that year (`docs/divergencias_de_conteudo.md`).
+
 > ⚠️ **Do not exclude the absence tags (`MISSING_*`, `INCOMPLETE`) in a default filter.** This
 > page recommended it until v1.90.1, and since v1.90.0 it silently drops real trade value. A
 > `MISSING_WEIGHT` row is a COMTRADE record with a correct value and no net weight: the value

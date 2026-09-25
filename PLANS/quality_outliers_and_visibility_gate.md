@@ -12,6 +12,14 @@
 > too (`serving/sql.visibility_clause`). All layers wired + tested: dbt compile + sqlfluff (ON) clean,
 > 950 pytest / 275 vitest green.
 > Designed data-grounded (adversarial workflow validated on live BigQuery, 2026-06-26/27).
+>
+> **Later changes, not in the design below** (audit: `docs/audits/qualidade_dados_audit_2026-09-24.md`):
+> v1.90.0 scores IBGE on `val_real_igpdi_brl` (IPCA left 1974–1979 unscoreable), makes the
+> floor test `greatest(value, qty × median price)` and emits `MISSING_WEIGHT` in COMTRADE;
+> v1.92.0 adds `ISOLATED_SPIKE` (`macros/isolated_spike.sql`), the time-series tier the price
+> detector cannot see. The taxonomy is now 14 values, 12 emittable. The rates quoted in this
+> status block are the 2026-06-27 ones; `embrapa doctor` (`quality-drift`, v1.91.0) now
+> watches them build by build.
 > Origin: the "Contrato de Dados" sheet verification (`docs/audits/curadoria_pr_audit_2026-06-26.md`
 > is the catalog audit; this doc is the spreadsheet-vs-code integration follow-up).
 
