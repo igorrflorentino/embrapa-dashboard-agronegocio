@@ -272,3 +272,59 @@ describe('ViewProductCompare — single-product + value-less herd branches', () 
     expect(container.textContent).not.toContain('val:');
   });
 });
+
+// ── Valor nominal atravessando uma reforma monetária ─────────────────────────────────
+// Medido na tela antes desta regra (PEVS, padrão sem correção): "Madeira em tora
+// +1.114.347.836.054% desde 1986, CAGR +83,8%", uma razão entre cruzados e reais. As
+// séries de VALOR partem do primeiro ano da moeda atual; um rebanho não tem moeda.
+describe('ViewProductCompare — a era da moeda', () => {
+  afterEach(() => { delete window.dataStore; });
+  const breaksAt = (anos) => { window.dataStore = { get: () => ({ valueEraBreaks: anos }) }; };
+  const overlines = (c) => [...c.querySelectorAll('.sh-ov')].map((n) => n.textContent);
+
+  it('com uma reforma dentro da janela, índice, tabela e aviso partem da moeda atual', () => {
+    stubGlobals(flowFixture());
+    breaksAt([2019]);
+    const { container } = render(
+      <ViewProductCompare summary={{}} conventions={{}} database="ibge_pevs" />);
+    expect(overlines(container)).toContain('Séries normalizadas · base 100 em 2019');
+    // P1: 150 em 2019 → 200 em 2020. A série indexada não carrega 2018 (outra moeda).
+    const p1 = multiLineProps.series[0].data;
+    expect(p1.map((d) => d.y)).toEqual([2019, 2020]);
+    expect(p1[0].v).toBe(100);
+    expect(p1[1].v).toBeCloseTo(133.33, 2);
+    expect([...container.querySelectorAll('.pc-table th')].map((t) => t.textContent))
+      .toContain('Variação acumulada (desde 2019)');
+    expect(container.textContent).toContain('os anos antes de 2019 estão em outra moeda');
+  });
+
+  it('um corte na borda da janela não corta nada (a janela já começa na moeda nova)', () => {
+    stubGlobals(flowFixture());
+    breaksAt([2018]);
+    const { container } = render(
+      <ViewProductCompare summary={{}} conventions={{}} database="ibge_pevs" />);
+    expect(overlines(container)).toContain('Séries normalizadas · base 100 em 2018');
+    expect(container.textContent).not.toContain('outra moeda');
+  });
+
+  it('um rebanho é medido em cabeças, sem moeda: a reforma não o recorta', () => {
+    stubGlobals({
+      selectedProducts: ['2670', '2675'],
+      allProductTS: {
+        2670: [{ y: 2018, v: 0, q: 200 }, { y: 2020, v: 0, q: 240 }],
+        2675: [{ y: 2018, v: 0, q: 40 }, { y: 2020, v: 0, q: 42 }],
+      },
+      products: [
+        { code: '2670', name: 'Bovino', family: 'count', measure_kind: 'stock' },
+        { code: '2675', name: 'Suíno', family: 'count', measure_kind: 'stock' },
+      ],
+      yearStart: 2018,
+      yearEnd: 2020,
+    });
+    breaksAt([2019]);
+    const { container } = render(
+      <ViewProductCompare summary={{}} conventions={{}} database="ibge_ppm" />);
+    expect(overlines(container)).toContain('Séries normalizadas · base 100 em 2018');
+    expect(container.textContent).not.toContain('outra moeda');
+  });
+});

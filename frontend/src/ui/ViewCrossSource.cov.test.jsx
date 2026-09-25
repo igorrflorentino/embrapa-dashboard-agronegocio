@@ -388,3 +388,35 @@ describe('ViewCrossSource — per-UF scope', () => {
     expect(container.querySelector('.uf-picker').value).toBe('PA');
   });
 });
+
+// ── Um extremo AUSENTE não vira uma queda de 100% ─────────────────────────────────────
+// `pts[n]?.v || 0` zerava o último ponto ausente, e a tabela publicava "−100%" de
+// variação e de CAGR. Este bloco usa as primitivas REAIS de seriesUtils (capturadas na
+// coleta, antes de stubGlobals trocá-las): os stubs do arquivo fazem `(null - v0) / v0`,
+// que é justamente −100%, e esconderiam o defeito.
+describe('ViewCrossSource — extremo ausente', () => {
+  const real = {
+    accumPct: window.accumPct, cagrPct: window.cagrPct, fmtSigned: window.fmtSigned,
+  };
+
+  it('mostra "—" em cinza, nunca −100% em vermelho nem um traço verde', () => {
+    stubGlobals();
+    Object.assign(window, real);
+    const orig = window.crossSeries;
+    window.crossSeries = (b, m, opts) => {
+      const s = orig(b, m, opts);
+      if (!s || s.key !== 'ibge_pevs:prod_value') return s;
+      return { ...s, points: s.points.map((p) => (p.y === 2020 ? { ...p, v: null } : p)) };
+    };
+    const { container } = render(<ViewCrossSource value={defaultState()} onChange={vi.fn()} />);
+    const row = [...container.querySelectorAll('.pc-table tbody tr')]
+      .find((tr) => tr.textContent.includes('Valor da produção'));
+    const tds = [...row.querySelectorAll('td')];
+    expect(tds[3].textContent).toBe('—');            // o último valor: ausente
+    expect(tds[4].textContent).toBe('—');            // variação acumulada, não −100%
+    expect(tds[5].textContent).toBe('—');            // CAGR
+    // `null >= 0` é true: sem deltaColor o traço saía pintado de crescimento.
+    expect(tds[4].style.color).toBe('var(--fg-4)');
+    expect(tds[5].style.color).toBe('var(--fg-4)');
+  });
+});

@@ -146,7 +146,11 @@ function ViewProductProfile({ families, summary, database, conventions }) {
   const prev = win[win.length - 2] || last;
   const lastValAbs = window.scalePresent(last.v, 1e6 * cvf);
   const prevValAbs = window.scalePresent(prev.v, 1e6 * cvf);
-  const deltaV = window.deltaPct(prevValAbs, lastValAbs);
+  // A janela que termina num ano de reforma (1994, por exemplo) compararia duas moedas no
+  // último par: a mesma recusa do Visão geral (deltaPctIn), com o motivo no subtítulo.
+  const eraBreaks = window.valueEraBreaksFor ? window.valueEraBreaksFor(database) : [];
+  const deltaV = window.deltaPctIn({ y: prev.y, v: prevValAbs }, { y: last.y, v: lastValAbs }, eraBreaks);
+  const deltaVMoeda = window.spanComparable(prev.y, last.y, eraBreaks);
   const deltaQ = window.deltaPct(prev.q, last.q);
   // scalePresent, não `last.q * qtyMul`: em JS `null * fator === 0`, e a quantidade
   // AUSENTE (janela sem ponto algum — `last` cai no fallback `{v: null, q: null}`)
@@ -216,7 +220,7 @@ function ViewProductProfile({ families, summary, database, conventions }) {
             value={window.formatValue(window.scalePresent(last.v, 1e6), conv)}
             delta={window.fmtSigned(deltaV)}
             deltaPositive={window.deltaUp(deltaV)}
-            sub={`${last.y} vs. ${prev.y}`}
+            sub={deltaVMoeda ? `${last.y} vs. ${prev.y} · ${deltaVMoeda}` : `${last.y} vs. ${prev.y}`}
             spark={win.slice(-12).map(d => ({ y: d.y, v: d.v }))}
             sparkKey="v"
             sparkColor="var(--viz-1)"

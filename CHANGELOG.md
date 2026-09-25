@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.94.1] - 2026-09-25
+
+### Corrigido
+- **O Comparativo entre produtos publicava crescimentos de trilhões por cento.** Aberto no
+  padrão (sem correção pela inflação), o PEVS mostrava "Madeira em tora +1.114.347.836.054%
+  desde 1986, CAGR +83,8% a.a.", uma razão entre cruzados e reais. Encontrado ao verificar a
+  v1.94.0, que tinha o mesmo defeito antes de chegar à tela. A tela agora segue a mesma regra
+  do Comparativo entre territórios: índice, variação acumulada, CAGR e correlação do valor
+  partem do primeiro ano da moeda atual, com o aviso de por quê. Medido no servidor local com
+  dados de produção: madeira em tora +3.279% desde 1994, CAGR +12,5%. Rebanhos são medidos em
+  cabeças, não têm moeda e não são recortados. Com uma correção pela inflação não há corte.
+- **Perfil do produto:** a variação anual do valor recusava a ausência, mas não a troca de
+  moeda. Com a janela terminando no ano de uma reforma, o último par comparava duas moedas.
+  Agora recusa como o Visão geral e diz o motivo no subtítulo ("moeda mudou em 1994 — valores
+  nominais não são comparáveis").
+- **Cruzamento de fontes:** um extremo ausente virava 0 (`|| 0`), e a tabela publicava "−100%"
+  de variação e de CAGR, uma queda que ninguém mediu. As duas células também coloriam com
+  `x >= 0`, e como `null >= 0` é verdadeiro em JS, o "—" sairia verde. Agora a ausência chega
+  à tela como "—" em cinza (`deltaColor`).
+
+Varredura: das telas que calculam a partir de um ano-base, Produtividade e Rebanho medem
+quantidade e são imunes. O cruzamento de fontes lê o PEVS já deflacionado e o comércio em
+dólar, então a regra da moeda não se aplica lá. Contraprova: os 3 testes dos defeitos falham
+na v1.94.0.
+
+---
+
 ## [1.94.0] - 2026-09-25
 
 Nova perspectiva: **Comparativo entre territórios**. Até aqui o painel respondia "o que este

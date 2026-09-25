@@ -71,7 +71,21 @@ function ViewProductCompare({ summary, conventions, database }) {
   // TODAS as séries têm medida (window.commonBaseYear), não `yearStart` às cegas: quando
   // a convenção escolhida não alcança o início da janela (IPCA só cobre a PAM desde
   // 1980), indexar por yearStart achatava TODAS as séries em zero.
-  const normPontos = items.map(it => it.win.map(d => ({ y: d.y, v: d[it.mkey] })));
+  //
+  // Em valores nominais em R$, uma janela que atravessa uma reforma monetária compara
+  // moedas diferentes: com a tela aberta no padrão (sem correção), o PEVS mostrava
+  // "Madeira em tora +1.114.347.836.054% desde 1986, CAGR +83,8%", uma razão entre
+  // cruzados e reais. As séries de VALOR partem do primeiro ano da moeda atual
+  // (window.currentEraStart) e a tela diz por quê; as de cabeças não têm moeda e ficam
+  // inteiras, mas o ano-base é comum, então ele acompanha o corte quando há valor.
+  const eraBreaks = window.valueEraBreaksFor ? window.valueEraBreaksFor(database) : [];
+  const eraStart = items.some(it => it.mkey === 'v')
+    ? window.currentEraStart(yearStart, yearEnd, eraBreaks) : null;
+  const inEra = (pts) => (eraStart == null ? pts : pts.filter(d => d.y >= eraStart));
+  const normPontos = items.map(it => {
+    const pts = it.win.map(d => ({ y: d.y, v: d[it.mkey] }));
+    return it.mkey === 'v' ? inEra(pts) : pts;
+  });
   const baseYear = window.commonBaseYear(normPontos);
   const normSeries = items.map((it, i) => ({
     name: it.label,
@@ -95,7 +109,10 @@ function ViewProductCompare({ summary, conventions, database }) {
   // product with an internal year gap would otherwise correlate mismatched years.
   // Correlate on headcount for an all-herd basket, on value otherwise.
   const corrKey = items.every(it => it.isStock) ? 'q' : 'v';
-  const corrMatrix = items.map(a => items.map(b => window.pearsonByYear(a.win, b.win, corrKey)));
+  // Na correlação de VALOR, o crescimento que atravessa uma reforma mede a troca de moeda,
+  // não a produção: a mesma era do gráfico vale aqui.
+  const corrWin = (it) => (corrKey === 'v' ? inEra(it.win) : it.win);
+  const corrMatrix = items.map(a => items.map(b => window.pearsonByYear(corrWin(a), corrWin(b), corrKey)));
   const corrColor = window.corrColor;
 
   // Indexing makes mixed families / stock+flow comparable as growth, but their ABSOLUTE
@@ -150,6 +167,14 @@ function ViewProductCompare({ summary, conventions, database }) {
             </span>
           ))}
         </div>
+        {eraStart != null && (
+          <p className="caption" style={{ margin: '8px 2px 0' }}>
+            Sem correção pela inflação, os anos antes de {eraStart} estão em outra moeda e não se
+            comparam com os de hoje. Por isso o índice, a variação acumulada, o CAGR e a
+            correlação do valor partem de {eraStart}, o primeiro ano na moeda atual. Para medir o
+            período inteiro, escolha uma correção em Convenções métricas.
+          </p>
+        )}
       </div>
 
       {/* Metrics table */}

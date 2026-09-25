@@ -319,3 +319,43 @@ describe('ViewProductProfile — no-geo banco', () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 });
+
+// ── A variação anual do valor não atravessa uma reforma monetária ─────────────────────
+// Com a janela terminando no ano da reforma, o último par compara duas moedas. A mesma
+// recusa do Visão geral (deltaPctIn), com o MOTIVO no subtítulo: um traço sozinho não
+// diria se falta dado ou se a moeda mudou.
+describe('ViewProductProfile — variação anual e a era da moeda', () => {
+  afterEach(() => { delete window.dataStore; });
+
+  const renderWithBreaks = (anos) => {
+    stubGlobals(FLOW_FIXTURE);
+    stubFetch([{ uf: 'PA', value: 8, q_count: 0 }]);
+    window.fmtSigned = (x) => (x == null ? '—' : `${Math.round(x)}%`);
+    window.KpiCardSpark = ({ label, delta, sub }) => (
+      <div className="kpi">
+        <span className="kpi-label">{label}</span>
+        <span className="kpi-delta">{delta}</span>
+        <span className="kpi-sub">{sub}</span>
+      </div>
+    );
+    window.dataStore = { get: () => ({ valueEraBreaks: anos }) };
+    const { container } = render(
+      <ViewProductProfile families={['mass']} summary={{ startDate: '2019-01-01', endDate: '2020-12-31' }}
+                          database="ibge_pevs" conventions={{ currency: 'BRL', correction: 'Nominal' }} />);
+    return [...container.querySelectorAll('.kpi')]
+      .find((k) => k.querySelector('.kpi-label').textContent.startsWith('Valor'));
+  };
+
+  it('recusa quando o par atravessa a reforma, e diz por quê', () => {
+    const kpi = renderWithBreaks([2020]);
+    expect(kpi.querySelector('.kpi-delta').textContent).toBe('—');
+    expect(kpi.querySelector('.kpi-sub').textContent)
+      .toBe('2020 vs. 2019 · moeda mudou em 2020 — valores nominais não são comparáveis');
+  });
+
+  it('dentro da mesma moeda a variação sai normalmente', () => {
+    const kpi = renderWithBreaks([2019]);    // 2019 já é a moeda nova: o par não atravessa
+    expect(kpi.querySelector('.kpi-delta').textContent).toBe('60%');   // 5 → 8
+    expect(kpi.querySelector('.kpi-sub').textContent).toBe('2020 vs. 2019');
+  });
+});

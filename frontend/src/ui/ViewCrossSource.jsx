@@ -76,7 +76,10 @@ function ViewCrossSource({ value, onChange }) {
   // ── Per-series metrics (variação acumulada, CAGR) ─────────────────────
   const items = seriesResults.map(s => {
     const pts = s.points;
-    const v0 = pts[0]?.v || 0, vT = pts[pts.length - 1]?.v || 0;
+    // `?? null`, não `|| 0`: um extremo AUSENTE virava 0, e o último ponto zerado publicava
+    // "−100%" de variação e de CAGR, uma queda que ninguém mediu. Ausente, accumPct e
+    // cagrPct recusam, e fmtV já escreve '—'.
+    const v0 = pts[0]?.v ?? null, vT = pts[pts.length - 1]?.v ?? null;
     return { ...s, v0, vT, cagr: window.cagrPct(v0, vT, window.spanYears(pts)), accum: window.accumPct(v0, vT) };
   });
 
@@ -299,8 +302,8 @@ function ViewCrossSource({ value, onChange }) {
                   <td>{it.bancoShort}</td>
                   <td className="num tnum">{fmtV(it.v0, it.unit)}</td>
                   <td className="num tnum">{fmtV(it.vT, it.unit)}</td>
-                  <td className="num tnum" style={{ color: it.accum >= 0 ? 'var(--ok)' : 'var(--err)' }}>{window.fmtSigned(it.accum, 0)}</td>
-                  <td className="num tnum" style={{ color: it.cagr >= 0 ? 'var(--ok)' : 'var(--err)' }}>{window.fmtSigned(it.cagr, 1)}</td>
+                  <td className="num tnum" style={{ color: window.deltaColor(it.accum) }}>{window.fmtSigned(it.accum, 0)}</td>
+                  <td className="num tnum" style={{ color: window.deltaColor(it.cagr) }}>{window.fmtSigned(it.cagr, 1)}</td>
                 </tr>
               ))}
             </tbody>
