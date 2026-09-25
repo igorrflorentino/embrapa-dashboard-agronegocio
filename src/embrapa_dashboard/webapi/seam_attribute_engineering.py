@@ -407,9 +407,11 @@ def market_nature(agrupamento_id: str | None = None) -> dict:
     acc: dict = {}
     if df is not None and not df.empty:
         for r in df.itertuples():
-            acc.setdefault(int(r.reference_year), {})[r.market_nature] = (
-                float(r.value_usd or 0) / 1e9
-            )
+            # A market with no value that year stays out of the slot, like a market with
+            # no row at all, instead of being stored as a measured US$ 0.
+            v = measures.scale_present(r.value_usd, 1e9)
+            if v is not None:
+                acc.setdefault(int(r.reference_year), {})[r.market_nature] = v
     years = sorted(acc)
     series = [{"y": y, **{m: acc[y].get(m, 0.0) for m in markets}} for y in years]
     return {"years": years, "series": series, "latest": series[-1] if series else {}}

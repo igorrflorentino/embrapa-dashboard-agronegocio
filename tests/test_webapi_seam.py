@@ -914,6 +914,69 @@ def test_cross_points_exp_price_emits_none_when_weight_missing(monkeypatch):
     assert pts == [{"y": 2020, "v": 5.0}, {"y": 2021, "v": None}]
 
 
+# ── an absent VALUE is a gap, not a zero (v1.92.3) ─────────────────────────────
+# `float(r.value or 0)` turned a NULL year sum into 0 before any division. No year is NULL
+# in COMEX/COMTRADE today, so these pin the construction, not a live defect.
+
+
+def test_exp_price_is_a_gap_when_the_value_is_absent(monkeypatch):
+    seam = _seam()
+    val = pd.DataFrame([{"reference_year": 2020, "value": None}])
+    wt = pd.DataFrame([{"reference_year": 2020, "value": 1e9}])
+
+    def fake_cross(metric, year_start=None, year_end=None, codes=(), uf_codes=()):
+        return val if metric == "mdic_comex:exp_value" else wt
+
+    monkeypatch.setattr(seam.gateway, "fetch_cross_series", fake_cross)
+    # Was {"v": 0.0}: a price of US$ 0/kg for a year with no measured value.
+    assert seam._cross_points("mdic_comex", "exp_price", 2020, 2020, "US$/kg") == [
+        {"y": 2020, "v": None}
+    ]
+
+
+def test_cross_series_point_is_a_gap_when_the_value_is_absent(monkeypatch):
+    seam = _seam()
+    df = pd.DataFrame(
+        [{"reference_year": 2020, "value": 2e9}, {"reference_year": 2021, "value": None}]
+    )
+    monkeypatch.setattr(seam.gateway, "fetch_cross_series", lambda *a, **k: df)
+    pts = seam._cross_points("mdic_comex", "exp_value", 2020, 2021, "US$ bi")
+    assert pts == [{"y": 2020, "v": 2.0}, {"y": 2021, "v": None}]
+
+
+def test_xyear_leaves_an_absent_year_out_instead_of_storing_zero(monkeypatch):
+    base = _base()
+    df = pd.DataFrame(
+        [
+            {"reference_year": 2020, "value": 5.0},
+            {"reference_year": 2021, "value": None},
+            {"reference_year": 2022, "value": float("nan")},
+            {"reference_year": 2023, "value": 0.0},  # a MEASURED zero stays
+        ]
+    )
+    monkeypatch.setattr(base.gateway, "fetch_cross_series", lambda *a, **k: df)
+    assert base._xyear("mdic_comex:exp_value", ()) == {2020: 5.0, 2023: 0.0}
+
+
+def test_market_share_skips_a_year_with_no_brazilian_value(monkeypatch):
+    """The consumer the `_xyear` change protects: a year with no COMEX value used to reach
+    `pct_present(0, world)` and publish a 0% share for a year nobody measured."""
+    cross = _cross()
+    base = _base()
+    frames = {
+        "mdic_comex:exp_value": pd.DataFrame(
+            [{"reference_year": 2020, "value": 1e9}, {"reference_year": 2021, "value": None}]
+        ),
+        "un_comtrade:world_exp": pd.DataFrame(
+            [{"reference_year": 2020, "value": 4e9}, {"reference_year": 2021, "value": 4e9}]
+        ),
+    }
+    monkeypatch.setattr(base.gateway, "fetch_cross_series", lambda metric, **k: frames[metric])
+    monkeypatch.setattr(cross, "_world_latest_complete_year", lambda: None)
+    series = cross._market_share_series(("0801",), ("0801",))
+    assert [(p["y"], p["share"]) for p in series] == [(2020, 25.0)]
+
+
 # ── cross producers: no codes for a needed source → honest empty, never the ────
 # unscoped ALL-commodities totals (empty codes mean "no filter" to the readers)
 
