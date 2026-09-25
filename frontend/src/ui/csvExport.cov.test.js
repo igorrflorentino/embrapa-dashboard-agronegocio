@@ -513,7 +513,7 @@ describe('exportActiveTableCSV — quality flags', () => {
     });
     window.exportActiveTableCSV({ view: 'quality', summary: {}, database: 'ibge_pevs' });
     const lines = lastCsv.replace('﻿', '').split('\n');
-    expect(lines[0]).toBe('flag;descricao;linhas;participacao');
+    expect(lines[0]).toBe('marca;descricao;linhas;participacao');
     // 0.9876 * 100 = 98.76 → "98,76%" — the comma-decimal is CSV-escaped (quoted)
     // because the esc() regex /[",\n;]/ matches the comma.
     expect(lines[1]).toBe('OK;Sem ressalva;1234;"98,76%"');

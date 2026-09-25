@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.93.6] - 2026-09-25
+
+### Alterado
+- **A exportação CSV da tela de Qualidade traz a coluna `marca`, e não mais `flag`.** É o nome
+  que a tela usa desde a v1.93.0. O conteúdo não muda: a coluna traz o código técnico da marca
+  (`OK`, `UNSCORED`…), e `descricao` traz o rótulo em português. Quem tiver planilha ou script
+  que leia a coluna pelo nome `flag` precisa trocar para `marca`.
+
+---
+
 ## [1.93.5] - 2026-09-25
 
 Correção de uma afirmação da v1.93.1, encontrada no teste visual dos mapas.
