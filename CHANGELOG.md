@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.93.4] - 2026-09-25
+
+Textos do Cadastro de produtos, do menu de filtros e da tela de Qualidade: três afirmações
+erradas corrigidas, e o jargão e o inglês que ainda sobravam trocados por linguagem simples.
+
+### Corrigido
+- **O Cadastro prometia que uma edição valia "na próxima reconstrução diária dos dados (por
+  volta das 08:30)".** O build de produção deixou de ser diário em 2026-08-26 e roda às segundas
+  e quintas (`cron: '30 11 * * 1,4'`), e o GitHub o inicia de 3h35 a 9h58 depois do disparo. A
+  frase ficou errada por um mês, em quatro cópias (duas confirmações, o rodapé da ajuda e o aviso
+  depois de salvar), e um teste fixava a palavra "diária". Agora uma constante só diz "no
+  próximo processamento dos dados, que roda às segundas e quintas-feiras e costuma terminar à
+  tarde", e `tests/test_cadastro_latency_matches_cron.py` lê o cron do workflow e falha se a
+  frase citar outros dias. Contraprova: no código anterior os dois testes falham.
+- **O rodapé do menu de filtros dizia "Atualização diária às 06h00 BRT"** quando a API não
+  trazia a data da última atualização. Isso não vale para nenhum banco (a busca é semanal e o
+  processamento, duas vezes por semana). Sem a data, o rodapé agora não afirma nada. Com ela,
+  diz "Dados atualizados em …", no lugar do inglês "Refresh".
+- **A nota do rebanho na tela de Qualidade dizia que a marca era "OK vs quantidade ausente".**
+  Desde a v1.73.0 o rebanho fica como Sem base para avaliar (ou Sem quantidade, quando falta a
+  contagem). A nota agora diz isso.
+
+### Alterado
+- **Cadastro de produtos em linguagem simples.** Saíram "camada Gold", "pipeline", "órfãos no
+  Gold" e "somente-adição", e os travessões. No lugar entram "base do painel", "o sistema", "os
+  dados continuam guardados" e "Nada aqui apaga dados". Isso vale para a introdução, a ajuda
+  "Como ler esta tabela", as confirmações, os títulos de status e os avisos.
+- **"Flag" virou "marca" em todo texto visível**, como já são chamados os rótulos desde a
+  v1.93.0: "O que significa cada marca?", "Distribuição das marcas", "Participação de cada
+  marca" (era "Share por flag"), o menu de filtros, o Panorama, a tela de Saúde e a descrição da
+  perspectiva. O nome técnico da coluna, `data_quality_flag`, continua onde é citado como coluna.
+- O gráfico de evolução mostra "% sem ressalva" em vez de "% OK".
+
+---
+
 ## [1.93.3] - 2026-09-25
 
 A regra "ausência não é zero" ganha, no frontend, a forma que a varredura JS não enxergava:

@@ -1627,15 +1627,15 @@ function FilterMenu({ open = false, banco = 'ibge_pevs', value, onClose, onApply
                     rodapé ("os filtros serão aplicados sobre gold_…") reforçava a leitura
                     errada. Dizer o alcance é honesto; deixar implícito não é. */}
                 <p className="fm-scope-note caption">
-                  Esta seleção recorta a perspectiva <strong>Qualidade dos dados</strong> —
-                  a distribuição de flags e os painéis por produto. Ela <strong>não</strong> recorta
-                  as séries de produção, valor e geografia das demais perspectivas: o acervo
-                  é preservado por inteiro, com as linhas problemáticas sinalizadas, nunca removidas.
+                  Esta seleção recorta só a perspectiva <strong>Qualidade dos dados</strong>, isto é,
+                  a distribuição das marcas e os painéis por produto. Ela <strong>não</strong> muda as
+                  séries de produção, valor e geografia das outras perspectivas. Nenhuma linha sai do
+                  acervo, e as problemáticas continuam lá, apenas marcadas.
                 </p>
                 <div className="fm-grid-scroll">
                   <div className="fm-grid">
                     {filteredFlags.length === 0 ? (
-                      <div className="fm-empty-grid">Nenhuma flag corresponde a “{qFlags}”.</div>
+                      <div className="fm-empty-grid">Nenhuma marca corresponde a “{qFlags}”.</div>
                     ) : filteredFlags.map(q => {
                       const on = flags.has(q.flag);
                       return (
@@ -1673,8 +1673,15 @@ function FilterMenu({ open = false, banco = 'ibge_pevs', value, onClose, onApply
                     esta tabela (nenhum mart carrega a flag), e a frase afirmava o contrário
                     para ela junto com as demais. O qualificador é curto e verdadeiro. */}
                 Os filtros de produto, geografia e período serão aplicados sobre <strong>{window.dataStore.meta(bancoMeta?.id || banco).table || 'gold_pevs_production'}</strong>
-                <span className="fm-dot"></span>
-                {bancoMeta?.prov?.refresh ? `Refresh ${bancoMeta.prov.refresh}` : 'Atualização diária às 06h00 BRT'}
+                {/* The refresh date comes from /api/source-meta. With none, say nothing: the old
+                    fallback, "Atualização diária às 06h00 BRT", was true of no banco (the batch is
+                    weekly and prod rebuilds Mondays and Thursdays). */}
+                {bancoMeta?.prov?.refresh && (
+                  <>
+                    <span className="fm-dot"></span>
+                    {`Dados atualizados em ${bancoMeta.prov.refresh}`}
+                  </>
+                )}
               </div>
               {/* "Redefinir campos" (not "Restaurar padrão") makes explicit that it
                   only resets the DRAFT form to defaults — the reset takes effect on
