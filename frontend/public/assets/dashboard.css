@@ -4285,3 +4285,12 @@ body.sb-resizing .sidebar-resizer { background: color-mix(in srgb, var(--embrapa
   .tc-add { grid-template-columns: 1fr; }
   .tc-controls { justify-content: flex-start; }
 }
+
+/* Geografia: "Comparar com outros" beside "Ver raio-x" — two ways out of the map, one
+   row, wrapping under the title on a narrow screen instead of overflowing it. */
+.gx-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}

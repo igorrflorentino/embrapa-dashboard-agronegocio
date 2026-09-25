@@ -826,3 +826,74 @@ describe('ViewGeography — "Soma por região" must name what it actually summed
     expect(container).toBeTruthy();
   });
 });
+
+// ── "Comparar com outros": the bridge to Comparativo entre territórios ───────
+//
+// The map shows how the activity spreads across places; the comparison puts chosen places
+// side by side. The button hands over what is selected here (territoryCompare.fromMapFocus)
+// and, unlike the raio-x, keeps the product filters: the point is the same basket.
+describe('ViewGeography — the Comparativo entre territórios shortcut', () => {
+  beforeEach(async () => { await import('./territoryCompare.js'); });
+  afterEach(() => { delete window.goToView; });
+
+  const renderWith = (summary, extra = {}) => {
+    stubGlobals(fullFixture({ ufYearlySeries: UF_YEARLY }));
+    window.goToView = vi.fn();
+    window.patchFilter.mockClear();
+    const setTerritoryCompare = vi.fn();
+    const { container } = render(
+      <ViewGeography families={['mass']} summary={summary} database="ibge_pevs"
+                     conventions={{ autoScale: true }} setTerritoryCompare={setTerritoryCompare} {...extra} />,
+    );
+    const btn = [...container.querySelectorAll('button')].find((b) => /^Comparar/.test(b.textContent.trim()));
+    return { btn, setTerritoryCompare };
+  };
+
+  it('hands over the state in focus and opens the comparison, keeping the basket', () => {
+    const { btn, setTerritoryCompare } = renderWith(
+      { states: ['PA'], basket: ['3403'] },
+      { territoryCompare: { items: [{ level: 'uf', code: 'SP' }], metric: 'mass', mode: 'index' } },
+    );
+    expect(btn.textContent.trim()).toBe('Comparar com outros');
+    expect(btn.title).toContain('Pará');
+    btn.click();
+    // The places are replaced (the button names them); metric and scale chosen before stay.
+    expect(setTerritoryCompare).toHaveBeenCalledWith({
+      items: [{ level: 'uf', code: 'PA' }], metric: 'mass', mode: 'index',
+    });
+    expect(window.goToView).toHaveBeenCalledWith('territory_compare');
+    expect(window.patchFilter).not.toHaveBeenCalled();   // the basket stays
+  });
+
+  it('a região entered on the map goes as the região, not as its states', () => {
+    // This file's universe has 3 states, and Norte is Pará alone: entering Norte writes
+    // regions ['N'] + states ['PA'], which is the região's own expansion.
+    const { btn, setTerritoryCompare } = renderWith({ regions: ['N'], states: ['PA'] });
+    btn.click();
+    expect(setTerritoryCompare.mock.calls[0][0].items).toEqual([{ level: 'regiao', code: 'N' }]);
+  });
+
+  it('at Brasil, it offers every região the map is showing', () => {
+    const { btn, setTerritoryCompare } = renderWith({});
+    const regioes = window.REGIONS.map((r) => r.id);   // 3 in this file's universe, 5 in Brasil
+    expect(btn.textContent.trim()).toBe(`Comparar as ${regioes.length} regiões`);
+    btn.click();
+    expect(setTerritoryCompare.mock.calls[0][0].items.map((t) => t.code)).toEqual(regioes);
+  });
+
+  it('several states picked in the filter are named by count', () => {
+    const { btn } = renderWith({ states: ['PA', 'SP'] });
+    expect(btn.textContent.trim()).toBe('Comparar os 2 estados');
+  });
+
+  it('renders nothing without the state setter, instead of a dead button', () => {
+    stubGlobals(fullFixture({ ufYearlySeries: UF_YEARLY }));
+    window.goToView = vi.fn();
+    const { container } = render(
+      <ViewGeography families={['mass']} summary={{ states: ['PA'] }}
+                     database="ibge_pevs" conventions={{ autoScale: true }} />,
+    );
+    expect([...container.querySelectorAll('button')].some((b) => /^Comparar/.test(b.textContent.trim())))
+      .toBe(false);
+  });
+});

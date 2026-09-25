@@ -224,3 +224,36 @@ describe('containments — mixing levels, and saying when two lines overlap', ()
     expect(tc().containments([{ level: 'uf', code: 'PA' }, { level: 'uf', code: 'SP' }])).toEqual([]);
   });
 });
+
+describe('fromMapFocus — what "Comparar com outros" hands over from the Geografia map', () => {
+  const NORTE = ['RO', 'AC', 'AM', 'RR', 'PA', 'AP', 'TO'];
+
+  it('the finest selection wins: municípios, then states, then the região', () => {
+    expect(tc().fromMapFocus({ cities: [1501402], ufs: ['PA'], region: 'N', regionUfs: NORTE }))
+      .toEqual([{ level: 'municipio', code: '1501402' }]);
+    expect(tc().fromMapFocus({ ufs: ['PA'], region: 'N', regionUfs: NORTE }))
+      .toEqual([{ level: 'uf', code: 'PA' }]);
+  });
+
+  it('a região entered on the map goes as ONE região, not as its seven states', () => {
+    // Entering a região writes its states to the filter too; those states ARE the região.
+    expect(tc().fromMapFocus({ ufs: NORTE, region: 'N', regionUfs: NORTE }))
+      .toEqual([{ level: 'regiao', code: 'N' }]);
+  });
+
+  it('several states picked in the filter go over as those states', () => {
+    expect(tc().fromMapFocus({ ufs: ['PA', 'AM'] }))
+      .toEqual([{ level: 'uf', code: 'PA' }, { level: 'uf', code: 'AM' }]);
+  });
+
+  it('over the limit, the list is not cut (that would drop places silently): a coarser level goes', () => {
+    const nine = ['PA', 'AM', 'SP', 'RJ', 'MG', 'BA', 'PR', 'RS', 'SC'];
+    expect(tc().fromMapFocus({ ufs: nine })).toHaveLength(5);            // the five regions
+    expect(tc().fromMapFocus({ ufs: nine })[0].level).toBe('regiao');
+  });
+
+  it('with nothing selected the map shows Brasil in five regions, and those five go over', () => {
+    expect(tc().fromMapFocus({}).map((t) => t.code)).toEqual(['N', 'NE', 'CO', 'SE', 'S']);
+    expect(tc().fromMapFocus({ cities: [], ufs: null }).every((t) => t.level === 'regiao')).toBe(true);
+  });
+});

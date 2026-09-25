@@ -167,6 +167,26 @@
     return selectionOf(state, database, summary).map(labelOf);
   }
 
+  /** The places the Geografia map hands to the comparison ("Comparar com outros"): what
+   *  is selected there, at the finest level — municípios, then states, then the região —
+   *  so the researcher starts from where they were and adds the others.
+   *
+   *  - A região entered on the map also writes its states to the filter; those states ARE
+   *    the região, so it goes over as one região, not as its 7 (or 9) states.
+   *  - A list over the limit is not cut to fit (which would drop places silently): the
+   *    next coarser level goes instead.
+   *  - With nothing selected the map shows Brasil split into its five regions, and those
+   *    five are what it hands over. */
+  function fromMapFocus({ cities = null, ufs = null, region = null, regionUfs = null } = {}) {
+    const fits = (list) => Array.isArray(list) && list.length >= 1 && list.length <= MAX;
+    if (fits(cities)) return cities.map((c) => ({ level: 'municipio', code: String(c) }));
+    const isRegionItself = !!region && Array.isArray(ufs) && Array.isArray(regionUfs)
+      && ufs.length === regionUfs.length && ufs.every((u) => regionUfs.includes(u));
+    if (fits(ufs) && !isRegionItself) return ufs.map((u) => ({ level: 'uf', code: u }));
+    if (region) return [{ level: 'regiao', code: region }];
+    return (window.REGIONS || []).map((r) => ({ level: 'regiao', code: r.id }));
+  }
+
   /** Pairs where one selected territory lies inside another ("Pará está dentro de
    *  Norte"). Mixing levels is allowed on purpose, and the reader needs to know when two
    *  lines overlap: Pará's value is PART of Norte's, not a rival to it. */
@@ -190,6 +210,6 @@
   window.TERRITORY_COMPARE_MAX = MAX;
   window.territoryCompare = {
     decode, encode, build, containments, labelOf, keyOf, defaultSelection, selectionOf,
-    selectionLabels, LEVEL_LABEL,
+    selectionLabels, fromMapFocus, LEVEL_LABEL,
   };
 })();
