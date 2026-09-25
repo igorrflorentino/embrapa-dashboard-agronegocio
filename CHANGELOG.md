@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.93.0] - 2026-09-24
+
+As marcas de qualidade ganham nomes que dizem o que a linha é, sem precisar de tradução.
+
+### Alterado
+- **Os 14 rótulos foram renomeados.** Vinham da planilha Contrato de Dados e precisavam ser
+  decifrados: "Normais" não dizia que a linha tinha sido conferida, e "(válido)" soava como
+  uma garantia que o detector não dá.
+
+  | marca | antes | agora |
+  |---|---|---|
+  | `OK` | Normais | Sem ressalva |
+  | `UNSCORED` | Não avaliada | Sem base para avaliar |
+  | `OUTLIER_VALUE` / `_QUANTITY` | Valor atípico (válido) / Quantidade atípica (válida) | Valor muito alto / Quantidade muito alta |
+  | `PROBLEMATIC_VALUE` / `_QUANTITY` | Valor / Quantidade problemática (provável erro) | Valor provavelmente errado / Quantidade provavelmente errada |
+  | `ISOLATED_SPIKE` | Pico isolado no tempo | Pico num único ano |
+  | `MISSING_VALUE` / `_QUANTITY` / `_WEIGHT` | Valor financeiro ausente / Quantidade ausente / Peso ausente | Sem valor / Sem quantidade / Sem peso |
+  | `INCOMPLETE` | Incompleto | Sem valor nem quantidade |
+  | `AREA_INCONSISTENT` | Área inconsistente (plantada < colhida) | Área plantada menor que a colhida |
+  | `INFERRED_QUANTITY` / `_VALUE` | Quantidade inferida / Valor financeiro inferido | Quantidade estimada / Valor estimado |
+
+  "Sem ressalva" e "Sem base para avaliar" repetem as palavras do indicador da tela de
+  Qualidade ("Linhas examinadas sem ressalva", "X% sem base para avaliar"). Os ids no Gold não
+  mudam, então filtros do Looker e links antigos continuam valendo.
+- O glossário, o perfil de produto e o README usam os nomes novos.
+
+### Adicionado
+- **Teste de paridade dos rótulos** (`tests/test_flag_label_parity.py`). Os rótulos vivem em
+  duas cópias, `data.js` no frontend e `serializers._FLAG_LABEL_PT` na API, e nada as
+  comparava. Uma marca renomeada só num lado apareceria com dois nomes na mesma tela. O teste
+  também recusa "válid" e "normal" num rótulo.
+
+---
+
 ## [1.92.3] - 2026-09-24
 
 A regra "ausência não é zero" ganha, no lado Python, a forma que a varredura não enxergava.

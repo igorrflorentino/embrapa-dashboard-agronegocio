@@ -52,8 +52,8 @@ describe('decorateSnapshot', () => {
   it('prefers the SERVER-supplied pt-BR label over the raw id for a registry-absent flag', () => {
     // serializers._FLAG_LABEL_PT emits a label for flags the client registry may
     // lack (e.g. INCOMPLETE/MISSING_WEIGHT). decorate must use it, not leak the id.
-    const out = decorateSnapshot({ quality: [{ id: 'INCOMPLETE', count: 2, label: 'Incompleto' }] });
-    expect(out.quality[0].label).toBe('Incompleto'); // server label wins over q.id
+    const out = decorateSnapshot({ quality: [{ id: 'INCOMPLETE', count: 2, label: 'Sem valor nem quantidade' }] });
+    expect(out.quality[0].label).toBe('Sem valor nem quantidade'); // server label wins over q.id
     expect(out.quality[0].color).toBe('var(--pres-gray-400)'); // still gets the fallback color
   });
 

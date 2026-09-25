@@ -77,7 +77,7 @@ const FIXTURE = {
   ],
   qualityFlags: [
     { id: 'OK', label: 'OK', color: 'var(--ok)', share: 0.8, count: 800000 },
-    { id: 'INCOMPLETE', label: 'Incompleto', color: 'var(--viz-7)', share: 0.2, count: 200000 },
+    { id: 'INCOMPLETE', label: 'Sem valor nem quantidade', color: 'var(--viz-7)', share: 0.2, count: 200000 },
   ],
   qualityTs: [{ y: 2020, ok: 0.8 }],
   ufData: [{ uf: 'PA', value: 5, real: true }],
@@ -126,8 +126,8 @@ describe('ViewOverview — KPI strip + quality digest (H3 + P0 lock-in)', () => 
     stubGlobals({
       ...FIXTURE,
       qualityFlags: [
-        { id: 'OK', label: 'Normais', share: 0.182, count: 246412, valueShare: 0.993 },
-        { id: 'UNSCORED', label: 'Não avaliada', share: 0.816, count: 1103462, valueShare: 0.007 },
+        { id: 'OK', label: 'Sem ressalva', share: 0.182, count: 246412, valueShare: 0.993 },
+        { id: 'UNSCORED', label: 'Sem base para avaliar', share: 0.816, count: 1103462, valueShare: 0.007 },
       ],
     });
     const { container } = render(
@@ -157,9 +157,9 @@ describe('ViewOverview — KPI strip + quality digest (H3 + P0 lock-in)', () => 
     stubGlobals({
       ...FIXTURE,
       qualityFlags: [
-        { id: 'OK', label: 'Normais', share: 0.337, count: 693055, valueShare: 0.835 },
-        { id: 'UNSCORED', label: 'Não avaliada', share: 0.646, count: 1327364, valueShare: 0.032 },
-        { id: 'MISSING_QUANTITY', label: 'Quantidade ausente', share: 0.012, count: 25630, valueShare: 0.009 },
+        { id: 'OK', label: 'Sem ressalva', share: 0.337, count: 693055, valueShare: 0.835 },
+        { id: 'UNSCORED', label: 'Sem base para avaliar', share: 0.646, count: 1327364, valueShare: 0.032 },
+        { id: 'MISSING_QUANTITY', label: 'Sem quantidade', share: 0.012, count: 25630, valueShare: 0.009 },
         { id: 'OUTLIER_VALUE', label: 'Valor atípico', share: 0.002, count: 3692, valueShare: 0.115 },
       ],
     });

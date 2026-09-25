@@ -507,8 +507,8 @@ describe('exportActiveTableCSV — quality flags', () => {
     stubRegistry({
       products: PRODUCTS,
       qualityFlags: [
-        { id: 'OK', label: 'Normais', count: 1234, share: 0.9876 },
-        { id: 'INCOMPLETE', label: 'Incompleto', count: 12, share: 0.0124 },
+        { id: 'OK', label: 'Sem ressalva', count: 1234, share: 0.9876 },
+        { id: 'INCOMPLETE', label: 'Sem valor nem quantidade', count: 12, share: 0.0124 },
       ],
     });
     window.exportActiveTableCSV({ view: 'quality', summary: {}, database: 'ibge_pevs' });
@@ -516,8 +516,8 @@ describe('exportActiveTableCSV — quality flags', () => {
     expect(lines[0]).toBe('flag;descricao;linhas;participacao');
     // 0.9876 * 100 = 98.76 → "98,76%" — the comma-decimal is CSV-escaped (quoted)
     // because the esc() regex /[",\n;]/ matches the comma.
-    expect(lines[1]).toBe('OK;Normais;1234;"98,76%"');
-    expect(lines[2]).toBe('INCOMPLETE;Incompleto;12;"1,24%"');
+    expect(lines[1]).toBe('OK;Sem ressalva;1234;"98,76%"');
+    expect(lines[2]).toBe('INCOMPLETE;Sem valor nem quantidade;12;"1,24%"');
     expect(lastDownloadName).toBe('ibge_pevs_qualidade_completo.csv');
   });
 });

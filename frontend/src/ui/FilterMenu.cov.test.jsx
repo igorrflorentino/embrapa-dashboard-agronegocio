@@ -21,17 +21,17 @@ import { cleanup, fireEvent, render } from '@testing-library/react';
 //    importing FilterMenu so the module-level QUALITY array is populated, matching
 //    data.js verbatim. ──────────────────────────────────────────────────────────────
 const QUALITY_FLAGS = [
-  { id: 'OK', label: 'Normais', color: 'var(--ok)' },
-  { id: 'MISSING_VALUE', label: 'Valor financeiro ausente', color: 'var(--warn)' },
-  { id: 'MISSING_QUANTITY', label: 'Quantidade ausente', color: 'var(--info)' },
-  { id: 'MISSING_WEIGHT', label: 'Peso ausente', color: 'var(--viz-4)' },
-  { id: 'INCOMPLETE', label: 'Incompleto', color: 'var(--viz-7)' },
-  { id: 'OUTLIER_QUANTITY', label: 'Quantidade atípica (válida)', color: 'var(--viz-3)' },
-  { id: 'PROBLEMATIC_QUANTITY', label: 'Quantidade problemática (provável erro)', color: 'var(--viz-9)' },
-  { id: 'OUTLIER_VALUE', label: 'Valor atípico (válido)', color: 'var(--viz-5)' },
-  { id: 'PROBLEMATIC_VALUE', label: 'Valor problemático (provável erro)', color: 'var(--err)' },
-  { id: 'INFERRED_QUANTITY', label: 'Quantidade inferida', color: 'var(--viz-8)', reserved: true },
-  { id: 'INFERRED_VALUE', label: 'Valor financeiro inferido', color: 'var(--viz-10)', reserved: true },
+  { id: 'OK', label: 'Sem ressalva', color: 'var(--ok)' },
+  { id: 'MISSING_VALUE', label: 'Sem valor', color: 'var(--warn)' },
+  { id: 'MISSING_QUANTITY', label: 'Sem quantidade', color: 'var(--info)' },
+  { id: 'MISSING_WEIGHT', label: 'Sem peso', color: 'var(--viz-4)' },
+  { id: 'INCOMPLETE', label: 'Sem valor nem quantidade', color: 'var(--viz-7)' },
+  { id: 'OUTLIER_QUANTITY', label: 'Quantidade muito alta', color: 'var(--viz-3)' },
+  { id: 'PROBLEMATIC_QUANTITY', label: 'Quantidade provavelmente errada', color: 'var(--viz-9)' },
+  { id: 'OUTLIER_VALUE', label: 'Valor muito alto', color: 'var(--viz-5)' },
+  { id: 'PROBLEMATIC_VALUE', label: 'Valor provavelmente errado', color: 'var(--err)' },
+  { id: 'INFERRED_QUANTITY', label: 'Quantidade estimada', color: 'var(--viz-8)', reserved: true },
+  { id: 'INFERRED_VALUE', label: 'Valor estimado', color: 'var(--viz-10)', reserved: true },
 ];
 
 const PRODUCTS = [
@@ -231,9 +231,9 @@ describe('FilterMenu — live render (ibge_pevs: product + geo + quality)', () =
     const { container } = render(
       <FilterMenu open banco="ibge_pevs" value={null} onClose={() => {}} onApply={() => {}} />
     );
-    expect(container.textContent).toContain('Normais');
-    expect(container.textContent).toContain('Incompleto');
-    expect(container.textContent).toContain('Quantidade problemática (provável erro)');
+    expect(container.textContent).toContain('Sem ressalva');
+    expect(container.textContent).toContain('Sem valor nem quantidade');
+    expect(container.textContent).toContain('Quantidade provavelmente errada');
     expect(container.textContent).toContain('de 11 selecionadas');
   });
 });

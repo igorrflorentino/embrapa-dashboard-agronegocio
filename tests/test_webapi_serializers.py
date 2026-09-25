@@ -121,13 +121,13 @@ def test_serialize_snapshot_shapes_and_scales():
     assert uf["q_mass"] == 0.0 and uf["q_vol"] == 0.0
     # _quality emits a pt-BR label so the donut stays Portuguese even for flags the
     # frontend taxonomy lacks (INCOMPLETE/MISSING_WEIGHT). The healthy row is labeled
-    # "Normais" per the Contrato de Dados spreadsheet (not the English "OK" token).
+    # "Sem ressalva" (not the English "OK" token), the words the Qualidade KPI uses.
     # valueShare None porque a fixture não traz a coluna: a mart antiga não tinha, e o
     # serializer degrada para ausência em vez de inventar 0% — que afirmaria que nenhum
     # dinheiro passou pelo detector.
     assert out["quality"][0] == {
         "id": "OK",
-        "label": "Normais",
+        "label": "Sem ressalva",
         "count": 42,
         "share": 0.8,
         "valueShare": None,
@@ -495,17 +495,17 @@ def test_quality_flag_taxonomy_complete_and_ptbr():
         "INFERRED_VALUE",
     } <= set(s._FLAG_KEY)
     assert all(label != flag_id for flag_id, label in s._FLAG_LABEL_PT.items())
-    assert "atípica" in s._FLAG_LABEL_PT["OUTLIER_QUANTITY"]
-    assert "problemático" in s._FLAG_LABEL_PT["PROBLEMATIC_VALUE"]
+    assert s._FLAG_LABEL_PT["OUTLIER_QUANTITY"] == "Quantidade muito alta"
+    assert s._FLAG_LABEL_PT["PROBLEMATIC_VALUE"] == "Valor provavelmente errado"
     # The reserved inferred tier carries its pt-BR labels + the qualityTs keys.
     assert s._FLAG_KEY["INFERRED_QUANTITY"] == "inferred_quantity"
     assert s._FLAG_KEY["INFERRED_VALUE"] == "inferred_value"
-    assert s._FLAG_LABEL_PT["INFERRED_QUANTITY"] == "Quantidade inferida"
-    assert s._FLAG_LABEL_PT["INFERRED_VALUE"] == "Valor financeiro inferido"
+    assert s._FLAG_LABEL_PT["INFERRED_QUANTITY"] == "Quantidade estimada"
+    assert s._FLAG_LABEL_PT["INFERRED_VALUE"] == "Valor estimado"
     # UNSCORED: a linha que o detector não pôde examinar tem marca PRÓPRIA — sem ela,
     # "examinada e aprovada" e "nunca examinada" saíam com a mesma palavra.
     assert s._FLAG_KEY["UNSCORED"] == "unscored"
-    assert s._FLAG_LABEL_PT["UNSCORED"] == "Não avaliada"
+    assert s._FLAG_LABEL_PT["UNSCORED"] == "Sem base para avaliar"
 
 
 def test_quality_ts_unmapped_flag_lowers_known_shares_not_dropped():
@@ -990,8 +990,8 @@ def test_quality_uses_real_pt_br_labels():
     )
     out = s._quality(df)
     by_id = {r["id"]: r["label"] for r in out}
-    assert by_id["INCOMPLETE"] == "Incompleto"  # pt-BR, not the raw English id
-    assert by_id["MISSING_WEIGHT"] == "Peso ausente"
+    assert by_id["INCOMPLETE"] == "Sem valor nem quantidade"  # pt-BR, not the raw English id
+    assert by_id["MISSING_WEIGHT"] == "Sem peso"
 
 
 def test_serialize_source_meta_carries_latest_year_completeness():

@@ -60,7 +60,7 @@ function makeSnapshot() {
     // `share` vem SEMPRE da API (serving_quality_by_source), e a fixture não o trazia —
     // invisível enquanto o cliente renormalizava por cima. Sem ele, `share` era undefined.
     quality: [
-      { id: 'OK', label: 'Normais', count: 900, share: 0.9 },
+      { id: 'OK', label: 'Sem ressalva', count: 900, share: 0.9 },
       { id: 'PROBLEMATIC', label: 'Problemático', count: 100, share: 0.1 },
     ],
     qualityTs: [
@@ -303,8 +303,8 @@ describe('applyFilters — share e valueShare vêm ambos do ACERVO', () => {
     // Um acervo onde as duas leituras divergem por ordem de grandeza, que é o caso real:
     // a marca majoritária em LINHAS é minoritária em VALOR.
     snap.quality = [
-      { id: 'UNSCORED', label: 'Não avaliada', count: 800, share: 0.8, valueShare: 0.01 },
-      { id: 'OK', label: 'Normais', count: 150, share: 0.15, valueShare: 0.79 },
+      { id: 'UNSCORED', label: 'Sem base para avaliar', count: 800, share: 0.8, valueShare: 0.01 },
+      { id: 'OK', label: 'Sem ressalva', count: 150, share: 0.15, valueShare: 0.79 },
       { id: 'OUTLIER_VALUE', label: 'Valor atípico', count: 50, share: 0.05, valueShare: 0.20 },
     ];
     return snap;
@@ -332,8 +332,8 @@ describe('applyFilters — share e valueShare vêm ambos do ACERVO', () => {
   it('um banco sem valor algum mantém valueShare NULO — não vira 0%', () => {
     const snap = makeSnapshot();
     snap.quality = [
-      { id: 'OK', label: 'Normais', count: 900, share: 0.9, valueShare: null },
-      { id: 'UNSCORED', label: 'Não avaliada', count: 100, share: 0.1, valueShare: null },
+      { id: 'OK', label: 'Sem ressalva', count: 900, share: 0.9, valueShare: null },
+      { id: 'UNSCORED', label: 'Sem base para avaliar', count: 100, share: 0.1, valueShare: null },
     ];
     installGlobals(snap);
     const out = window.applyFilters({ basket: null, flags: null }, 'ibge_pevs');

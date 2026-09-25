@@ -32,8 +32,8 @@ describe('data.js — registries', () => {
     // the 12-value taxonomy (5 base + 4 outlier/problemático + 2 reserved inferred tiers
     // + UNSCORED, que separa "examinada e aprovada" de "nunca examinada")
     expect(window.QUALITY_FLAGS).toHaveLength(14); // 12 shared + AREA_INCONSISTENT (PAM-only) + ISOLATED_SPIKE (IBGE)
-    expect(window.QUALITY_FLAGS.find((f) => f.id === 'OK').label).toBe('Normais');
-    expect(window.QUALITY_FLAGS.find((f) => f.id === 'UNSCORED').label).toBe('Não avaliada');
+    expect(window.QUALITY_FLAGS.find((f) => f.id === 'OK').label).toBe('Sem ressalva');
+    expect(window.QUALITY_FLAGS.find((f) => f.id === 'UNSCORED').label).toBe('Sem base para avaliar');
     // every flag now carries a plain-pt-BR legend description
     expect(window.QUALITY_FLAGS.every((f) => typeof f.desc === 'string' && f.desc.length > 0)).toBe(true);
     // the two reserved inferred tiers are flagged as such
