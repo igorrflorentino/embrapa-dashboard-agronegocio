@@ -63,7 +63,7 @@ function ViewOverview({ families, summary, database, conventions }) {
 
   // Quality digest. Lê a lista COMPLETA, não a recortada pelas chips de flag: este card
   // se declara "acervo do banco" no próprio subtítulo, e um número do acervo não muda
-  // porque o leitor desmarcou uma chip. Antes, desmarcar "Não avaliada" fazia o card ler
+  // porque o leitor desmarcou uma chip. Antes, desmarcar "Sem base para avaliar" fazia o card ler
   // "99,6%" com o subtítulo ainda dizendo "acervo do banco" — certo como aritmética,
   // respondendo outra pergunta. As chips seguem valendo na perspectiva Qualidade, que é
   // onde elas escolhem o que olhar.

@@ -51,8 +51,8 @@ afterEach(() => cleanup());
 const FIXTURE = {
   qualityFlags: [
     { id: 'OK', label: 'OK', color: 'var(--ok)', share: 0.8, count: 800000 },
-    { id: 'INCOMPLETE', label: 'Incompleto', color: 'var(--viz-7)', share: 0.15, count: 150000 },
-    { id: 'MISSING_WEIGHT', label: 'Peso ausente', color: 'var(--viz-4)', share: 0.05, count: 50000 },
+    { id: 'INCOMPLETE', label: 'Sem valor nem quantidade', color: 'var(--viz-7)', share: 0.15, count: 150000 },
+    { id: 'MISSING_WEIGHT', label: 'Sem peso', color: 'var(--viz-4)', share: 0.05, count: 50000 },
   ],
   qualityTs: [{ y: 2020, ok: 0.8, incomplete: 0.15, missing_weight: 0.05 }],
   qualityByProduct: [{ code: 'P1', name: 'Açaí', OK: 0.8, INCOMPLETE: 0.2 }],
@@ -68,8 +68,8 @@ describe('ViewQuality — renders the REAL Gold quality flags (H3 + P0 lock-in)'
     const { container } = render(<ViewQuality summary={{}} database="ibge_pevs" />);
     const labels = [...container.querySelectorAll('.qa-flag-label')].map((e) => e.textContent);
     expect(labels).toContain('OK');
-    expect(labels).toContain('Incompleto'); // INCOMPLETE — silently dropped before the P0 fix
-    expect(labels).toContain('Peso ausente'); // MISSING_WEIGHT — COMEX-only real flag
+    expect(labels).toContain('Sem valor nem quantidade'); // INCOMPLETE — silently dropped before the P0 fix
+    expect(labels).toContain('Sem peso'); // MISSING_WEIGHT — COMEX-only real flag
     expect(labels).not.toContain('Estimado'); // phantom prototype flags are gone
     expect(labels).not.toContain('Outlier');
   });
@@ -98,7 +98,7 @@ describe('ViewQuality — renders the REAL Gold quality flags (H3 + P0 lock-in)'
     const legend = container.querySelector('.qa-flag-legend');
     expect(legend).toBeTruthy();
     // The panel iterates the FULL registry, so a reserved 0-count flag is still explained.
-    expect(legend.textContent).toContain('Quantidade inferida');
+    expect(legend.textContent).toContain('Quantidade estimada');
     expect(legend.textContent).toContain('reservada');
     expect(legend.textContent).toContain('completaria automaticamente'); // the desc text
     // one legend item per registered flag (all documented, present or reserved)
@@ -135,7 +135,7 @@ describe('ViewQuality — renders the REAL Gold quality flags (H3 + P0 lock-in)'
 const PPM_FIXTURE = {
   qualityFlags: [
     { id: 'OK', label: 'OK', color: 'var(--ok)', share: 0.85, count: 850000 },
-    { id: 'MISSING_QUANTITY', label: 'Quantidade ausente', color: 'var(--viz-4)', share: 0.1, count: 100000 },
+    { id: 'MISSING_QUANTITY', label: 'Sem quantidade', color: 'var(--viz-4)', share: 0.1, count: 100000 },
     { id: 'MISSING_VALUE', label: 'Valor ausente', color: 'var(--viz-7)', share: 0.05, count: 50000 },
   ],
   qualityTs: [{ y: 2020, ok: 0.85 }],
@@ -179,7 +179,7 @@ describe('ViewQuality — stock/flow facet for livestock (measure_kind)', () => 
 const PEVS_HOMONIMOS = {
   qualityFlags: [
     { id: 'OK', label: 'OK', color: 'var(--ok)', share: 0.2, count: 200000 },
-    { id: 'UNSCORED', label: 'Não avaliada', color: 'var(--fg-4)', share: 0.8, count: 800000 },
+    { id: 'UNSCORED', label: 'Sem base para avaliar', color: 'var(--fg-4)', share: 0.8, count: 800000 },
   ],
   qualityTs: [{ y: 2020, ok: 0.2, unscored: 0.8 }],
   qualityByProduct: [
@@ -231,7 +231,7 @@ function bancoGrande(selecionados) {
   return {
     qualityFlags: [
       { id: 'OK', label: 'OK', color: 'var(--ok)', share: 0.5, count: 500 },
-      { id: 'UNSCORED', label: 'Não avaliada', color: 'var(--fg-4)', share: 0.5, count: 500 },
+      { id: 'UNSCORED', label: 'Sem base para avaliar', color: 'var(--fg-4)', share: 0.5, count: 500 },
     ],
     qualityTs: [{ y: 2020, ok: 0.5, unscored: 0.5 }],
     qualityByProduct: linhas,

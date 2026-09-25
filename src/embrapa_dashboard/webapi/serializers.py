@@ -79,29 +79,29 @@ _FLAG_KEY = {
 # The frontend's QUALITY_FLAGS registry lacks INCOMPLETE/MISSING_WEIGHT, so without
 # a server-supplied label decorate.js falls back to the raw English id — a pt-BR
 # rule violation. Emitting the label here keeps the chart Portuguese end-to-end.
-# Labels follow the "Contrato de Dados" spreadsheet's "Qualidade dos dados" wording:
-# the healthy row is "Normais" (not the English "OK"); the missing-value rung names
-# the financeiro vs quantidade split. Keep in sync with frontend data.js QUALITY_FLAGS.
+# Labels say what the row IS in plain words (v1.93.0; the old "Contrato de Dados" wording
+# — "Normais", "Valor atípico (válido)" — had to be decoded). The frontend's data.js
+# QUALITY_FLAGS carries the same labels; tests/test_flag_label_parity.py fails if they differ.
 _FLAG_LABEL_PT = {
-    "OK": "Normais",
-    "MISSING_VALUE": "Valor financeiro ausente",
-    "MISSING_QUANTITY": "Quantidade ausente",
-    "MISSING_WEIGHT": "Peso ausente",
-    "INCOMPLETE": "Incompleto",
+    "OK": "Sem ressalva",
+    "MISSING_VALUE": "Sem valor",
+    "MISSING_QUANTITY": "Sem quantidade",
+    "MISSING_WEIGHT": "Sem peso",
+    "INCOMPLETE": "Sem valor nem quantidade",
     # Q1 outlier (atípico = válido) vs problemático (provável erro de digitação/inserção).
-    "OUTLIER_QUANTITY": "Quantidade atípica (válida)",
-    "PROBLEMATIC_QUANTITY": "Quantidade problemática (provável erro)",
-    "OUTLIER_VALUE": "Valor atípico (válido)",
-    "PROBLEMATIC_VALUE": "Valor problemático (provável erro)",
+    "OUTLIER_QUANTITY": "Quantidade muito alta",
+    "PROBLEMATIC_QUANTITY": "Quantidade provavelmente errada",
+    "OUTLIER_VALUE": "Valor muito alto",
+    "PROBLEMATIC_VALUE": "Valor provavelmente errado",
     # Reserved tier for a future auto-fill pipeline (0 today).
-    "INFERRED_QUANTITY": "Quantidade inferida",
-    "INFERRED_VALUE": "Valor financeiro inferido",
+    "INFERRED_QUANTITY": "Quantidade estimada",
+    "INFERRED_VALUE": "Valor estimado",
     # PAM-only: área plantada < área colhida (erro de fonte do SIDRA, agronomicamente impossível).
-    "AREA_INCONSISTENT": "Área inconsistente (plantada < colhida)",
+    "AREA_INCONSISTENT": "Área plantada menor que a colhida",
     # Valor grande num ano só, que faz a série do estado saltar (ver data.js · QUALITY_FLAGS).
-    "ISOLATED_SPIKE": "Pico isolado no tempo",
+    "ISOLATED_SPIKE": "Pico num único ano",
     # Sem base para avaliar — não é defeito do registro (ver data.js · QUALITY_FLAGS).
-    "UNSCORED": "Não avaliada",
+    "UNSCORED": "Sem base para avaliar",
 }
 
 

@@ -383,7 +383,7 @@ function ViewProductProfile({ families, summary, database, conventions }) {
             {qaRow && <><dt>Linhas examinadas sem ressalva</dt><dd>{window.fmtPct(qaRow.OK)}</dd></>}
             {qaRow && <><dt>Sem base para avaliar</dt><dd>{window.fmtPct(qaRow.UNSCORED)}</dd></>}
             {qaRow && !isStock && <><dt>Valor ausente</dt><dd>{window.fmtPct(qaRow.MISSING_VALUE)}</dd></>}
-            {qaRow && isStock && qaRow.MISSING_QUANTITY != null && <><dt>Quantidade ausente</dt><dd>{window.fmtPct(qaRow.MISSING_QUANTITY)}</dd></>}
+            {qaRow && isStock && qaRow.MISSING_QUANTITY != null && <><dt>Sem quantidade</dt><dd>{window.fmtPct(qaRow.MISSING_QUANTITY)}</dd></>}
           </dl>
         </div>
       </div>

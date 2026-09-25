@@ -26,8 +26,8 @@ beforeAll(() => {
 afterEach(() => { cleanup(); reactState.traces = null; reactState.layout = null; });
 
 const FLAGS = [
-  { id: 'OK', label: 'Normais', color: '#0a0' },
-  { id: 'MISSING_VALUE', label: 'Valor financeiro ausente', color: '#c90' },
+  { id: 'OK', label: 'Sem ressalva', color: '#0a0' },
+  { id: 'MISSING_VALUE', label: 'Sem valor', color: '#c90' },
 ];
 const ROWS = [
   { name: 'Açaí (fruto)', OK: 0.9, MISSING_VALUE: 0.1 },
@@ -49,7 +49,7 @@ describe('FlagBars', () => {
     expect(t).toHaveLength(2);
     expect(t.every((tr) => tr.type === 'bar' && tr.orientation === 'h')).toBe(true);
     expect(reactState.layout.barmode).toBe('stack');
-    expect(t[0].name).toBe('Normais');
+    expect(t[0].name).toBe('Sem ressalva');
     expect(t[0].y).toEqual(['Açaí (fruto)', 'Castanha-do-pará']);
     expect(t[0].x).toEqual([0.9, 1]);
     expect(t[1].x).toEqual([0.1, 0]);
