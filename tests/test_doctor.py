@@ -906,6 +906,7 @@ def test_run_all_executes_every_probe(settings: Settings) -> None:
         "Quality-tag drift",
         "Catalog↔env product codes",
         "Curation backup coverage",
+        "Quality history backup",
         "Curation referential integrity",
         "Shared code across SIDRA tables",
         "Catalog orphan lifecycle",
@@ -1799,6 +1800,48 @@ def test_curation_backup_skips_when_no_snapshot_exists(monkeypatch, settings):
     _backup_manifest(monkeypatch, settings, None, runs=False)
 
     r = doctor._check_curation_backup(settings)
+
+    assert r.ok is True and "no snapshot yet" in r.detail
+
+
+# ── serving_quality_history: the append-only table no build recreates (v1.93.2) ──
+
+
+def test_history_backup_fails_when_the_snapshot_predates_coverage(monkeypatch, settings):
+    """serving_quality_history spent its first day in prod outside every backup: the
+    snapshot of 2026-09-25 02:30 UTC had Gold and curation and not it. A lost row is a lost
+    build, and the quality-drift check compares builds against exactly those rows."""
+    _backup_manifest(
+        monkeypatch,
+        settings,
+        {"dataset": settings.bq_gold_dataset, "curation_table_count": 12},
+    )
+
+    r = doctor._check_history_backup(settings)
+
+    assert r.ok is False and "predates quality-history coverage" in r.detail
+
+
+def test_history_backup_accepts_a_covered_snapshot(monkeypatch, settings):
+    _backup_manifest(
+        monkeypatch,
+        settings,
+        {
+            "dataset": settings.bq_gold_dataset,
+            "curation_table_count": 12,
+            "history_table_count": 1,
+        },
+    )
+
+    r = doctor._check_history_backup(settings)
+
+    assert r.ok is True and "1 history table(s)" in r.detail
+
+
+def test_history_backup_skips_when_no_snapshot_exists(monkeypatch, settings):
+    _backup_manifest(monkeypatch, settings, None, runs=False)
+
+    r = doctor._check_history_backup(settings)
 
     assert r.ok is True and "no snapshot yet" in r.detail
 

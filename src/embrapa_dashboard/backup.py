@@ -103,6 +103,34 @@ def _curation_tables(settings: Settings, bq_client: bigquery.Client) -> list[str
         return []
 
 
+# Sub-prefix for the serving tables no build can recreate (see HISTORY_TABLES).
+HISTORY_DIR = "_history"
+
+# Serving tables that ACCUMULATE across builds (`full_refresh=false`): each row is the only
+# record of a build that already happened, so neither `dbt build` nor Bronze can recreate
+# them. Everything else in `serving` is a mart derived from Gold and needs no snapshot.
+# `serving_quality_history` (v1.91.0) is what `doctor`'s quality-drift check compares
+# builds against; it went a day unprotected before this list existed (v1.93.2).
+# Listed, not introspected, because the property that matters (append-only) is a dbt
+# config, not something BigQuery exposes. `tests/test_backup.py` reads every dbt model
+# declaring `full_refresh=false` and fails if one is missing here.
+HISTORY_TABLES: tuple[str, ...] = ("serving_quality_history",)
+
+
+def _history_tables(settings: Settings, bq_client: bigquery.Client) -> list[str]:
+    """The append-only serving tables that exist, as fully-qualified names.
+
+    Returns ``[]`` when the serving dataset is absent or the table was never built (a cold
+    install, a dev .env), and the manifest records the zero, like the curation half."""
+    dataset_ref = f"{settings.gcp_project_id}.{settings.bq_serving_dataset}"
+    try:
+        present = {t.table_id for t in bq_client.list_tables(dataset_ref)}
+    except NotFound:
+        logger.warning("Serving dataset %s not found — no history to back up.", dataset_ref)
+        return []
+    return [f"{dataset_ref}.{name}" for name in HISTORY_TABLES if name in present]
+
+
 def run(settings: Settings) -> tuple[str, list[str]]:
     """Extract every Gold table to GCS Parquet. Returns (run_id, list of GCS URIs).
 
@@ -128,10 +156,16 @@ def run(settings: Settings) -> tuple[str, list[str]]:
     uris: list[str] = []
 
     curation_fqns = _curation_tables(settings, bq_client)
+    history_fqns = _history_tables(settings, bq_client)
 
-    for table_fqn in table_fqns + curation_fqns:
+    for table_fqn in table_fqns + curation_fqns + history_fqns:
         table_name = table_fqn.split(".")[-1]
-        sub = f"{CURATION_DIR}/" if table_fqn in curation_fqns else ""
+        if table_fqn in curation_fqns:
+            sub = f"{CURATION_DIR}/"
+        elif table_fqn in history_fqns:
+            sub = f"{HISTORY_DIR}/"
+        else:
+            sub = ""
         # Wildcard suffix is required so BigQuery can shard the export when
         # the table grows past a single-file limit (~1 GB Parquet).
         destination_uri = (
@@ -173,6 +207,10 @@ def run(settings: Settings) -> tuple[str, list[str]]:
         "curation_dataset": settings.bq_research_inputs_dataset,
         "curation_table_count": len(curation_fqns),
         "curation_tables": [fqn.split(".")[-1] for fqn in curation_fqns],
+        # Same absent-vs-zero contract as curation: no key = taken before coverage existed.
+        "history_dataset": settings.bq_serving_dataset,
+        "history_table_count": len(history_fqns),
+        "history_tables": [fqn.split(".")[-1] for fqn in history_fqns],
         "completed_at": datetime.now(UTC).isoformat(),
     }
     marker_name = f"{BACKUP_PREFIX}/run={run_id}/{SUCCESS_MARKER}"

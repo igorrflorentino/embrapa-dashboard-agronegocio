@@ -1348,34 +1348,75 @@ def _check_curation_backup(settings: Settings) -> CheckResult:
     before coverage existed" — different from ``0``, which means "covered, dataset empty".
     """
     try:
-        creds = get_credentials(settings)
-        client = storage.Client(project=settings.gcp_project_id, credentials=creds)
-        runs = _list_backup_runs(client, settings)
-        if not runs:
-            return CheckResult("Curation backup coverage", True, "skipped: no snapshot yet")
-        bucket = client.bucket(settings.gcs_bucket)
-        for ts, prefix in sorted(runs, reverse=True):
-            marker = bucket.blob(f"{prefix}{SUCCESS_MARKER}")
-            if not marker.exists():
-                continue
-            corpo = json.loads(marker.download_as_text())
-            if corpo.get("dataset") not in (None, settings.bq_gold_dataset):
-                continue
-            quando = ts.strftime("%Y-%m-%d %H:%M UTC")
-            n = corpo.get("curation_table_count")
-            if n is None:
-                return CheckResult(
-                    "Curation backup coverage",
-                    False,
-                    f"newest snapshot ({quando}) predates curation coverage — the authored "
-                    "catalog/classifications are NOT in it; run `make backup-gold`",
-                )
+        newest = _newest_sealed_manifest(settings)
+        if isinstance(newest, str):
+            return CheckResult("Curation backup coverage", True, f"skipped: {newest}")
+        quando, corpo = newest
+        n = corpo.get("curation_table_count")
+        if n is None:
             return CheckResult(
-                "Curation backup coverage", True, f"{n} curation table(s) in {quando} snapshot"
+                "Curation backup coverage",
+                False,
+                f"newest snapshot ({quando}) predates curation coverage — the authored "
+                "catalog/classifications are NOT in it; run `make backup-gold`",
             )
-        return CheckResult("Curation backup coverage", True, "skipped: no sealed snapshot")
+        return CheckResult(
+            "Curation backup coverage", True, f"{n} curation table(s) in {quando} snapshot"
+        )
     except Exception as exc:
         return _skip_ou_quebra("Curation backup coverage", exc)
+
+
+def _newest_sealed_manifest(settings: Settings) -> tuple[str, dict] | str:
+    """(when, manifest) of the newest SEALED snapshot of this environment's Gold, or the
+    reason there is none ("no snapshot yet" / "no sealed snapshot").
+
+    Sealed = its ``_SUCCESS`` marker landed (a crashed run has none). A snapshot of another
+    dataset (a dev .env pointed at ``dbt_dev_gold``) is skipped: it must not vouch for prod.
+    """
+    creds = get_credentials(settings)
+    client = storage.Client(project=settings.gcp_project_id, credentials=creds)
+    runs = _list_backup_runs(client, settings)
+    if not runs:
+        return "no snapshot yet"
+    bucket = client.bucket(settings.gcs_bucket)
+    for ts, prefix in sorted(runs, reverse=True):
+        marker = bucket.blob(f"{prefix}{SUCCESS_MARKER}")
+        if not marker.exists():
+            continue
+        corpo = json.loads(marker.download_as_text())
+        if corpo.get("dataset") not in (None, settings.bq_gold_dataset):
+            continue
+        return ts.strftime("%Y-%m-%d %H:%M UTC"), corpo
+    return "no sealed snapshot"
+
+
+def _check_history_backup(settings: Settings) -> CheckResult:
+    """Does the newest sealed snapshot cover the append-only serving tables?
+
+    ``serving_quality_history`` (v1.91.0) accumulates one donut per build and is what the
+    quality-drift check compares builds against. No build recreates it — a lost row is a
+    lost build — and for its first day in production no backup included it. FAILS when the
+    newest snapshot predates that coverage, the same absent-vs-zero contract as curation.
+    """
+    try:
+        newest = _newest_sealed_manifest(settings)
+        if isinstance(newest, str):
+            return CheckResult("Quality history backup", True, f"skipped: {newest}")
+        quando, corpo = newest
+        n = corpo.get("history_table_count")
+        if n is None:
+            return CheckResult(
+                "Quality history backup",
+                False,
+                f"newest snapshot ({quando}) predates quality-history coverage — "
+                "serving_quality_history is NOT in it; run `make backup-gold`",
+            )
+        return CheckResult(
+            "Quality history backup", True, f"{n} history table(s) in {quando} snapshot"
+        )
+    except Exception as exc:
+        return _skip_ou_quebra("Quality history backup", exc)
 
 
 # The sources `gold_source_metadata` is EXPECTED to emit a row for. Declared rather than
@@ -1955,6 +1996,7 @@ _POSTCHECKS: list[tuple[str, Callable[[Settings], CheckResult]]] = [
     ("quality-drift", _check_quality_drift),
     ("catalog-parity", _check_catalog_resolver_parity),
     ("curation-backup", _check_curation_backup),
+    ("history-backup", _check_history_backup),
     ("curation-integrity", _check_curation_referential_integrity),
     ("shared-code", _check_shared_code_across_tables),
     ("orphans", _check_orphan_lifecycle),
