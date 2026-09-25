@@ -319,3 +319,32 @@ describe('ViewValueVolume — value-less herd + combo-pending branches', () => {
     expect(stackedCalls.length).toBeGreaterThanOrEqual(1);
   });
 });
+
+// ── Variação anual e a troca de moeda ────────────────────────────────────────────
+// Em valores nominais, a barra de um par que atravessa uma reforma mediria a troca de
+// moeda. YoYBars não desenha essa barra, e o card NOMEIA os anos sem barra, para uma
+// lacuna nunca ser silenciosa.
+describe('ViewValueVolume — anos sem barra por troca de moeda', () => {
+  beforeEach(async () => { await import('./MonetaryNotes.jsx'); });   // window.listaAnosBR real
+  afterEach(() => { delete window.dataStore; });
+
+  const renderWith = (breaks) => {
+    stubGlobals(valueFixture());
+    window.dataStore = { get: () => ({ valueEraBreaks: breaks }) };
+    return render(
+      <ViewValueVolume families={['mass', 'volume']} summary={{}} database="ibge_pevs"
+                       conventions={{ currency: 'BRL', correction: 'Nominal', autoScale: false }} />);
+  };
+
+  it('passa os cortes ao gráfico e diz em que ano não há barra', () => {
+    const { container } = renderWith([2019]);
+    expect(yoyProps.breaks).toEqual([2019]);
+    expect(container.textContent).toContain('Sem barra em 2019: a moeda mudou nesse ano');
+  });
+
+  it('um corte fora da série, ou na primeira ponta, não tira barra nenhuma e não é citado', () => {
+    // 2018 é o primeiro ano (não tem barra de qualquer jeito); 1994 está fora da série.
+    const { container } = renderWith([1994, 2018]);
+    expect(container.textContent).not.toContain('Sem barra');
+  });
+});

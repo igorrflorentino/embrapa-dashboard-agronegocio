@@ -20,6 +20,12 @@ function ViewValueVolume({ families, conventions, summary, database }) {
   const filtered = window.applyFilters(summary || {}, database);
   const ts = filtered.ts.map(d => ({ ...d, v: window.scalePresent(d.v, 1e9) }));
   const valueSeries = window.convertSeries(ts, conv);
+  // The currency reforms inside the series (nominal R$ only; a deflated or foreign-currency
+  // convention sends none). YoYBars draws no bar for a pair that crosses one, and the card
+  // names those years, so a missing bar is never a silent gap.
+  const yoyBreaks = window.valueEraBreaksFor(database);
+  const yoyCortes = yoyBreaks.filter((b) =>
+    valueSeries.some((d) => d.y === b) && valueSeries.some((d) => d.y === b - 1));
   // massMul / volMul map (mil t, mi m³) → (t/kg, m³/L). The COUNT family (herd cabeças /
   // eggs) is deliberately NOT aggregated here: heads are not additive across species, so a
   // national "total contagem" line would be a meaningless blend (see the Rebanho view,
@@ -220,7 +226,14 @@ function ViewValueVolume({ families, conventions, summary, database }) {
           overline={`Variação interanual · valor (${ccyLabel})`}
           title={`Crescimento ano a ano · ${yearStart + 1}–${yearEnd}`}
         />
-        <window.YoYBars data={valueSeries} valueKey="v" height={200} />
+        <window.YoYBars data={valueSeries} valueKey="v" height={200} breaks={yoyBreaks} />
+        {yoyCortes.length > 0 && (
+          <p className="caption" style={{ margin: '8px 2px 0' }}>
+            Sem barra em {window.listaAnosBR(yoyCortes)}: a moeda mudou {yoyCortes.length === 1 ? 'nesse ano' : 'nesses anos'}, e
+            sem correção pela inflação a variação mediria a troca de moeda, não a produção. Com
+            uma correção em Convenções métricas, todos os anos aparecem.
+          </p>
+        )}
       </div>
       )}
 

@@ -174,14 +174,18 @@ function ViewTerritoryProfile({ summary, database, conventions }) {
     const rows = activeLevel === 'municipio'
       ? (muniCube || [])
       : ufYearly.filter((r) => activeUfs.includes(r.uf));
+    // addPresent, não `(r.value || 0)`: um ano que a correção escolhida não alcança (PAM
+    // de 1974 a 1979 em IPCA) tem TODAS as linhas sem valor, e a soma com `|| 0` desenhava
+    // a trajetória descendo a zero nesses anos. Ausente, o ano vira lacuna.
     const byYear = new Map();
     for (const r of rows) {
       if (r.year < yearStart || r.year > yearEnd) continue;
-      byYear.set(r.year, (byYear.get(r.year) || 0) + (r.value || 0));
+      byYear.set(r.year, window.addPresent(byYear.has(r.year) ? byYear.get(r.year) : null,
+        r.value == null ? NaN : r.value));
     }
     return [...byYear.entries()]
       // LineChart reads `d.y` for the x axis; the cubes carry `year`.
-      .map(([y, v]) => ({ y, v: v * 1e6 * cvf }))
+      .map(([y, v]) => ({ y, v: window.scalePresent(v, 1e6 * cvf) }))
       .sort((a, b) => a.y - b.y);
   }, [activeLevel, muniCube, ufYearly, activeUfs, yearStart, yearEnd, cvf]);
 
@@ -228,8 +232,14 @@ function ViewTerritoryProfile({ summary, database, conventions }) {
 
   const last = series[series.length - 1] || null;
   const prev = series[series.length - 2] || null;
-  const deltaV = (last && prev && prev.v) ? ((last.v - prev.v) / prev.v) * 100 : null;
-  const peak = series.reduce((m, d) => (!m || d.v > m.v ? d : m), null);
+  // deltaPctIn, not `(last.v - prev.v) / prev.v`: with the last year absent that gave
+  // −100%, and across a currency reform it measured the change of currency. The reason
+  // for a currency refusal goes in the sub line, as in Perfil do produto.
+  const eraBreaks = window.valueEraBreaksFor ? window.valueEraBreaksFor(database) : [];
+  const deltaV = last && prev ? window.deltaPctIn(prev, last, eraBreaks) : null;
+  const deltaVMoeda = last && prev ? window.spanComparable(prev.y, last.y, eraBreaks) : null;
+  // The peak among the years that HAVE a value; with none, there is no peak to name.
+  const peak = series.reduce((m, d) => (Number.isFinite(d.v) && (!m || d.v > m.v) ? d : m), null);
 
   if (!uf || !activeUfs.length) {
     return (
@@ -321,7 +331,9 @@ function ViewTerritoryProfile({ summary, database, conventions }) {
           value={last ? window.formatValue(last.v, conv) : '—'}
           delta={deltaV != null ? window.fmtSigned(deltaV) : null}
           deltaPositive={window.deltaUp(deltaV)}
-          sub={last && prev ? `${last.y} vs. ${prev.y}` : (last ? String(last.y) : 'sem dados')}
+          sub={last && prev
+            ? `${last.y} vs. ${prev.y}${deltaVMoeda ? ` · ${deltaVMoeda}` : ''}`
+            : (last ? String(last.y) : 'sem dados')}
           spark={series}
         />
         <window.KpiCardSpark

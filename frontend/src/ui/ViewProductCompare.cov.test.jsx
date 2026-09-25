@@ -328,3 +328,30 @@ describe('ViewProductCompare — a era da moeda', () => {
     expect(container.textContent).not.toContain('outra moeda');
   });
 });
+
+// ── O ano mais recente incompleto ──────────────────────────────────────────────────
+// O COMEX em setembro cobre 8 meses do ano corrente, e a tabela o tratava como um ano
+// cheio. Mesma regra do Visão geral: a conta segue a janela, e a tela marca e explica.
+describe('ViewProductCompare — ano parcial', () => {
+  afterEach(() => { delete window.dataStore; });
+
+  it('marca o último ano incompleto e diz quantos meses ele cobre', () => {
+    stubGlobals(flowFixture());
+    window.dataStore = { meta: () => ({ latest: { yearComplete: false, completeYear: 2019, monthsInLatestYear: 8 } }) };
+    const { container } = render(
+      <ViewProductCompare summary={{}} conventions={{}} database="mdic_comex" />);
+    expect([...container.querySelectorAll('.pc-table th')].map((t) => t.textContent))
+      .toContain('Magnitude (2020, parcial)');
+    expect(container.textContent).toContain('2020 (parcial): o ano mais recente cobre apenas 8 meses.');
+  });
+
+  it('um último ano completo não leva marca nem aviso', () => {
+    stubGlobals(flowFixture());
+    window.dataStore = { meta: () => ({ latest: { yearComplete: true, completeYear: 2020 } }) };
+    const { container } = render(
+      <ViewProductCompare summary={{}} conventions={{}} database="ibge_pevs" />);
+    expect([...container.querySelectorAll('.pc-table th')].map((t) => t.textContent))
+      .toContain('Magnitude (2020)');
+    expect(container.textContent).not.toContain('(parcial)');
+  });
+});

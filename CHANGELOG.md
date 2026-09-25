@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.95.1] - 2026-09-25
+
+A varredura que protege a regra "ausência não é zero" ganhou as duas formas que escaparam
+na v1.94.1. Ao ser ligada, ela encontrou mais defeitos da mesma família em outras quatro telas.
+
+### Corrigido
+- **Valor × Volume: barras de variação anual inventadas.** O gráfico dava **0%** ("não
+  variou") quando faltava o ano anterior e **−100%** quando faltava o ano atual. Em valores
+  nominais, desenhava a troca de moeda como crescimento. Medido no PEVS sem correção, com
+  dados de produção: barras de **+3.630% (1989), +971% (1990), +3.338% (1993) e +2.530%
+  (1994)**. Agora o gráfico usa a mesma regra do resto do painel (`deltaPctIn`): ausência,
+  base não positiva, anos não consecutivos e par que cruza uma reforma ficam sem barra. O
+  card diz quais anos ficaram sem barra por causa da moeda ("Sem barra em 1989, 1990, 1993 e
+  1994…"). Três testes antigos fixavam o 0% como contrato e foram reescritos.
+- **Perfil do território: a trajetória descia a zero** nos anos que a correção não alcança.
+  Na PAM em IPCA, 1974 a 1979 agora são lacuna. A variação do último ano dava −100% quando
+  ele faltava e não recusava a troca de moeda; agora recusa e diz o motivo, como o Perfil do
+  produto. O pico ignora os anos ausentes.
+- **Comparativo entre produtos: ano parcial.** No COMEX, 2026 cobre 8 meses e a tabela o
+  tratava como um ano cheio. Agora ela marca "Magnitude (2026, parcial)" e explica, com a
+  regra do Visão geral, que passou a morar numa primitiva só (`anoParcial`). O Comparativo
+  entre territórios usa a mesma primitiva.
+- **Fluxos e Multi-fontes mostravam zero no lugar de "sem dado":** "US$ 0" como valor da
+  maior origem e do maior destino, e "0% exportado" na UF mais interna. O `|| 0` na chamada
+  desfazia o "—" que os formatadores já davam.
+
+### Testes
+- **Duas famílias novas na varredura** (`absenceGuard.test.js`): campo anulável zerado por
+  `|| 0` fora de `Number(…)`, e cor decidida pelo sinal fora do `deltaColor`. Cada uma tem
+  regex com casos de prova e uma lista de permissões com razão obrigatória, que reprova quando
+  fica obsoleta. Linhas de ordenação ficam isentas por construção. Contraprova: rodando contra
+  as versões anteriores dos arquivos, as duas pegam **as 8 linhas dos defeitos**, inclusive as
+  três do Cruzamento de fontes corrigidas na v1.94.1. Os 11 testes de comportamento novos
+  falham na v1.95.0.
+
+### Documentação
+- **CLAUDE.md:** a quinta regra de leitura (moeda e ano parcial), com o caso medido em
+  produção, e as duas formas novas na regra da ausência.
+
+---
+
 ## [1.95.0] - 2026-09-25
 
 ### Adicionado

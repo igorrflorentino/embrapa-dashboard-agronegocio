@@ -176,6 +176,19 @@ window.currentEraStart = (y0, yT, breaks) => {
   return cortes.length ? Math.max(...cortes) : null;
 };
 
+// O ano mais recente de um banco mensal pode estar INCOMPLETO (o COMEX em setembro cobre
+// 8 meses). Devolve { ano, meses } quando `ano` é esse ano parcial, senão null. A regra do
+// produto é a do Visão geral: a conta segue a janela escolhida, com o ano parcial dentro,
+// e a tela MARCA esse ano e diz que a comparação com anos completos não é direta.
+// `meses` pode vir null (o servidor não informou): a tela diz "parte do ano".
+window.anoParcial = (bancoId, ano) => {
+  const meta = window.dataStore && window.dataStore.meta ? window.dataStore.meta(bancoId) : null;
+  const latest = meta && meta.latest;
+  if (!latest || latest.yearComplete !== false || ano == null) return null;
+  if (latest.completeYear != null && ano <= latest.completeYear) return null;
+  return { ano, meses: latest.monthsInLatestYear || null };
+};
+
 // Os cortes de moeda do banco ativo, lidos do snapshot já carregado. Um banco ainda
 // sem snapshot devolve [] — sem checagem é o comportamento antigo (permissivo), nunca
 // um KPI em branco por causa de um dado auxiliar que não chegou.

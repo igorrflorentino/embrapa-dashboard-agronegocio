@@ -342,3 +342,43 @@ describe('ViewTerritoryProfile — combining territories', () => {
     expect(sel.value).toBe('PA'); // the value-ranked default, not a combination
   });
 });
+
+// ── A trajetória não desce a zero onde a correção não alcança ───────────────────────
+// `(r.value || 0)` somava um ano sem NENHUM valor como zero, e a linha do lugar descia a
+// zero nos anos que a correção escolhida não cobre. E a variação do último ano, com ele
+// ausente, saía (null − prev) / prev = −100%.
+describe('ViewTerritoryProfile — ausência na trajetória e na variação', () => {
+  const GAP = {
+    ...BASE,
+    ufYearlySeries: [
+      { year: 2019, uf: 'PA', value: 100 },
+      { year: 2020, uf: 'PA', value: 200 },
+      { year: 2021, uf: 'PA', value: null },   // a correção não alcança 2021
+      { year: 2019, uf: 'SP', value: 100 },
+      { year: 2020, uf: 'SP', value: 100 },
+      { year: 2021, uf: 'SP', value: null },
+    ],
+  };
+
+  it('um ano sem valor vira lacuna na linha, não zero', () => {
+    stubGlobals(GAP);
+    let linha;
+    window.LineChart = (props) => { linha = props.data; return <div className="line-chart" />; };
+    render(<View summary={{}} database="ibge_pevs" conventions={CONV} />);
+    expect(linha.map((d) => [d.y, d.v])).toEqual([[2019, 100e6], [2020, 200e6], [2021, null]]);
+  });
+
+  it('o último ano ausente não vira −100%: a variação não tem resposta', () => {
+    stubGlobals(GAP);
+    window.fmtSigned = (x) => (x == null ? '—' : `${Math.round(x)}%`);
+    window.KpiCardSpark = ({ label, value, delta, sub }) => (
+      <div className="kpi"><span className="kpi-label">{label}</span>
+        <span className="kpi-value">{value}</span><span className="kpi-delta">{delta}</span>
+        <span className="kpi-sub">{sub}</span></div>
+    );
+    const { container } = render(<View summary={{}} database="ibge_pevs" conventions={CONV} />);
+    const valor = kpi(container, 'Valor');
+    // 2020 tem valor e 2021 não: a versão anterior publicava −100% aqui.
+    expect(valor.querySelector('.kpi-delta').textContent).toBe('');   // sem variação a mostrar
+  });
+});

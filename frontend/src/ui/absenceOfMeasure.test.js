@@ -192,4 +192,24 @@ describe('reforma monetária — o número existe e mesmo assim não responde', 
     expect(window.currentEraStart(1974, 2024, [])).toBeNull();
     expect(window.currentEraStart(null, 2024, CORTES_BRL_NOMINAL)).toBeNull();
   });
+
+  it('anoParcial: só o ano incompleto do banco mensal é parcial, com os meses que tem', () => {
+    const antes = window.dataStore;
+    try {
+      // COMEX em setembro de 2026: 2025 é o último ano completo, 2026 tem 8 meses.
+      window.dataStore = { meta: () => ({ latest: { yearComplete: false, completeYear: 2025, monthsInLatestYear: 8 } }) };
+      expect(window.anoParcial('mdic_comex', 2026)).toEqual({ ano: 2026, meses: 8 });
+      expect(window.anoParcial('mdic_comex', 2025)).toBeNull();   // o ano completo não se marca
+      expect(window.anoParcial('mdic_comex', null)).toBeNull();
+      // Sem o número de meses, o ano segue parcial: a tela diz "parte do ano".
+      window.dataStore = { meta: () => ({ latest: { yearComplete: false, completeYear: 2025 } }) };
+      expect(window.anoParcial('mdic_comex', 2026)).toEqual({ ano: 2026, meses: null });
+      // Um banco anual (IBGE) tem o último ano completo.
+      window.dataStore = { meta: () => ({ latest: { yearComplete: true, completeYear: 2024 } }) };
+      expect(window.anoParcial('ibge_pevs', 2024)).toBeNull();
+      // Sem metadado carregado, nada é afirmado.
+      window.dataStore = {};
+      expect(window.anoParcial('ibge_pevs', 2024)).toBeNull();
+    } finally { window.dataStore = antes; }
+  });
 });

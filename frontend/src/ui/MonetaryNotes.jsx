@@ -166,5 +166,7 @@ function NominalSeriesNote() {
   );
 }
 
+// The year list in pt-BR, shared so no screen writes its own ("1986, 1989 e 1994").
+window.listaAnosBR = _anos;
 window.ValueGapNote = ValueGapNote;
 window.NominalSeriesNote = NominalSeriesNote;
