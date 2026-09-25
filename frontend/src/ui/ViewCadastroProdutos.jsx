@@ -21,7 +21,7 @@ const { useState: useCcState, useEffect: useCcEffect, useMemo: useCcMemo, useRef
 // itself, so a reword meant a data migration plus a coordinated change in dbt and Python.
 const _CC_INGESTAO = [
   { v: 'ativa', label: 'Ativa', hint: 'Buscar dados novos a cada atualização' },
-  { v: 'pausada', label: 'Pausada', hint: 'Parar de buscar dados novos; mantém o que já está no Gold' },
+  { v: 'pausada', label: 'Pausada', hint: 'Para de buscar dados novos e guarda o que já foi baixado' },
 ];
 const _CC_VISIBILIDADE = [
   { v: 'visivel', label: 'Visível', hint: 'Aparece nos gráficos e filtros' },
@@ -103,14 +103,14 @@ const _CC_EMPTY_DRAFT = {
 // summary stay honest automatically. Order matches the table, left to right.
 const _CC_HELP_COLUNAS = [
   { k: 'Banco', d: 'A fonte oficial do dado (IBGE PEVS/PAM/PPM, MDIC COMEX, UN Comtrade).' },
-  { k: 'Tabela', d: 'A tabela do banco a que o produto pertence (passe o mouse para ver o que ela significa). Junto com o banco e o código, forma a identidade do produto — o mesmo código pode estar cadastrado em duas tabelas do mesmo banco e são produtos diferentes. Só o PEVS (extração vegetal · silvicultura) e o PPM (rebanho · produção animal) reúnem duas; nos demais o valor é o mesmo em todas as linhas. PEVS, PPM e PAM usam o código SIDRA de verdade; COMEX e COMTRADE não vêm do SIDRA, e o id deles é uma convenção deste projeto — está aí para a identidade funcionar igual em todos os bancos.' },
-  { k: 'Código', d: 'O código real da fonte (NCM, HS, código SIDRA). É ele, junto com o banco e a tabela, que identifica o produto no cadastro — não o nome.' },
+  { k: 'Tabela', d: 'A tabela do banco a que o produto pertence (passe o mouse para ver o que ela significa). Junto com o banco e o código, ela forma a identidade do produto, e o mesmo código em duas tabelas do mesmo banco são dois produtos diferentes. Só o PEVS (extração vegetal e silvicultura) e o PPM (rebanho e produção animal) têm duas tabelas. PEVS, PPM e PAM usam o número da tabela no SIDRA, o sistema do IBGE. COMEX e COMTRADE não vêm do SIDRA e usam um nome escolhido pelo projeto, só para a identidade funcionar igual em todos os bancos.' },
+  { k: 'Código', d: 'O código real da fonte (NCM, HS ou código do SIDRA). É ele, junto com o banco e a tabela, que identifica o produto no cadastro, e não o nome.' },
   { k: 'Descrição (fonte)', d: 'O nome que a própria fonte dá a esse código; é somente leitura. Logo abaixo fica a sua anotação (✎), um texto livre seu que não altera nenhum dado.' },
-  { k: 'Linhas', d: 'Quantas linhas esse produto tem hoje na camada Gold. Zero significa que ainda não foi ingerido.' },
+  { k: 'Linhas', d: 'Quantas linhas desse produto já estão na base do painel. Zero quer dizer que ele ainda não foi baixado da fonte.' },
   { k: 'Período', d: 'O intervalo de anos que os dados já ingeridos cobrem.' },
-  { k: 'Status', d: 'O estado do produto, derivado das duas colunas seguintes e da presença de dados: Ativo, Oculto, Pausado ou Pendente de ingestão. É um resumo, não um controle — para mudá-lo, use Ingestão ou Exibição.' },
+  { k: 'Status', d: 'O estado do produto (Ativo, Oculto, Pausado ou Pendente de ingestão), calculado a partir das duas colunas seguintes e de haver ou não dados. É só um resumo. Para mudá-lo, use Ingestão ou Exibição.' },
   { k: 'Agrupamento', d: 'O conceito que unifica o mesmo produto entre fontes diferentes (ex.: "Soja" reunindo os códigos do COMEX e do Comtrade). É o que permite comparar fontes no mesmo gráfico.' },
-  { k: 'Ingestão', d: 'Se o pipeline continua buscando dados novos desse produto a cada atualização.' },
+  { k: 'Ingestão', d: 'Se o sistema continua buscando dados novos desse produto a cada atualização.' },
   { k: 'Exibição', d: 'Se o pesquisador vê esse produto nos gráficos e filtros do dashboard.' },
   { k: 'Ações', d: 'Remover o produto do cadastro.' },
 ];
@@ -119,35 +119,40 @@ const _CC_HELP_ACOES = [
   { k: 'Editar a anotação (✎)', tag: 'reversível', tone: 'ok',
     d: 'Texto livre seu, para registrar o que quiser sobre o produto. Não altera nenhum número nem a descrição oficial da fonte.' },
   { k: 'Trocar o Agrupamento', tag: 'reversível', tone: 'ok',
-    d: 'Move o produto para outro conceito. Muda como ele é somado nas visões que cruzam fontes — o dado em si continua o mesmo.' },
+    d: 'Move o produto para outro conceito. Isso muda como ele é somado nas visões que cruzam fontes, mas o dado em si continua o mesmo.' },
   { k: 'Ingestão → Pausada', tag: 'reversível', tone: 'ok',
-    d: 'Para de buscar dados novos, mas mantém no Gold tudo que já foi baixado — e o produto continua aparecendo no dashboard. Use para congelar uma série sem perder o histórico.' },
+    d: 'Para de buscar dados novos, mas guarda tudo o que já foi baixado, e o produto continua aparecendo no painel. Use para congelar uma série sem perder o histórico.' },
   { k: 'Exibição → Oculto', tag: 'pede confirmação', tone: 'warn',
-    d: 'Tira o produto de TODOS os gráficos e filtros para os pesquisadores. Os dados continuam no Gold e a ingestão segue normalmente; é só uma decisão de exibição.' },
+    d: 'Tira o produto de TODOS os gráficos e filtros dos pesquisadores. Os dados continuam guardados e a busca de dados novos segue normalmente. É só uma decisão de exibição.' },
   { k: 'Remover (🗑)', tag: 'pede confirmação', tone: 'warn',
-    d: 'Marca o produto como descontinuado e o tira do cadastro. Os dados já baixados NÃO são apagados: ficam órfãos no Gold e aparecem na seção "Descontinuados". Só um operador os apaga, com backup antes.' },
+    d: 'Marca o produto como descontinuado e o tira do cadastro. Os dados já baixados NÃO são apagados. Eles continuam guardados e aparecem na seção "Descontinuados", e só a equipe técnica pode apagá-los, depois de fazer uma cópia de segurança.' },
   { k: 'Aplicar a todos', tag: 'em lote', tone: 'warn',
     d: 'Aplica Ingestão ou Exibição a todos os produtos do agrupamento de uma vez. Ocultar em lote também pede confirmação.' },
   { k: 'Criar / renomear / excluir agrupamento', tag: null, tone: null,
-    d: 'Renomear mantém os produtos; só o rótulo muda. Excluir exige que o agrupamento esteja vazio — reatribua ou remova os produtos antes.' },
+    d: 'Renomear mantém os produtos e só muda o nome. Para excluir, o agrupamento precisa estar vazio, então reatribua ou remova os produtos antes.' },
   { k: 'Adicionar produto', tag: null, tone: null,
-    d: 'Cadastra um código da fonte. Um código ainda não ingerido é aceito. Nas fontes cuja ' +
-       'ingestão é dirigida por este cadastro ele entra como "pendente de ingestão" e é buscado ' +
-       'na próxima ingestão; nas demais (o escopo vem da configuração do pipeline) ele fica como ' +
-       '"sem dados" até que a equipe técnica inclua o código.' },
+    d: 'Cadastra um código da fonte, mesmo que ele ainda não tenha sido baixado. Nas fontes ' +
+       'cuja busca é guiada por este cadastro, ele entra como "pendente de ingestão" e é buscado ' +
+       'na próxima atualização. Nas demais, fica "sem dados" até a equipe técnica incluir o ' +
+       'código na configuração do sistema.' },
 ];
 
 // A catalog write reaches the researcher-facing charts/filters only on the NEXT dbt build (+ the
 // serving marts' cache TTL) — never instantly. Appended to save/rename toasts so the researcher
 // isn't surprised the change doesn't show up in the dashboard right away (mirrors the hide notice).
 //
-// It used to say "alguns minutos", which is wrong by up to a DAY: the serving marts apply the
-// visibility gate at BUILD time (hidden_code_predicate), and prod rebuilds on the daily
-// dbt-build-prod schedule — `cron: '30 11 * * *'` = 08:30 BRT. A researcher who hid a produto,
-// waited five minutes and still saw it in the charts would reasonably conclude the control was
-// broken. Name the real cadence instead.
+// It used to say "alguns minutos", which is wrong by DAYS: the serving marts apply the
+// visibility gate at BUILD time (hidden_code_predicate), and prod rebuilds on the
+// dbt-build-prod schedule, `cron: '30 11 * * 1,4'` = Mondays and Thursdays, 08:30 BRT trigger,
+// which GitHub starts 3h35–9h58 later (measured), so a build lands in the afternoon. A
+// researcher who hid a produto, waited and still saw it charted would conclude the control
+// was broken. Until v1.93.4 this said "reconstrução diária … 08:30", from before the cron
+// went twice weekly on 2026-08-26, and four copies of it had drifted together.
+// tests/test_cadastro_latency_matches_cron.py reads the cron and fails if the days differ.
+// Every message that states the delay uses THIS constant, never a copy.
 const _CC_LATENCIA =
-  'A mudança vale na próxima reconstrução diária dos dados (por volta das 08:30, horário de Brasília).';
+  'A mudança aparece no painel no próximo processamento dos dados, que roda às segundas e ' +
+  'quintas-feiras e costuma terminar à tarde (horário de Brasília).';
 
 // The produto's LIFECYCLE STATE, derived from the two axes + whether its data actually
 // landed in Gold. Read-only: it is a consequence of the controls, never a control itself —
@@ -166,15 +171,15 @@ const _CC_LATENCIA =
 // registration actually steers; outside it we say what is true instead.
 function _ccStatus(entry, st, driven) {
   if ((entry.ingestao || 'ativa') === 'pausada') {
-    return { key: 'pausado', label: 'Pausado', title: 'Não busca dados novos; o histórico no Gold é mantido' };
+    return { key: 'pausado', label: 'Pausado', title: 'Não busca dados novos, e o histórico já baixado continua guardado' };
   }
   if (st && !st.has_data) {
     return (driven || []).includes(entry.banco)
-      ? { key: 'pendente', label: 'Pendente de ingestão', title: 'Cadastrado; será buscado na próxima ingestão' }
+      ? { key: 'pendente', label: 'Pendente de ingestão', title: 'Cadastrado. Será buscado na próxima atualização' }
       : { key: 'sem-dados', label: 'Sem dados',
-          title: 'Cadastrado, mas a ingestão desta fonte não é dirigida pelo cadastro — '
-               + 'o escopo dela é definido na configuração do pipeline. Registrar aqui não '
-               + 'agenda uma busca; fale com a equipe técnica para incluir o código.' };
+          title: 'Cadastrado, mas nesta fonte quem decide o que é buscado é a configuração '
+               + 'do sistema, não o cadastro. Registrar aqui não agenda uma busca. Fale com a '
+               + 'equipe técnica para incluir o código.' };
   }
   if ((entry.visibilidade || 'visivel') === _CC_OCULTO) {
     return { key: 'oculto', label: 'Oculto', title: 'Ingerido, mas fora de todos os gráficos e filtros' };
@@ -495,9 +500,8 @@ function ViewCadastroProdutos() {
       setPendingConfirm({
         title: `Ocultar ${e.codigo_produto}?`,
         body: `Ele deixará de aparecer em TODOS os gráficos e filtros do dashboard para os ` +
-          `pesquisadores. Os dados continuam no Gold e a ingestão segue normalmente. ` +
-          `A mudança vale na próxima reconstrução diária dos dados (por volta das 08:30, ` +
-          `horário de Brasília) — não na hora.`,
+          `pesquisadores. Os dados continuam guardados e a busca de dados novos segue ` +
+          `normalmente. ${_CC_LATENCIA}`,
         confirmLabel: 'Ocultar', danger: true,
         onConfirm: () => saveEntry({ ...e, visibilidade }),
       });
@@ -513,7 +517,8 @@ function ViewCadastroProdutos() {
   const removeEntry = (e) => {
     setPendingConfirm({
       title: `Remover ${e.codigo_produto} (${_CC_BANCO_LABEL[e.banco] || e.banco}) do cadastro?`,
-      body: 'Os dados já baixados ficam órfãos (não são apagados automaticamente).',
+      body: 'Os dados já baixados continuam guardados, não são apagados automaticamente e '
+        + 'aparecem na seção "Descontinuados".',
       confirmLabel: 'Remover', danger: true,
       onConfirm: () => {
         const key = `rm:${e.banco}:${e.tabela ?? '-'}:${e.codigo_produto}`;
@@ -596,7 +601,7 @@ function ViewCadastroProdutos() {
       setPendingConfirm({
         title: `Ocultar TODOS os ${members.length} produto(s) de "${g.group_name}"?`,
         body: 'Eles deixarão de aparecer em qualquer gráfico ou filtro do dashboard para os ' +
-          'pesquisadores. Vale na próxima reconstrução diária dos dados (por volta das 08:30).',
+          'pesquisadores. ' + _CC_LATENCIA,
         confirmLabel: 'Ocultar', danger: true,
         onConfirm: apply,
       });
@@ -809,15 +814,16 @@ function ViewCadastroProdutos() {
       <CcConfirmModal spec={pendingConfirm} onClose={() => setPendingConfirm(null)} />
       <div className="card subtle" style={{ marginBottom: 12 }}>
         <p className="caption" style={{ margin: 0 }}>
-          Este é o <strong>cadastro de produtos</strong> — a fonte única de verdade do que entra
-          e sai do dashboard. Cada produto é identificado por <code>(banco, tabela, código)</code> —
-          o <strong>código real da fonte</strong>, e a tabela porque PEVS e PPM reúnem duas sob um
-          mesmo banco — e pertence a um <strong>agrupamento</strong> (o
-          conceito que a unifica entre fontes). Agrupamentos são criados, renomeados e excluídos aqui;
-          <strong>Ingestão</strong> e <strong>Exibição</strong> controlam, separadamente, se o pipeline
-          busca dados novos e se o pesquisador vê o produto; <strong>remover</strong> um produto o marca
-          como descontinuado (os dados já baixados ficam órfãos, apagados só por um humano). Edições
-          exigem autorização e ficam registradas com seu e-mail.
+          Este é o <strong>cadastro de produtos</strong>, o lugar que decide o que entra e o que
+          sai do painel. Cada produto é identificado pelo banco, pela tabela e pelo{' '}
+          <strong>código real da fonte</strong> (a tabela conta porque o PEVS e o PPM reúnem duas
+          pesquisas no mesmo banco), e pertence a um <strong>agrupamento</strong>, o conceito que
+          reúne o mesmo produto em fontes diferentes. Aqui você cria, renomeia e exclui
+          agrupamentos. As colunas <strong>Ingestão</strong> e <strong>Exibição</strong> decidem,
+          cada uma por si, se o sistema continua buscando dados novos do produto e se o pesquisador
+          o vê. <strong>Remover</strong> um produto o marca como descontinuado, e os dados já
+          baixados só são apagados pela equipe técnica. Editar exige autorização, e cada edição
+          fica registrada com seu e-mail.
         </p>
       </div>
 
@@ -865,10 +871,8 @@ function ViewCadastroProdutos() {
             </dl>
           </div>
           <p className="caption cc-help-foot">
-            Nada aqui é destrutivo: o registro é <strong>somente-adição</strong> — cada edição vira
-            uma nova linha com seu e-mail e a data, e nenhuma anterior é apagada. As mudanças valem
-            na <strong>próxima reconstrução diária dos dados</strong> (por volta das 08:30, horário
-            de Brasília), não na hora.
+            <strong>Nada aqui apaga dados.</strong> Cada edição vira uma nova entrada no registro,
+            com seu e-mail e a data, e as anteriores continuam guardadas. {_CC_LATENCIA}
           </p>
         </div>
       </details>
@@ -901,7 +905,7 @@ function ViewCadastroProdutos() {
            style={{ padding: '8px 10px', borderRadius: 6, marginBottom: 10,
                     background: 'var(--warn-bg, #fff8e1)', color: 'var(--warn, #8a6d00)',
                     border: '1px solid var(--warn, #b8860b)' }}>
-          Não foi possível carregar o estado dos produtos no Gold (linhas, período e “tem dados”).
+          Não foi possível carregar o estado dos produtos na base do painel (linhas, período e “tem dados”).
           O cadastro continua válido; recarregue a página para tentar de novo.
         </p>
       )}
@@ -913,7 +917,7 @@ function ViewCadastroProdutos() {
            style={{ padding: '8px 10px', borderRadius: 6, marginBottom: 10,
                     background: 'var(--warn-bg, #fff8e1)', color: 'var(--warn, #8a6d00)',
                     border: '1px solid var(--warn, #b8860b)' }}>
-          Não foi possível carregar os produtos descontinuados (órfãos). Pode haver itens
+          Não foi possível carregar os produtos descontinuados. Pode haver itens
           aguardando remoção que não estão sendo exibidos; recarregue a página para tentar de novo.
         </p>
       )}
@@ -925,8 +929,9 @@ function ViewCadastroProdutos() {
             title={`${orphans.length.toLocaleString('pt-BR')} descontinuado(s)`}
           />
           <p className="caption" style={{ margin: '0 2px 8px' }}>
-            Removidos do cadastro, mas os dados já baixados continuam no Gold. Serão removidos
-            por um operador (com backup), <strong>nunca automaticamente</strong>.
+            Removidos do cadastro, mas os dados já baixados continuam guardados. Só a equipe
+            técnica os apaga, depois de fazer uma cópia de segurança, e{' '}
+            <strong>nunca automaticamente</strong>.
           </p>
           <div className="dt-wrap">
             <table className="dt-table">
@@ -1055,9 +1060,9 @@ function ViewCadastroProdutos() {
                   // in the pipeline config, so the entry would sit pendente forever.
                   <small className="cc-hint" style={{ color: 'var(--warn, #b8860b)' }}>
                     {(data.catalogDriven || []).includes(draft.banco)
-                      ? `⚠ ainda não ingerido em ${_CC_BANCO_LABEL[draft.banco]} — será buscado na próxima ingestão`
-                      : `⚠ ainda não ingerido em ${_CC_BANCO_LABEL[draft.banco]} — o cadastro não agenda a busca `
-                        + `nesta fonte (o escopo dela vem da configuração do pipeline); o produto entra como “sem dados”`}
+                      ? `⚠ ainda não ingerido em ${_CC_BANCO_LABEL[draft.banco]}, será buscado na próxima atualização`
+                      : `⚠ ainda não ingerido em ${_CC_BANCO_LABEL[draft.banco]}. Nesta fonte o cadastro não agenda `
+                        + `a busca (quem decide o que é buscado é a configuração do sistema), e o produto entra como “sem dados”`}
                   </small>
                 ) : (
                   <small className="cc-hint">verificando…</small>
@@ -1095,7 +1100,7 @@ function ViewCadastroProdutos() {
             </label>
 
             <label className="cc-field cc-field-wide">
-              <span className="cc-field-label">Descrição <small className="pc-cap">(opcional — anotação sua)</small></span>
+              <span className="cc-field-label">Descrição <small className="pc-cap">(opcional, anotação sua)</small></span>
               <input type="text" value={draft.descricao_produto} disabled={locked} placeholder="ex.: Castanha-do-pará com casca"
                      onChange={(e) => setDraft((d) => ({ ...d, descricao_produto: e.target.value }))} />
             </label>
@@ -1183,7 +1188,7 @@ function ViewCadastroProdutos() {
                 {/* Recolhido não renderiza a tabela — o custo de 234 linhas de <select> some
                     junto com a poluição visual, em vez de só ficar escondido por CSS. */}
                 {aberto && (members.length ? memberRows(members) : (
-                  <p className="caption" style={{ margin: '0 2px' }}>Agrupamento vazio — adicione produtos ou exclua-o.</p>
+                  <p className="caption" style={{ margin: '0 2px' }}>Agrupamento vazio. Adicione produtos ou exclua-o.</p>
                 ))}
               </div>
             );

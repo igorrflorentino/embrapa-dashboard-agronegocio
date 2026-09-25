@@ -750,8 +750,8 @@ VIEW_GROUPS: list[ViewGroup] = [
                 "live",
                 requires=("quality",),
                 exportable=True,
-                desc="Diagnóstico do data_quality_flag: distribuição de flags e qualidade "
-                "por produto e UF.",
+                desc="Diagnóstico da coluna data_quality_flag: como as linhas se distribuem "
+                "entre as marcas de qualidade e a qualidade por produto e UF.",
             ),
             View(
                 "dados",

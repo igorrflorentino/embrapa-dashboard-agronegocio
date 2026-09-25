@@ -351,7 +351,7 @@ function ViewHealth() {
             estado de operação). O histórico diário de execuções da pipeline (sucesso/falha por dia) ainda
             não é coletado por este painel — não há telemetria de <em>runs</em> exposta ao frontend; quando
             existir, aparecerá aqui. Para o diagnóstico da <strong>qualidade</strong> dos dados (integridade,
-            distribuição de flags), use a perspectiva <em>Qualidade dos dados</em> de cada banco.
+            distribuição das marcas), use a perspectiva <em>Qualidade dos dados</em> de cada banco.
           </p>
         </div>
       </div>

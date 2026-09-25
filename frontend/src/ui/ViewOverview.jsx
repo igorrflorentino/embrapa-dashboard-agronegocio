@@ -356,7 +356,7 @@ function ViewOverview({ families, summary, database, conventions }) {
             overline="Qualidade dos dados · agregado"
             title={hasGeo
               ? ('Cobertura geográfica: ' + ufCovered + ' / ' + ufTotalReal + ' UFs')
-              : 'Distribuição de flags de qualidade'}
+              : 'Distribuição das marcas de qualidade'}
             action={<span className="caption">{filtered.qualityFlags.length} de {window.QUALITY_FLAGS.length} flags</span>}
           />
           <div className="qa-summary">

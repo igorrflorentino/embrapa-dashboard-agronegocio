@@ -89,7 +89,7 @@ describe('ViewQuality — renders the REAL Gold quality flags (H3 + P0 lock-in)'
   it('renders an honest empty state when no flags are selected', () => {
     stubGlobals({ ...FIXTURE, qualityFlags: [] });
     const { container } = render(<ViewQuality summary={{}} database="ibge_pevs" />);
-    expect(container.textContent).toContain('Nenhuma flag selecionada');
+    expect(container.textContent).toContain('Nenhuma marca selecionada');
   });
 
   it('documents the FULL taxonomy (incl. the reserved inferred tiers) in the always-on legend', () => {

@@ -342,17 +342,19 @@ describe('ViewCadastroProdutos — the Curadoria catalog editor', () => {
   });
 
   it('never promises the hide takes effect in "minutos"', async () => {
-    // The serving marts apply the visibility gate at BUILD time, and prod rebuilds on the
-    // DAILY dbt-build-prod schedule (cron 30 11 * * * = 08:30 BRT). The copy used to say
-    // "pode levar alguns minutos", wrong by up to a day: a researcher who hid a produto,
-    // waited five minutes and still saw it charted would conclude the control was broken.
+    // The serving marts apply the visibility gate at BUILD time, and prod rebuilds Mondays and
+    // Thursdays (cron 30 11 * * 1,4). The copy said "alguns minutos", then "reconstrução diária"
+    // (true until 2026-08-26, stale for a month): a researcher who hid a produto and still saw it
+    // charted would conclude the control was broken. test_cadastro_latency_matches_cron.py ties
+    // the words to the cron itself.
     mockFetch();
     const { container } = render(<ViewCadastroProdutos />);
     await abrirAgrupamentos(container);
     await waitFor(() => expect(container.querySelector('.cc-status')).toBeTruthy());
     const texto = container.textContent;
     expect(texto).not.toMatch(/alguns minutos/i);
-    expect(texto).toMatch(/reconstrução diária/i);
+    expect(texto).toMatch(/segundas e quintas/i);
+    expect(texto).not.toMatch(/diária/i);
   });
 
   it('read-only when can_edit is false: banner shown, edit controls disabled', async () => {
@@ -407,8 +409,8 @@ describe('ViewCadastroProdutos — the Curadoria catalog editor', () => {
     await abrirAgrupamentos(container);
     const legend = container.querySelector('.cc-help').textContent;
     expect(legend).toContain('NÃO são apagados');
-    expect(legend).toContain('a ingestão segue normalmente');
-    expect(legend).toContain('somente-adição');
+    expect(legend).toContain('a busca de dados novos segue normalmente');
+    expect(legend).toContain('Nada aqui apaga dados');
   });
 
   it('pauses ingestion without a confirmation and without touching visibility', async () => {
@@ -651,7 +653,7 @@ describe('ViewCadastroProdutos — the Curadoria catalog editor', () => {
     const { container } = render(<ViewCadastroProdutos />);
     await abrirAgrupamentos(container);
     // The catalog itself loaded (entries ok); only the lazy status read failed → the warn banner shows.
-    await waitFor(() => expect(container.textContent).toContain('Não foi possível carregar o estado dos produtos no Gold'));
+    await waitFor(() => expect(container.textContent).toContain('Não foi possível carregar o estado dos produtos na base do painel'));
     // The Linhas cell shows '—' (unknown, explained by the banner), not the perpetual-loading '…'.
     const linhasCell = container.querySelector('.dt-table td[data-label="Linhas"]');
     expect(linhasCell.textContent).toBe('—');

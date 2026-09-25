@@ -147,7 +147,7 @@ window.VIEW_GROUPS = [
     hint: 'metadados',
     views: [
       { id: 'quality',  label: 'Qualidade dos dados', status: 'live', exportable: true, requires: ['quality'],
-        desc: 'Diagnóstico da dimensão data_quality_flag: distribuição de flags, integridade temporal e qualidade por produto e UF.' },
+        desc: 'Diagnóstico da coluna data_quality_flag: como as linhas se distribuem entre as marcas de qualidade, a evolução no tempo e a qualidade por produto e UF.' },
       { id: 'dados',    label: 'Estrutura de dados', status: 'live', requires: [],
         desc: 'A estrutura por trás do banco: percorra as tabelas de cada camada do pipeline — Bronze (bruto), Silver (padronizado), Gold (analítico) e Serving (pronto para o painel) — e investigue qualquer uma linha a linha, com paginação, ordenação e filtros por coluna. Para conferir os dados ou rastrear de onde vem cada número.',
         planned: ['Tabelas das 4 camadas (Bronze → Serving)', 'Linhagem: da fonte oficial ao gráfico', 'Paginação no servidor', 'Ordenar por qualquer coluna', 'Filtrar por coluna (=, >, contém…)', 'Exportar o recorte em CSV'] },

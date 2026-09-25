@@ -123,7 +123,7 @@ function ViewQuality({ summary, database }) {
       <div className="qa-flag-row">
         {flags.length === 0 ? (
           <div className="qa-flag-card" style={{ gridColumn: '1 / -1' }}>
-            <span className="qa-flag-label">Nenhuma flag selecionada nos filtros.</span>
+            <span className="qa-flag-label">Nenhuma marca selecionada nos filtros.</span>
           </div>
         ) : flags.map(f => (
           <div key={f.id} className="qa-flag-card" title={flagDesc(f.id)}>
@@ -143,7 +143,7 @@ function ViewQuality({ summary, database }) {
       {flags.length > 0 && (
         <p className="caption" style={{ padding: '0 4px 4px', marginTop: -4 }}>
           Distribuição no <strong>acervo completo</strong> do banco (todos os produtos, UFs e anos),
-          recortada apenas pelas <strong>flags</strong> selecionadas. Os filtros de produto, UF e ano
+          recortada apenas pelas <strong>marcas</strong> selecionadas. Os filtros de produto, UF e ano
           não recortam estes percentuais — a evolução temporal abaixo respeita a janela de anos.
         </p>
       )}
@@ -154,7 +154,7 @@ function ViewQuality({ summary, database }) {
           significa" reference in the Qualidade window. */}
       <details className="qa-flag-legend card">
         <summary className="qa-flag-legend-summary">
-          <span>O que significa cada flag?</span>
+          <span>O que significa cada marca?</span>
           <span className="caption">{window.QUALITY_FLAGS.length} marcas de qualidade</span>
         </summary>
         <p className="qa-flag-legend-intro">
@@ -198,14 +198,14 @@ function ViewQuality({ summary, database }) {
         {okFlag ? (
           <window.LineChart
             data={ts.map(d => ({ y: d.y, v: d.ok * 100 }))}
-            label="% OK"
+            label="% sem ressalva"
             valueKey="v"
             color="var(--ok)"
             height={240}
           />
         ) : (
           <p className="caption" style={{ padding: '24px 4px', textAlign: 'center' }}>
-            Flag <code>OK</code> não está entre as selecionadas nos filtros.
+            A marca <strong>Sem ressalva</strong> não está entre as selecionadas nos filtros.
           </p>
         )}
       </div>
@@ -213,7 +213,7 @@ function ViewQuality({ summary, database }) {
       {/* Quality flag distribution by product */}
       <div className="card">
         <window.SectionHeader
-          overline="Distribuição de flags · acervo"
+          overline="Distribuição das marcas · acervo"
           title="Por produto"
           action={
             <span className="caption">
@@ -234,8 +234,9 @@ function ViewQuality({ summary, database }) {
             {stockRows.length > 0 && (
               <div className="qa-facet">
                 <p className="caption" style={{ margin: '2px 2px 6px' }}>
-                  <strong>Estoque · efetivo dos rebanhos</strong> — qualidade da contagem de cabeças
-                  (um estoque não tem valor, então a flag é OK vs quantidade ausente).
+                  <strong>Estoque · efetivo dos rebanhos</strong>. O rebanho é contado em cabeças e
+                  não tem preço, então fica como Sem base para avaliar, ou como Sem quantidade quando
+                  falta a contagem.
                 </p>
                 <window.FlagBars rows={stockRows} flags={flags} labelKey="name" showLegend={false} />
               </div>
@@ -268,8 +269,8 @@ function ViewQuality({ summary, database }) {
       {flags.length > 0 && (
         <div className="card">
           <window.SectionHeader
-            overline="Composição temporal · flags"
-            title={`Share por flag · ${filtered.yearStart}–${filtered.yearEnd}`}
+            overline="Composição no tempo · marcas"
+            title={`Participação de cada marca · ${filtered.yearStart}–${filtered.yearEnd}`}
           />
           <window.StackedArea
             series={flags.slice().reverse().map(f => ({
