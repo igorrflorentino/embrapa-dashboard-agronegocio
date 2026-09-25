@@ -153,7 +153,7 @@ describe('conventionExplain diz o que o número É', () => {
 
   it('não inventa uma conversão quando a moeda é o real', () => {
     const frase = window.conventionExplain({ currency: 'BRL', correction: 'IPCA' }, 'ibge_pevs');
-    expect(frase).toBe('Deflacionado pelo IPCA: reais de hoje.');
+    expect(frase).toBe('Corrigido pela inflação do Brasil (IPCA), em reais de hoje.');
   });
 
   it('diz para que serve o nominal — e para que NÃO serve — na moeda certa', () => {

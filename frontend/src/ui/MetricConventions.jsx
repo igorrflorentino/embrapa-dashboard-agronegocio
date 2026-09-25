@@ -334,29 +334,28 @@ window.conventionExplain = (conv, banco) => {
   const sym = (window.CURRENCY_FX[currency] || {}).symbol || currency;
   const moeda = { BRL: 'reais', USD: 'dólares', EUR: 'euros' }[currency] || sym;
   if (correction === 'Nominal') {
-    return `Valores em ${moeda} de cada ano, sem correção: servem para auditar um ano ou `
-      + `comparar séries dentro do mesmo ano — não para comparar anos distantes.`;
+    return `Valores em ${moeda} de cada ano, sem correção pela inflação. Servem para conferir `
+      + `um ano ou comparar valores do mesmo ano, e não para comparar anos distantes.`;
   }
   const eco = window.CORRECTION_ECONOMY[correction];
   if (!eco) return '';
   if (eco === 'BR' && currency === 'BRL') {
-    return `Deflacionado pelo ${correction}: reais de hoje.`;
+    return `Corrigido pela inflação do Brasil (${correction}), em reais de hoje.`;
   }
   if (eco === 'BR') {
-    // A negativa explícita é o ponto: sem ela, o leitor completa a frase sozinho — e
+    // A negativa explícita é o ponto: sem ela, o leitor completa a frase sozinho, e
     // completa errado. Nomeia a inflação que este número NÃO é, pela moeda na tela.
     const outra = window.ECONOMY_DA[{ USD: 'US', EUR: 'EA' }[currency]] || 'de fora';
-    return `Deflacionado pelo ${correction} — a inflação do BRASIL — e convertido ao câmbio `
-      + `de hoje. Mede poder de compra brasileiro, apresentado em ${moeda}: não é a inflação `
-      + `${outra}.`;
+    return `Corrigido pela inflação do Brasil (${correction}) e convertido pelo câmbio de hoje. `
+      + `Mede o poder de compra brasileiro escrito em ${moeda}, e não a inflação ${outra}.`;
   }
   const base = window.canonCurrencyFor ? window.canonCurrencyFor(banco) : 'BRL';
   const semCambio = base === currency;
   return semCambio
-    ? `Deflacionado pelo ${correction} (inflação ${window.ECONOMY_DA[eco]}): ${moeda} de hoje. `
-      + `O valor já é declarado em ${sym} na fonte, então não passa por câmbio nenhum.`
-    : `Convertido ao câmbio do ano de registro e deflacionado pelo ${correction} (inflação `
-      + `${window.ECONOMY_DA[eco]}): ${moeda} de hoje, pelo poder de compra ${window.ECONOMY_DA[eco]}.`;
+    ? `Corrigido pela inflação ${window.ECONOMY_DA[eco]} (${correction}), em ${moeda} de hoje. `
+      + `O valor já vem em ${sym} da fonte, então não passa por câmbio nenhum.`
+    : `Convertido pelo câmbio do ano de registro e corrigido pela inflação `
+      + `${window.ECONOMY_DA[eco]} (${correction}), em ${moeda} de hoje.`;
 };
 
 // O valor do chip recolhido: o índice mais a economia que ele mede, porque é a economia

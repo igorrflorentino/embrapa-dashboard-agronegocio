@@ -148,7 +148,7 @@ The `discover` commands are **auxiliary and not part of the production pipeline*
 
 ## `data_quality_flag`
 
-A **13-value** taxonomy: **11 emittable + 2 reserved**. The completeness tiers are always emitted; the four implied-price tiers and `UNSCORED` are produced only when the dbt var `enable_quality_outliers` is `true` (on in prod); `AREA_INCONSISTENT` is PAM-only; and two **reserved** auto-fill tiers (`INFERRED_QUANTITY` / `INFERRED_VALUE`) are accepted-but-absent — no Gold rule emits them yet (always 0), reserved for a future auto-fill pipeline. The custom dashboard renders the pt-BR labels shown (see its "O que significa cada flag?" legend).
+A **14-value** taxonomy: **12 emittable + 2 reserved**. The completeness tiers are always emitted; the four implied-price tiers and `UNSCORED` are produced only when the dbt var `enable_quality_outliers` is `true` (on in prod); `ISOLATED_SPIKE` (IBGE only, v1.92.0) rides the same var plus its own `quality_isolated_spike`; `AREA_INCONSISTENT` is PAM-only; and two **reserved** auto-fill tiers (`INFERRED_QUANTITY` / `INFERRED_VALUE`) are accepted-but-absent — no Gold rule emits them yet (always 0), reserved for a future auto-fill pipeline. The custom dashboard renders the pt-BR labels shown (see its "O que significa cada flag?" legend).
 
 The flag answers **two independent questions** per row: is the row *complete* (does it carry a quantity and a value?), and is the number *plausible* (is `value ÷ quantity` near the product's median implied price?). The second question needs a price, so it cannot be asked of every row — and a row it could not be asked of is `UNSCORED`, **not** `OK`.
 

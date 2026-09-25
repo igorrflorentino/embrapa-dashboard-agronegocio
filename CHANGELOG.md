@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.92.2] - 2026-09-24
+
+Uma ressalva que a v1.92.1 tinha cortado volta às legendas, e o glossário ganha o mesmo
+tratamento de linguagem simples, com um erro de sentido corrigido no caminho.
+
+### Corrigido
+- **A legenda de "Valor atípico" e "Quantidade atípica" voltou a dizer que a margem é larga.**
+  Ao simplificar o texto, a v1.92.1 trocou "dentro de 100× da mediana, faixa larga" por "o
+  preço por unidade continua dentro do esperado", que promete mais do que o detector faz. O
+  detector só pede que o preço fique a menos de 100 vezes do típico. Remedido em produção,
+  com o detector atual, os atípicos cujo preço está 10 vezes ou mais longe do típico são
+  COMTRADE 460 de 4.671 (9,8%), COMEX 152 de 3.030 (5,0%), PEVS 30 de 1.531 (2,0%), PAM 52 de
+  4.994 (1,0%) e PPM 11 de 11.773 (0,1%). O texto diz isso de novo, e um teste exige a
+  ressalva. Os rótulos "(válida)" e "Normais" ficam, porque são o vocabulário da planilha
+  Contrato de Dados. "(válida)" ali é o nome da categoria "tratada como número real", não uma
+  garantia.
+- **O verbete "Deflacionar" dizia o contrário do que acontece.** Afirmava que, sem correção,
+  um valor de 1990 "parece muito maior" que o de hoje. É o inverso: os preços subiram, então o
+  valor antigo na moeda da época parece muito menor do que era. Um teste trava o sentido.
+
+### Alterado
+- **O verbete `data_quality_flag` do glossário deixou de copiar a legenda.** Cada um dos cinco
+  bancos tinha uma cópia de 183 a 235 palavras, e a cópia ficou para trás quando a legenda foi
+  corrigida (ainda chamava o atípico de "em geral um gigante de verdade"). Agora cada verbete
+  diz o que a coluna é, o que é próprio daquele banco e remete à perspectiva Qualidade dos
+  dados, com 78 a 104 palavras. Um teste limita o tamanho e exige a remissão.
+- **Os textos de correção pela inflação foram reescritos em linguagem simples**, no glossário
+  (colunas `val_*`, "Valor nominal × valor real", "Corrigir em qual economia?", os índices e
+  "Moeda") e na frase que a faixa de convenções mostra sob o valor. Sai "deflacionado", sai o
+  travessão. Os verbetes de comércio exterior passam a dizer que o índice oferecido em dólares
+  é o CPI, que o painel usa desde a v1.88.0. O de "IPCA · IGP-M · IGP-DI" passa a dar o ano em
+  que cada índice começa. No total, o glossário caiu de 4.343 para 3.832 palavras e de 96 para
+  46 travessões.
+
+### Documentação
+- `README.md`: a taxonomia tem 14 valores, 12 emitíveis (dizia 13 e 11 desde a v1.92.0).
+- `docs/looker_studio_setup.md`: o filtro padrão mantém `ISOLATED_SPIKE` e explica por quê.
+- `PLANS/quality_outliers_and_visibility_gate.md`: nota com o que mudou depois do desenho
+  (IGP-DI, piso, `MISSING_WEIGHT` no COMTRADE, `ISOLATED_SPIKE`).
+
+---
+
 ## [1.92.1] - 2026-09-24
 
 O bloco "O que significa cada flag?" da tela de Qualidade ficou mais fácil de ler e deixou de

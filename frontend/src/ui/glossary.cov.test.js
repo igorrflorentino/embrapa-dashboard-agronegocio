@@ -89,6 +89,29 @@ describe('GLOSSARY structure', () => {
     }
   });
 
+  it('keeps data_quality_flag short and points to the legend instead of copying it', () => {
+    // Until v1.92.2 each banco carried a 183–235-word copy of the whole legend, and the copy
+    // drifted: the legend was corrected in v1.89.0 and the glossary kept calling an outlier
+    // "em geral um gigante de verdade". The legend in data.js is the one place the flags are
+    // explained; the glossary says what the column is and where to read more.
+    const entries = Object.values(GLOSSARY).flatMap((s) => s.terms)
+      .filter((t) => t.term === 'data_quality_flag');
+    expect(entries).toHaveLength(5);
+    for (const t of entries) {
+      expect(t.short.split(/\s+/).length, t.short).toBeLessThanOrEqual(110);
+      expect(t.short).toContain('Qualidade dos dados');
+      expect(t.short).not.toMatch(/—|gigante/);
+    }
+  });
+
+  it('says an old nominal value looks SMALLER without correction, not larger', () => {
+    // The entry said the opposite until v1.92.2. Prices rose, so a 1990 value in the money of
+    // its day understates what it was worth.
+    const t = GLOSSARY.metodos.terms.find((x) => x.term === 'Deflacionar');
+    expect(t.short).toContain('parece muito menor');
+    expect(t.short).not.toContain('parece muito maior');
+  });
+
   it('names the per-banco Gold table in each banco section', () => {
     const expectedTable = {
       ibge_pevs: 'gold_pevs_production',
