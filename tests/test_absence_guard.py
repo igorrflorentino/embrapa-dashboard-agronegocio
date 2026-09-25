@@ -36,6 +36,11 @@ _DENOMINADOR_MASCARADO = re.compile(r"/\s*\(?[^()\n]*\bor\s+1\b")
 # guarda morta cujo denominador nunca chega a zero porque a coleção só existe se tiver
 # linhas. É ilegítimo quando o quociente vai para a tela como fração de alguma coisa.
 _TOTAL_MASCARADO = re.compile(r"^\s*\w+ = [^\n]*\bor\s+1(?:\.0)?\b")
+# `float(x or 0)` — a ausência vira zero ANTES de qualquer divisão. As três regexes acima
+# olham o DENOMINADOR; esta olha o valor lido da linha, que é onde a fatia de mercado de um
+# ano sem dado virava 0% (seam_base._xyear, v1.92.3). Aceita uma chamada aninhada
+# (`float(getattr(r, "v", None) or 0)`). `int(... or 0)` fica de fora: é contagem.
+_ZERO_COERCION = re.compile(r"\bfloat\(\s*(?:[^()\n]|\([^()\n]*\))*?\bor\s+0(?:\.0)?\s*\)")
 
 # Cada permissão precisa do trecho literal E de uma razão. Uma razão só vale se o zero for
 # MEDIDO (uma contagem de verdade) ou se não houver divisão por medida ausente.
@@ -66,6 +71,36 @@ PERMITIDOS: list[tuple[str, str]] = [
         "então a ausência de linha é um zero MEDIDO, não um dado que falta. A recusa "
         "continua onde deve: pct_present devolve None quando a soma dos dois lados não é "
         "positiva, e é o COEFICIENTE que não existe para quem exporta sem produzir.",
+    ),
+    # ── Os `float(x or 0)` que são TOTAIS, não pontos nem razões ────────────────
+    (
+        '"production": float(r.total_value or 0) / 1e3,',
+        "seam_cross._production_by_uf: massa produzida por UF, somada no BigQuery. É o "
+        "mesmo zero MEDIDO de _uf_mass logo abaixo: a pesquisa cobre as 27 UFs e o Gold "
+        "descarta a célula em branco (o '...' do SIDRA) antes de somar, então uma soma NULL "
+        "não chega aqui. O coeficiente continua recusado por pct_present quando a produção "
+        "somada não é positiva.",
+    ),
+    (
+        "exp_by_uf = {r.state_acronym: float(r.total_weight_kg or 0) / 1e6",
+        "seam_cross._export_coef_by_uf: peso exportado por UF, um TOTAL que entra no "
+        "numerador do coeficiente. O COMEX não tem linha com peso NULL (0 em toda a história, "
+        "medido na auditoria de 2026-09-24), e uma UF sem exportação exportou zero de fato. "
+        "A razão continua passando por pct_present.",
+    ),
+    (
+        "agg[key] = agg.get(key, 0.0) + float(r.value_usd or 0)",
+        "seam_attribute_engineering.flow_market_worklist: SOMA do valor por par regime × "
+        "fluxo para ordenar a matriz de classificação. Somar só os presentes é a leitura "
+        "certa de um total (regra do CLAUDE.md), e o par sem valor já é desenhado como '·' "
+        "pelo próprio docstring da função. O eixo está congelado (0 valores em produção).",
+    ),
+    (
+        "float(row.share or 0.0),",
+        "doctor._check_quality_drift: `share` é CONTAGEM ÷ contagem do mesmo banco "
+        "(safe_divide(count(*), sum(count(*)) over (partition by source)) no mart). A linha "
+        "só existe com count ≥ 1, então o denominador é positivo e o share nunca vem NULL. "
+        "O value_share, que é medida, já chega como None ao lado.",
     ),
     (
         "elapsed = (state.ended_at or now) - started if started else 0.0",
@@ -99,6 +134,22 @@ def test_a_varredura_encontra_o_que_varrer() -> None:
     assert len(_fontes()) > 30
 
 
+@pytest.mark.parametrize(
+    ("linha", "pega"),
+    [
+        ('"v": float(r.value or 0) / scale', True),  # a forma de seam_cross até a v1.92.3
+        ("return {y: float(r.value or 0.0) for r in df.itertuples()}", True),
+        ('x = float(getattr(r, "v", None) or 0)', True),  # uma chamada aninhada
+        ("n = int(job.num_dml_affected_rows or 0)", False),  # contagem, não medida
+        ("v = measures.present(r.value)", False),
+        ("x = float(a) + (b or 0)", False),  # o `or 0` fora do float(...)
+    ],
+)
+def test_a_regex_do_or_zero_pega_as_formas_conhecidas(linha: str, pega: bool) -> None:
+    """Uma regex que não casa nada deixa a varredura passar vazia, sem ninguém notar."""
+    assert bool(_ZERO_COERCION.search(linha)) is pega
+
+
 def test_nenhum_call_site_responde_zero_a_uma_razao_indefinida() -> None:
     achados: list[str] = []
     for caminho in _fontes():
@@ -110,6 +161,7 @@ def test_nenhum_call_site_responde_zero_a_uma_razao_indefinida() -> None:
                 _FALLBACK_ZERO.search(linha)
                 or _DENOMINADOR_MASCARADO.search(linha)
                 or _TOTAL_MASCARADO.search(linha)
+                or _ZERO_COERCION.search(linha)
             ):
                 continue
             if any(trecho in linha for trecho, _ in PERMITIDOS):

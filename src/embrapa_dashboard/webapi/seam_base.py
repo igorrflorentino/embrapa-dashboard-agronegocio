@@ -26,6 +26,8 @@ from embrapa_dashboard.serving import gateway
 from embrapa_dashboard.serving import sql as sqlbuild
 from embrapa_dashboard.serving.cache import cache
 
+from . import measures
+
 logger = logging.getLogger(__name__)
 
 # Banco id → the BFF source key (they already align by construction).
@@ -104,6 +106,14 @@ def _xyear(metric: str, codes: tuple, uf_codes: tuple = ()) -> dict:
     """{year: raw value} from the gateway cross reader for a metric, scoped to codes.
 
     ``uf_codes`` optionally narrows to origin UFs (cross-source per-UF scoping); it
-    only affects COMEX metrics — the gateway drops it for COMTRADE (no UF column)."""
+    only affects COMEX metrics — the gateway drops it for COMTRADE (no UF column).
+
+    A year whose value is absent is LEFT OUT of the map, never stored as 0. Every caller
+    intersects year sets or reads with ``.get``, so a missing key becomes a gap in the chart
+    and a refused ratio. The old ``or 0`` coercion turned it into a 0 before the division,
+    and the market share of that year would have read 0%. No year is absent today (the annual
+    sums of value and weight are never NULL in COMEX/COMTRADE), which is immunity by DATA;
+    this makes it hold by construction."""
     df = gateway.fetch_cross_series(metric, codes=codes, uf_codes=uf_codes)
-    return {int(r.reference_year): float(r.value or 0) for r in df.itertuples()}
+    out = {int(r.reference_year): measures.present(r.value) for r in df.itertuples()}
+    return {y: v for y, v in out.items() if v is not None}

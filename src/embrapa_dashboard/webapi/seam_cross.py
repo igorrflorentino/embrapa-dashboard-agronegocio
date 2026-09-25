@@ -106,7 +106,11 @@ def _cross_points(
         f"{banco_id}:{metric_id}", year_start=y0, year_end=y1, uf_codes=uf_codes
     )
     scale = 1e9 if unit.endswith("bi") else (1e6 if unit == "mil t" else 1.0)
-    return [{"y": int(r.reference_year), "v": float(r.value or 0) / scale} for r in df.itertuples()]
+    # An absent year is a gap (v = None), never a point drawn at zero.
+    return [
+        {"y": int(r.reference_year), "v": measures.scale_present(r.value, scale)}
+        for r in df.itertuples()
+    ]
 
 
 def _pevs_cross_points(metric_id: str, y0: int, y1: int, uf_codes: tuple = ()) -> list[dict]:
@@ -116,7 +120,7 @@ def _pevs_cross_points(metric_id: str, y0: int, y1: int, uf_codes: tuple = ()) -
             year_start=y0, year_end=y1, value_column="val_real_ipca_brl", uf_codes=uf_codes
         )
         return [
-            {"y": int(r.reference_year), "v": float(r.total_value or 0) / 1e9}
+            {"y": int(r.reference_year), "v": measures.scale_present(r.total_value, 1e9)}
             for r in df.itertuples()
         ]
     fam = "massa" if metric_id == "prod_mass" else "volume"
@@ -136,18 +140,15 @@ def _exp_price_cross_points(y0: int, y1: int, uf_codes: tuple = ()) -> list[dict
     wt = gateway.fetch_cross_series(
         "mdic_comex:exp_weight", year_start=y0, year_end=y1, uf_codes=uf_codes
     )
-    wmap = {int(r.reference_year): float(r.value or 0) for r in wt.itertuples()}
+    wmap = {int(r.reference_year): r.value for r in wt.itertuples()}
     # A year with no (or zero) weight has no defined price: emit None (a gap
     # in the chart) — NEVER divide by 1, which would plot the year's raw
-    # total US$ value as a 'US$/kg' point.
+    # total US$ value as a 'US$/kg' point. Nor with no VALUE: that used to read
+    # `float(r.value or 0) / w`, a price of US$ 0/kg for a year nobody measured.
     return [
         {
             "y": int(r.reference_year),
-            "v": (
-                float(r.value or 0) / wmap[int(r.reference_year)]
-                if wmap.get(int(r.reference_year))
-                else None
-            ),
+            "v": measures.ratio_present(r.value, wmap.get(int(r.reference_year))),
         }
         for r in val.itertuples()
     ]

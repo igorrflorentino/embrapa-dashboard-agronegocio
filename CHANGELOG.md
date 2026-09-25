@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.92.3] - 2026-09-24
+
+A regra "ausência não é zero" ganha, no lado Python, a forma que a varredura não enxergava.
+
+### Corrigido
+- **`float(x or 0)` não converte mais um valor ausente em zero antes de uma divisão.** A
+  varredura `tests/test_absence_guard.py` procurava `x if den else 0` e `or 1` no
+  denominador, e deixava passar a mesma ausência escrita no NUMERADOR. Estava em
+  `seam_base._xyear`, que alimenta a fatia de mercado, o coeficiente de exportação, o espelho
+  comercial, o preço FOB e o valor agregado. Um ano sem valor virava 0 e sairia como "0% do
+  mercado" ou "US$ 0/kg". Agora o ano sem valor fica fora do mapa e vira lacuna, porque todo
+  consumidor já cruza os anos ou lê com `.get`. O mesmo vale para os pontos das séries do
+  cruzamento de fontes (`_cross_points`) e para o preço de exportação, que agora sai `None`
+  quando falta o valor, e não só quando falta o peso.
+- **Nenhum número muda hoje.** As somas anuais de valor e peso do COMEX e do COMTRADE nunca
+  vêm NULL, então o defeito estava imune pelo DADO. A mudança o torna impossível pela
+  construção, que é a lição que o projeto já tinha registrado para o COMEX sem peso.
+
+### Adicionado
+- `measures.present` e `measures.scale_present`, as contrapartes Python de ler uma medida e de
+  trocar de escala preservando a ausência (a segunda espelha `scalePresent` do
+  `seriesUtils.js`).
+- A varredura recusa `float(x or 0)`, e um teste prova que a regex pega as formas conhecidas.
+  Ela achou mais um caso ao ser ligada, `doctor._check_quality_drift`, que ficou registrado
+  com o motivo: o `share` ali é razão de contagens de uma linha que só existe com contagem ≥ 1,
+  e nunca vem NULL. Os outros três registrados são TOTAIS (produção e exportação por UF, soma
+  do valor por par regime × fluxo), onde somar os presentes é a leitura certa.
+
+---
+
 ## [1.92.2] - 2026-09-24
 
 Uma ressalva que a v1.92.1 tinha cortado volta às legendas, e o glossário ganha o mesmo

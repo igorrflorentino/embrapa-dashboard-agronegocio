@@ -38,6 +38,26 @@ def _finite(value) -> float | None:
     return None if math.isnan(f) or math.isinf(f) else f
 
 
+def present(value) -> float | None:
+    """A medida lida de uma linha, ou ``None`` quando ela falta.
+
+    É o que ``float(x or 0)`` deveria ter sido: aquela forma converte a ausência em zero
+    ANTES de qualquer divisão, e o zero chega à tela como afirmação (fatia de mercado 0%,
+    preço US$ 0/kg). A varredura ``tests/test_absence_guard.py`` recusa a forma antiga.
+    """
+    return _finite(value)
+
+
+def scale_present(value, divisor: float) -> float | None:
+    """``value / divisor`` para trocar de escala (US$ → US$ bi), preservando a ausência.
+
+    A metade Python de ``scalePresent`` (seriesUtils.js): ``None / 1e9`` quebra, e
+    ``float(None or 0) / 1e9`` desenha um ponto no zero onde deveria haver lacuna.
+    """
+    v = _finite(value)
+    return None if v is None else v / divisor
+
+
 def ratio_present(numerator, denominator) -> float | None:
     """``numerator / denominator``, ou ``None`` quando a razão é indefinida.
 

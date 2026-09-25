@@ -1946,6 +1946,20 @@ def test_measures_recusam_a_razao_indefinida_em_vez_de_responder_zero():
     assert m.pct_present(0, 4) == 0.0
 
 
+def test_present_e_scale_present_preservam_a_ausencia():
+    """O substituto de `float(x or 0)` (v1.92.3): a ausência chega à razão como None."""
+    from embrapa_dashboard.webapi import measures as m
+
+    assert m.present(2.5) == 2.5
+    assert m.present("3") == 3.0
+    for ausente in (None, float("nan"), float("inf"), "x"):
+        assert m.present(ausente) is None, ausente
+        assert m.scale_present(ausente, 1e9) is None, ausente
+    assert m.present(0) == 0.0  # um zero MEDIDO continua zero
+    assert m.scale_present(2e9, 1e9) == 2.0
+    assert m.scale_present(0, 1e9) == 0.0
+
+
 def test_mean_present_ignora_os_ausentes_em_vez_de_conta_los_como_zero():
     from embrapa_dashboard.webapi import measures as m
 
