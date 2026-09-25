@@ -6,7 +6,10 @@ connectivity issues surface immediately instead of mid-run.
 
 **Cost, stated honestly.** A healthy run takes a few seconds. A BROKEN one does
 not: the source probes are sequential and issue 10–11 HTTP requests at
-``PROBE_TIMEOUT_S`` each, so an unreachable network costs around 100s. The
+``PROBE_TIMEOUT_S`` each, and since v1.95.2 each one gets ONE retry on a timeout or
+dropped connection (``_probe``), so a network that times out everywhere costs around
+200s (it was ~100s before the retry; a DNS failure answers at once, so it costs only
+the 2s retry pause per request). The
 BigQuery-backed checks add ~362 MB of scan (measured on prod, 2026-09-17), plus
 10 MB — BigQuery's per-query billing minimum over a table of kilobytes — for
 quality-drift since v1.91.0, all of it capped by ``_bq_job_config``. The docstrings
@@ -22,6 +25,7 @@ import itertools
 import json
 import logging
 import re
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
@@ -39,12 +43,48 @@ from embrapa_dashboard.discover import SIDRA_METADATA_URL
 logger = logging.getLogger(__name__)
 
 # Per-REQUEST timeout for the network probes. Not a budget for the command: the source
-# probes run sequentially and issue 10–11 requests between them, so a wholly unreachable
-# network costs ~100s here plus the BigQuery reads below. `requests` applies this per
+# probes run sequentially and issue 10–11 requests between them, each retried once on a
+# transient failure, so a network that times out everywhere costs ~200s here plus the
+# BigQuery reads below. `requests` applies this per
 # socket operation (connect, then read), not per call, so a slow-drip server can exceed
 # it. The docstrings used to promise "~10 seconds … even when something is broken",
 # which was wrong by an order of magnitude in the only case anyone times.
 PROBE_TIMEOUT_S = 10
+
+# ONE retry for a failure that can clear up by itself: a timeout, a dropped connection,
+# 429 or a 5xx. A 404 or 403 answers the same way twice, so it is not retried. Measured
+# on 2026-09-25: the BCB SGS probe timed out (read timeout=10) in 2 of 4 local runs,
+# while the ingest — which retries for up to 120 s per series — never failed on it.
+# A probe that fails on a source's bad second teaches the operator to read
+# "1 check(s) failed" as noise, and then the real failure is ignored too.
+PROBE_RETRY_DELAY_S = 2.0
+_TRANSIENT_STATUS = frozenset({429, 500, 502, 503, 504})
+
+
+def _probe(method: str, url: str, **kwargs) -> tuple[requests.Response, str]:
+    """GET or HEAD for a reachability probe, retried once on a transient failure.
+
+    Returns the response and a NOTE for the check's detail: empty when the first
+    attempt answered, otherwise what the first attempt got. A source that needed the
+    retry is slow or flaky, and that is worth seeing even when the check passes.
+    ``requests.get``/``requests.head`` are looked up at call time, so a test that
+    patches them still intercepts every attempt.
+    """
+    kwargs.setdefault("timeout", PROBE_TIMEOUT_S)
+    send = requests.head if method == "HEAD" else requests.get
+    try:
+        response = send(url, **kwargs)
+        if response.status_code not in _TRANSIENT_STATUS:
+            return response, ""
+        first = f"HTTP {response.status_code}"
+        response.close()
+    except requests.Timeout:  # before ConnectionError: ConnectTimeout is both
+        first = "timeout"
+    except requests.ConnectionError:
+        first = "connection error"
+    time.sleep(PROBE_RETRY_DELAY_S)
+    return send(url, **kwargs), f" (answered on retry; first attempt: {first})"
+
 
 # How far behind today a foreign price index's LATEST observation may be before the
 # series is presumed to have stopped. CPI-U for month M is released mid-M+1 and the HICP
@@ -630,9 +670,9 @@ def _check_ibge(settings: Settings) -> CheckResult:
     """SIDRA metadata endpoint responds for the configured table."""
     url = SIDRA_METADATA_URL.format(table_id=settings.ibge_table_id)
     try:
-        response = requests.get(url, timeout=PROBE_TIMEOUT_S)
+        response, note = _probe("GET", url)
         response.raise_for_status()
-        return CheckResult("IBGE SIDRA reachable", True, f"t{settings.ibge_table_id} 200 OK")
+        return CheckResult("IBGE SIDRA reachable", True, f"t{settings.ibge_table_id} 200 OK{note}")
     except Exception as exc:
         return CheckResult("IBGE SIDRA reachable", False, str(exc)[:120])
 
@@ -641,10 +681,12 @@ def _check_silvicultura(settings: Settings) -> CheckResult:
     """SIDRA metadata endpoint responds for the configured silviculture table (291)."""
     url = SIDRA_METADATA_URL.format(table_id=settings.silvicultura_table_id)
     try:
-        response = requests.get(url, timeout=PROBE_TIMEOUT_S)
+        response, note = _probe("GET", url)
         response.raise_for_status()
         return CheckResult(
-            "IBGE SIDRA silvicultura reachable", True, f"t{settings.silvicultura_table_id} 200 OK"
+            "IBGE SIDRA silvicultura reachable",
+            True,
+            f"t{settings.silvicultura_table_id} 200 OK{note}",
         )
     except Exception as exc:
         return CheckResult("IBGE SIDRA silvicultura reachable", False, str(exc)[:120])
@@ -654,9 +696,9 @@ def _check_pam(settings: Settings) -> CheckResult:
     """SIDRA metadata endpoint responds for the configured PAM table (5457)."""
     url = SIDRA_METADATA_URL.format(table_id=settings.pam_table_id)
     try:
-        response = requests.get(url, timeout=PROBE_TIMEOUT_S)
+        response, note = _probe("GET", url)
         response.raise_for_status()
-        return CheckResult("IBGE PAM reachable", True, f"t{settings.pam_table_id} 200 OK")
+        return CheckResult("IBGE PAM reachable", True, f"t{settings.pam_table_id} 200 OK{note}")
     except Exception as exc:
         return CheckResult("IBGE PAM reachable", False, str(exc)[:120])
 
@@ -665,12 +707,12 @@ def _check_ppm(settings: Settings) -> CheckResult:
     """SIDRA metadata endpoint responds for BOTH configured PPM tables (3939 + 74)."""
     tables = [settings.ppm_herd_table_id, settings.ppm_animal_table_id]
     try:
+        notes = ""
         for table_id in tables:
-            response = requests.get(
-                SIDRA_METADATA_URL.format(table_id=table_id), timeout=PROBE_TIMEOUT_S
-            )
+            response, note = _probe("GET", SIDRA_METADATA_URL.format(table_id=table_id))
             response.raise_for_status()
-        return CheckResult("IBGE PPM reachable", True, f"t{'+t'.join(tables)} 200 OK")
+            notes += f" t{table_id}{note}" if note else ""
+        return CheckResult("IBGE PPM reachable", True, f"t{'+t'.join(tables)} 200 OK{notes}")
     except Exception as exc:
         return CheckResult("IBGE PPM reachable", False, str(exc)[:120])
 
@@ -692,9 +734,9 @@ def _check_bcb(settings: Settings) -> CheckResult:
         # Hit the URL pattern the real client uses, with a tiny 1-year window so
         # we just verify reachability, not data correctness.
         url = SGS_URL.format(code=code, start="01/01/2024", end="31/12/2024")
-        response = requests.get(url, timeout=PROBE_TIMEOUT_S)
+        response, note = _probe("GET", url)
         response.raise_for_status()
-        return CheckResult("BCB SGS reachable", True, f"sgs.{code} 200 OK")
+        return CheckResult("BCB SGS reachable", True, f"sgs.{code} 200 OK{note}")
     except Exception as exc:
         return CheckResult("BCB SGS reachable", False, str(exc)[:120])
 
@@ -743,7 +785,8 @@ def _probe_bls(settings: Settings, today: date) -> tuple[bool, str]:
     if keyed:
         url = f"{url}&registrationkey={settings.bls_api_key}"
     try:
-        response = requests.get(url, timeout=PROBE_TIMEOUT_S)
+        # The URL carries the key when one is set; _probe never prints the URL.
+        response, note = _probe("GET", url)
         response.raise_for_status()
         # BLS answers a throttle/quota refusal with HTTP 200 and a status string in the
         # BODY (the keyless v1 quota is 25 requests/day per calling IP), so
@@ -779,7 +822,7 @@ def _probe_bls(settings: Settings, today: date) -> tuple[bool, str]:
         reason = _stale(latest, today)
         if reason:
             raise ValueError(reason)
-        detail = f"bls.{cpi} 200 OK (latest {latest:%Y-%m})"
+        detail = f"bls.{cpi} 200 OK (latest {latest:%Y-%m}){note}"
         if outside:
             detail += (
                 " ⚠ keyless v1 ignores the requested years: fine for a delta, but a "
@@ -813,7 +856,7 @@ def _probe_ecb(settings: Settings, today: date) -> tuple[bool, str]:
         "?format=csvdata&detail=dataonly&lastNObservations=1"
     )
     try:
-        response = requests.get(url, timeout=PROBE_TIMEOUT_S)
+        response, note = _probe("GET", url)
         response.raise_for_status()
         # Same class of lie on the other publisher: a bogus series id is a clean 404
         # (raise_for_status catches it), but a series with nothing to report comes back
@@ -824,7 +867,7 @@ def _probe_ecb(settings: Settings, today: date) -> tuple[bool, str]:
         reason = _stale(latest, today)
         if reason:
             raise ValueError(reason)
-        return True, f"ecb.{hicp} 200 OK (latest {latest:%Y-%m})"
+        return True, f"ecb.{hicp} 200 OK (latest {latest:%Y-%m}){note}"
     except Exception as exc:
         return False, f"ecb.{hicp} {str(exc)[:200]}"
 
@@ -871,17 +914,16 @@ def _check_comex(settings: Settings) -> CheckResult:
         prefix = FILE_PREFIX.get(flow, "EXP")
         end_year = settings.comex_end_year
 
-        def _head(year: int) -> None:
+        def _head(year: int) -> str:
             url = f"{settings.comex_csv_base_url.rstrip('/')}/{prefix}_{year}.csv"
             # The host omits its TLS intermediate — reuse the client's certifi+vendored
             # CA bundle so the probe verifies the same way the real download does.
-            response = requests.head(
-                url, timeout=PROBE_TIMEOUT_S, allow_redirects=True, verify=_ca_bundle()
-            )
+            response, note = _probe("HEAD", url, allow_redirects=True, verify=_ca_bundle())
             response.raise_for_status()
+            return note
 
-        _head(end_year)
-        return CheckResult("COMEX reachable", True, f"{prefix}_{end_year}.csv 200 OK")
+        note = _head(end_year)
+        return CheckResult("COMEX reachable", True, f"{prefix}_{end_year}.csv 200 OK{note}")
     except requests.HTTPError as exc:
         status = exc.response.status_code if exc.response is not None else None
         if status != 404:
@@ -893,11 +935,11 @@ def _check_comex(settings: Settings) -> CheckResult:
     # (the same condition the ingest treats as a healthy skip). The host is
     # only broken if the previous year's file is unreachable too.
     try:
-        _head(end_year - 1)
+        note = _head(end_year - 1)
         return CheckResult(
             "COMEX reachable",
             True,
-            f"{prefix}_{end_year - 1}.csv 200 OK "
+            f"{prefix}_{end_year - 1}.csv 200 OK{note} "
             f"({prefix}_{end_year}.csv not published yet — expected)",
         )
     except Exception as exc:
@@ -916,18 +958,18 @@ def _check_comtrade(settings: Settings) -> CheckResult:
     try:
         # The reference host serves this static file over GET only — it 404s on
         # HEAD — so probe with a streamed GET and don't drain the body.
-        response = requests.get(
-            REPORTERS_REF_URL, timeout=PROBE_TIMEOUT_S, allow_redirects=True, stream=True
-        )
+        response, note = _probe("GET", REPORTERS_REF_URL, allow_redirects=True, stream=True)
         response.close()
         response.raise_for_status()
     except Exception as exc:
         return CheckResult("COMTRADE reachable", False, str(exc)[:120])
     if not settings.comtrade_api_key:
         return CheckResult(
-            "COMTRADE reachable", True, "⚠ API 200 OK but COMTRADE_API_KEY unset (keyed ingest)"
+            "COMTRADE reachable",
+            True,
+            f"⚠ API 200 OK but COMTRADE_API_KEY unset (keyed ingest){note}",
         )
-    return CheckResult("COMTRADE reachable", True, "API 200 OK; key configured")
+    return CheckResult("COMTRADE reachable", True, f"API 200 OK; key configured{note}")
 
 
 def _check_bronze_tables(settings: Settings) -> CheckResult:

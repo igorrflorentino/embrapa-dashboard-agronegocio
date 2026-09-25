@@ -165,8 +165,9 @@ def test_check_comex_fails_on_connection_error(settings: Settings) -> None:
         result = doctor._check_comex(settings)
     assert result.ok is False
     assert "comex host unreachable" in result.detail
-    # The connection error is terminal — the previous-year HEAD must not fire.
-    assert head.call_count == 1
+    # The connection error is terminal — the previous-year HEAD must not fire. It gets ONE
+    # retry (v1.95.2, `_probe`), of the same end-year file.
+    assert [c.args[0].rsplit("/", 1)[-1] for c in head.call_args_list] == ["EXP_2026.csv"] * 2
 
 
 # --- _check_comtrade except + key-configured success (lines 365-366, 371) -----

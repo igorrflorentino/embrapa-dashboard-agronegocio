@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.95.2] - 2026-09-25
+
+### Corrigido
+- **`embrapa doctor` reprovava por um segundo ruim da fonte.** Cada teste de alcance fazia
+  uma chamada só, com 10 s de limite. Medido em 25/09: o do Banco Central estourou o tempo
+  em 2 de 4 rodadas locais, enquanto a ingestão (que tenta de novo por até 120 s por série)
+  nunca falhou por isso. Um `doctor` que diz "1 check(s) failed" sem problema real ensina a
+  ignorar o aviso, e aí o problema real também é ignorado. Agora todos os testes de alcance
+  (SIDRA ×4, BCB, BLS, BCE, COMEX e COMTRADE) passam por uma função só, `_probe`, que tenta
+  de novo **uma** vez após 2 s em timeout, conexão caída, 429 ou 5xx. Um 403 ou 404 não é
+  repetido, porque responderia igual. Quando precisa da nova tentativa, o check passa e diz
+  isso no detalhe ("answered on retry; first attempt: timeout"), porque uma fonte lenta é
+  informação. Nas rodadas de verificação, contra as fontes reais, foi o **IBGE SIDRA t289**
+  que precisou dela, não o BCB: a instabilidade não é de uma fonte só. A nota diz apenas o
+  tipo da falha, nunca a URL, que no BLS leva a chave da API. Custo honesto, atualizado no
+  cabeçalho do módulo: uma rede que estoura o tempo em tudo passa a custar cerca de 200 s
+  (eram ~100 s).
+
+### Documentação
+- **`docs/iam_setup.md`: quantas leituras de secrets esperar, e como conferir.** Cada
+  deploy do Job lê cada chave 1 vez (o `gcloud run jobs update --image` do workflow faz o
+  Cloud Run resolver os secrets, sem executar nada) e cada execução lê 2 vezes. Medido em
+  25/09: 28 leituras de cada chave = 24 deploys × 1 + 2 execuções × 2, exato. O texto dizia
+  "a cada execução", o que explicava só uma parte do volume. A seção traz a fórmula, os
+  comandos e o que investigar quando a conta não fecha.
+
+### Testes
+- 11 novos (nova tentativa em timeout, 429 e 5xx; nenhuma em 403/404; desistência depois de
+  uma; a nota sem a URL; nenhum teste de alcance chamando `requests` direto). Com a nova
+  tentativa removida, 8 deles falham. Uma fixture zera a pausa nos testes, e a suíte do
+  `doctor` caiu de 17 s para 2,6 s.
+
+---
+
 ## [1.95.1] - 2026-09-25
 
 A varredura que protege a regra "ausência não é zero" ganhou as duas formas que escaparam

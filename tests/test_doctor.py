@@ -605,7 +605,9 @@ def test_check_comex_fails_on_5xx_without_fallback(settings: Settings) -> None:
     responses.add(responses.HEAD, _comex_url(settings, 2026), status=503)
     result = doctor._check_comex(settings)
     assert result.ok is False
-    assert len(responses.calls) == 1
+    # A 5xx gets ONE retry (v1.95.2, `_probe`), always of the SAME file: the fallback to
+    # the previous year belongs to the 404 alone.
+    assert [c.request.url for c in responses.calls] == [_comex_url(settings, 2026)] * 2
 
 
 def test_check_bronze_tables_distinguishes_present_vs_missing(settings: Settings) -> None:
@@ -2311,3 +2313,104 @@ def test_quality_drift_skips_before_the_history_table_exists(settings: Settings)
 
 def test_quality_drift_is_registered() -> None:
     assert ("quality-drift", doctor._check_quality_drift) in doctor.CHECKS
+
+
+# ── Uma nova tentativa para o que passa sozinho (v1.95.2) ──────────────────────────
+# Medido em 2026-09-25: o teste de alcance do BCB estourou os 10 s em 2 de 4 rodadas
+# locais, enquanto a ingestão (que tenta de novo por até 120 s por série) nunca falhou por
+# isso. Um `doctor` que reprova por um segundo ruim da fonte ensina a ler "1 check(s)
+# failed" como ruído. `_probe` tenta de novo UMA vez, e só o que pode passar sozinho.
+
+
+def _ok() -> MagicMock:
+    r = MagicMock()
+    r.status_code = 200
+    r.raise_for_status = MagicMock()
+    return r
+
+
+def _status(code: int) -> MagicMock:
+    import requests as rq
+
+    r = MagicMock()
+    r.status_code = code
+    r.raise_for_status = MagicMock(side_effect=rq.HTTPError(f"{code} Error"))
+    return r
+
+
+def test_probe_retries_a_timeout_and_says_it_needed_to(settings: Settings) -> None:
+    import requests as rq
+
+    with patch("embrapa_dashboard.doctor.requests.get") as get:
+        get.side_effect = [rq.ReadTimeout("Read timed out. (read timeout=10)"), _ok()]
+        result = doctor._check_bcb(settings)
+    assert result.ok is True
+    assert get.call_count == 2
+    # A source that needed the retry is slow; the check passes and still says so.
+    assert result.detail.endswith("(answered on retry; first attempt: timeout)")
+
+
+@pytest.mark.parametrize(
+    ("first", "label"),
+    [
+        ("502", "HTTP 502"),
+        ("503", "HTTP 503"),
+        ("429", "HTTP 429"),
+        ("connect_timeout", "timeout"),  # ConnectTimeout is also a ConnectionError
+        ("connection", "connection error"),
+    ],
+)
+def test_probe_retries_only_what_can_clear_up(settings: Settings, first: str, label: str) -> None:
+    import requests as rq
+
+    primeiro = {
+        "connect_timeout": rq.ConnectTimeout("connect timed out"),
+        "connection": rq.ConnectionError("connection reset"),
+    }.get(first) or _status(int(first))
+    with patch("embrapa_dashboard.doctor.requests.get") as get:
+        get.side_effect = [primeiro, _ok()]
+        result = doctor._check_ibge(settings)
+    assert result.ok is True
+    assert result.detail.endswith(f" (answered on retry; first attempt: {label})")
+
+
+@pytest.mark.parametrize("code", [403, 404])
+def test_probe_does_not_retry_an_answer_that_would_repeat(settings: Settings, code: int) -> None:
+    with patch("embrapa_dashboard.doctor.requests.get") as get:
+        get.side_effect = [_status(code), _ok()]
+        result = doctor._check_ibge(settings)
+    assert result.ok is False
+    assert get.call_count == 1
+
+
+def test_probe_gives_up_after_one_retry(settings: Settings) -> None:
+    import requests as rq
+
+    with patch("embrapa_dashboard.doctor.requests.get") as get:
+        get.side_effect = [rq.ReadTimeout("first"), rq.ReadTimeout("Read timed out. (second)")]
+        result = doctor._check_bcb(settings)
+    assert result.ok is False
+    assert get.call_count == 2
+    assert "second" in result.detail  # the failure reported is the LAST one
+
+
+def test_probe_note_never_carries_the_url() -> None:
+    # The BLS URL carries the API key when one is set. The note names only the KIND of
+    # the first failure, never the request, so a retry cannot leak the key into the report.
+    import requests as rq
+
+    url = "https://api.bls.gov/publicAPI/v2/timeseries/data/X?registrationkey=SEKRET123"
+    with patch("embrapa_dashboard.doctor.requests.get") as get:
+        get.side_effect = [rq.ReadTimeout(f"timed out: {url}"), _ok()]
+        _, note = doctor._probe("GET", url)
+    assert "SEKRET123" not in note
+    assert note == " (answered on retry; first attempt: timeout)"
+
+
+def test_every_http_probe_goes_through_probe() -> None:
+    # One rule for every source probe: a probe written with requests.get/head directly
+    # would fail on the source's bad second again, and nothing else would notice.
+    fonte = inspect.getsource(doctor)
+    corpo = fonte.split("def _probe(", 1)[1].split("\n\n\n", 1)[1]
+    assert "requests.get(" not in corpo
+    assert "requests.head(" not in corpo

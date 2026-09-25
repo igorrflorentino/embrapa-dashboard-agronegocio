@@ -51,6 +51,19 @@ def _no_real_heartbeat_writes(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_probe_retry_pause(monkeypatch):
+    """The doctor's one-retry pause is real time; in tests it is zero.
+
+    Since v1.95.2 every reachability probe retries once on a timeout, a dropped
+    connection, 429 or a 5xx, after `PROBE_RETRY_DELAY_S`. The retry itself is what the
+    tests exercise; the 2 s pause would only add seconds per failing-host test.
+    """
+    from embrapa_dashboard import doctor
+
+    monkeypatch.setattr(doctor, "PROBE_RETRY_DELAY_S", 0.0)
+
+
+@pytest.fixture(autouse=True)
 def _no_live_comex_gap_lookup(monkeypatch):
     """No test may reach BigQuery through the COMEX value-gap lookup.
 

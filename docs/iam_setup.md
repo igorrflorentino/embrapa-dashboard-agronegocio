@@ -179,8 +179,37 @@ gcloud projects add-iam-policy-binding embrapa-dashboard-commodities \
 > gcloud logging read 'logName:"cloudaudit.googleapis.com%2Fdata_access" AND protoPayload.serviceName="secretmanager.googleapis.com" AND protoPayload.methodName:"AccessSecretVersion"' --project embrapa-dashboard-commodities --freshness=7d --format='value(timestamp,protoPayload.authenticationInfo.principalEmail,protoPayload.resourceName)'
 > ```
 >
-> Only `sa-data-pipeline-prod` (the two API keys, at each Job execution) and
-> `sa-web-dashboard-prod` (the feedback token, at instance start) should appear.
+> Only `sa-data-pipeline-prod` (the two API keys) and `sa-web-dashboard-prod` (the
+> feedback token, at every instance start: each deploy and each cold start) should appear.
+> Any other principal reading a secret value is an incident.
+>
+> **How many pipeline reads to expect — the count is predictable, so check it.** Measured
+> on 2026-09-25 from the first recorded read (the config took effect between 2026-09-24
+> 12:19 and 13:02 UTC): 28 reads of EACH key = 24 × 1 + 2 × 2, exactly, every read paired
+> with an event.
+>
+> - **Every deploy of the Job reads each key once**, about 1–2 min after the workflow
+>   starts, with NO execution. Each merge to `main` runs `ingestion-job-deploy.yml`, whose
+>   `gcloud run jobs update --image` makes Cloud Run resolve the Job's secret env vars as
+>   the runtime SA. This is most of the volume on a day of merges, and it is why "reads
+>   per execution" alone came out wrong (26 against the 2 per execution first expected).
+> - **Every execution reads each key twice**: when the execution is created and when its
+>   container starts. A retried task attempt (the Job has `maxRetries=2`) plausibly reads
+>   again; that one is not measured yet.
+>
+> So, per key: `(successful "Deploy ingestion job" runs) + 2 × (Job executions)` over the
+> same window. The inputs:
+>
+> ```bash
+> gh run list --workflow ingestion-job-deploy.yml --limit 100 --json createdAt,conclusion
+> gcloud run jobs executions list --job embrapa-ingest-all --region us-central1 --project embrapa-dashboard-commodities --limit 50
+> ```
+>
+> A count ABOVE the formula is not an incident by itself: first look for a retried
+> execution and for a deploy outside the workflow (`deploy/ingestion/deploy.sh`, a manual
+> `gcloud run jobs update`), then list the reads that pair with no event. A count BELOW
+> it means some deploy or execution did not resolve the secret. A NEW principal is the
+> finding that matters.
 
 ### 2.2 Data Pipeline SA
 
