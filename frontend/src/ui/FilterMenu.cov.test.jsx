@@ -627,3 +627,43 @@ describe('FilterMenu — product tree (multi-tree banco)', () => {
     }
   });
 });
+
+// ── "Aplicar" sem nenhuma mudança não pode mexer na geografia (v1.93.7) ───────────
+// A sub-UF facet was judged against the whole of Brazil, so every mesorregião of the
+// selected state looked like a narrowing: in production "Editar filtros → Aplicar" turned
+// "Brasil › Norte › Pará" into "… › 56 recortes › 144 municípios". In this 2-município mesh
+// Pará's one mesorregião is 1 of 2, the same shape.
+describe('FilterMenu — Aplicar sem mudanças devolve a mesma geografia', () => {
+  const apply = (value, banco = 'ibge_pevs') => {
+    const onApply = vi.fn();
+    const { container } = render(
+      <FilterMenu open banco={banco} value={value} onClose={() => {}} onApply={onApply} />,
+    );
+    fireEvent.click(container.querySelector('.btn-primary'));
+    return onApply.mock.calls[0][0];
+  };
+
+  it('Brasil › Norte › Pará volta igual, sem recortes nem municípios explícitos', () => {
+    const out = apply({ regions: ['N'], states: ['PA'] });
+    expect(out.regions).toEqual(['N']);
+    expect(out.states).toEqual(['PA']);
+    for (const k of ['mesos', 'micros', 'inters', 'imediatas', 'munis']) {
+      expect(out[k], k).toBeNull();
+    }
+  });
+
+  it('um recorte de verdade continua sendo gravado', () => {
+    // Pará and São Paulo selected, only Pará's mesorregião kept: that excludes São Paulo's,
+    // so it IS a narrowing and must travel.
+    const out = apply({ states: ['PA', 'SP'], mesos: ['1506'] });
+    expect(out.mesos).toEqual(['1506']);
+  });
+
+  it('não inventa "mundo" no país reporter de um banco que não tem esse eixo', () => {
+    // An IBGE banco has no reporter universe; the draft's default {Brasil} is 1 >= 0 and
+    // used to come out as '__all__', writing rp=ALL into every URL after an "Aplicar".
+    const out = apply({ regions: ['N'], states: ['PA'] });
+    expect(out.reporters).toBeUndefined();
+    expect(out.partners).toBeNull();
+  });
+});

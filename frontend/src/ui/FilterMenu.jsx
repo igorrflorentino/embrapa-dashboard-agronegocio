@@ -449,9 +449,6 @@ function GeoColumn({
 // selection means "no narrowing" → emit null so dataFilters skips it and the share
 // URL omits it (instead of serializing every código). namesObj is the per-level
 // {code: name} map whose key count IS the universe size.
-const _geoArr = (set, namesObj) =>
-  set.size >= Object.keys(namesObj).length ? null : [...set];
-
 // Cap how many geo checkboxes render at once. The município column's universe is ~5570;
 // rendering them all on first open is jank/memory the list rarely needs (RVC-5). Bulk
 // actions still operate on the full search-filtered set — only the visible DOM is capped,
@@ -665,13 +662,20 @@ function FilterMenu({ open = false, banco = 'ibge_pevs', value, onClose, onApply
   // NON-EMPTY subset of its universe (0 selected = a cascade-emptied child = no
   // constraint, same as "all"). Drives the "recorte ativo" badge on the collapsed
   // toggle, so collapsing the panel never hides an active narrowing silently.
-  const isNarrowingFacet = (size, total) => size > 0 && size < total;
+  // A facet NARROWS only when it leaves out something the SELECTED states could show.
+  // It used to be compared with the whole of Brazil: every mesorregião of Pará is 6 of
+  // 137, so "Editar filtros → Aplicar" with nothing changed turned "Brasil › Norte › Pará"
+  // into "… › 56 recortes › 144 municípios" and wrote every one of them into the URL
+  // (v1.93.7). An empty facet is "no constraint", as dataFilters already reads it.
+  const eligibleMuniCodes = useMemo(() => eligibleMunis.map((m) => m.code), [eligibleMunis]);
+  const facetNarrows = (set, eligible) => set.size > 0 && !eligible.every((k) => set.has(k));
+  const facetOut = (set, eligible) => (facetNarrows(set, eligible) ? [...set] : null);
   const subUfNarrowing =
-    isNarrowingFacet(mesos.size, Object.keys(mesoNames).length) ||
-    isNarrowingFacet(micros.size, Object.keys(microNames).length) ||
-    isNarrowingFacet(inters.size, Object.keys(interNames).length) ||
-    isNarrowingFacet(imediatas.size, Object.keys(imediataNames).length) ||
-    isNarrowingFacet(munis.size, MUNIS.length);
+    facetNarrows(mesos, eligibleMesos) ||
+    facetNarrows(micros, eligibleMicros) ||
+    facetNarrows(inters, eligibleInters) ||
+    facetNarrows(imediatas, eligibleImediatas) ||
+    facetNarrows(munis, eligibleMuniCodes);
 
   // The recorte as the summary line and the chip must STATE it. Built from the same
   // isNarrowingFacet rule as the badge above, so the menu cannot claim "todo o
@@ -679,15 +683,15 @@ function FilterMenu({ open = false, banco = 'ibge_pevs', value, onClose, onApply
   // shared formatter (geoDrill.subUfChipText) the applied-filter path also uses, so the
   // two can't drift into two different sentences for one selection.
   const subUfText = useMemo(() => {
-    const only = (set, total) => (isNarrowingFacet(set.size, total) ? [...set] : null);
     const sel = {
-      mesos:     only(mesos,     Object.keys(mesoNames).length),
-      micros:    only(micros,    Object.keys(microNames).length),
-      inters:    only(inters,    Object.keys(interNames).length),
-      imediatas: only(imediatas, Object.keys(imediataNames).length),
+      mesos:     facetOut(mesos,     eligibleMesos),
+      micros:    facetOut(micros,    eligibleMicros),
+      inters:    facetOut(inters,    eligibleInters),
+      imediatas: facetOut(imediatas, eligibleImediatas),
     };
     return window.subUfChipText ? window.subUfChipText(sel, mesh || []) : null;
-  }, [mesos, micros, inters, imediatas, mesoNames, microNames, interNames, imediataNames, mesh]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mesos, micros, inters, imediatas, eligibleMesos, eligibleMicros, eligibleInters, eligibleImediatas, mesh]);
 
   // search strings, one per multi-select
   const [qProducts, setQProducts] = useState('');
@@ -969,14 +973,18 @@ function FilterMenu({ open = false, banco = 'ibge_pevs', value, onClose, onApply
     // byte-identical); the FULL universe → '__all__' (world total); else the ISO list. Preserve
     // the incoming value until the country universe loaded (mirrors the geo belt-and-suspenders).
     const reporterOut = (() => {
-      if (!countriesReady) return v.reporters ?? undefined;
+      // A banco WITHOUT the country axis has an empty reporter universe, and the draft's
+      // default {Brasil} (1) is >= 0, so it used to come out as '__all__' (world): every
+      // "Aplicar" on an IBGE banco wrote rp=ALL into the URL (v1.93.7). Not our axis here —
+      // hand back whatever came in.
+      if (!hasCountries || !countriesReady) return v.reporters ?? undefined;
       if (reporters.size === 0) return undefined;
       if (reporters.size >= reporterUniverse.length) return '__all__';
       if (reporters.size === 1 && reporters.has(BRAZIL_ISO)) return undefined;
       return [...reporters];
     })();
     // País parceiro: empty OR full → null (all); else the ISO list.
-    const partnerOut = !countriesReady
+    const partnerOut = !hasCountries || !countriesReady
       ? (v.partners ?? null)
       : (partners.size === 0 || partners.size >= partnerUniverse.length) ? null : [...partners];
     if (typeof onApply === 'function') {
@@ -990,11 +998,11 @@ function FilterMenu({ open = false, banco = 'ibge_pevs', value, onClose, onApply
         // The four sub-UF levels (two parallel IBGE divisions) + município, all
         // CODE-keyed off the mesh — dataFilters rolls the município cube up to the
         // active level via /api/geo-mesh. A FULL selection emits null = "all".
-        mesos:     geoReady ? _geoArr(mesos, mesoNames)         : (v.mesos ?? null),
-        micros:    geoReady ? _geoArr(micros, microNames)       : (v.micros ?? null),
-        inters:    geoReady ? _geoArr(inters, interNames)       : (v.inters ?? null),
-        imediatas: geoReady ? _geoArr(imediatas, imediataNames) : (v.imediatas ?? null),
-        munis:     geoReady ? (munis.size >= MUNIS.length ? null : [...munis]) : (v.munis ?? null),
+        mesos:     geoReady ? facetOut(mesos, eligibleMesos)         : (v.mesos ?? null),
+        micros:    geoReady ? facetOut(micros, eligibleMicros)       : (v.micros ?? null),
+        inters:    geoReady ? facetOut(inters, eligibleInters)       : (v.inters ?? null),
+        imediatas: geoReady ? facetOut(imediatas, eligibleImediatas) : (v.imediatas ?? null),
+        munis:     geoReady ? facetOut(munis, eligibleMuniCodes)     : (v.munis ?? null),
         startDate, endDate,
         // Fluxo (server-side): omitted when 'all' so the summary/URL stay clean and
         // the data-layer bridge reads it as "every flow" (the default).

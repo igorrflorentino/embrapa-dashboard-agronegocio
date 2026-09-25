@@ -675,10 +675,20 @@ function ViewGeography({ families, conventions, summary, database }) {
             <button
               type="button"
               className="btn-secondary gx-xray-btn"
-              onClick={() => window.goToView('territory_profile')}
+              // The raio-x answers "what does THIS place have". Opened with a product filter
+              // inherited from Geografia, it listed only the basket, so a session narrowed to
+              // one produto profiled Pará as producing one produto (v1.93.7). Through THIS
+              // button the product filters go back to "all" — basket, SIDRA table and
+              // industrialization level, the three that restrict which produtos count — and
+              // the geography stays. Opening Perfil do território from the sidebar still keeps
+              // whatever filter the researcher chose: there the filter is the universe.
+              onClick={() => {
+                if (window.patchFilter) window.patchFilter({ basket: null, tabela: null, niveis: null });
+                window.goToView('territory_profile');
+              }}
               title={xrayScope
-                ? `Abrir o perfil de ${xrayScope} em Perfil do território`
-                : 'Abrir Perfil do território'}
+                ? `Abrir o perfil de ${xrayScope} com todos os produtos, em Perfil do território`
+                : 'Abrir Perfil do território com todos os produtos'}
             >
               <window.Icon name="fact_check" size={14} />
               Ver raio-x{xrayScope ? ` de ${xrayScope}` : ''}
