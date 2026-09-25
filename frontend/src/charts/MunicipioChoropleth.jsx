@@ -21,8 +21,16 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { NODATA, fillColorExpression, ufColorScaleQuantile } from './choroplethScale';
+import {
+  NODATA, escapeHtml, fillColorExpression, fmtMapValue, presentValue, rowsSignature,
+  ufColorScaleQuantile,
+} from './choroplethScale';
 import { sanitizeFeatureCollection } from './geoSanitize';
+import { loadMaplibre, trackContainerSize } from './maplibreLoader';
+
+// Maps with an 'idle' retry already queued (see BrazilChoropleth: one wait per map,
+// replaying the LATEST paint, never a queue of stale closures).
+const IDLE_WAIT = new WeakSet();
 
 // uf -> Promise<FeatureCollection>. Module-level so switching away from a UF and back
 // (or toggling metric) never refetches, and two mounts of this component share one
@@ -48,12 +56,7 @@ export function loadMunicipioMesh(uf) {
   return p;
 }
 
-function fmtCompact(v) {
-  const mp = window.autoScaleNum && v ? window.autoScaleNum(v) : { factor: 1, suffix: '' };
-  const s = v / mp.factor;
-  const t = s.toLocaleString('pt-BR', { maximumFractionDigits: Math.abs(s) < 10 ? 1 : 0 });
-  return mp.suffix ? `${t} ${mp.suffix}` : t;
-}
+const fmtCompact = (v) => fmtMapValue(v) ?? '—';
 
 export function MunicipioChoropleth({
   uf, data, valueKey, label, height = 420, onSelect, selectedCity, narrowed = false, onBackground,
@@ -68,18 +71,28 @@ export function MunicipioChoropleth({
   // UF's payload simply doesn't match and reads as "still loading".
   const [loaded, setLoaded] = useState({ uf: null, fc: null, error: null });
   const [layerReady, setLayerReady] = useState(false);
+  // maplibre itself failing (no WebGL, a chunk that did not load). The two catch blocks
+  // below called `setFailed`, a setter this component never declared: the ReferenceError
+  // escaped the async IIFE as an unhandled rejection and the map area stayed BLANK, with
+  // no notice, exactly on the browsers the notice exists for.
+  const [mapError, setMapError] = useState(null);
   const current = loaded.uf === uf ? loaded : { fc: null, error: null };
   const mesh = current.fc;
-  const failed = current.error;
+  const failed = current.error || mapError;
 
   // The SAME quantile classes + legend the UF choropleth uses. Municipal values are
   // even more concentrated than per-UF ones (measured 2024: the top 100 of 5570
   // municípios carry 71% of national value), so a linear ramp would be worse here
   // than it already was at UF grain.
+  // Keyed on the CONTENT: Geografia passes `scaledMunis.filter(…)`, a fresh array every
+  // render, and keyed on identity each re-render recomputed the bins and re-sent maplibre
+  // a `match` with one entry per município (853 in MG), re-tiling the whole layer.
+  const dataSig = rowsSignature(data, 'cityCode', valueKey);
   const scale = useMemo(() => {
     const rows = (data || []).map((d) => ({ uf: d.cityCode, [valueKey]: d[valueKey] }));
     return ufColorScaleQuantile(rows, valueKey);
-  }, [data, valueKey]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataSig, valueKey]);
 
   // cityCode -> { name, value } for the hover popup, in a ref so the handlers
   // registered once always read current data.
@@ -89,7 +102,7 @@ export function MunicipioChoropleth({
     (data || []).forEach((d) => {
       // `city` is what the município rows carry (dataFilters/rankMunisFromCube);
       // `name` is accepted too so the component isn't bound to one row shape.
-      idx[d.cityCode] = { name: d.name || d.city, value: Number(d[valueKey]) || 0, label };
+      idx[d.cityCode] = { name: d.name || d.city, value: presentValue(d[valueKey]), label };
     });
     lookupRef.current = idx;
   }, [data, valueKey, label]);
@@ -120,20 +133,17 @@ export function MunicipioChoropleth({
     let cancelled = false;
     let map = null;
     let popup = null;
+    let stopTracking = () => {};
 
     (async () => {
       let maplibregl;
       try {
-        // Namespace import + bundled worker URL — same contract as BrazilChoropleth;
-        // see the long note there for why `.default` and a plain `?url` both break.
-        maplibregl = await import('maplibre-gl');
-        await import('maplibre-gl/dist/maplibre-gl.css');
-        maplibregl.setWorkerUrl(
-          (await import('maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url')).default,
-        );
+        // Shared loader: namespace import, CSS and the bundled worker, once per session
+        // (maplibreLoader.js carries the notes on why `.default` and `?url` break).
+        maplibregl = await loadMaplibre();
       } catch (err) {
         console.error('[municipio-choropleth] maplibre failed to load:', err);
-        if (!cancelled) setFailed('Mapa indisponível neste navegador.');
+        if (!cancelled) setMapError('Mapa indisponível neste navegador.');
         return;
       }
       if (cancelled || !ref.current) return;
@@ -154,10 +164,11 @@ export function MunicipioChoropleth({
         });
       } catch (err) {
         console.error('[municipio-choropleth] maplibre init failed:', err);
-        if (!cancelled) setFailed('Mapa indisponível neste navegador.');
+        if (!cancelled) setMapError('Mapa indisponível neste navegador.');
         return;
       }
       mapRef.current = map;
+      stopTracking = trackContainerSize(map, ref.current);
       map.on('error', (e) => {
         console.warn('[municipio-choropleth] maplibre error:', (e && e.error && e.error.message) || e);
       });
@@ -206,15 +217,18 @@ export function MunicipioChoropleth({
         // A município with no row is genuinely "sem produção registrada" — say so,
         // rather than showing a bare dash the reader has to interpret.
         const name = (hit && hit.name) || code;
-        const body = hit
-          ? `${fmtCompact(hit.value)} ${(hit.label || '')}`
-          : 'sem produção registrada';
+        // No row = nothing registered there. A row whose value is ABSENT is different:
+        // there is a record and no number, which used to read "0" through `|| 0`.
+        const val = hit ? fmtMapValue(hit.value) : null;
+        const body = !hit
+          ? 'sem produção registrada'
+          : val == null ? 'sem dado' : `${val} ${(hit.label || '')}`;
         popup
           .setLngLat(e.lngLat)
           .setHTML(
             `<div style="max-width:200px;overflow-wrap:anywhere">` +
-              `<div style="font:600 12px var(--font-body,sans-serif)">${name}</div>` +
-              `<div style="font:11px var(--font-body,sans-serif);color:#555">${body}</div>` +
+              `<div style="font:600 12px var(--font-body,sans-serif)">${escapeHtml(name)}</div>` +
+              `<div style="font:11px var(--font-body,sans-serif);color:#555">${escapeHtml(body)}</div>` +
             `</div>`,
           )
           .addTo(map);
@@ -232,6 +246,7 @@ export function MunicipioChoropleth({
 
     return () => {
       cancelled = true;
+      stopTracking();
       setLayerReady(false);
       if (popup) popup.remove();
       if (map) map.remove();
@@ -240,6 +255,7 @@ export function MunicipioChoropleth({
   }, [mesh]);
 
   // Repaint on data/metric/selection change (no map rebuild).
+  const paintRef = useRef(null);
   useEffect(() => {
     const map = mapRef.current;
     if (!map || typeof map.getLayer !== 'function') return;
@@ -247,7 +263,15 @@ export function MunicipioChoropleth({
       const notReady =
         (typeof map.isStyleLoaded === 'function' && !map.isStyleLoaded()) || !map.getLayer('mun-fill');
       if (notReady) {
-        if (typeof map.once === 'function') map.once('idle', paint);
+        // One wait per map, running the LATEST paint: queuing this effect's `paint` on
+        // every run replayed each stale closure in order once the map went idle.
+        if (typeof map.once === 'function' && !IDLE_WAIT.has(map)) {
+          IDLE_WAIT.add(map);
+          map.once('idle', () => {
+            IDLE_WAIT.delete(map);
+            if (mapRef.current === map && paintRef.current) paintRef.current();
+          });
+        }
         return;
       }
       try {
@@ -271,6 +295,7 @@ export function MunicipioChoropleth({
         try { map.setPaintProperty('mun-fill', 'fill-color', NODATA); } catch { /* best effort */ }
       }
     };
+    paintRef.current = paint;
     paint();
   }, [scale, selectedCity, layerReady, focusCity]);
 

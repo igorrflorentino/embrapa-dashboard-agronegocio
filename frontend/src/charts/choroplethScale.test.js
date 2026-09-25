@@ -4,7 +4,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  NODATA, RAMP, fillColorExpression, quantileIndexer, quantileThresholds, ufColorScaleQuantile,
+  NODATA, RAMP, escapeHtml, fillColorExpression, fmtMapValue, presentValue, quantileIndexer,
+  quantileThresholds, rowsSignature, ufColorScaleQuantile,
 } from './choroplethScale';
 
 describe('quantileIndexer — the rule every map now shares', () => {
@@ -158,5 +159,62 @@ describe('fillColorExpression', () => {
 
   it('falls back to the constant when every pair is malformed', () => {
     expect(fillColorExpression({ PA: undefined, RJ: null }, '#fff')).toBe('#fff');
+  });
+});
+
+// ── A legenda descreve as cores que o mapa de fato pinta (v1.93.1) ────────────
+describe('quantileThresholds with tied values', () => {
+  // Ties are common among small municípios (many report R$ 1 mil or R$ 2 mil). The legend
+  // placed values by array POSITION while the colour came from indexOf, which gives every
+  // copy of a value the rank of its first copy — so buckets 1 and 2 below appeared in the
+  // legend with no polygon painted in them, and bucket 3 claimed a "1" painted as bucket 0.
+  const vals = [1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 3, 50, 900, 1200];
+
+  it('lists only the buckets some value is actually painted with', () => {
+    const idx = quantileIndexer(vals, RAMP.length);
+    const painted = new Set(vals.map((v) => idx.indexOf(v)));
+    const t = quantileThresholds(idx, RAMP);
+    t.forEach((bucket, i) => expect(Boolean(bucket), `bucket ${i}`).toBe(painted.has(i)));
+  });
+
+  it('puts every value in the bucket of its own colour', () => {
+    const idx = quantileIndexer(vals, RAMP.length);
+    const t = quantileThresholds(idx, RAMP);
+    for (const v of vals) {
+      const b = t[idx.indexOf(v)];
+      expect(b && v >= b.min && v <= b.max, `value ${v}`).toBe(true);
+    }
+  });
+});
+
+describe('map value helpers', () => {
+  it('presentValue keeps absence apart from a measured zero', () => {
+    for (const absent of [null, undefined, '', NaN, 'x', Infinity]) {
+      expect(presentValue(absent), String(absent)).toBeNull();
+    }
+    expect(presentValue(0)).toBe(0);
+    expect(presentValue('12.5')).toBe(12.5);
+  });
+
+  it('fmtMapValue returns null for an absent value instead of "0"', () => {
+    expect(fmtMapValue(null)).toBeNull();
+    expect(fmtMapValue(undefined)).toBeNull();
+    expect(fmtMapValue(0)).toBe('0');
+  });
+
+  it('rowsSignature changes with the painted content and nothing else', () => {
+    const a = [{ uf: 'PA', value: 1, name: 'Pará' }];
+    expect(rowsSignature([{ ...a[0] }], 'uf', 'value')).toBe(rowsSignature(a, 'uf', 'value'));
+    expect(rowsSignature([{ ...a[0], name: 'outro' }], 'uf', 'value'))
+      .toBe(rowsSignature(a, 'uf', 'value')); // a name does not change the colours
+    expect(rowsSignature([{ uf: 'PA', value: 2 }], 'uf', 'value'))
+      .not.toBe(rowsSignature(a, 'uf', 'value'));
+    expect(rowsSignature([], 'uf', 'value')).toBe('');
+    expect(rowsSignature(null, 'uf', 'value')).toBe('');
+  });
+
+  it('escapeHtml neutralises markup in a name', () => {
+    expect(escapeHtml(`Olho d'Água & <Cia>`)).toBe('Olho d&#39;Água &amp; &lt;Cia&gt;');
+    expect(escapeHtml(null)).toBe('');
   });
 });

@@ -57,13 +57,61 @@ export function quantileIndexer(values, bucketCount) {
 }
 
 /** `[{ color, min, max } | null]` per bucket — the legend. A bucket nobody landed
- *  in is null, so a legend can dim it instead of inventing a range for it. */
+ *  in is null, so a legend can dim it instead of inventing a range for it.
+ *
+ *  Each value is placed by `indexOf`, the SAME call that colours it. This used to place
+ *  values by their position in the sorted array, while `indexOf` gives every copy of a
+ *  tied value the rank of its FIRST copy. With ties (common among small municípios: many
+ *  report R$ 1 mil or R$ 2 mil) the legend then showed buckets no polygon was painted
+ *  with, and put values in a bucket whose colour they did not have. */
 export function quantileThresholds(indexer, ramp = RAMP) {
-  const { ranked, bucketOf } = indexer;
+  const { ranked, indexOf } = indexer;
   return ramp.map((color, i) => {
-    const inBucket = ranked.filter((_, rank) => bucketOf(rank) === i);
+    const inBucket = ranked.filter((v) => indexOf(v) === i);
     return inBucket.length ? { color, min: inBucket[0], max: inBucket[inBucket.length - 1] } : null;
   });
+}
+
+/** The value a row carries, or null when it has none. `Number(v) || 0` (what the map
+ *  popups used) turned an absent value into a "0" on screen, asserting a measurement
+ *  nobody made. A MEASURED zero stays zero. */
+export function presentValue(v) {
+  if (v == null || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Compact pt-BR magnitude for the map popups and legends ("2,9 bi"), or null when
+ *  there is no value, so the caller chooses the words for absence. */
+export function fmtMapValue(v) {
+  const n = presentValue(v);
+  if (n == null) return null;
+  const mp = window.autoScaleNum && n ? window.autoScaleNum(n) : { factor: 1, suffix: '' };
+  const s = n / mp.factor;
+  const t = s.toLocaleString('pt-BR', { maximumFractionDigits: Math.abs(s) < 10 ? 1 : 0 });
+  return mp.suffix ? `${t} ${mp.suffix}` : t;
+}
+
+/** A string that changes only when the painted CONTENT changes: each row's key and
+ *  value, in order. The maps memoize their colour scale on this instead of on the array
+ *  identity, because the views rebuild the rows array on every render (a `.filter` or
+ *  `.map` inline in the JSX). Keyed on identity, every unrelated re-render of Geografia
+ *  recomputed the quantiles and re-sent maplibre a `match` expression with one entry per
+ *  município (853 in MG), which re-tiles the whole layer. O(n) and cheap to build. */
+export function rowsSignature(rows, codeKey, valueKey) {
+  if (!Array.isArray(rows) || !rows.length) return '';
+  let sig = '';
+  for (const d of rows) sig += `${d && d[codeKey]}=${d && d[valueKey]};`;
+  return sig;
+}
+
+/** Text safe to interpolate into a popup's HTML. The names come from IBGE and the
+ *  catalog, not from users, but a município name with `&` or `<` would still break the
+ *  markup, and maplibre's setHTML does not escape. */
+export function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
 }
 
 /** {uf -> bucket color} using quantile bins (see quantileIndexer). `uf` is whatever

@@ -22,7 +22,12 @@ let workerUrl;
 // against the data effect is explicit; 'idle' fires on a later tick, as maplibre's does
 // once the style has settled.
 class FakeMap {
-  constructor({ styleReady = true } = {}) {
+  constructor({ styleReady = true, autoIdle = true } = {}) {
+    this.autoIdle = autoIdle;
+    this.idleQueue = [];
+    this.paintCalls = 0;
+    this.fitCalls = 0;
+    this.resizes = 0;
     this.paintProps = {};
     this.handlers = {};
     this.layers = new Set();
@@ -40,12 +45,18 @@ class FakeMap {
     return this.layers.has(id) ? { id } : undefined;
   }
   setPaintProperty(layer, prop, value) {
+    this.paintCalls += 1;
     this.paintProps[`${layer}.${prop}`] = value;
+  }
+  resize() {
+    this.resizes += 1;
   }
   setFilter(layer, filter) {
     this.filters[layer] = filter;
   }
-  fitBounds() {}
+  fitBounds() {
+    this.fitCalls += 1;
+  }
   get fill() {
     return this.paintProps['uf-fill.fill-color'];
   }
@@ -65,10 +76,19 @@ class FakeMap {
   once(evt, fn) {
     if (evt !== 'idle') return;
     this.idleHandlers += 1;
+    if (!this.autoIdle) { this.idleQueue.push(fn); return; }
     setTimeout(() => {
       this.styleReady = true; // the style finished settling
       fn();
     }, 0);
+  }
+  /** Settle the style and run every queued 'idle' handler (autoIdle: false). */
+  fireIdle() {
+    return act(async () => {
+      this.styleReady = true;
+      const queued = this.idleQueue.splice(0);
+      queued.forEach((fn) => fn());
+    });
   }
   fireLoad() {
     return act(async () => {
@@ -97,6 +117,10 @@ beforeEach(async () => {
   popupHtml = '';
   workerUrl = undefined;
   // The real worker is a 470 kB bundle; under jsdom we only need the URL string.
+  // The CSS too: left real, Vite transformed maplibre's stylesheet again after every
+  // resetModules, and under a loaded full-suite run that alone could outlast waitFor's
+  // 1 s default. That was the intermittent failure seen in CI-like runs (v1.93.1).
+  vi.doMock('maplibre-gl/dist/maplibre-gl.css', () => ({}));
   vi.doMock('maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url', () => ({
     default: '/assets/maplibre-gl-worker.js',
   }));
@@ -108,6 +132,8 @@ beforeEach(async () => {
     // constructor hands back that object.
     Map: function Map() {
       calls.push('Map');
+      // An Error stands for a browser without WebGL: maplibre throws from the constructor.
+      if (fakeMap instanceof Error) throw fakeMap;
       return fakeMap;
     },
     Popup: function Popup() {
@@ -125,12 +151,15 @@ beforeEach(async () => {
 afterEach(() => {
   cleanup();
   vi.doUnmock('maplibre-gl');
+  vi.doUnmock('maplibre-gl/dist/maplibre-gl.css');
   vi.doUnmock('maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url');
 });
 
-// maplibre is imported dynamically, so the map only exists a few microtasks in.
+// maplibre is imported dynamically, so the map only exists a few microtasks in. The wait
+// is on module loading, not on the code under test, so it gets real headroom: a busy
+// machine running the whole suite is not a failure of the map.
 async function waitForMapInit() {
-  await waitFor(() => expect(fakeMap.loadHandler).toBeTypeOf('function'));
+  await waitFor(() => expect(fakeMap.loadHandler).toBeTypeOf('function'), { timeout: 5000 });
 }
 
 describe('BrazilChoropleth — first paint', () => {
@@ -350,5 +379,111 @@ describe('BrazilChoropleth — o popup declara o recorte sub-UF', () => {
     const html = await hoverWith({});
     expect(html).toContain('Pará');
     expect(html).not.toContain('recorte');
+  });
+});
+
+// ── Robustez e eficiência (v1.93.1) ──────────────────────────────────────────
+describe('BrazilChoropleth — robustez e eficiência', () => {
+  const settle = async (ui) => {
+    const r = render(ui);
+    await waitForMapInit();
+    await fakeMap.fireLoad();
+    await waitFor(() => expect(Array.isArray(fakeMap.fill)).toBe(true));
+    return r;
+  };
+
+  it('mostra o aviso quando o navegador não cria o mapa (sem WebGL)', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    fakeMap = new Error('Failed to initialize WebGL');
+    const { container } = render(<BrazilChoropleth data={DATA} valueKey="value" label="R$" />);
+    await waitFor(() => expect(container.textContent).toContain('Mapa indisponível neste navegador.'),
+      { timeout: 5000 });
+    console.error.mockRestore();
+  });
+
+  it('um valor ausente aparece como "sem dado" no popup, nunca como 0', async () => {
+    // Number(null) || 0 fazia o popup afirmar "0 R$" para uma UF que ninguém mediu.
+    fakeMap = new FakeMap();
+    await settle(<BrazilChoropleth data={[{ uf: 'PA', name: 'Pará', value: null }]}
+                                   valueKey="value" label="R$" />);
+    await act(async () => {
+      fakeMap.handlers['mousemove:uf-fill'](
+        { features: [{ properties: { uf: 'PA', name: 'Pará' } }], lngLat: { lng: 0, lat: 0 } });
+    });
+    expect(popupHtml).toContain('sem dado');
+    expect(popupHtml).not.toMatch(/>0 R\$/);
+  });
+
+  it('não repinta quando a view reconstrói o MESMO dado num array novo', async () => {
+    // Geografia passa `scaledMunis.filter(…)` e afins: um array novo a cada render.
+    fakeMap = new FakeMap();
+    const { rerender } = await settle(<BrazilChoropleth data={DATA} valueKey="value" label="R$" />);
+    const before = fakeMap.paintCalls;
+    rerender(<BrazilChoropleth data={DATA.map((d) => ({ ...d }))} valueKey="value" label="R$" />);
+    expect(fakeMap.paintCalls).toBe(before);
+    // …e repinta quando o CONTEÚDO muda.
+    rerender(<BrazilChoropleth data={[{ uf: 'SP', name: 'São Paulo', value: 5 }]}
+                               valueKey="value" label="R$" />);
+    expect(fakeMap.paintCalls).toBeGreaterThan(before);
+    expect(fakeMap.fill).toContain('SP');
+  });
+
+  it('não reinicia o enquadramento quando o foco chega num array novo com as mesmas UFs', async () => {
+    fakeMap = new FakeMap();
+    const { rerender } = await settle(
+      <BrazilChoropleth data={DATA} valueKey="value" label="R$" focusUfs={['PA', 'AM']} />);
+    const before = fakeMap.fitCalls;
+    rerender(<BrazilChoropleth data={DATA} valueKey="value" label="R$" focusUfs={['PA', 'AM']} />);
+    expect(fakeMap.fitCalls).toBe(before);
+    rerender(<BrazilChoropleth data={DATA} valueKey="value" label="R$" focusUfs={['SP']} />);
+    expect(fakeMap.fitCalls).toBe(before + 1);
+  });
+
+  it('com o estilo ainda assentando, uma rajada de renders deixa UMA espera, e ela pinta o dado atual', async () => {
+    fakeMap = new FakeMap({ styleReady: false, autoIdle: false });
+    const { rerender } = render(<BrazilChoropleth data={DATA} valueKey="value" label="R$" />);
+    await waitForMapInit();
+    await fakeMap.fireLoad();
+    rerender(<BrazilChoropleth data={[{ uf: 'AM', value: 1 }]} valueKey="value" label="R$" />);
+    rerender(<BrazilChoropleth data={[{ uf: 'SP', value: 2 }]} valueKey="value" label="R$" />);
+    expect(fakeMap.idleHandlers).toBe(1);
+    await fakeMap.fireIdle();
+    expect(fakeMap.fill).toContain('SP'); // the LATEST data, not the first render's
+    expect(fakeMap.fill).not.toContain('PA');
+  });
+
+  it('carrega o maplibre uma vez para vários mapas na mesma sessão', async () => {
+    fakeMap = new FakeMap();
+    render(<>
+      <BrazilChoropleth data={DATA} valueKey="value" label="R$" />
+      <BrazilChoropleth data={DATA} valueKey="value" label="R$" />
+    </>);
+    await waitFor(() => expect(calls.filter((c) => c === 'Map')).toHaveLength(2), { timeout: 5000 });
+    expect(calls.filter((c) => c === 'setWorkerUrl')).toHaveLength(1);
+    expect(calls[0]).toBe('setWorkerUrl'); // still wired BEFORE the first map
+  });
+
+  it('acompanha o tamanho do contêiner, não só o da janela', async () => {
+    const observers = [];
+    let disconnected = 0;
+    const original = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = class {
+      constructor(cb) { observers.push(cb); }
+      observe() {}
+      disconnect() { disconnected += 1; }
+    };
+    try {
+      fakeMap = new FakeMap();
+      const { unmount } = render(<BrazilChoropleth data={DATA} valueKey="value" label="R$" />);
+      await waitForMapInit();
+      expect(observers).toHaveLength(1);
+      observers[0]([]);
+      observers[0]([]); // a drawer animating open fires many times; one resize per frame
+      await waitFor(() => expect(fakeMap.resizes).toBe(1));
+      unmount();
+      expect(disconnected).toBe(1);
+    } finally {
+      globalThis.ResizeObserver = original;
+    }
   });
 });
