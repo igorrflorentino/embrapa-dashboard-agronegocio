@@ -26,7 +26,7 @@ import {
   ufColorScaleQuantile,
 } from './choroplethScale';
 import { sanitizeFeatureCollection } from './geoSanitize';
-import { loadMaplibre, trackContainerSize } from './maplibreLoader';
+import { loadMaplibre } from './maplibreLoader';
 
 // Maps with an 'idle' retry already queued (see BrazilChoropleth: one wait per map,
 // replaying the LATEST paint, never a queue of stale closures).
@@ -133,7 +133,6 @@ export function MunicipioChoropleth({
     let cancelled = false;
     let map = null;
     let popup = null;
-    let stopTracking = () => {};
 
     (async () => {
       let maplibregl;
@@ -168,7 +167,6 @@ export function MunicipioChoropleth({
         return;
       }
       mapRef.current = map;
-      stopTracking = trackContainerSize(map, ref.current);
       map.on('error', (e) => {
         console.warn('[municipio-choropleth] maplibre error:', (e && e.error && e.error.message) || e);
       });
@@ -246,7 +244,6 @@ export function MunicipioChoropleth({
 
     return () => {
       cancelled = true;
-      stopTracking();
       setLayerReady(false);
       if (popup) popup.remove();
       if (map) map.remove();

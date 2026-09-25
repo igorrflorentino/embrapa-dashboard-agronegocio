@@ -17,6 +17,7 @@ let fakeMap;
 let BrazilChoropleth;
 let calls;      // ordered record of maplibre entry points the component touched
 let workerUrl;
+let mapOptions; // what the component passed to `new maplibregl.Map(...)`
 
 // Stand-in for maplibre's Map. 'load' is fired MANUALLY by each test so the ordering
 // against the data effect is explicit; 'idle' fires on a later tick, as maplibre's does
@@ -27,7 +28,6 @@ class FakeMap {
     this.idleQueue = [];
     this.paintCalls = 0;
     this.fitCalls = 0;
-    this.resizes = 0;
     this.paintProps = {};
     this.handlers = {};
     this.layers = new Set();
@@ -47,9 +47,6 @@ class FakeMap {
   setPaintProperty(layer, prop, value) {
     this.paintCalls += 1;
     this.paintProps[`${layer}.${prop}`] = value;
-  }
-  resize() {
-    this.resizes += 1;
   }
   setFilter(layer, filter) {
     this.filters[layer] = filter;
@@ -130,8 +127,9 @@ beforeEach(async () => {
   vi.doMock('maplibre-gl', () => ({
     // Plain functions so `new maplibregl.Map(...)` constructs; returning an object from a
     // constructor hands back that object.
-    Map: function Map() {
+    Map: function Map(opts) {
       calls.push('Map');
+      mapOptions = opts;
       // An Error stands for a browser without WebGL: maplibre throws from the constructor.
       if (fakeMap instanceof Error) throw fakeMap;
       return fakeMap;
@@ -463,27 +461,15 @@ describe('BrazilChoropleth — robustez e eficiência', () => {
     expect(calls[0]).toBe('setWorkerUrl'); // still wired BEFORE the first map
   });
 
-  it('acompanha o tamanho do contêiner, não só o da janela', async () => {
-    const observers = [];
-    let disconnected = 0;
-    const original = globalThis.ResizeObserver;
-    globalThis.ResizeObserver = class {
-      constructor(cb) { observers.push(cb); }
-      observe() {}
-      disconnect() { disconnected += 1; }
-    };
-    try {
-      fakeMap = new FakeMap();
-      const { unmount } = render(<BrazilChoropleth data={DATA} valueKey="value" label="R$" />);
-      await waitForMapInit();
-      expect(observers).toHaveLength(1);
-      observers[0]([]);
-      observers[0]([]); // a drawer animating open fires many times; one resize per frame
-      await waitFor(() => expect(fakeMap.resizes).toBe(1));
-      unmount();
-      expect(disconnected).toBe(1);
-    } finally {
-      globalThis.ResizeObserver = original;
-    }
+  it('deixa o maplibre acompanhar o tamanho do contêiner (trackResize no padrão)', async () => {
+    // maplibre 6 observes its own container. v1.93.1 added a second observer on the wrong
+    // premise that it only listened to the window, and every card resize ran twice; v1.93.5
+    // removed it after a browser check. What the maps now rely on is maplibre's default,
+    // so turning it off here would bring back the stretched canvas silently.
+    fakeMap = new FakeMap();
+    render(<BrazilChoropleth data={DATA} valueKey="value" label="R$" />);
+    await waitForMapInit();
+    expect(mapOptions).toBeTruthy();
+    expect(mapOptions.trackResize).not.toBe(false);
   });
 });

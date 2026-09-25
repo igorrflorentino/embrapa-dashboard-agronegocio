@@ -23,6 +23,7 @@ const meshFC = (...codes) => ({
 
 let fakeMap;
 let MunicipioChoropleth;
+let mapOptions; // what the component passed to new maplibregl.Map(...)
 
 class FakeMap {
   constructor() {
@@ -76,7 +77,7 @@ beforeEach(async () => {
   vi.doMock('maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url', () => ({ default: '/w.js' }));
   vi.doMock('maplibre-gl', () => ({
     // An Error stands for a browser without WebGL: maplibre throws from the constructor.
-    Map: function Map() { if (fakeMap instanceof Error) throw fakeMap; return fakeMap; },
+    Map: function Map(opts) { if (fakeMap instanceof Error) throw fakeMap; mapOptions = opts; return fakeMap; },
     Popup: function Popup() { return stubPopup(); },
     NavigationControl: function NavigationControl() {},
     setWorkerUrl: () => {},
@@ -459,4 +460,12 @@ describe('MunicipioChoropleth — robustez e eficiência', () => {
       { features: [{ properties: { codarea: '1500107' } }], lngLat: { lng: 0, lat: 0 } });
     expect(popupHtml).toContain('A &amp; &lt;B&gt;');
   });
+});
+
+it('deixa o maplibre acompanhar o tamanho do contêiner (trackResize no padrão)', async () => {
+  // Same contract as BrazilChoropleth: maplibre 6 resizes the canvas on its own; v1.93.5
+  // removed the duplicate observer, so the default must stay on.
+  await renderMap();
+  expect(mapOptions).toBeTruthy();
+  expect(mapOptions.trackResize).not.toBe(false);
 });

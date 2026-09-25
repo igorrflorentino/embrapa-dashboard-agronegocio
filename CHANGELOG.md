@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.93.5] - 2026-09-25
+
+Correção de uma afirmação da v1.93.1, encontrada no teste visual dos mapas.
+
+### Corrigido
+- **O observador de tamanho que a v1.93.1 acrescentou aos mapas era redundante, e a razão dada
+  para ele estava errada.** A v1.93.1 afirmou que o maplibre só acompanhava a janela, e que
+  abrir o painel de filtros deixava o canvas no tamanho antigo. O maplibre 6.10 (a versão
+  instalada) já observa o próprio contêiner (`trackResize`, ligado por padrão). O defeito
+  nunca existiu, e não tinha sido reproduzido antes da "correção". Na prática, cada mudança de
+  largura do cartão redimensionava o mapa duas vezes.
+  - O `trackContainerSize` saiu de `maplibreLoader.js` e dos dois mapas.
+  - Verificado no navegador, com o código já sem o observador próprio: estreitando o cartão
+    de 1.167 para 642 px, sem mudar a janela, o canvas foi junto (642 px, 963 px internos com
+    densidade 1,5), e voltou a 1.167 px quando a largura foi restaurada.
+  - Os testes dos dois mapas agora exigem que o mapa não seja criado com
+    `trackResize: false`, porque é desse padrão que o comportamento depende.
+  - A entrada da v1.93.1 ganhou uma nota apontando para esta correção.
+
+---
+
 ## [1.93.4] - 2026-09-25
 
 Textos do Cadastro de produtos, do menu de filtros e da tela de Qualidade: três afirmações
@@ -129,7 +150,8 @@ falhar de vez em quando.
   mapa montado. As notas sobre por que `.default` e `?url` quebram a produção foram junto.
 - **O mapa acompanha o tamanho do contêiner**, e não só o da janela. Abrir o painel de
   filtros ou refluir o card deixava o canvas no tamanho antigo, esticado ou cortado, com o
-  clique caindo no polígono errado.
+  clique caindo no polígono errado. **(Errado, ver v1.93.5:** o maplibre 6 já acompanhava o
+  contêiner, o defeito não existia e este observador só duplicava o trabalho.)
 - **Uma só espera pelo `idle` do mapa**, que pinta os dados mais recentes. Antes, cada render
   antes do mapa assentar enfileirava a própria pintura, e todas rodavam em ordem.
 - Os nomes nos popups são escapados antes de ir para o HTML.

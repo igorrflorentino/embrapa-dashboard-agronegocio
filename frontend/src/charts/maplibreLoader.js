@@ -52,22 +52,10 @@ export function loadMaplibre() {
   return pending;
 }
 
-/** Keep a map's canvas the size of its container. maplibre only listens to WINDOW
- *  resizes, so a container that changes on its own (the filter drawer opening, the
- *  Mapa/Blocos toggle, a card reflowing on a narrow screen) left the canvas at its old
- *  size: stretched, cropped, or clicks landing on the wrong polygon. Returns a cleanup. */
-export function trackContainerSize(map, container) {
-  if (typeof ResizeObserver === 'undefined' || !container) return () => {};
-  let frame = 0;
-  const ro = new ResizeObserver(() => {
-    // One resize per frame: a drawer animating open fires the observer many times.
-    if (frame) return;
-    const raf = typeof requestAnimationFrame === 'function' ? requestAnimationFrame : (fn) => setTimeout(fn, 16);
-    frame = raf(() => {
-      frame = 0;
-      try { map.resize(); } catch { /* the map may be mid-teardown */ }
-    });
-  });
-  ro.observe(container);
-  return () => ro.disconnect();
-}
+// Container size: NOT handled here, on purpose. maplibre 6 observes its own container
+// (`trackResize`, default true, via a ResizeObserver) and resizes the canvas when the card
+// changes width. v1.93.1 added a second observer on the claim that maplibre only listened
+// to the window; that was never true of the installed version, so every container change
+// resized the map twice. Removed in v1.93.5 after a browser check with only maplibre's
+// observer in place. Keep `trackResize` at its default when constructing a Map (the map
+// tests assert it).
