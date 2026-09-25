@@ -17,7 +17,7 @@ import {
   ufColorScaleQuantile,
 } from './choroplethScale';
 import { sanitizeFeatureCollection } from './geoSanitize';
-import { loadMaplibre, trackContainerSize } from './maplibreLoader';
+import { loadMaplibre } from './maplibreLoader';
 
 // Maps with an 'idle' retry already queued. One is enough: the retry reads the LATEST
 // paint through a ref, so queuing one per render only replayed stale closures.
@@ -161,7 +161,6 @@ export function BrazilChoropleth({
     let cancelled = false;
     let map = null;
     let popup = null;
-    let stopTracking = () => {};
 
     (async () => {
       let maplibregl;
@@ -197,7 +196,6 @@ export function BrazilChoropleth({
         return;
       }
       mapRef.current = map;
-      stopTracking = trackContainerSize(map, ref.current);
       // Surface any maplibre-internal error under our own prefix (maplibre's default
       // handler logs a stackless console.error) — diagnostic only, never blanks the map.
       map.on('error', (e) => {
@@ -293,7 +291,6 @@ export function BrazilChoropleth({
 
     return () => {
       cancelled = true;
-      stopTracking();
       if (popup) popup.remove();
       if (map) map.remove();
       mapRef.current = null;
