@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.93.3] - 2026-09-25
+
+A regra "ausência não é zero" ganha, no frontend, a forma que a varredura JS não enxergava:
+a mesma que a v1.92.3 fechou no Python.
+
+### Corrigido
+- **Seis pontos mostravam "0" onde falta valor**, pela forma `Number(x) || 0` ou
+  `Number(x || 0)`, que converte a ausência em medida antes de qualquer conta:
+  - **Parceiros, ranking de Volume:** um parceiro que declara valor e não declara peso líquido
+    (o COMTRADE tem 79 mil linhas assim) aparecia com "0 t", como se não tivesse embarcado
+    nada. Agora aparece "—". O formatador `_nf` também devolve "—" para valor ausente.
+  - **Fluxos:** uma rota sem valor aparecia como "US$ 0". Agora "—".
+  - **Sazonalidade:** o valor não numérico de uma célula virava zero (a célula nula já era
+    tratada, o resto não). Agora vira lacuna e "sem valor nesta convenção".
+  - **Tooltips padrão do mapa de calor mês × ano e do Sankey:** "0 US$" para uma célula ou
+    um nó sem valor. Agora "sem dado". Um zero medido continua zero.
+
+### Adicionado
+- **Quarta família na varredura `absenceGuard.test.js`:** `Number(x) || 0` e `Number(x || 0)`.
+  As três famílias anteriores olhavam divisão, aritmética sobre campo anulável e `.toFixed`, e
+  esta forma não é nenhuma delas. Contraprova: rodada contra o código anterior, a varredura
+  acusa exatamente as seis linhas corrigidas. Quatro pontos ficam registrados com o motivo,
+  porque não mentem: o ângulo das fatias do `Donut`, a escala do eixo e o zero medido do
+  `StackedBars`, e o total do `fmtUsdShort`. Um autoteste prova que a regex pega as formas
+  conhecidas e ignora um piso não zero (`|| 0.5`).
+- Testes de comportamento: o parceiro sem peso mostra "—", e o Sankey diz "sem dado" para o nó
+  sem valor e "0 US$" para o zero medido.
+
+---
+
 ## [1.93.2] - 2026-09-25
 
 O backup passa a cobrir a única tabela do pipeline que nenhum build consegue recriar.

@@ -24,8 +24,13 @@ function MonthYearHeatmap({ matrix = {}, years = [], unit = '', height, formatVa
   // Per-cell hover text via a caller-supplied formatter so the magnitude shows:
   // the serializer pre-scales monthly values to millions, so the raw "%{z}" with a
   // bare unit would read e.g. 2.07 instead of "2,07 mi US$". Default = value+unit.
-  const fmtVal = formatValue || ((v) =>
-    `${(Number(v) || 0).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}${unit ? ` ${unit}` : ''}`);
+  // A cell with no value is a gap in the heat and "sem dado" in the hover, not "0".
+  const fmtVal = formatValue || ((v) => {
+    const n = v == null ? NaN : Number(v);
+    return Number.isFinite(n)
+      ? `${n.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}${unit ? ` ${unit}` : ''}`
+      : 'sem dado';
+  });
   const customdata = z.map((row) => row.map(fmtVal));
 
   // Heat ramp from the design-system --heat-1…--heat-7 stops, resolved for Plotly.

@@ -78,3 +78,16 @@ describe('SankeyChart — dangling links degrade, never throw', () => {
     expect(t.link.value).toEqual([10, 5]);
   });
 });
+
+describe('SankeyChart — o hover padrão não inventa zero (v1.93.3)', () => {
+  it('um nó sem valor diz "sem dado"; um zero medido continua zero', () => {
+    const nodes = [
+      { id: 'o0', label: 'PA', side: 'origin', value: null },
+      { id: 'o1', label: 'SP', side: 'origin', value: 0 },
+      { id: 'd0', label: 'China', side: 'dest', value: 15 },
+    ];
+    render(<SankeyChart nodes={nodes} links={[{ source: 'o1', target: 'd0', value: 15 }]} unit="US$" />);
+    // `(Number(v) || 0)` printed "0 US$" for PA, a flow nobody measured.
+    expect(sankey().node.customdata).toEqual(['sem dado', '0 US$', '15 US$']);
+  });
+});

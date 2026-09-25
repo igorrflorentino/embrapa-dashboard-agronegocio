@@ -222,6 +222,25 @@ describe('ViewPartners — smoke + metric-toggle branches', () => {
     expect(container.querySelectorAll('.ptn-row').length).toBe(3);
   });
 
+  it('um parceiro sem peso líquido mostra "—" no Volume, não "0 t" (v1.93.3)', () => {
+    // COMTRADE tem 79 mil linhas com valor e sem peso. `_nf((v || 0) * 1000)` dizia que
+    // o parceiro não embarcou nada, quando ele só não declarou quanto.
+    stubGlobals({
+      ...BY_METRIC,
+      weight: { ...BY_METRIC.weight, partners: [
+        { name: 'China', weight: 12.5 }, { name: 'Guam', weight: null },
+      ] },
+    });
+    const { container } = render(
+      <ViewPartners summary={{}} conventions={{}} database="un_comtrade" />
+    );
+    fireEvent.click([...container.querySelectorAll('.seg-opt')].find((b) => b.textContent === 'Volume'));
+    const guam = [...container.querySelectorAll('.ptn-row')].find((r) => r.textContent.includes('Guam'));
+    expect(guam).toBeTruthy();
+    expect(guam.textContent).toContain('—');
+    expect(guam.textContent).not.toMatch(/0 t/);
+  });
+
   it('shows a LoadErrorNote when the partnerData fetch failed (not a false "0 parceiros")', () => {
     stubGlobals(BY_METRIC);
     // A settled fetch failure surfaces loadError on the shell (resource.errorOf → producers).
