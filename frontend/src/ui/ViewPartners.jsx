@@ -29,8 +29,14 @@ const _PARTNER_METRICS = [
 // de cobertura e a cauda desce até 56%.
 const _COBERTURA_MINIMA = 0.9;
 
-const _nf = (v, d = 0) =>
-  Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: d, maximumFractionDigits: d });
+// '—' for a value that is not there, never a formatted "0": `Number(v || 0)` turned the
+// absence into a measurement before any caller could refuse it.
+const _nf = (v, d = 0) => {
+  const n = v == null ? NaN : Number(v);
+  return Number.isFinite(n)
+    ? n.toLocaleString('pt-BR', { minimumFractionDigits: d, maximumFractionDigits: d })
+    : '—';
+};
 
 function ViewPartners({ summary, conventions, database }) {
   const [metric, setMetric] = window.React.useState('value');
@@ -48,7 +54,9 @@ function ViewPartners({ summary, conventions, database }) {
   const fmtMetric = (p) => {
     const v = p && p[spec.field];
     if (metric === 'value')  return fmtMoney(v);
-    if (metric === 'weight') return _nf((v || 0) * 1000) + ' t'; // mil t → t (pt-BR)
+    // A partner that reports value and no net weight (COMTRADE has 79 mil such rows) has no
+    // tonnage to show: "0 t" would say it shipped nothing.
+    if (metric === 'weight') return v == null ? '—' : _nf(v * 1000) + ' t'; // mil t → t (pt-BR)
     return v == null ? '—' : data.unit + ' ' + _nf(v, 2) + '/kg'; // price (unit/kg)
   };
 

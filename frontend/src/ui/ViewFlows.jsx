@@ -16,7 +16,10 @@ function ViewFlows({ summary, conventions, database }) {
   // US$, which is why it passed. The unit prefix is the contract's display unit; the
   // suffix (bi/mi/mil) stays pt-BR.
   const fmt = (v) => {
-    const n = (Number(v) || 0) * 1e6; // contract unit: mi → raw
+    // A route with no value is '—', not "US$ 0" (`Number(v) || 0` made it a measurement).
+    const mi = v == null ? NaN : Number(v);
+    if (!Number.isFinite(mi)) return '—';
+    const n = mi * 1e6; // contract unit: mi → raw
     const { factor, suffix } = window.autoScaleNum(n);
     const scaled = n / factor;
     const txt = scaled.toLocaleString('pt-BR', {

@@ -345,3 +345,86 @@ describe('varredura: a variação ausente não pode apontar direção', () => {
     ].join('\n')).toEqual([]);
   });
 });
+
+// ── A QUARTA FAMÍLIA: coerção da ausência para zero ANTES de qualquer conta ─────
+//
+// `Number(x) || 0` e `Number(x || 0)` não dividem, não multiplicam um campo anulável
+// conhecido e não arredondam, então passavam por todas as regex acima. Mas é a mesma
+// ausência virando medida, e na tela ela lê "0": os popups dos dois mapas (v1.93.1), os
+// tooltips do mapa de calor mês × ano e do Sankey, a rota de fluxo sem valor ("US$ 0") e
+// o parceiro de comércio sem peso líquido ("0 t", com 79 mil linhas assim no COMTRADE)
+// (v1.93.3). A metade Python da mesma regra é `float(x or 0)`, em test_absence_guard.py.
+const COERCAO_ZERO = /\bNumber\([^()\n]*\)\s*\|\|\s*0(?![.0-9])|\bNumber\([^()\n]*\|\|\s*0\s*\)/;
+
+const PERMITIDOS_COERCAO = [
+  {
+    trecho: 'const sliceValue = (d, valueKey) => Number(d[valueKey]) || 0;',
+    razao: 'Donut: é o ÂNGULO da fatia, não um número exibido. Os chamadores passam ' +
+           'contagens e shares que o serializer já recusou, e desde a v1.61.0 devolvem ' +
+           'lista vazia quando não há total. Uma fatia sem valor tem ângulo zero, que é o ' +
+           'desenho certo.',
+  },
+  {
+    trecho: '...rows.map((r) => series.reduce((s, f) => s + (Number(r[f.id]) || 0), 0)),',
+    razao: 'StackedBars: é o MÁXIMO do eixo (a soma das faixas de cada barra), geometria. ' +
+           'Somar os presentes é a leitura certa de um total, e nenhum número sai daqui.',
+  },
+  {
+    trecho: 'x: rows.map((r) => Number(r[f.id]) || 0),',
+    razao: 'StackedBars: a faixa ausente numa barra cuja outra faixa existe é um zero ' +
+           'MEDIDO (um estado que só extrai tem lavoura zero), como diz o comentário logo ' +
+           'acima. Quem não tem produção nenhuma não vira linha.',
+  },
+  {
+    trecho: 'const n = Number(v || 0);',
+    razao: 'enrichment.fmtUsdShort: formata um TOTAL da matriz de valor agregado (soma ' +
+           'de contagem de valor), não uma medida que possa faltar. O mesmo trecho já está ' +
+           'registrado em PERMITIDOS_TOFIXED com essa razão.',
+  },
+];
+
+describe('varredura: coerção da ausência para zero', () => {
+  const arquivos = [...fontes(join(SRC, 'ui')), ...fontes(join(SRC, 'charts')), ...fontes(join(SRC, 'data'))];
+
+  it.each([
+    ['const n = Number(v) || 0;', true],
+    ["`${(Number(v) || 0).toLocaleString('pt-BR')}`", true],
+    ['Number(v || 0).toLocaleString()', true],
+    ['const x = Number(v) || 0.5;', false],   // um piso não-zero é outra coisa
+    ['const n = Number(v);', false],
+    ['if (!Number.isFinite(n)) return;', false],
+  ])('a regex reconhece %s → %s', (linha, pega) => {
+    // Uma regex que não casa nada deixa a varredura passar vazia, sem ninguém notar.
+    expect(COERCAO_ZERO.test(linha)).toBe(pega);
+  });
+
+  it('nenhum valor ausente vira zero por Number(…) || 0', () => {
+    const achados = [];
+    for (const caminho of arquivos) {
+      readFileSync(caminho, 'utf-8').split('\n').forEach((linha, i) => {
+        const t = linha.trimStart();
+        if (t.startsWith('//') || t.startsWith('*') || t.startsWith('/*')) return;
+        const codigo = linha.replace(/\/\/.*$/, '');   // um comentário no fim da linha não conta
+        if (!COERCAO_ZERO.test(codigo)) return;
+        if (PERMITIDOS_COERCAO.some((p) => linha.includes(p.trecho))) return;
+        achados.push(`${relative(SRC, caminho)}:${i + 1}\n      ${linha.trim()}`);
+      });
+    }
+    expect(achados, [
+      '`Number(x) || 0` transforma a ausência em uma medida ANTES de qualquer conta, e a',
+      'tela mostra "0" onde deveria dizer "sem dado". Teste Number.isFinite e devolva',
+      "null / '—' / 'sem dado'. Se o zero aqui for MEDIDO, ou se o número for geometria e",
+      'não aparecer na tela, registre em PERMITIDOS_COERCAO com a razão.',
+      '', ...achados,
+    ].join('\n')).toEqual([]);
+  });
+
+  it('cada permissão declara uma razão de verdade e ainda corresponde a código', () => {
+    const todo = arquivos.map((c) => readFileSync(c, 'utf-8')).join('\n');
+    for (const p of PERMITIDOS_COERCAO) {
+      expect(p.razao.length, `sem razão: ${p.trecho}`).toBeGreaterThan(60);
+      expect(p.razao).not.toMatch(/não deu problema|por enquanto|TODO/i);
+      expect(todo, `permissão obsoleta, remova: ${p.trecho}`).toContain(p.trecho);
+    }
+  });
+});

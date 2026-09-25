@@ -42,8 +42,12 @@ function SankeyChart({ nodes = [], links = [], unit = '', height = 420, formatVa
   // shows the right magnitude: the serializer pre-scales flow values to millions,
   // so a bare "%{value}" would read 2.07 instead of "2,07 mi US$". Default keeps a
   // simple "value + unit".
-  const fmtVal = formatValue || ((v) =>
-    `${(Number(v) || 0).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}${unit ? ` ${unit}` : ''}`);
+  const fmtVal = formatValue || ((v) => {
+    const n = v == null ? NaN : Number(v);
+    return Number.isFinite(n)
+      ? `${n.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}${unit ? ` ${unit}` : ''}`
+      : 'sem dado';
+  });
 
   const traces = [
     {

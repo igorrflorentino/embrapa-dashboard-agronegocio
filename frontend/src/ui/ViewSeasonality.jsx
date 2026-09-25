@@ -12,7 +12,10 @@
 // 1999): it stays null — a gap in the heatmap, out of the averages server-side — because
 // `Number(null) * 1e6` would draw it as a measured zero (v1.78.0).
 const _MI = 1e6;
-const _toRaw = (v) => (v == null ? null : (Number(v) || 0) * _MI);
+const _toRaw = (v) => {
+  const n = v == null ? NaN : Number(v);
+  return Number.isFinite(n) ? n * _MI : null;
+};
 
 function ViewSeasonality({ summary, conventions, database }) {
   const data  = window.monthlyData(database, summary);
@@ -43,8 +46,8 @@ function ViewSeasonality({ summary, conventions, database }) {
   // amplitude — ratioPresent devolve null e o card mostra '—'.
   const amplitude = window.ratioPresent(avg[peakIdx], avg[lowIdx]);
   const fmt = (v) => {
-    if (v == null) return 'sem valor nesta convenção';
-    const n = Number(v) || 0;
+    const n = v == null ? NaN : Number(v);
+    if (!Number.isFinite(n)) return 'sem valor nesta convenção';
     const { factor, suffix } = window.autoScaleNum(n);
     const scaled = n / factor;
     return [data.unit, scaled.toLocaleString('pt-BR', { maximumFractionDigits: scaled < 10 ? 2 : scaled < 100 ? 1 : 0 }), suffix]
