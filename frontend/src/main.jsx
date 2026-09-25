@@ -157,8 +157,9 @@ function readStateFromURL() {
     // Server-side flow filter (export/import); absent → all flows.
     flow: q.get('fx') || null,
     // Qual TABELA SIDRA (t289 extração | t291 silvicultura); ausente = todas.
-    //
-    // Aceita o `or=extrativa|silvicultura` dos links antigos e o traduz para a tabela: o
+    // O `or=extrativa|silvicultura` dos links anteriores à v1.46.0 deixou de ser traduzido
+    // na v1.47.0, de propósito (registrado no CHANGELOG): um link desses abre com as duas
+    // metades.
     tabela: q.get('tb') || null,
     // Níveis de industrialização selecionados (CSV); ausente = todos.
     niveis: window.urlDecodeArr(q, 'ni'),

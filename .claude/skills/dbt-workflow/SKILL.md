@@ -18,7 +18,7 @@ cd dbt && uv run dbt run --select silver_ibge_pevs+   # single model + downstrea
 cd dbt && uv run dbt test --select gold_pevs_production
 
 # Prod (writes to silver / gold — only after dev validation):
-make dbt-build-prod           # full-refresh against real datasets
+make dbt-build-prod           # plain build (NOT --full-refresh) against real datasets
 
 # Test:
 make dbt-test
@@ -34,7 +34,7 @@ The macro `dbt/macros/generate_schema_name.sql` enforces:
 | `dev` (default) | `<target.schema>_<custom_schema>` | `dbt_dev_silver`, `dbt_dev_gold` |
 | `prod` | `<custom_schema>` only | `silver`, `gold` |
 
-**Always iterate on `make dbt-build` (dev).** `make dbt-build-prod` does `--full-refresh` against real datasets — only run after dev validation.
+**Always iterate on `make dbt-build` (dev).** `make dbt-build-prod` builds against the real datasets (a plain build, not `--full-refresh`: the incremental Silver re-scans whatever Bronze years got a newer ingestion) — only run after dev validation.
 
 **Dev schemas auto-expire after 7 days** via the `apply_dev_ttl` macro (`on-run-end` hook in `dbt_project.yml`).
 

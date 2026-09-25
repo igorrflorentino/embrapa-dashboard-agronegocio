@@ -117,9 +117,9 @@ window.buildUrlState = ({ view, database, infoPage, conventions, summary, crossS
     // Server-side SIDRA-table filter (t289 extração | t291 silvicultura); omitted when
     // 'all'/absent, so a permalink to an unfiltered panel keeps meaning "every table" —
     // the survey's own total — rather than freezing today's default into the link.
-    // Escreve `tb` desde v1.46.0; o decodificador ainda ACEITA o `or=extrativa|silvicultura`
-    // dos links antigos (ver main.jsx) para que nenhum permalink já compartilhado pare de
-    // restaurar o recorte.
+    // Escreve `tb` desde v1.46.0. O `or=extrativa|silvicultura` dos links antigos deixou de
+    // ser lido na v1.47.0, de propósito (ver main.jsx): um link desses abre com as duas
+    // metades.
     tb: s.tabela && s.tabela !== 'all' ? s.tabela : '',
     // Níveis de industrialização; omitido quando nada está selecionado.
     ni: window.urlEncodeArr(s.niveis),
