@@ -157,7 +157,11 @@ schedule. **Since v1.97.0 a push is SKIPPED when it changes nothing the build pr
 - **Scheduled and dispatched builds never skip.** They carry new Bronze.
 - **Backtest over the 63 builds of the 30 days to 2026-09-26:** 12 of the 46 push builds would have been skipped, and each of the 12 was read by hand. They changed comments, `config.py`, source-freshness windows (read only by `dbt source freshness`) or a var-gated `enabled` already on in prod.
 
-The fingerprint must stay **deterministic**. Two compiles of one commit give one fingerprint, and the `invocation_id` that `serving_quality_history` stamps into its SQL is neutralized. A new model that embeds a per-run value would silently turn every push back into a build. Bronze ingested on a Sunday waits until Monday. To publish a backfill or one-off
+The fingerprint must stay **deterministic**. Two compiles of one commit give one fingerprint, and the `invocation_id` that `serving_quality_history` stamps into its SQL is neutralized. A new model that embeds a per-run value would silently turn every push back into a build.
+
+**The spend itself is watched since v1.98.0.** `embrapa doctor` (`bq-spend`) sums the last 30 days of billed bytes and names the top three principals. It warns at 80% of the free 1 TiB/month and never fails. It counts each job ONCE: a dbt script's parent bills the sum of its children, so only top-level jobs are summed. Baseline 2026-09-26: 2.63 TiB, with the prod build at 63% and local development at 26%. The per-model breakdown and the levers left are in `docs/operations_runbook.md` § BigQuery spend.
+
+Bronze ingested on a Sunday waits until Monday. To publish a backfill or one-off
 ingest now, dispatch it:
 `gh workflow run dbt-build-prod.yml --ref main`. No `--full-refresh` is needed: `silver_ibge_pevs` is incremental but
 **year-agnostic** (it re-scans whatever Bronze years got a newer

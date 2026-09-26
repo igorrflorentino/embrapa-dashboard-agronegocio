@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.98.0] - 2026-09-26
+
+### Adicionado
+- **`embrapa doctor` mede o gasto do BigQuery** (`bq-spend`).
+  - Soma os bytes cobrados pelas consultas do projeto nos últimos 30 dias e nomeia os três
+    maiores consumidores.
+  - Avisa ao chegar a 80% da cota gratuita de 1 TiB/mês e diz quanto passou dela, com o
+    valor aproximado a preço de lista (US$ 6,25/TiB).
+  - Nunca falha: gasto é questão de orçamento, não defeito.
+  - **Por quê:** um comentário de código dizia que o projeto usava ~15% da cota (medido em
+    28/08). Um mês depois ele estava em 2,63 TiB, 2,6 vezes a cota, e isso só apareceu por
+    acaso. É o mesmo padrão do reconcile que falhava e da deriva de qualidade: um número que
+    ninguém mede deixa de ser verdade em silêncio.
+  - **Primeira medição (26/09):** 2,63 TiB. O build de produção responde por 63%, o
+    desenvolvimento local por 26% e o painel por 4%.
+
+### Corrigido (medição)
+- **As somas de gasto contavam duas vezes os scripts do BigQuery.** Os modelos incrementais
+  do dbt rodam como script, e o job pai de um script cobra a soma dos jobs filhos, que também
+  aparecem na lista. Somar todas as linhas contava esses bytes duas vezes. Nos 425 scripts
+  do período, o pai bateu com os filhos até o byte; o excesso era de 3% do total.
+- A checagem soma só os jobs de nível superior, e o runbook ensina a mesma consulta, que
+  também dá o detalhe por modelo do dbt.
+- Os totais citados na v1.96.2 e no runbook (2,63 e 1,72 TiB, medidos de manhã) ficaram
+  ~3% altos, e o runbook agora diz isso. As medidas por modelo e as reduções
+  antes/depois continuam certas, porque os dois lados foram medidos do mesmo jeito.
+
+### Documentação
+- `docs/operations_runbook.md` § *BigQuery spend* ganhou:
+  - o que a checagem mede e o que ela não vê (a cota é por conta de faturamento; a view é
+    regional; a permissão exigida);
+  - a consulta por modelo e a linha de base;
+  - o resultado das duas medidas do dia: o build caiu de ~28 para 17,46 GiB;
+  - para onde vai o build agora, com as alavancas que faltam em ordem.
+
+Muda o `doctor`, que fica em `src/embrapa_dashboard/`, então **leva tag**.
+
+---
+
 ## [1.97.0] - 2026-09-26
 
 ### Adicionado (CI: o build de produção deixa de reconstruir o que não mudou)
