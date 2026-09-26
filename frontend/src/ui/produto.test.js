@@ -26,7 +26,7 @@ describe('window.PRODUTO — a fonte única do nome', () => {
     const p = window.PRODUTO;
     expect(p.escopo).toBe('produtos agropecuários e florestais');
     expect(p.nome).toBe('Análise histórica de produtos agropecuários e florestais');
-    expect(p.tituloCitacao).toBe('Dashboard de análise histórica de produtos agropecuários e florestais');
+    expect(p.tituloCitacao).toBe('Painel de análise histórica de produtos agropecuários e florestais');
     // Os três derivam do MESMO escopo — é isso que faz o renome ser de uma linha.
     for (const s of [p.nome, p.tituloCitacao, p.tituloAba.toLowerCase()]) {
       expect(s.toLowerCase()).toContain(p.escopo.toLowerCase());

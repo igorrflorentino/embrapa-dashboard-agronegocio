@@ -129,7 +129,7 @@ def create_app() -> Flask:
         # r.json(), so an HTML 200 burns its retry budget on parse errors).
         # Werkzeug ranks the blueprint's static rules above this path-converter
         # rule, so every registered /api endpoint still wins.
-        return jsonify(error="endpoint de API não encontrado", code=404), 404
+        return jsonify(error="rota da API não encontrada", code=404), 404
 
     spa = _spa_dir()
     if spa is not None:

@@ -193,7 +193,7 @@ def _forward_to_github(
     safe_url = _safe_http_url(url)
     if safe_url:
         body.append(f"- **Reproduzir:** {_md_inline(safe_url)}")
-    body.append("\n_Aberto automaticamente pelo canal de feedback do dashboard._")
+    body.append("\n_Aberto automaticamente pelo canal de feedback do painel._")
     try:
         resp = requests.post(
             f"{_GITHUB_API}/repos/{repo}/issues",

@@ -16,12 +16,12 @@ function PreviewBanner({ banco, capabilityNote }) {
           <>
             Esta perspectiva já está construída; quando <strong>{banco.short}</strong> for
             liberado{date ? ` (${date})` : ''}, os mesmos gráficos passam a refletir dados reais —
-            sem mudança de layout.
+            sem mudança de leiaute.
           </>
         ) : (
           <>
-            Os mesmos gráficos passam a refletir dados reais assim que o cruzamento ler o Gold real —
-            sem mudança de layout.
+            Os mesmos gráficos passam a refletir dados reais assim que o cruzamento ler a base analítica real —
+            sem mudança de leiaute.
           </>
         )}
       </span>

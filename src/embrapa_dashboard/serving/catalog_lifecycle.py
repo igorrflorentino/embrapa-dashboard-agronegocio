@@ -38,7 +38,8 @@ logger = logging.getLogger(__name__)
 ORPHAN_DETECTOR_AUTHOR = "system:orphan-detector"
 # The warning every Descontinuado element carries. The purge is human-gated, backup-first.
 PURGE_WARNING = (
-    "Descontinuada: será removida do Gold por um operador (com backup), nunca automaticamente."
+    "Descontinuada: será removida da base analítica por um operador (com backup), nunca "
+    "automaticamente."
 )
 
 CATALOG_LIFECYCLE_LOG_SCHEMA = [
@@ -192,7 +193,7 @@ def auto_mark_orphans(
         if _change_id_seen(bq, table_fqn, change_id):
             continue
         reason = (
-            f"Removida do cadastro; dados em Gold pendentes "
+            f"Removida do cadastro; dados na base analítica pendentes "
             f"(agrupamento {getattr(o, 'agrupamento', None) or '—'})."
         )
         _insert_lifecycle_event(

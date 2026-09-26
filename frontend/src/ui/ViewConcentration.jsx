@@ -177,12 +177,12 @@ function ViewConcentration({ summary, conventions, database }) {
           sub={hhiBand(ufHHI).label}
         />
         <window.KpiCardSpark
-          label="Concentração top-5 UFs"
+          label="Concentração nas 5 maiores UFs"
           value={window.fmtPct(top5UF)}
           sub={`de ${ufSorted.length} ${ufSorted.length === 1 ? 'UF' : 'UFs'} com produção`}
         />
         <window.KpiCardSpark
-          label="Concentração top-3 produtos"
+          label="Concentração nos 3 maiores produtos"
           value={window.fmtPct(top3Prod)}
           sub={`de ${prodValues.length} ${prodValues.length === 1 ? 'produto' : 'produtos'} na cesta`}
         />
@@ -200,7 +200,7 @@ function ViewConcentration({ summary, conventions, database }) {
           sub={hhiBand(prodHHI).label}
         />
         <window.KpiCardSpark
-          label="Concentração top-3 produtos"
+          label="Concentração nos 3 maiores produtos"
           value={window.fmtPct(top3Prod)}
           sub={`de ${prodValues.length} ${prodValues.length === 1 ? 'produto' : 'produtos'} na cesta`}
         />

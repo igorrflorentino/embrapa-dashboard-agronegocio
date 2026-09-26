@@ -220,7 +220,7 @@ function ViewOverview({ families, summary, database, conventions }) {
               + (naoAvaliadaShare > 0
                 ? ` · ${window.fmtPct(naoAvaliadaShare)} das linhas sem base para avaliar`
                 : '')
-            : 'OK não selecionada · acervo do banco'}
+            : '“Sem ressalva” fora do filtro · acervo do banco'}
           spark={filtered.qualityTs.slice(-12)}
           sparkKey="ok"
           sparkColor="var(--ok)"
@@ -315,7 +315,7 @@ function ViewOverview({ families, summary, database, conventions }) {
                   title={`${onCount ? 'Cabeças' : 'Valor'} por UF · ${geoUnit}`}
                   action={
                     <span className="caption">
-                      {top3.length ? 'Top 3: ' + top3.map(u => u.uf).join(' · ') : '—'}
+                      {top3.length ? '3 maiores: ' + top3.map(u => u.uf).join(' · ') : '—'}
                     </span>
                   }
                 />

@@ -381,7 +381,7 @@ function AppShell({
   const CITE_LEVELS = [
     { id: 'tool', label: 'Ferramenta geral',
       head: CITE_AUTHOR, title: CITE_TITLE, rest: `. ${citeTail}`,
-      hint: 'Cita o dashboard como ferramenta \u2014 sem banco e sem filtros.' },
+      hint: 'Cita o painel como ferramenta \u2014 sem banco e sem filtros.' },
     { id: 'banco', label: 'Por banco de dados',
       head: CITE_AUTHOR, title: CITE_TITLE,
       // The source is a SUBTITLE (after the colon), so it stays out of the bold — that
@@ -513,7 +513,7 @@ function AppShell({
             <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
           </svg>
         </button>
-        <button className="brand brand-btn" onClick={() => { if (setInfoPage) setInfoPage('about'); }} title="Voltar para Sobre o dashboard">
+        <button className="brand brand-btn" onClick={() => { if (setInfoPage) setInfoPage('about'); }} title="Voltar para Sobre o painel">
           <img src="assets/logo-embrapa-white-cropped.png" alt="Embrapa" className="brand-logo"/>
         </button>
         <div className="sep"></div>
@@ -591,8 +591,8 @@ function AppShell({
                         // clickable (it routes to an explainer naming the supporting bancos).
                         const disabled = isCrossOpt && !applies;
                         const tooltip = isCrossOpt
-                          ? (applies ? v.desc : cross.reason)
-                          : (!applies ? `Requer ${window.missingCapsLabel(compat.missing)} — não disponível em ${bancoMeta?.short || 'este banco'}` : v.desc);
+                          ? (applies ? window.textoSimples(v.desc) : cross.reason)
+                          : (!applies ? `Requer ${window.missingCapsLabel(compat.missing)} — não disponível em ${bancoMeta?.short || 'este banco'}` : window.textoSimples(v.desc));
                         return (
                           <button
                             key={v.id}
@@ -649,9 +649,9 @@ function AppShell({
             <window.Icon name="format_quote" size={16}/>
             <span>Citar painel</span>
           </button>
-          <button className="util-action" onClick={onShare} title="Copiar URL com o estado atual (filtros, view, convenções)">
+          <button className="util-action" onClick={onShare} title="Copiar o link com o estado atual (filtros, perspectiva, convenções)">
             <window.Icon name="link" size={16}/>
-            <span>{shared ? 'URL copiada' : 'Compartilhar'}</span>
+            <span>{shared ? 'Link copiado' : 'Compartilhar'}</span>
           </button>
           <button className="util-action" onClick={onReport} title="Relate um problema, tire uma dúvida ou envie uma sugestão">
             <window.Icon name="feedback" size={16}/>
@@ -681,7 +681,7 @@ function AppShell({
                     <window.Icon name="format_quote" size={18}/><span>Citar painel</span>
                   </button>
                   <button role="menuitem" className="util-menu-item" onClick={() => { setUtilOpen(false); onShare(); }}>
-                    <window.Icon name="link" size={18}/><span>{shared ? 'URL copiada' : 'Compartilhar'}</span>
+                    <window.Icon name="link" size={18}/><span>{shared ? 'Link copiado' : 'Compartilhar'}</span>
                   </button>
                   <button role="menuitem" className="util-menu-item" onClick={() => { setUtilOpen(false); onReport(); }}>
                     <window.Icon name="feedback" size={18}/><span>Enviar feedback</span>
@@ -784,7 +784,7 @@ function AppShell({
           <div className="side-section">Informações</div>
           <div className={'side-item ' + (infoPage === 'about' ? 'active' : '')}
                {...clickable(() => onInfo('about'))}>
-            <window.Icon name="info"/>Sobre o dashboard
+            <window.Icon name="info"/>Sobre o painel
           </div>
           <div className={'side-item ' + (infoPage === 'glossary' ? 'active' : '')}
                {...clickable(() => onInfo('glossary'))}>
@@ -839,7 +839,7 @@ function AppShell({
                 <h2 id="cite-title">Citar painel</h2>
                 <p className="caption">
                   Escolha <strong>quanto do painel</strong> a referência deve descrever — desde
-                  o dashboard como ferramenta até o recorte exato consultado — sempre com o link
+                  o painel como ferramenta até o recorte exato consultado — sempre com o link
                   permanente que reproduz a seleção. A <strong>citação no texto</strong> segue a
                   ABNT NBR 10520:2023; a <strong>referência</strong> completa segue a ABNT NBR
                   6023:2025.
@@ -924,7 +924,7 @@ function AppShell({
             already shown there (ViewAbout's "Contato técnico"), kept in sync manually. */}
         <div className="foot-meta foot-meta-team">
           <div>Desenvolvimento e manutenção</div>
-          <div className="caption">Equipe de engenharia de dados do dashboard</div>
+          <div className="caption">Equipe de engenharia de dados do painel</div>
           <div className="caption">
             <a href="mailto:igor.lopes@embrapa.br">Contato técnico</a>
             &nbsp;·&nbsp;

@@ -111,7 +111,7 @@ describe('ViewHealth — render smoke + operability sections', () => {
     const labels = [...container.querySelectorAll('.kpi')].map((e) => e.dataset.label);
     expect(labels).toContain('Status geral do sistema');
     expect(labels).toContain('Bancos operando');
-    expect(labels).toContain('Volume total na Gold');
+    expect(labels).toContain('Volume total na base analítica');
     expect(labels).toContain('Alertas operacionais');
 
     // The per-banco table renders a row per banco (short label appears).
@@ -158,7 +158,7 @@ describe('ViewHealth — multi-bank KPI rollups + table columns', () => {
     stubHelpers(store);
 
     const { container } = render(<ViewHealth summary={{}} />);
-    const vol = container.querySelector('.kpi[data-label="Volume total na Gold"] .kpi-value');
+    const vol = container.querySelector('.kpi[data-label="Volume total na base analítica"] .kpi-value');
     expect(vol?.textContent).toBe('1500'); // 1000 + 500 (fmtRows stub → String(n))
     // The 'Bancos operando' KPI reads healthy/live.
     const ok = container.querySelector('.kpi[data-label="Bancos operando"] .kpi-value');

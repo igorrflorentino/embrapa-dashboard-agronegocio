@@ -1591,7 +1591,7 @@ def test_unknown_api_path_returns_json_404(monkeypatch):
     for resp in (client.get("/api/definitely-not-a-route"), client.post("/api/nope")):
         assert resp.status_code == 404
         assert resp.content_type.startswith("application/json")
-        assert resp.get_json()["error"] == "endpoint de API não encontrado"
+        assert resp.get_json()["error"] == "rota da API não encontrada"
 
     # Registered routes still win over the catch-all.
     # routes.py calls seam.produto_catalog_with_family (the facade's re-exported

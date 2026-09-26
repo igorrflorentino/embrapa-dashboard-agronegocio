@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.96.0] - 2026-09-25
+
+Controle editorial do texto de tela: um termo por conceito, sem jargão que tenha equivalente
+em português, e itálico no conceito estrangeiro mantido. As regras e as decisões estão no
+CLAUDE.md (Code Style → Language, "Editorial control"). Muda o que o pesquisador lê, então
+**leva tag**.
+
+### Alterado (texto de tela)
+- **"Painel", nunca "dashboard"**, inclusive no título da citação ABNT, que passa a ser
+  "Painel de análise histórica de produtos agropecuários e florestais". As telas já usavam
+  "painel" 48 vezes contra 18 de "dashboard".
+- **A camada Gold, no texto do dia a dia, é "a base analítica".** Antes, o mesmo conceito
+  aparecia como "Gold", "a Gold", "o Gold" e, no glossário, "Base final" (tabelas) ao lado
+  de `gold` (colunas). Os nomes Bronze/Silver/Gold/Serving ficam só nas explicações de
+  arquitetura, sempre com a tradução ao lado.
+- **Trocas pontuais:**
+  - URL → link ("Link copiado");
+  - view → perspectiva;
+  - pipeline → processamento ("Processamento pronto");
+  - seed → tabela de referência;
+  - layout → leiaute;
+  - cache → "dados já carregados";
+  - endpoint → "rota da API";
+  - Cloud Run *stateless* → "servidor sem estado".
+- **"Top" e as decisões de termo:**
+  - "Top 10", "top-3" e similares viram "10 maiores", "nos 3 maiores";
+  - Markup → **multiplicador de preço**;
+  - Spread → **diferença de preço**;
+  - Mart → **tabela pré-agregada**, nos rótulos do explorador "Estrutura de dados".
+- **Backend:**
+  - o aviso de descontinuação do Cadastro e o motivo da remoção dizem "base analítica";
+  - as descrições do catálogo de Referências dizem "processamento";
+  - o rótulo de moeda de reserva virou "(moeda indisponível nos dados → R$)";
+  - a dica do filtro de produtos do PEVS, que dizia "Commodities", volta a espelhar a do SPA ("Produtos").
+
+### Adicionado
+- **Itálico para conceito estrangeiro em texto longo** (*drawback*, *commodity*, *Silver*,
+  *Gold*, *Serving*), nunca em rótulo.
+  - No JSX, `<em>` direto. Nos registros (glossário, descrições de perspectiva e de
+    camada), a marca `*termo*` é renderizada por `window.comItalico` (`ui/italico.jsx`).
+  - As saídas de texto puro (dica nativa do navegador, busca do glossário) passam por
+    `window.textoSimples`. O asterisco de `val_real_*` não é lido como marca.
+- **Duas varreduras com o mesmo vocabulário** (`ui/editorialVocabulary.json`):
+  - `editorialGuard.test.js` extrai pela árvore sintática todo texto que o SPA exibe e
+    reprova termo proibido, verbo inventado, gíria, nome de camada fora de lugar, itálico
+    faltando e marca `*termo*` num campo que não a renderiza;
+  - `tests/test_editorial_guard.py` faz o mesmo nas strings em português de `webapi/` e `serving/`.
+  - Exceção vai em `PERMITIDOS`, com razão, e entrada obsoleta reprova.
+  - **Contraprova:** sobre o texto da v1.95.4, a varredura do SPA reprova 104 trechos em
+    20 arquivos.
+  - A do backend achou o que a auditoria manual não tinha visto: `serving/` estava fora dela.
+- `@babel/parser` virou dependência de desenvolvimento explícita (antes só chegava por tabela).
+
+---
+
 ## [1.95.4] - 2026-09-25
 
 ### Corrigido (documentação do Gold no dbt, que o BigQuery e o Looker Studio exibem)

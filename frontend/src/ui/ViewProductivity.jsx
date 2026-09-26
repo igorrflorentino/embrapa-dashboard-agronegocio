@@ -179,7 +179,7 @@ function ViewProductivity({ summary, conventions, database }) {
           <window.SectionHeader
             overline={`Ranking de rendimento · ${last.y}`}
             title="UFs mais produtivas"
-            action={<span className="caption">Top 12 · {yUnit}</span>}
+            action={<span className="caption">12 maiores · {yUnit}</span>}
           />
           {/* compact=false: yield is a UNIT metric (kg/ha) — show the exact figure
               ("3.500"), not the misleading magnitude word ("3,5 mil"); matches the

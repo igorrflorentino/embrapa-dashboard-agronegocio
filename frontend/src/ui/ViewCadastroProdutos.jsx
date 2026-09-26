@@ -111,7 +111,7 @@ const _CC_HELP_COLUNAS = [
   { k: 'Status', d: 'O estado do produto (Ativo, Oculto, Pausado ou Pendente de ingestão), calculado a partir das duas colunas seguintes e de haver ou não dados. É só um resumo. Para mudá-lo, use Ingestão ou Exibição.' },
   { k: 'Agrupamento', d: 'O conceito que unifica o mesmo produto entre fontes diferentes (ex.: "Soja" reunindo os códigos do COMEX e do Comtrade). É o que permite comparar fontes no mesmo gráfico.' },
   { k: 'Ingestão', d: 'Se o sistema continua buscando dados novos desse produto a cada atualização.' },
-  { k: 'Exibição', d: 'Se o pesquisador vê esse produto nos gráficos e filtros do dashboard.' },
+  { k: 'Exibição', d: 'Se o pesquisador vê esse produto nos gráficos e filtros do painel.' },
   { k: 'Ações', d: 'Remover o produto do cadastro.' },
 ];
 
@@ -184,7 +184,7 @@ function _ccStatus(entry, st, driven) {
   if ((entry.visibilidade || 'visivel') === _CC_OCULTO) {
     return { key: 'oculto', label: 'Oculto', title: 'Ingerido, mas fora de todos os gráficos e filtros' };
   }
-  return { key: 'ativo', label: 'Ativo', title: 'Ingerindo e visível no dashboard' };
+  return { key: 'ativo', label: 'Ativo', title: 'Ingerindo e visível no painel' };
 }
 const _ccInt = (n) => (n == null ? '—' : Number(n).toLocaleString('pt-BR'));
 
@@ -499,7 +499,7 @@ function ViewCadastroProdutos() {
     if (visibilidade === _CC_OCULTO) {
       setPendingConfirm({
         title: `Ocultar ${e.codigo_produto}?`,
-        body: `Ele deixará de aparecer em TODOS os gráficos e filtros do dashboard para os ` +
+        body: `Ele deixará de aparecer em TODOS os gráficos e filtros do painel para os ` +
           `pesquisadores. Os dados continuam guardados e a busca de dados novos segue ` +
           `normalmente. ${_CC_LATENCIA}`,
         confirmLabel: 'Ocultar', danger: true,
@@ -600,7 +600,7 @@ function ViewCadastroProdutos() {
     if (axis === 'visibilidade' && value === _CC_OCULTO) {
       setPendingConfirm({
         title: `Ocultar TODOS os ${members.length} produto(s) de "${g.group_name}"?`,
-        body: 'Eles deixarão de aparecer em qualquer gráfico ou filtro do dashboard para os ' +
+        body: 'Eles deixarão de aparecer em qualquer gráfico ou filtro do painel para os ' +
           'pesquisadores. ' + _CC_LATENCIA,
         confirmLabel: 'Ocultar', danger: true,
         onConfirm: apply,
@@ -948,7 +948,7 @@ function ViewCadastroProdutos() {
                       <td>{o.agrupamento || '—'}</td>
                       <td>{_CC_BANCO_LABEL[o.banco] || o.banco}</td>
                       <td className="tnum">{o.codigo_produto}</td>
-                      <td className="caption">{purged ? 'Purgado — dados retornaram ao Gold' : 'Aguardando remoção'}</td>
+                      <td className="caption">{purged ? 'Purgado — dados voltaram à base analítica' : 'Aguardando remoção'}</td>
                       <td className="caption">{o.flagged_at ? String(o.flagged_at).slice(0, 10) : 'detectado agora'}</td>
                     </tr>
                   );

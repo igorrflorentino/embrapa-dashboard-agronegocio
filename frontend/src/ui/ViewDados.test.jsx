@@ -14,7 +14,7 @@ const TABLES = [
   { id: 'sidra_t3939_raw', label: 'SIDRA 3939 (bruto)', grain: 'cópia fiel do IBGE', layer: 'bronze' },
   { id: 'silver_ibge_ppm', label: 'PPM padronizado', grain: 'tipado + qualidade', layer: 'silver' },
   { id: 'gold_ppm_production', label: 'Pecuária PPM', grain: 'linha por (ano, UF, município)', layer: 'gold' },
-  { id: 'serving_ppm_annual', label: 'Mart anual', grain: 'ano × UF × produto × família', layer: 'serving' },
+  { id: 'serving_ppm_annual', label: 'Tabela anual pré-agregada', grain: 'ano × UF × produto × família', layer: 'serving' },
 ];
 const PAGE = {
   columns: [

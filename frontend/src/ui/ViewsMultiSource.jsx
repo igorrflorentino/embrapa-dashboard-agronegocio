@@ -297,12 +297,12 @@ function ViewPriceSpread() {
         <CrossProductPicker value={effProduct} onChange={setProduct} families={['mass']} />
         <window.UfScopePicker value={uf} onChange={setUf} />
         <div className="card subtle">
-          <window.SectionHeader overline="Spread de preço" title="Indicador indisponível para esta seleção" />
+          <window.SectionHeader overline="Diferença de preço" title="Indicador indisponível para esta seleção" />
           <p className="caption" style={{ padding: '16px 4px' }}>
             O preço na porteira deriva de <strong>valor ÷ massa</strong> (IBGE) e o preço FOB de
             <strong> valor ÷ peso</strong> (MDIC), em US$/kg — só interpretáveis para agrupamentos de
             família <strong>massa</strong>. A seleção atual inclui agrupamento de volume (m³) ou cesta
-            mista. Escolha um agrupamento de massa para ver o spread.
+            mista. Escolha um agrupamento de massa para ver a diferença de preço.
           </p>
         </div>
       </>
@@ -328,8 +328,8 @@ function ViewPriceSpread() {
             prefixo e um sufixo afirmando uma unidade sobre um valor que não existe. */}
         <window.KpiCardSpark label="Preço FOB atual" value={msUnit(last?.fob, 'US$ ', '/kg', 2)} sub={`${last?.y ?? '—'} · no porto`} />
         <window.KpiCardSpark label="Preço na porteira" value={msUnit(last?.gate, 'US$ ', '/kg', 2)} sub="na produção" />
-        <window.KpiCardSpark label="Markup" value={msUnit(last?.markup, '×', '', 1)} sub="FOB ÷ porteira" />
-        <window.KpiCardSpark label="Spread" value={msUnit(last?.spread, 'US$ ', '/kg', 2)} sub="valor agregado entre porteira e porto" />
+        <window.KpiCardSpark label="Multiplicador de preço" value={msUnit(last?.markup, '×', '', 1)} sub="FOB ÷ porteira" />
+        <window.KpiCardSpark label="Diferença de preço" value={msUnit(last?.spread, 'US$ ', '/kg', 2)} sub="valor agregado entre porteira e porto" />
       </div>
 
       <div className="card">
@@ -345,7 +345,7 @@ function ViewPriceSpread() {
       </div>
 
       <div className="card">
-        <window.SectionHeader overline="Markup no tempo" title="Quantas vezes o porto vale a porteira"
+        <window.SectionHeader overline="Multiplicador de preço no tempo" title="Quantas vezes o porto vale a porteira"
           action={<span className="caption">× · FOB ÷ porteira</span>} />
         <window.LineChart data={markupTs} valueKey="v" label="×" color="var(--embrapa-blue)" height={240} />
       </div>

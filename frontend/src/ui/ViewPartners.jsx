@@ -80,7 +80,7 @@ function ViewPartners({ summary, conventions, database }) {
   const sumField = window.sumPresent(partners.map(valOf));
   const kpi3 = spec.additive
     ? {
-        label: 'Concentração top-3',
+        label: 'Concentração nos 3 maiores',
         value: window.fmtPct(window.ratioPresent(
           partners.slice(0, 3).reduce((s, p) => s + valOf(p), 0), sumField)),
         sub: `do ${metric === 'value' ? 'fluxo' : 'volume'} total`,

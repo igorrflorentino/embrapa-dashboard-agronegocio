@@ -23,7 +23,7 @@ const GROUP_DESCS = {
   flows: 'Acompanhe o caminho do produto da origem ao destino: a cadeia da extração à exportação e os parceiros (estados e países) que compram e vendem.',
   distribution: 'Veja onde a produção acontece e quão concentrada ela é: mapas e rankings por região, estado ou município, com índices de concentração e desigualdade (Gini, HHI, Lorenz).',
   temporal: 'Investigue os padrões no tempo além da tendência: sazonalidade, decomposição da série e quebras estruturais. Mais reveladora com dados mensais.',
-  crosssource: 'Cruze séries de bancos diferentes no mesmo eixo — produção (IBGE) × exportação (MDIC) × mercado mundial (Comtrade) — para medir coeficiente de exportação, participação global, spread de preço e o balanço da cadeia.',
+  crosssource: 'Cruze séries de bancos diferentes no mesmo eixo — produção (IBGE) × exportação (MDIC) × mercado mundial (Comtrade) — para medir coeficiente de exportação, participação global, diferença de preço e o balanço da cadeia.',
   curated: 'Análises que dependem da classificação feita pelo pesquisador (Engenharia de atributos): produto bruto × processado e a finalidade econômica (consumo × processamento) do que é comercializado.',
   documentation: 'Conheça a procedência e a confiabilidade do banco selecionado: o diagnóstico de qualidade dos dados (e, no menu lateral, o glossário de termos e códigos).',
 };
@@ -77,15 +77,15 @@ function ViewAbout() {
     },
     {
       title: 'Famílias de unidades nunca se misturam',
-      desc: 'Quantidades em massa (t/kg) e em volume (m³/L) jamais são somadas. Quando a cesta selecionada contém produtos de famílias diferentes, o dashboard mostra uma métrica de quantidade por família. O valor monetário permanece sempre agregável.',
+      desc: 'Quantidades em massa (t/kg) e em volume (m³/L) jamais são somadas. Quando a cesta selecionada contém produtos de famílias diferentes, o painel mostra uma métrica de quantidade por família. O valor monetário permanece sempre agregável.',
     },
     {
       title: 'Citação e compartilhamento',
-      desc: 'Use “Citar painel” (canto superior direito) para gerar, do painel exatamente como exibido — banco, perspectiva, recorte, produtos, UFs, filtros e convenções —, a citação no texto (ABNT NBR 10520:2023) e a referência completa (ABNT NBR 6023:2025), já com o link permanente. “Compartilhar” copia uma URL que reproduz toda a seleção atual, ideal para colaborar com outro pesquisador.',
+      desc: 'Use “Citar painel” (canto superior direito) para gerar, do painel exatamente como exibido — banco, perspectiva, recorte, produtos, UFs, filtros e convenções —, a citação no texto (ABNT NBR 10520:2023) e a referência completa (ABNT NBR 6023:2025), já com o link permanente. “Compartilhar” copia um link que reproduz toda a seleção atual, ideal para colaborar com outro pesquisador.',
     },
     {
       title: 'Exportação de dados',
-      desc: 'O botão “Exportar CSV” (canto superior direito, à esquerda de “Citar painel”) baixa a fatia de dados em tela — já com todos os filtros e convenções aplicados, na resolução máxima disponível — para você seguir a análise em planilha ou em outra ferramenta. Antes do download aparece uma confirmação com o que o arquivo vai conter: quantas linhas, quais colunas, o recorte e as convenções aplicados. Fica ao lado de “Citar painel” e “Compartilhar” porque os três levam o mesmo estado embora: como citação, como link e como arquivo.',
+      desc: 'O botão “Exportar CSV” (canto superior direito, à esquerda de “Citar painel”) baixa a fatia de dados em tela — já com todos os filtros e convenções aplicados, na resolução máxima disponível — para você seguir a análise em planilha ou em outra ferramenta. Antes de baixar aparece uma confirmação com o que o arquivo vai conter: quantas linhas, quais colunas, o recorte e as convenções aplicados. Fica ao lado de “Citar painel” e “Compartilhar” porque os três levam o mesmo estado embora: como citação, como link e como arquivo.',
     },
   ];
 
@@ -116,7 +116,7 @@ function ViewAbout() {
           mercados evoluíram ao longo de décadas. Cada fonte oficial entra com o mesmo
           peso: você escolhe o banco de dados e a perspectiva, aplica filtros e compara séries.
           O foco é exclusivamente analítico e científico — todos os números vêm de dados oficiais
-          processados pelo pipeline, sem projeções, recomendações ou opiniões automatizadas.
+          tratados pelo processamento descrito abaixo, sem projeções, recomendações ou opiniões automatizadas.
         </p>
         <p className="ab-lead">
           <strong>Primeiros passos:</strong> escolha um banco de dados na barra à esquerda,
@@ -193,7 +193,7 @@ function ViewAbout() {
                 {g.views.map(v => (
                   <div key={v.id} className="ab-view">
                     <h4 className="ab-view-title">{v.title}</h4>
-                    <p className="ab-view-desc">{v.desc}</p>
+                    <p className="ab-view-desc">{window.comItalico(v.desc)}</p>
                   </div>
                 ))}
               </div>
@@ -209,11 +209,11 @@ function ViewAbout() {
           title="Das fontes oficiais aos números do painel"
         />
         <p className="ab-lead">
-          Cada número exibido percorre um pipeline de quatro camadas — das cópias fiéis das
+          Cada número exibido percorre um processamento em quatro camadas — das cópias fiéis das
           fontes oficiais (<strong>Bronze</strong>), passando pela padronização
-          (<strong>Silver</strong>) e pela tabela analítica completa de cada fonte
-          (<strong>Gold</strong>), até os recortes prontos para o painel
-          (<strong>Serving</strong>). Para conhecer cada camada em detalhe e investigar as
+          (<strong><em>Silver</em></strong>) e pela tabela analítica completa de cada fonte
+          (<strong><em>Gold</em></strong>), até os recortes prontos para o painel
+          (<strong><em>Serving</em></strong>). Para conhecer cada camada em detalhe e investigar as
           tabelas linha a linha, abra a perspectiva <strong>Estrutura de dados</strong> (no
           menu “Selecionar perspectiva”, em “Documentação do banco”).
         </p>
@@ -239,7 +239,7 @@ function ViewAbout() {
       <div className="card">
         <window.SectionHeader
           overline="Créditos e proveniência"
-          title="Quem mantém o dashboard"
+          title="Quem mantém o painel"
         />
         <dl className="ab-credits">
           {CREDITS.map((c, i) => (

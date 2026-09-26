@@ -880,7 +880,7 @@ function ViewGeography({ families, conventions, summary, database, territoryComp
           {showRankingCard && (
             <div className="card">
               <window.SectionHeader
-                overline={`Top 10 · ${activeDim.label}`}
+                overline={`10 maiores · ${activeDim.label}`}
                 title={ufRankTitle}
                 action={<span className="caption">{activeDim.label} ({top10Scaled.label})</span>}
               />

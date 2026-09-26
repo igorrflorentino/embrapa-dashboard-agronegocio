@@ -234,7 +234,7 @@ function ViewRebanho({ summary, conventions, database }) {
           <window.SectionHeader
             overline={`Distribuição por UF · ${focusProd.name} · ${yearStart}–${yearEnd}`}
             title={`Onde ${focusProd.name} é criado`}
-            action={<span className="caption">{ufTop.length ? 'Top 3: ' + ufTop.map(u => u.uf).join(' · ') : '—'}</span>}
+            action={<span className="caption">{ufTop.length ? '3 maiores: ' + ufTop.map(u => u.uf).join(' · ') : '—'}</span>}
           />
           {ufRank.loading ? (
             <p className="caption" style={{ padding: '40px 4px', textAlign: 'center' }}>

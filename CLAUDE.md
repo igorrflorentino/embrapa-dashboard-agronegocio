@@ -47,6 +47,23 @@ Built for **Embrapa researchers** — the purpose is historical/scientific explo
     - Read **exclusively by the development team** → **English**: identifiers, docstrings, comments, log/error and operator/CLI messages, dbt comments + YAML descriptions, and all technical docs (README, ARCHITECTURE, docs/, PLANS/, …).
     - Read by **anyone *including* the end user**, or **any string the end user could read — no matter where it lives** → **Portuguese**: dashboard display strings, chart/axis labels, and i18n data values (e.g. `month_name_pt` → `'Janeiro'`, Brazilian region/state names).
     - When unsure whether the end user could ever see a string, **default to Portuguese**. (External-API literals the code must match — e.g. SIDRA's Portuguese error text — stay verbatim as data.)
+    - **Editorial control of that Portuguese** (v1.96.0 — clarity, brevity and immediate understanding over sounding "techy"):
+        - A foreign term is allowed only when it is a **consolidated UI standard** (link, login, download, upload, e-mail, zoom, API, leiaute) or a **true conceptual gap**.
+        - **Forbidden**:
+            - a foreign word or corporate jargon with a native equivalent: prazo not *deadline*, reunião not *call*, configurações not *settings*, abordagem not *approach*;
+            - invented anglicized verbs: marcar not "taguear", iniciar not "startar";
+            - slang: os 5 maiores, never "top-5".
+        - **One concept, one term, everywhere.** The product is **"painel"**, never "dashboard" (the ABNT citation title included); a screen is a **"perspectiva"**; the Gold layer, in day-to-day text, is **"a base analítica"**.
+        - The layer names **Bronze/Silver/Gold/Serving** appear only in architecture explanations ("Estrutura de dados", the "Como os dados são processados" card, the provenance tooltip), always beside their pt gloss.
+        - **Kept by decision** (2026-09-25): *feedback*, *status*, *ranking* — "classificação" already names the industrialization scale here. Replaced by decision: *markup* → **"multiplicador de preço"**; *spread* → **"diferença de preço"**; *mart* → **"tabela pré-agregada"**.
+        - **Italics:**
+            - A foreign concept kept for lack of a native word (*drawback*, *commodity*, *Silver*/*Gold*/*Serving*) is italicized in **long text**, never in a label or button.
+            - JSX prose writes `<em>`. A registry string (glossary `short`, view/layer `desc`) writes `*termo*`, which `window.comItalico` (`frontend/src/ui/italico.jsx`) renders as `<em>`.
+            - A plain-text sink (a native `title` tooltip, the glossary search) goes through `window.textoSimples`. The browser cannot draw italics there, and a stray asterisk would be worse.
+        - **Enforced, not remembered:**
+            - The vocabulary is `frontend/src/ui/editorialVocabulary.json`, read by two sweeps: `frontend/src/ui/editorialGuard.test.js` (every string the SPA renders, extracted by AST) and `tests/test_editorial_guard.py` (the pt-BR strings of `webapi/` and `serving/`).
+            - A new term goes into the vocabulary. An exception goes into the sweep's `PERMITIDOS` with a reason (stale entries fail).
+            - Counter-proof: over the pre-v1.96.0 tree the JS sweep fails on 104 strings.
 - **SQL**: SQLFluff for dbt models
 - **Pre-commit**: gitleaks + ruff + file-hygiene hooks (install with `make precommit-install`)
 
