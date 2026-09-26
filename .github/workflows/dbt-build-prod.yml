@@ -7,11 +7,18 @@
 # BigQuery table is missing — surfacing only on the next downstream read.
 #
 # Trigger model:
-#   • push to main + paths filter on dbt/** → runs automatically after merge
-#   • workflow_dispatch                      → manual fix-up runs (e.g. to
-#                                              materialize tables for a
-#                                              still-open PR, or to opt
-#                                              into --full-refresh)
+#   • push to main + paths filter on dbt/** → runs automatically after merge —
+#                                              UNLESS the compiled project is
+#                                              identical to the last successful
+#                                              build's (v1.97.0: a comment, a YAML
+#                                              comment or config.py rebuilds
+#                                              nothing; see "Compile and
+#                                              fingerprint the project" below)
+#   • schedule (Mon/Thu)                     → always builds: carries new Bronze
+#   • workflow_dispatch                      → always builds: manual fix-up runs
+#                                              (e.g. to materialize tables for a
+#                                              still-open PR, or to opt into
+#                                              --full-refresh)
 #
 # Snapshot policy: this workflow runs PLAIN `dbt build --target prod` —
 # NOT `make dbt-build-prod-with-backup`. CLAUDE.md keeps the with-backup
@@ -160,9 +167,12 @@ concurrency:
   cancel-in-progress: false
 
 # WIF needs id-token: write so GitHub mints an OIDC token for the auth step.
+# actions: read lets the push-triggered run read the PREVIOUS build (its conclusion and
+# its fingerprint artifact) to decide whether there is anything to rebuild.
 permissions:
   contents: read
   id-token: write
+  actions: read
 
 jobs:
   build:
@@ -172,6 +182,24 @@ jobs:
 
     runs-on: ubuntu-latest
     timeout-minutes: 30
+
+    # dbt_project.yml resolves its datasets + BCB inflation/currency series codes via
+    # env_var(<name>, <default>) — those read the PROCESS env, not .env (which doesn't exist
+    # in CI). Set them explicitly so a change to the prod config via repo variables takes
+    # effect instead of silently using the baked-in defaults. The `|| '<default>'` fallbacks
+    # mirror dbt_project.yml, so leaving the repo vars unset keeps the current (default)
+    # behaviour. JOB-level, not step-level: the compile that is fingerprinted and the build
+    # must see the SAME values, or the fingerprint would describe a different project.
+    env:
+      BQ_SILVER_DATASET: ${{ vars.BQ_SILVER_DATASET || 'silver' }}
+      BQ_GOLD_DATASET: ${{ vars.BQ_GOLD_DATASET || 'gold' }}
+      BQ_SERVING_DATASET: ${{ vars.BQ_SERVING_DATASET || 'serving' }}
+      BCB_INFLATION_SERIES_IPCA_CODE: ${{ vars.BCB_INFLATION_SERIES_IPCA_CODE || '433' }}
+      BCB_INFLATION_SERIES_IGPM_CODE: ${{ vars.BCB_INFLATION_SERIES_IGPM_CODE || '189' }}
+      BCB_INFLATION_SERIES_IGPDI_CODE: ${{ vars.BCB_INFLATION_SERIES_IGPDI_CODE || '190' }}
+      BCB_CURRENCY_SERIES: ${{ vars.BCB_CURRENCY_SERIES || '1:USD,21619:EUR' }}
+      FOREIGN_INFLATION_CPI_CODE: ${{ vars.FOREIGN_INFLATION_CPI_CODE || 'CUUR0000SA0' }}
+      FOREIGN_INFLATION_HICP_CODE: ${{ vars.FOREIGN_INFLATION_HICP_CODE || 'HICP.M.U2.N.000000.4D0.INX' }}
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -253,26 +281,13 @@ jobs:
       # BUILD-ORDER gate, not a feature switch — its Bronze source 404s until the first
       # `embrapa ingest foreign-inflation`, and that would fail every Gold model
       # downstream. Off, the val_real_{cpi,hicp}_* columns still exist and come out NULL.
-      - name: dbt build prod
-        working-directory: dbt
-        # dbt_project.yml resolves its datasets + BCB inflation/currency series
-        # codes via env_var(<name>, <default>) — those read the PROCESS env, not
-        # .env (which doesn't exist in CI). Set them explicitly so a change to the
-        # prod config via repo variables takes effect instead of silently using the
-        # baked-in defaults. The `|| '<default>'` fallbacks mirror dbt_project.yml,
-        # so leaving the repo vars unset keeps the current (default) behaviour.
-        env:
-          BQ_SILVER_DATASET: ${{ vars.BQ_SILVER_DATASET || 'silver' }}
-          BQ_GOLD_DATASET: ${{ vars.BQ_GOLD_DATASET || 'gold' }}
-          BQ_SERVING_DATASET: ${{ vars.BQ_SERVING_DATASET || 'serving' }}
-          BCB_INFLATION_SERIES_IPCA_CODE: ${{ vars.BCB_INFLATION_SERIES_IPCA_CODE || '433' }}
-          BCB_INFLATION_SERIES_IGPM_CODE: ${{ vars.BCB_INFLATION_SERIES_IGPM_CODE || '189' }}
-          BCB_INFLATION_SERIES_IGPDI_CODE: ${{ vars.BCB_INFLATION_SERIES_IGPDI_CODE || '190' }}
-          BCB_CURRENCY_SERIES: ${{ vars.BCB_CURRENCY_SERIES || '1:USD,21619:EUR' }}
-          FOREIGN_INFLATION_CPI_CODE: ${{ vars.FOREIGN_INFLATION_CPI_CODE || 'CUUR0000SA0' }}
-          FOREIGN_INFLATION_HICP_CODE: ${{ vars.FOREIGN_INFLATION_HICP_CODE || 'HICP.M.U2.N.000000.4D0.INX' }}
+      # The arguments are assembled ONCE and read by both the compile below and the
+      # build: a fingerprint computed under different --vars than the build uses would
+      # describe another project — a change to a var-gated model (the curation views, the
+      # foreign deflators) would be invisible to it, and the build would be skipped wrongly.
+      - name: Assemble dbt arguments
         run: |
-          ARGS=(build --target prod)
+          ARGS=(--target prod)
           if [ "${{ github.event.inputs.full_refresh }}" = "true" ]; then
             echo "::notice::Running with --full-refresh (incremental models will rebuild from scratch)"
             ARGS+=(--full-refresh)
@@ -294,7 +309,81 @@ jobs:
             joined=$(printf '%s, ' "${VARS[@]}")
             ARGS+=(--vars "{${joined%, }}")
           fi
-          uv run dbt "${ARGS[@]}"
+          # One argument per line (none contains a newline); read back with mapfile.
+          printf '%s\n' "${ARGS[@]}" > "$RUNNER_TEMP/dbt_args"
+
+      # SKIP A BUILD THAT WOULD CHANGE NOTHING (v1.97.0). A push rebuilds prod even when
+      # the commit only touched a comment, a YAML comment or config.py (which dbt never
+      # reads in CI): 46 of the 63 builds in the 30 days to 2026-09-26 were push-triggered,
+      # at ~18 GiB each. This step compiles the project with the SAME arguments the build
+      # uses (compile only reads table metadata — no bytes billed) and reduces it to a
+      # fingerprint: scripts/dbt_build_fingerprint.py says what counts and what does not.
+      # EVERY run computes it, so the scheduled and manual builds also leave the baseline
+      # the next push compares against.
+      - name: Compile and fingerprint the project
+        working-directory: dbt
+        run: |
+          mapfile -t ARGS < "$RUNNER_TEMP/dbt_args"
+          uv run dbt compile "${ARGS[@]}"
+          mkdir -p "$RUNNER_TEMP/fingerprint"
+          uv run python ../scripts/dbt_build_fingerprint.py compute target/manifest.json \
+            --project-dir . --workflow ../.github/workflows/dbt-build-prod.yml \
+            --out "$RUNNER_TEMP/fingerprint/fingerprint.json"
+
+      # ONLY a push can be skipped. The scheduled and manual builds exist to carry NEW
+      # BRONZE DATA to Silver/Gold — their code is usually unchanged, and that is exactly
+      # when they must run. Every doubt resolves to BUILD: no previous run, a previous run
+      # that did not succeed (a failed or cancelled build may have left prod half-built,
+      # so its fingerprint no longer describes prod), a missing artifact, an unreadable
+      # file, or any difference at all.
+      - name: Decide whether this push changes what the build produces
+        id: decide
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          skip=false
+          prev=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow dbt-build-prod.yml \
+                   --branch main --status completed --limit 20 \
+                   --json databaseId,conclusion,headSha \
+                   --jq "[.[] | select(.databaseId != $GITHUB_RUN_ID)][0] // empty | \"\(.databaseId) \(.conclusion) \(.headSha)\"") || prev=""
+          read -r prev_id prev_conclusion prev_sha <<< "$prev"
+          if [ -z "${prev_id:-}" ]; then
+            reason="no completed build to compare with"
+          elif [ "$prev_conclusion" != "success" ]; then
+            reason="the last build (run $prev_id) ended '$prev_conclusion' — prod may be half-built"
+          elif ! gh run download "$prev_id" --repo "$GITHUB_REPOSITORY" \
+                 -n dbt-build-fingerprint -D "$RUNNER_TEMP/baseline"; then
+            reason="run $prev_id left no fingerprint to compare with"
+          elif uv run python scripts/dbt_build_fingerprint.py compare \
+                 "$RUNNER_TEMP/baseline/fingerprint.json" "$RUNNER_TEMP/fingerprint/fingerprint.json"; then
+            skip=true
+            reason="the compiled project is identical to run $prev_id (${prev_sha:0:9})"
+          else
+            reason="the compiled project differs from run $prev_id (${prev_sha:0:9})"
+          fi
+          echo "skip=$skip" >> "$GITHUB_OUTPUT"
+          if [ "$skip" = true ]; then
+            echo "::notice::Build skipped — $reason. Nothing this push changed reaches BigQuery."
+            {
+              echo "## ⏭️ prod dbt build skipped — nothing to rebuild"
+              echo ""
+              echo "$reason: every model, test, seed, persisted description and project"
+              echo "macro compiles to the same thing. The tables in prod already are what this"
+              echo "commit would build. New Bronze data still reaches Gold on the scheduled"
+              echo "build (Mon/Thu); to force one now: \`gh workflow run dbt-build-prod.yml --ref main\`."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::notice::Building — $reason."
+          fi
+
+      - name: dbt build prod
+        if: steps.decide.outputs.skip != 'true'
+        working-directory: dbt
+        run: |
+          mapfile -t ARGS < "$RUNNER_TEMP/dbt_args"
+          uv run dbt build "${ARGS[@]}"
 
       # Curadoria lifecycle: auto-mark orphan produtos (removed from the catalog but
       # with Gold data still lingering) as Descontinuado, on the build boundary — orphan
@@ -303,7 +392,7 @@ jobs:
       # Best-effort: needs the `webapi` extra (the cache for the memoized reads) and must
       # NOT fail the build (the marts are already rebuilt) — continue-on-error.
       - name: Mark orphan produtos (Curadoria lifecycle)
-        if: success()
+        if: success() && steps.decide.outputs.skip != 'true'
         continue-on-error: true
         env:
           GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
@@ -311,6 +400,18 @@ jobs:
           BQ_GOLD_DATASET: ${{ vars.BQ_GOLD_DATASET || 'gold' }}
           BQ_RESEARCH_INPUTS_DATASET: ${{ vars.BQ_RESEARCH_INPUTS_DATASET || 'research_inputs' }}
         run: uv run --extra webapi embrapa mark-orphans
+
+      # The baseline for the NEXT push. Uploaded only on success — a failed run's
+      # fingerprint would claim prod holds what it failed to build. A skipped run uploads
+      # too: its fingerprint equals the one it matched, so the chain stays anchored.
+      - name: Keep this build's fingerprint
+        if: success()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: dbt-build-fingerprint
+          path: ${{ runner.temp }}/fingerprint/fingerprint.json
+          retention-days: 90
+          if-no-files-found: error
 
       # Alerting (intentionally GitHub-native, like dbt-source-freshness.yml): this
       # build is the ONLY stage that carries Bronze → the Silver/Gold/serving marts

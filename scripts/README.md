@@ -6,12 +6,13 @@ README is the index — for behaviour details, open the script and read its
 header comment / docstring (which is also the source for every description
 below).
 
-Three groups, distinguished by audience:
+Four groups, distinguished by audience:
 
 - **Local dev / setup** — run once per machine when you start contributing.
 - **GCP IAM / service accounts** — one-shots run by the project owner.
 - **Reporting / data export** — ad-hoc pulls from Gold for sharing (e.g. a
   produtos agrícolas inventory for a supervisor report).
+- **CI** — called by a GitHub Actions workflow, not by a person.
 
 > ℹ️ **Frontend tooling moved to `frontend/`.** The run / build / deploy scripts for the
 > Dash dashboard (`dashboard-*.ps1`, `dashboard_smoke.py`,
@@ -55,6 +56,12 @@ than committing point-in-time snapshots.
 |---|---|---|---|---|
 | [`export_commodity_inventory.py`](export_commodity_inventory.py) | Cross-platform (Python 3) | Exports the per-banco produto inventory (`Banco \| Código \| Descrição`, one row per product code) from the five live Gold tables to `inventario_produtos_agricolas.csv`. | Ad-hoc, to produce a flat produto list for a report. | Standalone. |
 | [`export_commodity_consolidated.py`](export_commodity_consolidated.py) | Cross-platform (Python 3) | Exports the inventory **consolidated by agrupamento concept** via `gold_produto_agrupamento` (`Conceito \| Banco \| Código \| Descrição`) plus a per-concept summary, into two CSVs (`inventario_produtos_agricolas_consolidado.csv` + `inventario_produtos_agricolas_por_conceito_resumo.csv`). Codes the crosswalk does not link (all PAM + PPM, deep COMTRADE wood-derivatives) are kept in a marked `(não vinculado)` bucket. | Ad-hoc, alongside the inventory export, when a concept-grouped view is needed. | Standalone. |
+
+## CI
+
+| Script | Platform | What it does | When to run | Invoked by |
+|---|---|---|---|---|
+| [`dbt_build_fingerprint.py`](dbt_build_fingerprint.py) | Cross-platform (Python 3) | Reduces a compiled dbt project (`target/manifest.json`) to a fingerprint of what `dbt build` would produce — compiled SQL with comments normalized away, config, persisted descriptions, seed data, project macros, project/package files, dbt versions, the workflow — and compares two of them (`compare` exits 0 only when identical). | Never by hand; to inspect a skip decision locally, `dbt compile` two commits and `compare` their fingerprints. | `.github/workflows/dbt-build-prod.yml` (skips a push-triggered prod build that would change nothing). |
 
 ---
 

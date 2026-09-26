@@ -7,6 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.97.0] - 2026-09-26
+
+### Adicionado (CI: o build de produção deixa de reconstruir o que não mudou)
+- **Um push que não muda nada do que o build produz não reconstrói mais a produção.**
+  - Antes, todo merge que tocava `dbt/**`, `config.py` ou o workflow disparava um
+    `dbt build` completo (~18 GiB): 46 dos 63 builds dos 30 dias até 26/09.
+  - Agora, cada execução compila o projeto com os mesmos argumentos do build (compilar só
+    lê metadados de tabela, sem bytes cobrados) e o reduz a uma impressão digital
+    (`scripts/dbt_build_fingerprint.py`).
+  - Um push cuja impressão é igual à do último build bem-sucedido pula o build e diz isso
+    no resumo da execução.
+- **O que conta como mudança:**
+  - o SQL compilado, com os comentários removidos por um lexer de SQL de verdade (nunca
+    dentro de uma string), e o `invocation_id` que o `serving_quality_history` grava no
+    SQL neutralizado;
+  - a configuração de cada nó e as descrições que o `persist_docs` grava no BigQuery;
+  - os dados das seeds, as macros do projeto e os testes unitários;
+  - `dbt_project.yml` e os arquivos de pacote (lidos como YAML, então comentário não
+    conta), as versões do dbt e o próprio workflow.
+- **Toda dúvida constrói:**
+  - o build anterior falhou ou foi cancelado (a produção pode ter ficado pela metade);
+  - não há artefato para comparar, ou o arquivo não pôde ser lido;
+  - existe qualquer diferença.
+- **Só o push pode pular.** O build agendado (seg/qui) e o manual sempre rodam, porque
+  são eles que levam dado novo do Bronze ao Gold.
+
+### Verificação
+- **Backtest nos 63 builds reais dos 30 dias até 26/09**, com os 56 commits compilados:
+  12 dos 46 builds de push teriam sido pulados (26%), cerca de 216 GiB por mês no
+  tamanho atual do build. Li à mão o diff dos 12 e nenhum mudava o que o build produz:
+  - três só mudaram o `config.py`, que o dbt não lê no CI;
+  - seis só mudaram comentários de SQL, YAML ou Jinja;
+  - um mudou os limites de frescor das fontes, que só o `dbt source freshness` lê;
+  - um passou a ligar uma fonte a um var que já está ligado em produção;
+  - um mudou uma linha dentro de um comentário Jinja de macro.
+- **Determinismo:** o mesmo commit compilado duas vezes, com `invocation_id` diferente,
+  dá a mesma impressão.
+- **O backtest achou um defeito antes do CI:** a chave `on:` do workflow vira o booleano
+  `True` no YAML 1.1 e quebrava o hash ordenado. Agora há um teste sobre os arquivos
+  reais do repositório.
+- **Testes:**
+  - `tests/test_dbt_build_fingerprint.py` (30): o que não pode forçar build e o que tem
+    que forçar;
+  - `tests/test_dbt_build_skip_workflow.py`: ordem e condição dos passos, os mesmos
+    argumentos no compile e no build, o mesmo artefato no envio e no download, e o passo
+    de decisão executado em bash com `gh` e `uv` falsos nos sete cenários, dos quais só
+    um pula;
+  - os testes em bash, que no Windows ficam pulados, rodaram aqui pelo Git Bash: 13/13;
+  - contraprova com quatro defeitos introduzidos (pular com build anterior falho, build
+    ignorando a decisão, decisão no agendado, `invocation_id` sem neutralizar): os quatro
+    pegos.
+- `tests/test_dbt_prod_vars.py` agora testa o passo que monta os argumentos, lidos pelo
+  compile e pelo build.
+
+Muda só CI, scripts e documentação, então **sem tag**. O primeiro push depois do merge
+constrói, porque o workflow mudou e ainda não há impressão anterior para comparar, e deixa
+a primeira impressão para o push seguinte.
+
+---
+
 ## [1.96.2] - 2026-09-26
 
 Registro de uma operação em produção: a **poda das linhas superadas do Bronze** do
