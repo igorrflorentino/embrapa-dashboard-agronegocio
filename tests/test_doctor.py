@@ -906,6 +906,7 @@ def test_run_all_executes_every_probe(settings: Settings) -> None:
         "Bronze tables",
         "Serving marts",
         "Quality-tag drift",
+        "BigQuery spend (30 days)",
         "Catalog↔env product codes",
         "Curation backup coverage",
         "Quality history backup",
@@ -2414,3 +2415,76 @@ def test_every_http_probe_goes_through_probe() -> None:
     corpo = fonte.split("def _probe(", 1)[1].split("\n\n\n", 1)[1]
     assert "requests.get(" not in corpo
     assert "requests.head(" not in corpo
+
+
+# ── BigQuery spend ───────────────────────────────────────────────────────────
+
+_TIB = 1024**4
+
+
+def test_bq_spend_is_quiet_well_inside_the_free_tier() -> None:
+    warn, detail = doctor._bq_spend_summary([("sa-dbt-build-ci", int(0.3 * _TIB))])
+    assert warn is False and "⚠" not in detail
+    assert "0.30 TiB billed in 30 days (30% of the free 1 TiB/month)" in detail
+
+
+def test_bq_spend_warns_before_the_allowance_is_gone() -> None:
+    warn, detail = doctor._bq_spend_summary([("a", int(0.5 * _TIB)), ("b", int(0.35 * _TIB))])
+    assert warn is True and detail.startswith("⚠") and "85% of the free" in detail
+
+
+def test_bq_spend_above_the_free_tier_says_by_how_much_and_who() -> None:
+    """The case that existed unseen on 2026-09-26: 2.63 TiB against a 1 TiB allowance."""
+    rows = [
+        ("igorlopesC", int(0.68 * _TIB)),
+        ("sa-dbt-build-ci", int(1.65 * _TIB)),
+        ("sa-web-dashboard-prod", int(0.10 * _TIB)),
+        ("sa-data-pipeline-prod", int(0.01 * _TIB)),
+    ]
+    warn, detail = doctor._bq_spend_summary(rows)
+    assert warn is True
+    assert "2.44 TiB billed" in detail and "1.44 TiB above the free 1 TiB/month" in detail
+    assert "≈US$ 9.00" in detail and "per billing account" in detail
+    # the top three, biggest first — and only three
+    assert "Top: sa-dbt-build-ci 1.65 TiB (68%), igorlopesC 0.68 TiB (28%)" in detail
+    assert "sa-data-pipeline-prod" not in detail
+
+
+def test_bq_spend_with_no_jobs_is_zero_not_an_error() -> None:
+    warn, detail = doctor._bq_spend_summary([])
+    assert warn is False and detail.startswith("0.00 TiB billed")
+
+
+def _patch_spend(rows):
+    client = MagicMock()
+    client.query.return_value.result.return_value = rows
+    return client, patch("embrapa_dashboard.doctor.bigquery.Client", return_value=client)
+
+
+def test_bq_spend_check_sums_top_level_jobs_only(settings: Settings) -> None:
+    """A dbt incremental model runs as a SCRIPT whose parent job bills the sum of its
+    children — and the children are listed too. Summing every row counted those bytes
+    twice (3% of the total, measured 2026-09-26). Only top-level jobs may be summed."""
+    client, patcher = _patch_spend([SimpleNamespace(principal="sa-dbt-build-ci", billed=2 * _TIB)])
+    with patcher:
+        result = doctor._check_bq_spend(settings)
+    sql = client.query.call_args.args[0]
+    assert "parent_job_id is null" in sql
+    assert "job_type = 'QUERY'" in sql and "state = 'DONE'" in sql
+    assert f"region-{settings.bq_location}" in sql
+    assert result.ok is True  # a warning, never a failure
+    assert result.detail.startswith("⚠ 2.00 TiB billed")
+
+
+def test_bq_spend_check_without_permission_is_skipped(settings: Settings) -> None:
+    """JOBS_BY_PROJECT needs bigquery.jobs.listAll; an identity without it has nothing
+    to judge — the usual green `skipped:`, not a red row."""
+    client, patcher = _patch_spend([])
+    client.query.side_effect = Forbidden("Access Denied: jobs.listAll")
+    with patcher:
+        result = doctor._check_bq_spend(settings)
+    assert result.ok is True and result.detail.startswith("skipped:")
+
+
+def test_bq_spend_is_registered() -> None:
+    assert ("bq-spend", doctor._check_bq_spend) in doctor.CHECKS

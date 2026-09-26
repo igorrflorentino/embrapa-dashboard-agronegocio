@@ -1239,6 +1239,100 @@ def _check_quality_drift(settings: Settings) -> CheckResult:
         return _skip_ou_quebra(name, exc)
 
 
+# ── BigQuery spend ───────────────────────────────────────────────────────────
+BQ_SPEND_WINDOW_DAYS = 30
+# On-demand queries: the first 1 TiB per month is free — per BILLING ACCOUNT, not per
+# project, so any other project on the same account eats into the same allowance.
+BQ_FREE_TIB_PER_MONTH = 1.0
+# Warn before the allowance is gone, not after.
+BQ_SPEND_WARN_SHARE = 0.8
+# On-demand list price in us-central1 (checked 2026-09-26). Only for the rough "≈ US$"
+# in the message; the bill is the source of truth.
+BQ_ON_DEMAND_USD_PER_TIB = 6.25
+_BQ_SPEND_TOP = 3
+_TIB = 1024**4
+
+
+def _bq_spend_summary(by_principal: list[tuple[str, int]]) -> tuple[bool, str]:
+    """(warn, detail) for the bytes billed per principal over the window.
+
+    Separate from the query so the thresholds and the wording are testable without
+    BigQuery. ``by_principal`` is (principal before the @, bytes billed), any order.
+    """
+    total = sum(b for _, b in by_principal)
+    tib = total / _TIB
+    top = sorted(by_principal, key=lambda pb: pb[1], reverse=True)[:_BQ_SPEND_TOP]
+    who = ", ".join(f"{p} {b / _TIB:.2f} TiB ({b / total:.0%})" for p, b in top) if total else "—"
+    head = f"{tib:.2f} TiB billed in {BQ_SPEND_WINDOW_DAYS} days"
+    if tib > BQ_FREE_TIB_PER_MONTH:
+        over = tib - BQ_FREE_TIB_PER_MONTH
+        return True, (
+            f"⚠ {head} — {over:.2f} TiB above the free {BQ_FREE_TIB_PER_MONTH:.0f} TiB/month "
+            f"(≈US$ {over * BQ_ON_DEMAND_USD_PER_TIB:.2f} at the on-demand list price; the free "
+            f"tier is per billing account). Top: {who}. Where it goes, by dbt node: "
+            "docs/operations_runbook.md § BigQuery spend."
+        )
+    share = tib / BQ_FREE_TIB_PER_MONTH
+    if share >= BQ_SPEND_WARN_SHARE:
+        return True, (
+            f"⚠ {head} — {share:.0%} of the free {BQ_FREE_TIB_PER_MONTH:.0f} TiB/month. Top: {who}."
+        )
+    return (
+        False,
+        f"{head} ({share:.0%} of the free {BQ_FREE_TIB_PER_MONTH:.0f} TiB/month). Top: {who}.",
+    )
+
+
+def _check_bq_spend(settings: Settings) -> CheckResult:
+    """How many bytes the project's queries billed in the last 30 days, and who.
+
+    Why it exists: a code comment said the project sat at ~15% of BigQuery's free tier
+    (measured 2026-08-28), and a month later it was at 2.6 TiB — 2.6× the allowance —
+    with nothing to say so. It was found by chance, while deciding whether a cleanup was
+    worth doing. The same shape as the failed `reconcile` runs and the quality drift: a
+    number nobody measures stops being true in silence.
+
+    A warning, never a failure: spend is a budget question, not a broken pipeline.
+
+    Two measurement traps, both real:
+      • a BigQuery SCRIPT job (dbt's incremental models run as scripts) bills the sum of
+        its child jobs, and the children are listed too — summing every row counts those
+        bytes twice (3% of the total on 2026-09-26; parents == children to the byte over
+        425 scripts). Only TOP-LEVEL jobs are summed: the parent, not its children, since
+        the parent is also the row that carries the dbt node id;
+      • the view is REGIONAL — jobs that ran outside ``BQ_LOCATION`` are not in it.
+
+    Reads ``INFORMATION_SCHEMA.JOBS_BY_PROJECT``, which needs ``bigquery.jobs.listAll``
+    on the project; an identity without it gets the usual ``skipped:``. The query itself
+    bills ~20 MB (that view's minimum), once per doctor run.
+    """
+    name = "BigQuery spend (30 days)"
+    try:
+        client = bigquery.Client(
+            project=settings.gcp_project_id,
+            location=settings.bq_location,
+            credentials=get_credentials(settings),
+        )
+        sql = f"""
+            select regexp_extract(user_email, r'^[^@]+') as principal,
+                   sum(total_bytes_billed) as billed
+            from `{settings.gcp_project_id}`.`region-{settings.bq_location}`
+                 .INFORMATION_SCHEMA.JOBS_BY_PROJECT
+            where creation_time > timestamp_sub(current_timestamp(),
+                                                interval {BQ_SPEND_WINDOW_DAYS} day)
+              and job_type = 'QUERY'
+              and state = 'DONE'
+              and parent_job_id is null
+            group by principal
+        """
+        rows = client.query(sql, job_config=_bq_job_config(settings)).result()
+        by_principal = [(r.principal or "?", int(r.billed or 0)) for r in rows]
+        _warn, detail = _bq_spend_summary(by_principal)
+        return CheckResult(name, True, detail)
+    except Exception as exc:  # sem dado → verde; check quebrado → vermelho
+        return _skip_ou_quebra(name, exc)
+
+
 # `embrapa backup-gold` lays down prefixes shaped `backups/run=YYYYMMDDTHHMMSSZ/...`.
 # The trailing slash is important — without it `list_blobs(delimiter="/")` would
 # return individual blob names instead of the `run=*/` directory prefixes.
@@ -2036,6 +2130,7 @@ _POSTCHECKS: list[tuple[str, Callable[[Settings], CheckResult]]] = [
     ("bronze", _check_bronze_tables),
     ("serving", _check_serving_marts),
     ("quality-drift", _check_quality_drift),
+    ("bq-spend", _check_bq_spend),
     ("catalog-parity", _check_catalog_resolver_parity),
     ("curation-backup", _check_curation_backup),
     ("history-backup", _check_history_backup),

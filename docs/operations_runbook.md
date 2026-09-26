@@ -548,7 +548,7 @@ its dedupe `qualify` throws the copies away. So the copies cost scan on every bu
 storage: the table is 6.8 GB logical but 146 MB physical.
 
 **Why it was done (measured 2026-09-25/26):**
-- The project billed **2.63 TiB of queries in 30 days**, above BigQuery's free 1 TiB.
+- The project billed **2.63 TiB of queries in 30 days**, above BigQuery's free 1 TiB. (That morning's totals counted BigQuery script children twice, so they are ~3% high. The per-model figures below are right; see § BigQuery spend.)
 - The prod build accounted for 1.72 TiB of it (61 builds).
 - `silver_ibge_pam` + `silver_ibge_pevs` were 774 GiB of that (45%).
 - Superseded rows were **88.4%** of `bronze_ibge.sidra_t289_raw` (34.4 M of 38.9 M; 24.1 M from the two failed `reconcile` runs of 2026-08/09) and **70.2%** of `bronze_pam.sidra_t5457_raw` (39.7 M of 56.6 M).
@@ -607,6 +607,60 @@ WHERE EXISTS (
 - Within 48 h, time travel works: these datasets keep 48 h, not the default 7 days. Copy from the table as it was before the DELETE, e.g. `bq cp 'bronze_ibge.sidra_t289_raw@<epoch_ms_before>' bronze_ibge.sidra_t289_raw_restore`.
 - After 48 h, load the Parquet backup into a NEW table.
 - Either way, check count + fingerprint against the numbers above before swapping anything.
+
+## BigQuery spend — `embrapa doctor` § `bq-spend`
+
+**What the check does.** `doctor` sums the bytes the project's queries billed in the last 30 days and names the top three principals. It warns at 80% of the free 1 TiB/month and says by how much the total exceeds it. It never fails: spend is a budget question, not a broken pipeline.
+
+**What the number is, and is not:**
+- **The free tier is per BILLING ACCOUNT.** Another project on the same account shares it, so the real headroom can be smaller than the check shows.
+- **The view is regional.** It covers only jobs that ran in `BQ_LOCATION`.
+- **It needs `bigquery.jobs.listAll`.** An identity without that permission gets `skipped:`, not a number.
+- **It costs ~20 MB per doctor run**, the minimum for that view.
+
+**Why it exists.** A code comment said the project sat at ~15% of the free tier, measured 2026-08-28. A month later it was at 2.63 TiB, and it was found by chance.
+
+**Measuring it yourself — count each job ONCE.** dbt's incremental models run as BigQuery scripts, and a script's parent job bills the sum of its children, which are listed too. Summing every row counts those bytes twice: 3% of the total on 2026-09-26, and parent equalled children to the byte across 425 scripts. Sum TOP-LEVEL jobs only (`parent_job_id IS NULL`). The parent is also the row that carries the dbt node id, so the same filter gives a correct per-model breakdown:
+
+```sql
+SELECT REGEXP_EXTRACT(query, r'"node_id": "([^"]+)"') AS node,
+       COUNT(*) AS jobs, ROUND(SUM(total_bytes_billed) / POW(1024, 3), 2) AS gib
+FROM `embrapa-dashboard-commodities`.`region-us-central1`.INFORMATION_SCHEMA.JOBS_BY_PROJECT
+WHERE creation_time > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)
+  AND job_type = 'QUERY' AND state = 'DONE' AND parent_job_id IS NULL
+  AND REGEXP_CONTAINS(user_email, r'^sa-dbt-build-ci@')
+GROUP BY node ORDER BY gib DESC
+```
+
+**Baseline, 2026-09-26 (30 days, counted once): 2.63 TiB.**
+
+| Principal | Billed | Share |
+|---|---|---|
+| Prod build (`sa-dbt-build-ci`) | 1.65 TiB | 63% |
+| Local development and audits (`igorlopesC`) | 0.68 TiB | 26% |
+| The panel (`sa-web-dashboard-prod`) | 0.10 TiB | 4% |
+
+The earlier figures in § Pruning superseded Bronze rows (2.63 TiB / 1.72 TiB, measured that morning) counted script children twice, so they are ~3% high. The per-model numbers there were counted by node and are right.
+
+**Two levers pulled that day:**
+1. **Bronze pruning** (§ above). The build right after read 18.0 GiB against ~28 GiB before (−36%); `silver_ibge_pevs` fell 5.96 → 0.77 GiB and `silver_ibge_pam` 6.99 → 2.12 GiB. Both sides of that comparison include the script children, so the ratio holds.
+2. **Skipping a push-triggered build that changes nothing** (v1.97.0, `scripts/dbt_build_fingerprint.py`). In the backtest, 12 of 46 push builds would have been skipped.
+
+**The build after both: 17.46 GiB, counted once.** Where it goes now:
+- `silver_ibge_pam` 2.12 GiB;
+- `silver_comtrade_flows` 2.02;
+- `gold_pam_production` 1.32;
+- `silver_ibge_ppm` 0.86;
+- `silver_ibge_pevs` 0.77;
+- the PAM uniqueness test 0.71;
+- `serving_comtrade_annual` 0.66.
+
+**Levers not pulled yet**, in the order the numbers suggest:
+- the Silver `>=` boundary that makes the "incremental" models re-read every year (header of `silver_ibge_pevs.sql`);
+- `silver_comtrade_flows`;
+- local development, which is the second-largest consumer. Two cheap habits:
+  - **Build only the touched models in dev, deferring the rest to prod:** `dbt parse --target prod --target-path <dir>` writes the prod manifest without querying anything; then `dbt build --target dev --select <models> --defer --favor-state --state <dir>` reads unselected upstream from prod instead of rebuilding it. The full dev build in `docs/testing.md` is for dbt upgrades, where every model must be compared.
+  - **Run `--dry_run` before any large ad-hoc query.**
 
 ## Destructive-command safety hooks
 
