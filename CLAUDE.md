@@ -151,7 +151,13 @@ Silver/Gold. That build is **scheduled twice weekly, NOT daily** — Mondays and
 `main` that touches `dbt/**`, `src/embrapa_dashboard/config.py` or the workflow itself** —
 and that is most of them: 44 push-triggered against 11 scheduled and 6 dispatched in the 30
 days to 2026-09-25. So the build's BigQuery cost follows the pace of dbt merges more than the
-schedule. Bronze ingested on a Sunday waits until Monday. To publish a backfill or one-off
+schedule. **Since v1.97.0 a push is SKIPPED when it changes nothing the build produces.** Every run compiles the project with the build's own arguments (compiling reads only table metadata, so no bytes are billed) and reduces it to a fingerprint: `scripts/dbt_build_fingerprint.py`. A push whose fingerprint equals the last successful build's skips the build and says so in the run summary.
+- **What counts:** the compiled SQL with comments normalized away by a real SQL lexer; config; persisted descriptions; seed data; the project's own macros; `dbt_project.yml`; the packages; the dbt versions; the workflow itself.
+- **Every doubt builds:** a previous run that failed or was cancelled, a missing artifact, any difference.
+- **Scheduled and dispatched builds never skip.** They carry new Bronze.
+- **Backtest over the 63 builds of the 30 days to 2026-09-26:** 12 of the 46 push builds would have been skipped, and each of the 12 was read by hand. They changed comments, `config.py`, source-freshness windows (read only by `dbt source freshness`) or a var-gated `enabled` already on in prod.
+
+The fingerprint must stay **deterministic**. Two compiles of one commit give one fingerprint, and the `invocation_id` that `serving_quality_history` stamps into its SQL is neutralized. A new model that embeds a per-run value would silently turn every push back into a build. Bronze ingested on a Sunday waits until Monday. To publish a backfill or one-off
 ingest now, dispatch it:
 `gh workflow run dbt-build-prod.yml --ref main`. No `--full-refresh` is needed: `silver_ibge_pevs` is incremental but
 **year-agnostic** (it re-scans whatever Bronze years got a newer
