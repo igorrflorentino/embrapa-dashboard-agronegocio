@@ -7,8 +7,10 @@ models:
       for this source (naming convention: gold_<source>_<form>; `production` =
       one row per produced/extracted measurement, no origin→destination).
       Wide, partitioned, clustered fact table. One row per
-      (reference_year, state_acronym, city_code, product_code) — city_code is the
-      natural geographic key (city_name is a display label lifted via any_value).
+      (reference_year, state_acronym, city_code, product_code, tabela) — tabela is the
+      SIDRA table (289 extração / 291 silvicultura), part of the produto's identity;
+      city_code is the natural geographic key (city_name is a display label lifted
+      via any_value).
       Ad-hoc state/year/national aggregation is derived at query time via GROUP BY.
       For the dashboard's Pushdown Computing (React SPA + Flask webapi BFF), the
       `serving/` layer materializes pre-aggregated marts at the chart grains —
@@ -18,7 +20,9 @@ models:
       Value columns: val_yearfx_{brl,usd,eur} (nominal at year-of-record FX),
       val_real_ipca_{brl,usd,eur} / val_real_igpm_{brl,usd,eur} /
       val_real_igpdi_{brl,usd,eur} (deflated to today via the respective
-      BCB chain index, optionally converted to foreign currency at today's FX).
+      BCB chain index, optionally converted to foreign currency at today's FX),
+      plus val_real_cpi_usd (US CPI-U) and val_real_hicp_eur (euro-area HICP) — each
+      index corrects only its own economy's currency.
     tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
@@ -57,6 +61,11 @@ models:
         tests: [not_null]
       - name: product_code
         tests: [not_null]
+      - name: tabela
+        description: >-
+          Source table of the row: '289' (extração vegetal, native forest) or '291' (silvicultura, planted forest). Part of the produto's identity
+          (banco, tabela, code) and of this table's grain — stamped in Silver; every human
+          label for a table is derived from it, never stored beside it.
       - name: family
         description: "Physical-unit family of the quantity: massa|volume|energia|contagem|area|desconhecida. NEVER sum qty_base across families."
         tests:
@@ -125,7 +134,7 @@ models:
     description: |
       Gold table for IBGE PAM (Produção Agrícola Municipal, SIDRA 5457) — the
       comprehensive `production` fact for crop agriculture. One row per
-      (reference_year, state_acronym, city_code, product_code), pivoting PAM's
+      (reference_year, state_acronym, city_code, product_code, tabela), pivoting PAM's
       five measures into columns: area_planted_ha / area_harvested_ha (ha),
       qty_native (t, the 'massa' quantity) / qty_base, yield_kg_ha (kg/ha), and
       the monetary val_* matrix (same FX + inflation deflation as
@@ -168,6 +177,11 @@ models:
       - name: product_code
         description: "SIDRA classification-782 crop code (e.g. 40124 = Soja)."
         tests: [not_null]
+      - name: tabela
+        description: >-
+          Source table of the row: '5457' — PAM is a single-table banco; the id is carried for the symmetry of the identity. Part of the produto's identity
+          (banco, tabela, code) and of this table's grain — stamped in Silver; every human
+          label for a table is derived from it, never stored beside it.
       - name: family
         description: "Physical-unit family of the quantity (always 'massa'/t for the lean crops)."
         tests:
@@ -258,7 +272,7 @@ models:
     description: |
       Gold table for IBGE PPM (Pesquisa da Pecuária Municipal) — the comprehensive
       `production` fact for livestock. One row per (reference_year, state_acronym,
-      city_code, product_code), with qty_native in the product's own family (Cabeças/
+      city_code, product_code, tabela), with qty_native in the product's own family (Cabeças/
       contagem for herd, Mil litros/volume + Quilogramas/massa + Mil dúzias/contagem
       for animal production) and the monetary val_* matrix (same FX + inflation
       deflation as gold_pevs/pam — animal production only). DIVERGES from PAM: no
@@ -301,6 +315,11 @@ models:
       - name: product_code
         description: "SIDRA herd code (c79, e.g. 2670=Bovino) or animal-product code (c80, e.g. 2682=Leite)."
         tests: [not_null]
+      - name: tabela
+        description: >-
+          Source table of the row: '3939' (efetivo dos rebanhos, herd heads) or '74' (produção de origem animal). Part of the produto's identity
+          (banco, tabela, code) and of this table's grain — stamped in Silver; every human
+          label for a table is derived from it, never stored beside it.
       - name: measure_kind
         description: "'stock' (herd headcount, no value) vs 'flow' (animal production, qty + value)."
         tests:
@@ -377,7 +396,7 @@ models:
     description: |
       Gold table for MDIC Comex Stat — the single comprehensive `flows` table
       for this source (naming: gold_<source>_<form>; `flows` = origin→destination
-      trade). One row per (flow, reference_year, reference_month, ncm_code,
+      trade). One row per (flow, reference_year, reference_month, ncm_code, tabela,
       country_code, state_acronym, transport_route_code) — transport route is
       part of the grain (it backs the frontend `via` filter); the Silver source
       grain (also split by customs office / statistical unit) is summed up here.
@@ -424,8 +443,16 @@ models:
         description: "First day of (reference_year, reference_month). Use as DATE dimension in Looker Studio."
         tests: [not_null]
       - name: ncm_code
-        description: "8-digit NCM code (castanha 0801* or HS chapter 44)."
+        description: >-
+          8-digit NCM code of a cataloged produto. The scope follows the curation catalog,
+          not a fixed list: on 2026-09-25 it was 110 codes in HS chapters 07, 08, 10, 11,
+          12, 14, 15, 19, 20, 23 and 44 (wood alone is 71 of them).
         tests: [not_null]
+      - name: tabela
+        description: >-
+          Source table of the row: 'ncm' — a project-chosen id (COMEX is not SIDRA), carried for the symmetry of the identity. Part of the produto's identity
+          (banco, tabela, code) and of this table's grain — stamped in Silver; every human
+          label for a table is derived from it, never stored beside it.
       - name: ncm_description
         description: "Portuguese NCM description (seed comex_ncm). NULL only for a code OUTSIDE the ingested scope — a code that reaches this table unnamed is a seed gap, caught by assert_trade_codes_have_a_description."
       - name: hs_chapter
@@ -531,7 +558,7 @@ models:
       Gold table for UN Comtrade — the single comprehensive `flows` table for
       this source (naming: gold_<source>_<form>; `flows` = origin→destination
       trade). The global complement to gold_comex_flows. One row per (flow,
-      customs_code, reference_year, reporter_code, partner_code, cmd_code); the Silver
+      customs_code, reference_year, reporter_code, partner_code, cmd_code, tabela); the Silver
       source grain (also split by partner2 / mode-of-supply / mode-of-transport /
       qty-unit) is summed up here. The CUSTOMS PROCEDURE (regime aduaneiro) is preserved
       as a dimension (C00 = todos os regimes / total; the only value for ~86% of trade).
@@ -578,8 +605,16 @@ models:
         description: "Dec 31 of reference_year. Use as DATE dimension in Looker Studio (annual grain)."
         tests: [not_null]
       - name: cmd_code
-        description: "HS code in scope (0801 nuts or 44 wood/charcoal)."
+        description: >-
+          HS6 code of a cataloged produto. The scope follows the curation catalog, not a
+          fixed list: on 2026-09-25 it was 89 codes in HS chapters 07, 08, 10, 11, 12, 14,
+          15, 19, 20, 23 and 44 (wood alone is 63 of them).
         tests: [not_null]
+      - name: tabela
+        description: >-
+          Source table of the row: 'hs' — a project-chosen id (COMTRADE is not SIDRA), carried for the symmetry of the identity. Part of the produto's identity
+          (banco, tabela, code) and of this table's grain — stamped in Silver; every human
+          label for a table is derived from it, never stored beside it.
       - name: cmd_description
         description: "Portuguese HS description (seed comtrade_hs). NULL only for a code OUTSIDE the ingested scope — a code that reaches this table unnamed is a seed gap, caught by assert_trade_codes_have_a_description."
       - name: hs_chapter

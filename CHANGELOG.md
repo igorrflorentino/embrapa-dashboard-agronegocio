@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.95.4] - 2026-09-25
+
+### Corrigido (documentação do Gold no dbt, que o BigQuery e o Looker Studio exibem)
+- **A coluna `tabela` não tinha descrição em nenhuma das cinco tabelas do Gold**, embora faça
+  parte da identidade do produto (banco, tabela, código) e da chave de todas: os testes de
+  unicidade do dbt a exigem. Como o projeto usa `persist_docs`, o BigQuery mostrava a coluna
+  vazia, sem descrição, ao lado de `city_code` e `family`, que têm. Agora cada tabela diz
+  quais valores ela assume, medidos no Gold: `289`/`291` no PEVS, `5457` na PAM, `3939`/`74`
+  no PPM, `ncm` no COMEX e `hs` no COMTRADE.
+- **O grão escrito nas descrições das tabelas omitia `tabela`** nas cinco. O texto dava uma
+  chave e o teste logo abaixo exigia outra.
+- **O escopo do comércio estava parado no começo do projeto.** `ncm_code` dizia "castanha 0801
+  ou capítulo 44" e `cmd_code` "0801 ou 44". Medido em 25/09: são 110 códigos NCM e 89 SH6,
+  nos capítulos 07, 08, 10, 11, 12, 14, 15, 19, 20, 23 e 44. O texto agora diz que o escopo
+  segue o catálogo de curadoria, e não uma lista fixa.
+- O resumo das colunas de valor do PEVS ganhou `val_real_cpi_usd` e `val_real_hicp_eur`.
+
+Só descrições: nenhum teste foi criado nem alterado, e nenhum número muda. Mas elas chegam ao
+usuário (o `persist_docs` grava no BigQuery, e o Looker Studio exibe), então **leva tag**. O
+merge dispara um build de produção pelo gatilho de push em `dbt/**`, e é ele que grava as
+descrições.
+
+---
+
 ## [1.95.3] - 2026-09-25
 
 Auditoria do CLAUDE.md contra o repositório e a produção. Só documentação e comentários,
