@@ -212,7 +212,7 @@ function ViewAbout() {
           Cada número exibido percorre um processamento em quatro camadas — das cópias fiéis das
           fontes oficiais (<strong>Bronze</strong>), passando pela padronização
           (<strong><em>Silver</em></strong>) e pela tabela analítica completa de cada fonte
-          (<strong><em>Gold</em></strong>), até os recortes prontos para o painel
+          (<strong><em>Gold</em></strong>), até as tabelas pré-agregadas, prontas para o painel
           (<strong><em>Serving</em></strong>). Para conhecer cada camada em detalhe e investigar as
           tabelas linha a linha, abra a perspectiva <strong>Estrutura de dados</strong> (no
           menu “Selecionar perspectiva”, em “Documentação do banco”).

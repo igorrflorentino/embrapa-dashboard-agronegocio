@@ -41,7 +41,8 @@
     { "term": "backfill", "pattern": "backfills?", "use": "carga retroativa", "why": "native equivalent exists" },
     { "term": "template", "pattern": "templates?", "use": "modelo", "why": "native equivalent exists" },
     { "term": "workflow", "pattern": "workflows?", "use": "fluxo de trabalho", "why": "native equivalent exists" },
-    { "term": "mart", "pattern": "marts?", "use": "tabela pré-agregada", "why": "data-warehouse jargon; the screens already say 'tabelas pré-agregadas'" }
+    { "term": "mart", "pattern": "marts?", "use": "tabela pré-agregada", "why": "data-warehouse jargon; the screens already say 'tabelas pré-agregadas'" },
+    { "term": "recorte (tabela)", "pattern": "recortes? (pré-agregad[oa]s?|prontos? para o painel|que o painel (consome|lê))", "use": "tabela pré-agregada", "why": "'recorte' is the researcher's SELECTION (~100 uses: RecorteNote, 'recorte geográfico', the citation's 'recorte exato consultado'); three texts also used it for the Serving tables until v1.96.1. Narrow on purpose: it catches the phrasings that meant the tables, not the word" }
   ],
   "inventedVerbs": [
     { "pattern": "tag(u)?e(a|ia|ar|ou|ado|ada|ados|adas|ando)", "use": "marcar / etiquetar" },

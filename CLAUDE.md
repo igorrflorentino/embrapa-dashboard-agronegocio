@@ -53,7 +53,7 @@ Built for **Embrapa researchers** — the purpose is historical/scientific explo
             - a foreign word or corporate jargon with a native equivalent: prazo not *deadline*, reunião not *call*, configurações not *settings*, abordagem not *approach*;
             - invented anglicized verbs: marcar not "taguear", iniciar not "startar";
             - slang: os 5 maiores, never "top-5".
-        - **One concept, one term, everywhere.** The product is **"painel"**, never "dashboard" (the ABNT citation title included); a screen is a **"perspectiva"**; the Gold layer, in day-to-day text, is **"a base analítica"**.
+        - **One concept, one term, everywhere.** The product is **"painel"**, never "dashboard" (the ABNT citation title included); a screen is a **"perspectiva"**; the Gold layer, in day-to-day text, is **"a base analítica"**; the Serving tables are **"tabelas pré-agregadas"**, and **"recorte"** is only ever the researcher's selection (the citation's *recorte exato consultado*).
         - The layer names **Bronze/Silver/Gold/Serving** appear only in architecture explanations ("Estrutura de dados", the "Como os dados são processados" card, the provenance tooltip), always beside their pt gloss.
         - **Kept by decision** (2026-09-25): *feedback*, *status*, *ranking* — "classificação" already names the industrialization scale here. Replaced by decision: *markup* → **"multiplicador de preço"**; *spread* → **"diferença de preço"**; *mart* → **"tabela pré-agregada"**.
         - **Italics:**
