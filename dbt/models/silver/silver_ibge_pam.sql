@@ -22,8 +22,9 @@
     behave incrementally today — billed bytes are flat at ~3.1 GB/build, the signature of a
     full rebuild, because the `>=` boundary keeps re-including a whole-history ingestion
     batch (the monthly `reconcile`) until something newer displaces it. Not fixed on
-    purpose: the `>=` is what prevents a same-second append from being skipped forever, and
-    the project sits at ~15% of BigQuery's free tier, so this costs nothing today. LONG
+    purpose: the `>=` is what prevents a same-second append from being skipped forever. (The
+    "costs nothing" premise no longer holds since 2026-09 — see silver_ibge_pevs's header;
+    the superseded Bronze rows this re-read were pruned on 2026-09-26.) LONG
     format — one row per (year, city, product, variable); gold_pam_production
     pivots it into measure columns.
 

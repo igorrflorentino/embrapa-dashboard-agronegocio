@@ -38,20 +38,24 @@
     skipped forever (see the note in the CTE), so tightening it needs a different
     correctness argument, not just a different operator — a per-year comparison of Bronze
     vs Silver (max ingestion_timestamp AND row count, so the same-second case is still
-    caught) would do it. It is not worth the risk today: the whole project sits at ~15% of
-    BigQuery's free 1 TiB/month, so this costs nothing. Revisit if that changes — these
-    two models are ~36% of the build's bytes and would drop to near zero.
+    caught) would do it. REVISITED 2026-09-26: the premise that this "costs nothing" (the
+    project at ~15% of BigQuery's free 1 TiB/month, measured 2026-08-28) no longer holds —
+    the project billed 2.63 TiB in the 30 days to 2026-09-25, and this model plus
+    silver_ibge_pam were 774 GiB of the build's 1.72 TiB (45%). The safer lever below was
+    pulled first; tightening the boundary is still the bigger one (near zero for both).
 
-    AND THE BRONZE THEY SCAN IS MOSTLY DEAD WEIGHT. Measured 2026-08-28 with each model's
-    own natural key: **82.8%** of bronze_ibge.sidra_t289_raw is superseded (21.1M rows vs
-    4.4M live) and **69.9%** of bronze_pam.sidra_t5457_raw (39.1M vs 16.9M). Bronze is
-    append-only by design and the monthly `reconcile` re-ingests the whole history, so
-    copies accumulate; Silver's dedupe `qualify` then discards ~5 of every 6 rows it read.
-    Pruning superseded rows would cut this model's scan ~5× WITHOUT touching the `>=`
-    contract above — a bigger and safer lever than tightening the boundary. It is a
-    human-gated, backup-first operation (Bronze is the queryable landing; the GCS raw zone
-    keeps the provenance copy), and it buys ~US$0.16/month today, which is why it has not
-    been done.
+    AND THE BRONZE THEY SCAN WAS MOSTLY DEAD WEIGHT — PRUNED 2026-09-26. Bronze is
+    append-only and every full re-ingest (reconcile, --full, a retried failure) appends
+    another copy of the history, which this model re-reads and its `qualify` discards.
+    Superseded rows were 88.4% of bronze_ibge.sidra_t289_raw (34.4M of 38.9M) and 70.2% of
+    bronze_pam.sidra_t5457_raw (39.7M of 56.6M); they were deleted, keeping the latest row
+    per natural key and, for the 89 keys IBGE revised, the first ingestion of each value.
+    A read-only proof showed this model picks the identical row per key before and after,
+    and a verified backup is in gs://…-datalake/backups/bronze-pre-poda-20260926T031526Z/.
+    The revision rows must stay: the GCS raw zone does NOT keep history (files are
+    overwritten per window, noncurrent versions deleted after 30 days), so Bronze is the
+    only record of an older fetch. Copies re-accumulate with every full re-ingest —
+    procedure, proof and restore in docs/operations_runbook.md.
     On `--full-refresh` (or first build), the {% if is_incremental() %} block
     is skipped and we scan all of Bronze.
 
