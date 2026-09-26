@@ -12,7 +12,8 @@
 > Bronze (`sidra_t289_raw`), e quem exibia não alcançava a identidade — o gráfico "O que
 > ‹lugar› produz" fundia madeira/lenha/carvão (o mesmo nome nas duas metades) numa barra
 > só, com os dois rótulos por cima um do outro. O parâmetro de URL virou `tb`; o `or=` antigo
-> segue sendo decodificado para não quebrar permalinks.
+> foi decodificado até a v1.46.x e deixou de ser na v1.47.0 (remoção deliberada, registrada no
+> CHANGELOG): um link desses abre hoje com as duas metades.
 >
 > **Tudo o mais neste plano continua valendo** — o escopo da ingestão, o modelo de linhas,
 > os critérios de aceite e a razão de as duas metades nunca serem somadas em silêncio. Leia

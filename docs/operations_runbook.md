@@ -97,7 +97,8 @@ Detects orphans (a catalog removal that left Gold data behind — not every unca
 code) and appends a `descontinuado` lifecycle event carrying a deletion warning. It
 **never deletes data**, is **idempotent** (re-running is a no-op), and its author is the
 reserved SYSTEM identity `system:orphan-detector`. Run it on the ops cadence — e.g. right
-after a prod `dbt build` (scheduled Mondays and Thursdays, or dispatched by hand), on the
+after a prod `dbt build` (scheduled Mondays and Thursdays, on every push to `main` that
+touches `dbt/**`, or dispatched by hand), on the
 same boundary the catalog diff is computed.
 
 ### `purge-orphan` — human-gated, backup-first Gold delete

@@ -7,6 +7,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.95.3] - 2026-09-25
+
+Auditoria do CLAUDE.md contra o repositório e a produção. Só documentação e comentários,
+então **sem tag** (CONTRIBUTING, Release Policy).
+
+### Corrigido (documentação)
+- **O `reconcile` automático que ninguém sabia que rodava.** A documentação diz desde 17/06
+  (#130) que o `reconcile` é disparado pelo operador. Mas o gatilho mensal criado em 11/06
+  (`embrapa-ingest-all-reconcile-monthly`) nunca foi desligado. Ele funcionou uma vez
+  (01/07, 39 min) e **falhou em 01/08 e 01/09**, depois de 2 h 10 min e 2 h 50 min: o bloco
+  1998–2000 do IBGE estourou o limite de 600 s, e o PAM, o PPM, a silvicultura, o BCB e o
+  COMEX nunca foram alcançados. As falhas, cada uma com uma nova tentativa, gravaram de novo o
+  histórico do PEVS: cerca de 24,1 milhões de linhas repetidas em
+  `bronze_ibge.sidra_t289_raw`, 62% da tabela. Os números não mudam, porque o Silver fica
+  com a ingestão mais recente, mas as cópias pesam na leitura. Nenhum alerta pegou isso.
+  **O gatilho foi PAUSADO em 25/09**, com a aprovação do mantenedor, no mesmo dia em que o
+  `reconcile-check` conferiu 19.658 pontos e não achou nenhuma revisão. O CLAUDE.md registra o
+  caso e avisa que um `reconcile` automático precisaria antes de uma fase IBGE resiliente.
+- **O build de produção não roda só duas vezes por semana.** Ele também dispara a cada push
+  na `main` que mexa em `dbt/**`, no `config.py` ou no próprio workflow. Nos 30 dias até 25/09
+  foram 44 builds por push, 11 agendados e 6 manuais, então o custo acompanha o ritmo dos
+  merges de dbt, mais que o agendamento. O ARCHITECTURE.md já dizia isso; o CLAUDE.md não.
+- **`make dbt-build-prod` não faz `--full-refresh`.** O CLAUDE.md e a skill `dbt-workflow`
+  diziam que sim; a receita é um build simples.
+- **O parâmetro antigo `or=` não é mais lido.** A v1.47.0 removeu a tradução de propósito, mas
+  o CLAUDE.md, o `PLANS/silvicultura_source.md` e dois comentários no código (um deles com a
+  frase cortada no `main.jsx`) diziam que ele continuava sendo decodificado.
+- **Lista de fontes e de comandos.** A seção *Architecture* citava só "IBGE PEVS + BCB SGS";
+  hoje são também PAM, PPM, COMEX, COMTRADE e os deflatores do BLS e do BCE. A lista de
+  comandos de ingestão ganhou o `foreign-inflation`.
+
+### Corrigido (demais documentos vivos, revisados antes do merge)
+- **README.md:**
+  - A abertura descrevia o projeto como "produção extrativa vegetal (IBGE PEVS)", de antes da
+    renomeação da v1.50.0, e sem os deflatores estrangeiros; o diagrama de fontes não tinha o
+    BLS nem o BCE.
+  - O grão do Gold PEVS dizia `city_name` e não tinha `tabela`; o teste de unicidade do dbt é
+    `(reference_year, state_acronym, city_code, product_code, tabela)`.
+  - "US$/€ **zerados** antes de 1994" estava errado. Medido no Gold: são **nulos**, o dólar
+    antes de 1994 (102.636 linhas) e o euro antes de 1999 (mais 65.365), com 0 linhas zeradas.
+  - Entraram as colunas `val_real_cpi_usd` e `val_real_hicp_eur`, e o comando
+    `ibge-silvicultura` na lista.
+- **docs/gold_data_model.md**, que se apresenta como o modelo autoritativo do Gold:
+  - As listas de `data_quality_flag` do PEVS e do PAM traziam `MISSING_WEIGHT`, que só o
+    comércio emite, e a do PAM omitia `AREA_INCONSISTENT`, a marca exclusiva dela.
+  - O diagrama **não tinha o `gold_ppm_production`**, e agora tem (com `measure_kind`).
+  - A coluna `tabela`, que faz parte da chave nas cinco tabelas, não aparecia em nenhuma
+    entidade; o grão do COMTRADE também omitia `customs_code`.
+  - O cubo municipal passou a ligar aos três bancos do IBGE, e não só ao PEVS.
+- **docs/operations_runbook.md:** o build de produção também roda por push.
+- **docs/frontend_data_contract.md:** `../data.js` apontava para um caminho inexistente; o
+  arquivo é `frontend/src/ui/data.js`.
+
+Fora deste PR, de propósito: o `dbt/models/gold/_gold.yml` também não documenta a coluna
+`tabela` no PEVS, no PAM e no PPM (ela existe no SQL e no BigQuery, e está no teste de
+unicidade). Mexer em `dbt/` dispara um build de produção no merge e pede tag, então isso fica
+para um PR próprio.
+
+### Conferido
+Os 79 caminhos e 151 identificadores de código citados no CLAUDE.md existem, e as afirmações
+de comportamento conferem: alvos do Makefile e da CLI, as 6 fontes do `all` e suas cadências,
+variáveis do dbt, padrões do `config.py`, ruff, empacotamento, deploy, taxonomia de qualidade
+(14 valores, IGP-DI, precedência), pisos de materialidade, contas de CI e Dependabot.
+
+---
+
 ## [1.95.2] - 2026-09-25
 
 ### Corrigido
