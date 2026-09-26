@@ -138,7 +138,9 @@ operator-triggered (#130) and kept running on the 1st of each month. It succeede
 IBGE 1998–2000 block exceeded the 600 s slow-byte budget, and the phase after it — PAM, PPM,
 silvicultura, BCB, COMEX — was never reached. Each failed run, retried once, re-appended
 PEVS history: ~24.1 M duplicate rows in `bronze_ibge.sidra_t289_raw`, 62% of it (the numbers
-are unaffected, Silver keeps the latest ingestion; what it costs is scan). Nothing alerted,
+were unaffected, Silver keeps the latest ingestion; what it cost was scan — pruned on
+2026-09-26 with every other superseded PEVS/PAM Bronze row, keeping IBGE's revisions:
+`docs/operations_runbook.md` § Pruning superseded Bronze rows). Nothing alerted,
 because `doctor` watches the scheduled sources, not reconcile. It was PAUSED on 2026-09-25,
 the day `reconcile-check` compared 19,658 points and found no revision. An unattended
 reconcile would need a resilient IBGE phase first.) `reconcile` refreshes only **Bronze**;

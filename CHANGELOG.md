@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.96.2] - 2026-09-26
+
+Registro de uma operação em produção: a **poda das linhas superadas do Bronze** do
+PEVS-extração e da PAM. Neste PR só mudam documentação e comentários, então **sem tag**.
+
+### Operação (feita em 26/09, com autorização explícita)
+- **Por quê:**
+  - o projeto foi cobrado por **2,63 TiB de consultas em 30 dias**, acima da cota gratuita
+    de 1 TiB. A premissa dos comentários do Silver, de ~15% da cota, era de agosto;
+  - `silver_ibge_pam` e `silver_ibge_pevs` releem o Bronze inteiro a cada build e fizeram
+    45% da leitura do build de produção;
+  - no Bronze, as linhas superadas eram **88,4%** do PEVS-extração (24,1 milhões delas das
+    duas execuções do reconcile que falharam) e **70,2%** da PAM. São linhas que já têm uma
+    coleta mais nova da mesma chave.
+- **O que ficou:**
+  - a linha mais recente de cada chave;
+  - nas **89 chaves** que o IBGE revisou entre coletas, a primeira ocorrência de cada valor.
+
+  O histórico de revisões precisa ficar no Bronze. A zona bruta do GCS não o guarda: os
+  arquivos são sobrescritos e as versões antigas somem em 30 dias.
+- **Antes de apagar:**
+  - uma prova só de leitura mostrou que o Silver e o `reconcile-check` escolhem exatamente
+    as mesmas linhas com e sem as cópias;
+  - as duas tabelas foram exportadas inteiras para
+    `backups/bronze-pre-poda-20260926T031526Z/` e lidas de volta: contagem e impressão
+    digital idênticas.
+- **Resultado:**
+  - saíram 34.423.951 linhas do PEVS e 39.747.635 da PAM, exatamente o que a prova previa;
+  - ficaram 4.504.169 e 16.855.890, com chaves e pares (chave, valor) intactos.
+
+### Documentação
+- `docs/operations_runbook.md` ganhou a seção *Pruning superseded Bronze rows*: a regra, a
+  prova, o SQL, o backup, como repetir e como restaurar. A viagem no tempo destes datasets
+  é de **48 h**, não de 7 dias.
+- Os comentários de `silver_ibge_pevs.sql` e `silver_ibge_pam.sql` deixam de dizer que a
+  releitura "não custa nada" e registram a poda. O SQL compilado não muda, porque são
+  comentários Jinja.
+- CLAUDE.md: a passagem sobre as cópias do reconcile registra a poda.
+
+O merge dispara um build de produção (o PR mexe em `dbt/**`). É nele que se mede quanto
+os dois modelos Silver passam a ler.
+
+---
+
 ## [1.96.1] - 2026-09-25
 
 ### Corrigido (texto de tela)

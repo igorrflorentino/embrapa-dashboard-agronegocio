@@ -539,6 +539,75 @@ The prod path `make dbt-build-prod-with-backup` sets the prod target itself, so
 this override is only needed for a one-off local backup. `embrapa doctor` warns
 when the latest snapshot is older than `BACKUP_STALENESS_DAYS` (default 14).
 
+## Pruning superseded Bronze rows (IBGE PEVS extração / PAM) — done 2026-09-26
+
+Bronze is append-only, and every full re-ingest (`reconcile`, `--full`, a retried
+failure) appends another copy of the whole history. Silver reads ALL of it on every build
+(its `>=` boundary re-includes every year — see the header of `silver_ibge_pevs.sql`) and
+its dedupe `qualify` throws the copies away. So the copies cost scan on every build, not
+storage: the table is 6.8 GB logical but 146 MB physical.
+
+**Why it was done (measured 2026-09-25/26):**
+- The project billed **2.63 TiB of queries in 30 days**, above BigQuery's free 1 TiB.
+- The prod build accounted for 1.72 TiB of it (61 builds).
+- `silver_ibge_pam` + `silver_ibge_pevs` were 774 GiB of that (45%).
+- Superseded rows were **88.4%** of `bronze_ibge.sidra_t289_raw` (34.4 M of 38.9 M; 24.1 M from the two failed `reconcile` runs of 2026-08/09) and **70.2%** of `bronze_pam.sidra_t5457_raw` (39.7 M of 56.6 M).
+
+**The keep rule.** Per Silver natural key — `ano, municipio_codigo, <produto>_codigo, variavel_codigo, lower(trim(unidade_de_medida))` — a row stays if either:
+- it is at the key's LATEST `ingestion_timestamp`; or
+- the key was REVISED by IBGE (more than one distinct `valor`) and the row is the FIRST ingestion of its value.
+
+Only identical re-fetches go. The revision history must stay in Bronze because **the GCS raw zone does not keep it**:
+- raw files are named by product/year window and overwritten by each fetch;
+- the bucket deletes noncurrent object versions after 30 days.
+
+So for anything older than a month, Bronze is the only record of what IBGE served on a given date. In PEVS, 89 keys (1,045 rows) had been revised between 2026-05-17 and 2026-09-25; in PAM, none.
+
+**How it was proven before anything was deleted (read-only).** On each table, one query compared the full table with the kept subset:
+- the row Silver picks per key: identical, fingerprint and count;
+- the row `reconcile-check` picks per its coarser key: identical;
+- the key count and the `(key, valor)` pair count: all preserved;
+- ties at the latest ingestion: 0.
+
+**Backup and results.**
+- Backup: both tables were exported whole to `gs://embrapa-dashboard-commodities-datalake/backups/bronze-pre-poda-20260926T031526Z/`, then read back through an external table. Row count and `BIT_XOR(FARM_FINGERPRINT(TO_JSON_STRING(row)))` matched the originals. Kept 365 days by the `backups/` lifecycle rule. `doctor` ignores it, since it only lists `run=` prefixes.
+- Deleted: 34,423,951 rows (PEVS) and 39,747,635 (PAM), exactly the counts the proof predicted.
+- Remaining: 4,504,169 rows (the 4,504,080 keys + the 89 revisions' earlier values) and 16,855,890 rows. Keys and value pairs unchanged.
+- The two DELETEs billed 14.8 GB.
+
+The DELETE (PEVS shown). For PAM, swap the table for `bronze_pam.sidra_t5457_raw` and the product column for `produto_das_lavouras_temporarias_e_permanentes_codigo`. No key column is NULL in either table, so plain equality identifies each `(key, ingestion_timestamp, valor)`, and a row's fate depends only on that triple.
+
+```sql
+DELETE FROM `embrapa-dashboard-commodities.bronze_ibge.sidra_t289_raw` AS t
+WHERE EXISTS (
+  SELECT 1
+  FROM (
+    SELECT ano, municipio_codigo, tipo_de_produto_extrativo_codigo AS produto, variavel_codigo,
+      LOWER(TRIM(unidade_de_medida)) AS unidade, valor, ingestion_timestamp,
+      MAX(ingestion_timestamp) OVER (PARTITION BY ano, municipio_codigo, tipo_de_produto_extrativo_codigo, variavel_codigo, LOWER(TRIM(unidade_de_medida))) AS ts_max,
+      MIN(ingestion_timestamp) OVER (PARTITION BY ano, municipio_codigo, tipo_de_produto_extrativo_codigo, variavel_codigo, LOWER(TRIM(unidade_de_medida)), valor) AS ts_valor,
+      COUNT(DISTINCT valor) OVER (PARTITION BY ano, municipio_codigo, tipo_de_produto_extrativo_codigo, variavel_codigo, LOWER(TRIM(unidade_de_medida))) AS n_valores
+    FROM `embrapa-dashboard-commodities.bronze_ibge.sidra_t289_raw`
+  ) AS s
+  WHERE NOT (s.ingestion_timestamp = s.ts_max OR (s.n_valores > 1 AND s.ingestion_timestamp = s.ts_valor))
+    AND s.ano = t.ano AND s.municipio_codigo = t.municipio_codigo
+    AND s.produto = t.tipo_de_produto_extrativo_codigo AND s.variavel_codigo = t.variavel_codigo
+    AND s.unidade = LOWER(TRIM(t.unidade_de_medida))
+    AND s.ingestion_timestamp = t.ingestion_timestamp AND s.valor = t.valor
+)
+```
+
+**Doing it again.**
+- Copies re-accumulate with every full re-ingest, and the weekly delta adds a small overlap.
+- Re-measure the superseded share first (`COUNTIF(rn = 1)` over the same key, ordered by `ingestion_timestamp DESC`). Prune only when the scan matters, and in the same order: read-only proof → verified backup → DELETE → count check.
+- Don't run it while an ingestion loads the table: PEVS runs Monday 05:00 BRT, PAM runs the 2nd at 04:00.
+- The `bq` CLI crashes on a DML `--dry_run` (a recursion error in its output formatting). Dry-run DML through the Python client (`QueryJobConfig(dry_run=True)`) instead.
+
+**Restoring, if it is ever needed.**
+- Within 48 h, time travel works: these datasets keep 48 h, not the default 7 days. Copy from the table as it was before the DELETE, e.g. `bq cp 'bronze_ibge.sidra_t289_raw@<epoch_ms_before>' bronze_ibge.sidra_t289_raw_restore`.
+- After 48 h, load the Parquet backup into a NEW table.
+- Either way, check count + fingerprint against the numbers above before swapping anything.
+
 ## Destructive-command safety hooks
 
 [`scripts/claude-hooks/block-dangerous-commands.js`](../scripts/claude-hooks/block-dangerous-commands.js)
