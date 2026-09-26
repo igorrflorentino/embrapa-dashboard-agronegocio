@@ -160,6 +160,7 @@ def test_permitidos_tem_razao_e_nao_estao_obsoletos() -> None:
         ("endpoint de API não encontrado", "endpoint"),
         ("Pipeline construído, mas os dados ainda estão sendo baixados das fontes", "pipeline"),
         ("Veja o dashboard com os filtros aplicados", "dashboard"),
+        ("da fonte oficial ao recorte que o painel consome", "recorte (tabela)"),
         ("Precisamos taguear os produtos antes de startar a carga", "verbo inventado"),
     ],
 )
@@ -174,6 +175,7 @@ def test_reprova(texto: str, termo: str) -> None:
         "a tabela gold_pevs_production tem uma linha por município",
         "Aguarde alguns segundos antes de enviar outro feedback.",
         "O cachê do artista não é memória temporária",
+        "Aplique o recorte geográfico e compare as séries",
     ],
 )
 def test_aprova(texto: str) -> None:

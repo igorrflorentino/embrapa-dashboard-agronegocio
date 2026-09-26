@@ -30,7 +30,7 @@ const _DT_LAYERS = [
   { id: 'bronze',  label: 'Bronze',  hint: 'bruto',                desc: 'Cópia fiel das fontes oficiais, sem nenhuma alteração — cada extração registrada com a data de coleta, para rastreabilidade.' },
   { id: 'silver',  label: 'Silver',  hint: 'padronizado',          desc: 'Códigos de produto reconciliados entre fontes, séries históricas reconstruídas, tipos corrigidos e a marca de confiabilidade de cada valor.' },
   { id: 'gold',    label: 'Gold',    hint: 'analítico completo',   desc: 'Uma tabela abrangente por fonte, já com a conversão de moeda e a correção pela inflação aplicadas — a base de toda a análise.' },
-  { id: 'serving', label: 'Serving', hint: 'pronto para o painel', desc: 'Recortes pré-agregados na granularidade exata de cada gráfico, derivados do *Gold* — é daqui que o painel lê todos os números.' },
+  { id: 'serving', label: 'Serving', hint: 'pronto para o painel', desc: 'Tabelas pré-agregadas na granularidade exata de cada gráfico, derivadas do *Gold* — é daqui que o painel lê todos os números.' },
 ];
 // Per-layer left-border accent (reuses the About pipeline palette tokens).
 const _DT_LAYER_COLOR = { bronze: '#a87b4f', silver: '#8a8f98', gold: '#c9a227', serving: 'var(--viz-2, #2f7ed8)' };
@@ -161,8 +161,8 @@ function ViewDados({ database }) {
           title="As tabelas por trás deste banco, camada a camada"
         />
         <p className="caption" style={{ margin: '0 2px 14px' }}>
-          Os dados percorrem quatro camadas, da cópia bruta da fonte oficial (Bronze) ao recorte
-          que o painel consome (<em>Serving</em>). Escolha qualquer tabela para investigá-la linha a linha.
+          Os dados percorrem quatro camadas, da cópia bruta da fonte oficial (Bronze) às tabelas
+          pré-agregadas que o painel consome (<em>Serving</em>). Escolha qualquer tabela para investigá-la linha a linha.
           As camadas <strong>Bronze</strong> e <strong><em>Silver</em></strong> são o dado cru, anterior à
           curadoria — úteis para auditar a origem de um número.
         </p>

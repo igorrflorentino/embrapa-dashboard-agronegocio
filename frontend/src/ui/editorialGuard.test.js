@@ -267,6 +267,8 @@ describe('controle editorial — as próprias regras (contraprova)', () => {
     ['O spread entre porteira e porto', 'spread'],
     ['Precisamos taguear os produtos antes de startar a carga', 'verbo inventado'],
     ['Marque uma call para discutir o deadline', 'call'],
+    ['Recortes pré-agregados na granularidade exata de cada gráfico', 'recorte (tabela)'],
+    ['até os recortes prontos para o painel', 'recorte (tabela)'],
   ])('reprova: “%s”', (texto, termo) => {
     const vs = violacoesDeVocabulario(linha(texto));
     expect(vs.map((v) => v.regra.split(' → ')[0])).toContain(termo);
@@ -281,6 +283,7 @@ describe('controle editorial — as próprias regras (contraprova)', () => {
     'Ranking de UFs',
     'Status do banco',
     'O cachê do artista não é memória temporária',
+    'o painel exatamente como exibido, com o recorte exato consultado',
   ])('aprova: “%s”', (texto) => {
     expect(relatorio(violacoesDeVocabulario(linha(texto)))).toEqual([]);
   });

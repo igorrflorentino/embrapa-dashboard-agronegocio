@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.96.1] - 2026-09-25
+
+### Corrigido (texto de tela)
+- **"Recorte" voltou a ter um sentido só.** No painel, recorte é a seleção do pesquisador: o
+  componente de nota de recorte, o "recorte geográfico" e o "recorte exato consultado" da
+  citação, perto de 100 usos. Três textos também chamavam de recorte as tabelas
+  pré-agregadas da camada *Serving*: dois na "Estrutura de dados" e um no "Sobre o painel".
+  Agora eles dizem **"tabelas pré-agregadas"**, o nome que os rótulos do explorador e a dica de
+  proveniência já usavam desde a v1.96.0.
+- O vocabulário editorial ganhou a regra. Ela é estreita de propósito: reprova as frases que
+  queriam dizer a tabela ("recortes pré-agregados", "recortes prontos para o painel",
+  "recorte que o painel consome"), não a palavra. Contraprova: sobre a v1.96.0, reprova os três
+  trechos e nenhum dos outros usos.
+
+Muda texto de tela, então **leva tag**.
+
+---
+
 ## [1.96.0] - 2026-09-25
 
 Controle editorial do texto de tela: um termo por conceito, sem jargão que tenha equivalente
