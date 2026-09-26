@@ -23,6 +23,10 @@ import './src/ui/data.js';        // formatadores pt-BR reais: fmtSigned/numBR/p
                                  // devolvem '—' para null, e é exatamente esse
                                  // comportamento que a correção de ausência depende.
 import './src/ui/seriesUtils.js';
+import './src/ui/italico.jsx';   // window.comItalico / textoSimples — a marca *termo* do
+                                 // glossário e das perspectivas vira <em>. Módulo REAL: um
+                                 // stub que devolvesse o texto cru esconderia o asterisco
+                                 // literal que o teste da tela existe para pegar.
 
 // ── localStorage: repair the one Node ≥26 breaks ─────────────────────────────
 //

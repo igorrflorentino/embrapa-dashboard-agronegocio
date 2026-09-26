@@ -52,7 +52,7 @@ window.MATURITY = {
   desenvolvimento: { id: 'desenvolvimento', label: 'Em desenvolvimento',  color: 'var(--status-mat-dev)', hasData: true,  order: 2,
                      desc: 'Em produção e já consultável, mas ainda em construção, cálculos podem mudar.' },
   ingestao:        { id: 'ingestao',        label: 'Ingestão',           color: 'var(--status-mat-ingest)', hasData: false, order: 3,
-                     desc: 'Pipeline construído, mas os dados ainda estão sendo baixados das fontes oficiais — a cobertura pode mudar.' },
+                     desc: 'Processamento pronto, mas os dados ainda estão sendo baixados das fontes oficiais — a cobertura pode mudar.' },
   beta:            { id: 'beta',            label: 'Beta',               color: 'var(--info)',          hasData: true,  caveat: true, order: 4,
                      desc: 'Disponível para testes e validações, resultados podem mudar.' },
   estavel:         { id: 'estavel',         label: 'Estável',            color: 'var(--ok)',            hasData: true,  order: 5,
@@ -197,9 +197,9 @@ window.BANCOS = [
     plannedScope: [
       { col: 'produto (lavoura)',            desc: 'Cultura agrícola — temporária ou permanente.' },
       { col: 'uf · município',               desc: 'Localização da lavoura (até o nível municipal).' },
-      { col: 'area_plantada · area_colhida', desc: 'Área destinada e efetivamente colhida (ha) — no Gold; painel em seguida.' },
+      { col: 'area_plantada · area_colhida', desc: 'Área destinada e efetivamente colhida (ha) — já na base analítica; gráfico em seguida.' },
       { col: 'quantidade_produzida',         desc: 'Produção colhida (t) — disponível.' },
-      { col: 'rendimento_medio',             desc: 'Produtividade = produção ÷ área colhida (kg/ha) — no Gold; painel em seguida.' },
+      { col: 'rendimento_medio',             desc: 'Produtividade = produção ÷ área colhida (kg/ha) — já na base analítica; gráfico em seguida.' },
       { col: 'valor_producao',               desc: 'Valor da produção (R$) — disponível.' },
     ],
     cobertura: {

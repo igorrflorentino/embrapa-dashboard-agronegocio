@@ -342,7 +342,7 @@ function ViewProductProfile({ families, summary, database, conventions }) {
           <window.SectionHeader
             overline={`Ranking de UFs ${isStock ? 'criadoras' : 'produtoras'} · ${yearStart}–${yearEnd}`}
             title={`Onde ${prod.name} ${isStock ? 'é criado' : 'é produzido'}`}
-            action={<span className="caption">Top 10 · {ufScaled.label}</span>}
+            action={<span className="caption">10 maiores · {ufScaled.label}</span>}
           />
           {ufRank.loading ? (
             <p className="caption" style={{ padding: '40px 4px', textAlign: 'center' }}>

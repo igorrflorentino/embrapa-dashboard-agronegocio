@@ -16,6 +16,7 @@ import './ui/bancos.js';
 import './ui/views.js';
 import './ui/filtersSchema.js';
 import './ui/glossary.js';
+import './ui/italico.jsx'; // window.comItalico / textoSimples — *termo* → <em>
 import './ui/urlState.js';
 import './ui/chipFmt.js';
 import './ui/scopeChips.js';

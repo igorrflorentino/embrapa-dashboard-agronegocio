@@ -112,7 +112,7 @@ def effective_value_column(banco: Banco, conv: dict) -> tuple[str, str]:
     brl = fmt.monetary_column("BRL", correction)
     if brl in sqlbuild.ALLOWED_VALUE_COLUMNS:
         label = fmt.convention_value_label({**conv, "currency": "BRL"})
-        return brl, f"{label} (moeda indisponível no mart → R$){note}"
+        return brl, f"{label} (moeda indisponível nos dados → R$){note}"
     return "val_real_ipca_brl", f"Valor real (IPCA) — R${note}"
 
 

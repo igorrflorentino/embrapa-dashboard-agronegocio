@@ -237,7 +237,7 @@ async function fetchSnapshot(id) {
     qs.set('reporters', activeReporters.join(','));
   if (Array.isArray(activePartners) && activePartners.length) qs.set('partners', activePartners.join(','));
   const r = await fetch(`${API}/snapshot?${qs}`);
-  if (!r.ok) throw new Error(`Falha ao consultar a Gold no BigQuery (HTTP ${r.status}).`);
+  if (!r.ok) throw new Error(`Falha ao consultar a base analítica no BigQuery (HTTP ${r.status}).`);
   const snap = await r.json();
   assertSnapshotShape(snap); // fail loudly on a drifted contract, don't render blank
   snap.table = tableOf(id);

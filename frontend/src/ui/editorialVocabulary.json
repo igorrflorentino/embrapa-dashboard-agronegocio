@@ -1,0 +1,90 @@
+{
+  "_doc": [
+    "Editorial vocabulary for every string a researcher can read (CLAUDE.md § Code Style → Language, 'Editorial control').",
+    "Read by frontend/src/ui/editorialGuard.test.js (the SPA) and tests/test_editorial_guard.py (the webapi's pt-BR strings).",
+    "Each pattern is matched case-insensitively as a WHOLE WORD (letters, digits and _ are word characters, accents included),",
+    "so 'top' does not match 'Topázio' and 'gold' does not match 'gold_pevs_production'. Patterns must be valid in BOTH",
+    "JavaScript (flag u) and Python re: plain alternations, ?, character classes — no lookbehind, no named groups.",
+    "To accept a violation, add it to the sweep's PERMITIDOS with a reason; to change the rule, change this file."
+  ],
+  "forbidden": [
+    { "term": "dashboard", "pattern": "dashboards?", "use": "painel", "why": "decided 2026-09-25: 'painel' everywhere, including the ABNT citation title" },
+    { "term": "pipeline", "pattern": "pipelines?", "use": "processamento", "why": "native word exists" },
+    { "term": "top", "pattern": "top", "use": "os N maiores / principais", "why": "slang; 'Top 10' reads as marketing" },
+    { "term": "seed", "pattern": "seeds?", "use": "tabela de referência", "why": "dbt jargon" },
+    { "term": "URL", "pattern": "urls?", "use": "link", "why": "'link' is the consolidated UI term the screen already used" },
+    { "term": "view", "pattern": "views?", "use": "perspectiva", "why": "the product's own name for a screen" },
+    { "term": "layout", "pattern": "layouts?", "use": "leiaute", "why": "the pt spelling is the one on the approved list" },
+    { "term": "cache", "pattern": "cache", "use": "dados já carregados", "why": "infrastructure jargon" },
+    { "term": "deploy", "pattern": "deploys?", "use": "publicação / em produção", "why": "infrastructure jargon" },
+    { "term": "stateless", "pattern": "stateless", "use": "sem estado", "why": "infrastructure jargon" },
+    { "term": "endpoint", "pattern": "endpoints?", "use": "rota da API", "why": "infrastructure jargon" },
+    { "term": "markup", "pattern": "markups?", "use": "multiplicador de preço", "why": "decided 2026-09-25" },
+    { "term": "spread", "pattern": "spreads?", "use": "diferença de preço", "why": "native equivalent exists" },
+    { "term": "deadline", "pattern": "deadlines?", "use": "prazo", "why": "example in the rule" },
+    { "term": "call", "pattern": "calls?", "use": "reunião", "why": "example in the rule" },
+    { "term": "settings", "pattern": "settings", "use": "configurações", "why": "example in the rule" },
+    { "term": "approach", "pattern": "approach", "use": "abordagem", "why": "example in the rule" },
+    { "term": "insight", "pattern": "insights?", "use": "constatação / achado", "why": "corporate jargon" },
+    { "term": "overview", "pattern": "overview", "use": "visão geral", "why": "native equivalent exists" },
+    { "term": "performance", "pattern": "performance", "use": "desempenho", "why": "native equivalent exists" },
+    { "term": "default", "pattern": "defaults?", "use": "padrão", "why": "native equivalent exists" },
+    { "term": "outlier", "pattern": "outliers?", "use": "atípico", "why": "the flag taxonomy's own pt label" },
+    { "term": "spike", "pattern": "spikes?", "use": "pico", "why": "the flag taxonomy's own pt label" },
+    { "term": "trend", "pattern": "trends?", "use": "tendência", "why": "native equivalent exists" },
+    { "term": "tooltip", "pattern": "tooltips?", "use": "dica", "why": "native equivalent exists" },
+    { "term": "hover", "pattern": "hover", "use": "passar o cursor", "why": "native equivalent exists" },
+    { "term": "chart", "pattern": "charts?", "use": "gráfico", "why": "native equivalent exists" },
+    { "term": "crosswalk", "pattern": "crosswalks?", "use": "tabela de correspondência", "why": "native equivalent exists" },
+    { "term": "drill-down", "pattern": "drill-?down", "use": "detalhamento", "why": "native equivalent exists" },
+    { "term": "fallback", "pattern": "fallbacks?", "use": "alternativa", "why": "native equivalent exists" },
+    { "term": "backfill", "pattern": "backfills?", "use": "carga retroativa", "why": "native equivalent exists" },
+    { "term": "template", "pattern": "templates?", "use": "modelo", "why": "native equivalent exists" },
+    { "term": "workflow", "pattern": "workflows?", "use": "fluxo de trabalho", "why": "native equivalent exists" },
+    { "term": "mart", "pattern": "marts?", "use": "tabela pré-agregada", "why": "data-warehouse jargon; the screens already say 'tabelas pré-agregadas'" }
+  ],
+  "inventedVerbs": [
+    { "pattern": "tag(u)?e(a|ia|ar|ou|ado|ada|ados|adas|ando)", "use": "marcar / etiquetar" },
+    { "pattern": "e?start(a|ar|ou|ado|ada|ando)", "use": "iniciar" },
+    { "pattern": "reset(a|ar|ou|ado|ada|ando)", "use": "redefinir / limpar" },
+    { "pattern": "set(ar|ou|ado|ada|ando)", "use": "definir" },
+    { "pattern": "delet(a|ar|ou|ado|ada|ados|adas|ando)", "use": "apagar / excluir" },
+    { "pattern": "link(ar|ou|ado|ada|ados|adas|ando)", "use": "vincular" },
+    { "pattern": "log(ar|ou|ado|ada|ando)", "use": "entrar" },
+    { "pattern": "print(ar|ou|ado|ada|ando)", "use": "capturar a tela" },
+    { "pattern": "customiz(a|ar|ou|ado|ada|ados|adas|ando|ável|áveis)", "use": "personalizar" },
+    { "pattern": "upd?at(ar|ou|ado|ada|ando)", "use": "atualizar" },
+    { "pattern": "downloadar|uploadar|upar", "use": "baixar / enviar" }
+  ],
+  "layerNames": {
+    "pattern": "bronze|silver|gold|serving",
+    "rule": "The medallion layer names belong in ARCHITECTURE explanations only, always next to their pt gloss (bruto, padronizado, analítico, pronto para o painel). In day-to-day text the Gold layer is 'a base analítica' (decided 2026-09-25).",
+    "allowedIn": [
+      { "file": "frontend/src/ui/ViewDados.jsx", "contains": "", "why": "the 'Estrutura de dados' perspective IS the architecture explorer: every table is shown under its layer" },
+      { "file": "frontend/src/ui/ViewAbout.jsx", "contains": "", "why": "the 'Como os dados são processados' card explains the four layers, each with its pt gloss" },
+      { "file": "frontend/src/ui/views.js", "contains": "percorra as tabelas de cada camada do processamento", "why": "description of the 'Estrutura de dados' perspective, with each layer's pt gloss" },
+      { "file": "frontend/src/ui/views.js", "contains": "Tabelas das 4 camadas (Bronze → Serving)", "why": "the same perspective's feature list, right under the description that glosses each layer" },
+      { "file": "frontend/src/ui/MainScreen.jsx", "contains": "Tabela de referência do banco na camada Gold", "why": "provenance tooltip that explains where the charts read from, with the pt gloss of both layers" },
+      { "file": "src/embrapa_dashboard/webapi/registries.py", "contains": "percorra as tabelas de cada camada do processamento", "why": "the Python mirror of the views.js description above (test_view_registry_parity.py)" },
+      { "file": "src/embrapa_dashboard/serving/gateway.py", "contains": "A união que o Gold lê", "why": "table description in the 'Estrutura de dados' explorer (_INSPECT catalog), shown under its layer" },
+      { "file": "src/embrapa_dashboard/serving/gateway.py", "contains": "com a marca de qualidade — antes do Gold", "why": "table description in the 'Estrutura de dados' explorer (_INSPECT catalog), shown under its layer" },
+      { "file": "src/embrapa_dashboard/serving/gateway.py", "contains": "União das duas tabelas Bronze", "why": "table description in the 'Estrutura de dados' explorer (_INSPECT catalog), shown under its layer" }
+    ]
+  },
+  "italic": {
+    "rule": "A foreign concept kept for lack of a native word is set in italics in LONG text (a sentence), never in a label. In JSX prose write <em>; in a registry string write *termo*, rendered by window.comItalico. Consolidated UI words (link, login, download, e-mail, zoom, beta, API) and the three kept by decision (feedback, status, ranking) are NOT italicized.",
+    "longTextMinWords": 8,
+    "terms": [
+      { "term": "drawback", "pattern": "drawback", "why": "customs regime with no native name" },
+      { "term": "commodity", "pattern": "commodity|commodities", "why": "narrow term of art (an undifferentiated produto) and a level name of the industrialization scale" },
+      { "term": "Silver", "pattern": "silver", "why": "layer name (architecture explanations only)" },
+      { "term": "Gold", "pattern": "gold", "why": "layer name (architecture explanations only)" },
+      { "term": "Serving", "pattern": "serving", "why": "layer name (architecture explanations only)" }
+    ],
+    "renderedRegistries": [
+      { "file": "frontend/src/ui/glossary.js", "key": "short", "renderedBy": "Glossary.jsx (and the search, through textoSimples)" },
+      { "file": "frontend/src/ui/views.js", "key": "desc", "renderedBy": "MainScreen.jsx, ViewAbout.jsx; the menu tooltip in AppShell.jsx through textoSimples" },
+      { "file": "frontend/src/ui/ViewDados.jsx", "key": "desc", "renderedBy": "ViewDados.jsx, the layer cards" }
+    ]
+  }
+}

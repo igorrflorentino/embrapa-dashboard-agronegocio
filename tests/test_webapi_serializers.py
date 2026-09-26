@@ -1482,7 +1482,7 @@ def test_serialize_partner_unit_follows_the_column_actually_summed():
     out = s.serialize_partner(
         df,
         value_column="val_real_igpm_brl",
-        value_label="Valor real (IGP-M) — R$ (moeda indisponível no mart → R$) · FOB",
+        value_label="Valor real (IGP-M) — R$ (moeda indisponível nos dados → R$) · FOB",
     )
     assert out["unit"] == "R$"
     assert out["valueLabel"].startswith("Valor real (IGP-M) — R$")

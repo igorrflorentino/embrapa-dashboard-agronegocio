@@ -36,7 +36,7 @@ window.PRODUTO = {
   // O nome da obra, em caixa de sentença (a forma da ABNT NBR 6023:2025).
   nome: `Análise histórica de ${ESCOPO}`,
   // O título na referência ABNT: o mesmo nome, precedido do tipo da obra.
-  tituloCitacao: `Dashboard de análise histórica de ${ESCOPO}`,
+  tituloCitacao: `Painel de análise histórica de ${ESCOPO}`,
   // O <title> da aba do navegador. Duplicado ESTATICAMENTE em index.html (o HTML é
   // servido antes do JS rodar, e uma aba sem nome até a hidratação seria pior), e essa
   // duplicação é fixada pelo teste produto.test.js — ela não pode divergir em silêncio.

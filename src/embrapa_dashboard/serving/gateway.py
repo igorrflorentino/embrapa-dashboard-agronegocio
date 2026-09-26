@@ -1577,7 +1577,7 @@ _INSPECT_TABLES: dict[str, list[tuple[str, str, str, str, str]]] = {
         (
             "serving_pevs_annual",
             "bq_serving_dataset",
-            "Mart anual",
+            "Tabela anual pré-agregada",
             "Derivada — agregado (ano × UF × produto × família) que alimenta os gráficos.",
             "serving",
         ),
@@ -1608,7 +1608,7 @@ _INSPECT_TABLES: dict[str, list[tuple[str, str, str, str, str]]] = {
         (
             "serving_pam_annual",
             "bq_serving_dataset",
-            "Mart anual",
+            "Tabela anual pré-agregada",
             "Derivada — agregado (ano × UF × produto × família) com área/rendimento.",
             "serving",
         ),
@@ -1646,7 +1646,7 @@ _INSPECT_TABLES: dict[str, list[tuple[str, str, str, str, str]]] = {
         (
             "serving_ppm_annual",
             "bq_serving_dataset",
-            "Mart anual",
+            "Tabela anual pré-agregada",
             "Derivada — agregado (ano × UF × produto × família) com measure_kind.",
             "serving",
         ),
@@ -1677,15 +1677,15 @@ _INSPECT_TABLES: dict[str, list[tuple[str, str, str, str, str]]] = {
         (
             "serving_comex_annual",
             "bq_serving_dataset",
-            "Mart anual",
+            "Tabela anual pré-agregada",
             "Derivada — agregado anual (ano × NCM × UF × fluxo) dos gráficos.",
             "serving",
         ),
         (
             "serving_comex_seasonality",
             "bq_serving_dataset",
-            "Mart de sazonalidade",
-            "Derivada — grão mensal (ano × mês × NCM × UF × fluxo) da view Sazonalidade.",
+            "Tabela de sazonalidade pré-agregada",
+            "Derivada — grão mensal (ano × mês × NCM × UF × fluxo) da perspectiva Sazonalidade.",
             "serving",
         ),
     ],
@@ -1715,7 +1715,7 @@ _INSPECT_TABLES: dict[str, list[tuple[str, str, str, str, str]]] = {
         (
             "serving_comtrade_annual",
             "bq_serving_dataset",
-            "Mart anual",
+            "Tabela anual pré-agregada",
             "Derivada — agregado anual (ano × HS × reporter × parceiro × fluxo).",
             "serving",
         ),
@@ -1993,7 +1993,7 @@ _SEED_CATALOG: list[tuple[str, str, bool, str]] = [
         "Meses não publicados (inflação estrangeira)",
         False,
         "Meses que o próprio publicador nunca divulgou — não falhas de coleta nossa — e que "
-        "o pipeline preenche pela média geométrica dos dois meses vizinhos publicados. Hoje: "
+        "o processamento preenche pela média geométrica dos dois meses vizinhos publicados. Hoje: "
         "CPI-U de outubro de 2025, que o BLS não publicou (paralisação do governo dos EUA). "
         "Só um mês isolado é preenchido, e um valor publicado depois substitui a estimativa.",
     ),
@@ -2032,11 +2032,11 @@ _REFERENCE_TABLE_CATALOG: list[tuple[str, str, bool, str]] = [
         "silver_inflation",
         "Deflatores, todos (BR + estrangeiros)",
         False,
-        "A tabela que o Gold consulta para corrigir valores: os índices brasileiros do "
+        "A tabela que a base analítica consulta para corrigir valores: os índices brasileiros do "
         "BCB mais o CPI dos EUA (BLS) e o HICP da zona do euro (BCE). A coluna `economy` "
         "diz de qual economia cada índice mede os preços — e, portanto, qual moeda ele "
         "pode corrigir: um índice só corrige o dinheiro da economia que ele mede. A coluna "
-        "`is_interpolated` marca a leitura que o publicador nunca divulgou e o pipeline "
+        "`is_interpolated` marca a leitura que o publicador nunca divulgou e o processamento "
         "estimou — hoje, só o CPI de outubro de 2025.",
     ),
 ]

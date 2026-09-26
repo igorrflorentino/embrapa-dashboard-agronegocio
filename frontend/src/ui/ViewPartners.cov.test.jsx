@@ -190,7 +190,7 @@ describe('ViewPartners — smoke + metric-toggle branches', () => {
     const mapped = container.querySelector('.kpi[data-label="Parceiros mapeados"] .kpi-value');
     expect(mapped.textContent).toBe('4');
     // Additive metric → top-3 concentration KPI.
-    expect(container.querySelector('.kpi[data-label="Concentração top-3"]')).toBeTruthy();
+    expect(container.querySelector('.kpi[data-label="Concentração nos 3 maiores"]')).toBeTruthy();
     expect(container.querySelector('.kpi[data-label="Faixa de preço"]')).toBeFalsy();
     // Value metric → exp + imp split bars + the legend.
     expect(container.querySelectorAll('.ptn-bar.exp').length).toBe(4);
@@ -212,7 +212,7 @@ describe('ViewPartners — smoke + metric-toggle branches', () => {
     // The toggle triggered a fresh partnerData('weight') call (server-side re-sort).
     expect(partnerDataCalls).toContain('weight');
     // Volume is additive → still the top-3 concentration KPI, sub now "volume total".
-    const kpi3 = container.querySelector('.kpi[data-label="Concentração top-3"]');
+    const kpi3 = container.querySelector('.kpi[data-label="Concentração nos 3 maiores"]');
     expect(kpi3).toBeTruthy();
     expect(kpi3.querySelector('.kpi-sub').textContent).toContain('volume');
     // Weight metric → single (non-exp/imp) bars, no exp/imp split, no value legend.
@@ -261,7 +261,7 @@ describe('ViewPartners — smoke + metric-toggle branches', () => {
     expect(partnerDataCalls).toContain('price');
     // Non-additive → faixa de preço KPI, not top-3 concentration.
     expect(container.querySelector('.kpi[data-label="Faixa de preço"]')).toBeTruthy();
-    expect(container.querySelector('.kpi[data-label="Concentração top-3"]')).toBeFalsy();
+    expect(container.querySelector('.kpi[data-label="Concentração nos 3 maiores"]')).toBeFalsy();
     // Range value spans min–max over the positive prices: 6,25–42,50/kg.
     const faixa = container.querySelector('.kpi[data-label="Faixa de preço"] .kpi-value');
     expect(faixa.textContent).toContain('6,25');

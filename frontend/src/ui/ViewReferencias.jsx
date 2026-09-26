@@ -157,7 +157,7 @@ function ViewReferencias() {
       {/* Seed picker — the consultable reference tables (shared across bancos) */}
       <div className="pp-selector">
         <span className="pp-selector-label">
-          Tabela de referência <small className="pc-cap">(valores de referência usados pelo pipeline)</small>
+          Tabela de referência <small className="pc-cap">(valores de referência usados pelo processamento)</small>
         </span>
         <div className="pp-chips">
           {seeds.map((s) => (

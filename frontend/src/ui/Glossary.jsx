@@ -35,7 +35,7 @@ function Glossary({ scope = 'global' }) {
       if (!needle) return true;
       return (
         t.term.toLowerCase().includes(needle) ||
-        t.short.toLowerCase().includes(needle) ||
+        window.textoSimples(t.short).toLowerCase().includes(needle) ||
         (t.tag && t.tag.toLowerCase().includes(needle))
       );
     });
@@ -127,7 +127,7 @@ function Glossary({ scope = 'global' }) {
                     <span className="gloss-banco subtle">{t.cat}</span>
                   )}
                 </div>
-                <p className="gloss-short">{t.short}</p>
+                <p className="gloss-short">{window.comItalico(t.short)}</p>
               </article>
             ))}
           </div>

@@ -52,7 +52,7 @@ window.VIEW_GROUPS = [
         planned: ['Diagrama Sankey origem → destino', 'Cadeia extração → interno → externo', 'Saldo líquido por UF', 'Filtro por elo da cadeia'] },
       { id: 'flows_partners', label: 'Parceiros comerciais', status: 'live', requires: ['partner'], selfData: true,
         desc: 'Rankings de UFs e países de origem/destino, fluxos bilaterais e participação de cada parceiro no total comercializado.',
-        planned: ['Top parceiros (país / UF)', 'Fluxos bilaterais', 'Evolução de participação por parceiro', 'Mapa de fluxos internacionais'] },
+        planned: ['Maiores parceiros (país / UF)', 'Fluxos bilaterais', 'Evolução de participação por parceiro', 'Mapa de fluxos internacionais'] },
     ],
   },
   {
@@ -76,7 +76,7 @@ window.VIEW_GROUPS = [
         desc: 'Coloque lado a lado até 8 territórios de qualquer nível (regiões, estados e municípios): evolução em valores ou em índice, crescimento, participação no país e correlação.' },
       { id: 'concentration', label: 'Concentração e desigualdade', status: 'live', exportable: true, requires: [],
         desc: 'Quão concentrada é a atividade: curva de Lorenz, índice de Gini e HHI (Herfindahl-Hirschman) por geografia e por produto.',
-        planned: ['Curva de Lorenz', 'Índice de Gini ao longo do tempo', 'HHI por UF e por produto', 'Participação dos top-5 produtores'] },
+        planned: ['Curva de Lorenz', 'Índice de Gini ao longo do tempo', 'HHI por UF e por produto', 'Participação dos 5 maiores produtores'] },
     ],
   },
   {
@@ -108,7 +108,7 @@ window.VIEW_GROUPS = [
 
       { id: 'cross_price_spread', label: 'Preço: porteira vs. FOB', status: 'live', requires: [], crossBanco: true, align: 'eixo temporal (ano)',
         sources: ['ibge_pevs', 'mdic_comex'],
-        desc: 'Preço implícito na produção (IBGE) contra o preço de exportação FOB (MDIC). O spread entre porteira e porto mede a agregação de valor.' },
+        desc: 'Preço implícito na produção (IBGE) contra o preço de exportação FOB (MDIC). A diferença entre o preço na porteira e o do porto mede a agregação de valor.' },
 
       { id: 'cross_mirror', label: 'Espelho comercial', status: 'live', requires: [], crossBanco: true, align: 'eixo temporal (ano)',
         sources: ['mdic_comex', 'un_comtrade'],
@@ -153,7 +153,7 @@ window.VIEW_GROUPS = [
       { id: 'quality',  label: 'Qualidade dos dados', status: 'live', exportable: true, requires: ['quality'],
         desc: 'Diagnóstico da coluna data_quality_flag: como as linhas se distribuem entre as marcas de qualidade, a evolução no tempo e a qualidade por produto e UF.' },
       { id: 'dados',    label: 'Estrutura de dados', status: 'live', requires: [],
-        desc: 'A estrutura por trás do banco: percorra as tabelas de cada camada do pipeline — Bronze (bruto), Silver (padronizado), Gold (analítico) e Serving (pronto para o painel) — e investigue qualquer uma linha a linha, com paginação, ordenação e filtros por coluna. Para conferir os dados ou rastrear de onde vem cada número.',
+        desc: 'A estrutura por trás do banco: percorra as tabelas de cada camada do processamento — Bronze (bruto), *Silver* (padronizado), *Gold* (analítico) e *Serving* (pronto para o painel) — e investigue qualquer uma linha a linha, com paginação, ordenação e filtros por coluna. Para conferir os dados ou rastrear de onde vem cada número.',
         planned: ['Tabelas das 4 camadas (Bronze → Serving)', 'Linhagem: da fonte oficial ao gráfico', 'Paginação no servidor', 'Ordenar por qualquer coluna', 'Filtrar por coluna (=, >, contém…)', 'Exportar o recorte em CSV'] },
       { id: 'glossary', label: 'Glossário', status: 'live', requires: [],
         desc: 'Termos, códigos e colunas do banco selecionado.' },
@@ -314,7 +314,7 @@ window.crossViewApplies = (viewId) => {
   if (!v || !v.crossBanco) return { usable: true, state: 'ok', reason: '' };
   if (v.dataBlocked) {
     return { usable: false, state: 'preview',
-      reason: 'Demonstração — a fonte necessária ainda não existe no pipeline (valores ilustrativos).' };
+      reason: 'Demonstração — a fonte necessária ainda não entrou no processamento (valores ilustrativos).' };
   }
   const sources = v.sources || [];
   const missing = sources.filter((id) => {

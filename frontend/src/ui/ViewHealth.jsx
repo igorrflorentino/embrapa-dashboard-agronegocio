@@ -89,8 +89,8 @@ function ViewHealth() {
         banco: b.id,
         title: `Falha de consulta · ${b.short}`,
         desc: err
-          ? `A consulta à Gold (${table}) retornou erro: ${err}. O banco não está respondendo no momento.`
-          : `A consulta à Gold (${table}) falhou. O banco não está respondendo no momento.`,
+          ? `A consulta à base analítica (${table}) retornou erro: ${err}. O banco não está respondendo no momento.`
+          : `A consulta à base analítica (${table}) falhou. O banco não está respondendo no momento.`,
         since: STATE[b.id]?.lastRun && STATE[b.id].lastRun !== '—' ? STATE[b.id].lastRun : null,
       });
     });
@@ -149,7 +149,7 @@ function ViewHealth() {
   const OVERALL = {
     ok:   { color: 'var(--ok)',   label: 'Operacional', note: `os ${liveOk.length} bancos em produção responderam às consultas` },
     fail: { color: 'var(--err)',  label: 'Falha',       note: `${failCount} banco(s) sem responder às consultas — veja os alertas` },
-    checking: { color: 'var(--fg-3)', label: 'Verificando…', note: 'consultando as tabelas Gold em produção…' },
+    checking: { color: 'var(--fg-3)', label: 'Verificando…', note: 'consultando a base analítica em produção…' },
   }[overall];
 
   const STATUS_LABEL = {
@@ -182,7 +182,7 @@ function ViewHealth() {
           sub={notLiveSub}
         />
         <window.KpiCardSpark
-          label="Volume total na Gold"
+          label="Volume total na base analítica"
           value={anyRows ? fmtRows(totalRows) : '—'}
           sub={
             spanStart != null && spanEnd != null
@@ -214,7 +214,7 @@ function ViewHealth() {
                 <th>Maturidade</th>
                 <th>Operação</th>
                 <th>Período coberto</th>
-                <th className="num">Linhas Gold</th>
+                <th className="num">Linhas na base analítica</th>
               </tr>
             </thead>
             <tbody>
@@ -259,12 +259,12 @@ function ViewHealth() {
         <window.SectionHeader
           overline="Alertas operacionais"
           title={ALERTS.length === 0 ? 'Nenhuma falha de operação' : `${ALERTS.length} falha(s) de consulta`}
-          action={<span className="caption">falhas reais de consulta à Gold</span>}
+          action={<span className="caption">falhas reais de consulta à base analítica</span>}
         />
         <div className="hs-alerts">
           {ALERTS.length === 0 ? (
             <p className="caption" style={{ padding: '12px 4px' }}>
-              Todos os bancos em produção responderam às consultas à Gold. Nenhuma falha operacional no momento.
+              Todos os bancos em produção responderam às consultas à base analítica. Nenhuma falha operacional no momento.
             </p>
           ) : ALERTS.map((a, i) => {
             const meta = STATUS_LABEL.fail;
@@ -311,7 +311,7 @@ function ViewHealth() {
                 <div className="hs-source-r">
                   <span className="meta-label">Edição mais recente</span>
                   <span className="meta-val tnum">{lastEd}</span>
-                  <span className="meta-label" style={{ marginTop: 4 }}>Atualização da Gold</span>
+                  <span className="meta-label" style={{ marginTop: 4 }}>Atualização da base analítica</span>
                   <span className="meta-val tnum">{refresh}</span>
                 </div>
               </div>
@@ -325,8 +325,8 @@ function ViewHealth() {
           pointer to where data-QUALITY diagnostics live (a separate perspective). */}
       <div className="card">
         <window.SectionHeader
-          overline="Arquitetura operacional · Cloud Run stateless"
-          title="Como o dashboard consulta os dados"
+          overline="Arquitetura operacional · servidor sem estado"
+          title="Como o painel consulta os dados"
         />
         <div className="hs-snap">
           <div className="hs-snap-row">
@@ -340,15 +340,15 @@ function ViewHealth() {
             </span>
           </div>
           <div className="hs-snap-row">
-            <span className="meta-label">Telemetria de execuções da pipeline</span>
+            <span className="meta-label">Telemetria das execuções do processamento</span>
             <span className="meta-val tnum">não monitorada</span>
           </div>
           <p className="caption hs-snap-note">
-            No deploy, o Cloud Run é stateless: cada interação vira uma consulta SQL parametrizada
+            Em produção, o servidor (Cloud Run) não guarda estado entre acessos: cada interação vira uma consulta SQL parametrizada
             empurrada ao BigQuery, e o <strong>flask-caching</strong> memoiza os resultados pequenos por
             parâmetro de consulta. A saúde por banco acima reflete o resultado <strong>real</strong> dessas
-            consultas à Gold (<code>/api/source-meta</code> para a proveniência; a própria consulta para o
-            estado de operação). O histórico diário de execuções da pipeline (sucesso/falha por dia) ainda
+            consultas à base analítica (<code>/api/source-meta</code> para a proveniência; a própria consulta para o
+            estado de operação). O histórico diário de execuções do processamento (sucesso/falha por dia) ainda
             não é coletado por este painel — não há telemetria de <em>runs</em> exposta ao frontend; quando
             existir, aparecerá aqui. Para o diagnóstico da <strong>qualidade</strong> dos dados (integridade,
             distribuição das marcas), use a perspectiva <em>Qualidade dos dados</em> de cada banco.

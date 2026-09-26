@@ -8,8 +8,10 @@ Not every `cat: 'Coluna'` entry is a physical identifier — most are the resear
 vocabulary ("Área colhida", "Via", "Município"), and several bancos deliberately name the
 SOURCE's variables rather than the Gold ones (`ncm`, `codigo_pevs`, `valor_producao`).
 Guessing physical-ness from the shape of the string would flag all of those. The entry's
-own `tag` is the explicit signal instead: `tag: 'gold'` claims a Gold column, and
-`cat: 'Tabela'` + `tag: 'Base final'` claims a Gold table that exists today.
+own `tag` is the explicit signal instead: `tag: 'Base analítica'` — the screen's name for
+the Gold layer — claims a Gold column on a `cat: 'Coluna'` entry and a Gold table that
+exists today on a `cat: 'Tabela'` one. (Until v1.96.0 the two chips read `gold` and
+`Base final`: one concept under two names, which the editorial rule forbids.)
 
 The schema side comes from `dbt/models/gold/_gold.yml`, which documents every column of
 every Gold model as of v1.33.9 — that completeness is what makes this check possible
@@ -26,6 +28,9 @@ import yaml
 REPO = Path(__file__).resolve().parents[1]
 GLOSSARY = REPO / "frontend" / "src" / "ui" / "glossary.js"
 GOLD_YML = REPO / "dbt" / "models" / "gold" / "_gold.yml"
+
+# The chip that claims "this is in the Gold layer" — the same words the screens use.
+_GOLD_TAG = "Base analítica"
 
 # term, cat, tag — the three fields always appear in this order on a tagged entry.
 _ENTRY = re.compile(r"\{ term: '([^']+)',\s*cat: '([^']+)',\s*tag: '([^']+)'")
@@ -55,8 +60,8 @@ def _resolves(name: str, columns: set[str]) -> bool:
 def test_every_gold_tagged_term_names_a_real_column() -> None:
     _, columns = _schema()
     unresolved = []
-    for term, _cat, tag in _tagged_claims():
-        if tag != "gold":
+    for term, cat, tag in _tagged_claims():
+        if cat != "Coluna" or tag != _GOLD_TAG:
             continue
         # A term may list a family pair, e.g. "val_yearfx_* · val_real_*".
         for part in (p.strip() for p in term.split("·")):
@@ -65,15 +70,16 @@ def test_every_gold_tagged_term_names_a_real_column() -> None:
     assert unresolved == []
 
 
-def test_every_table_tagged_base_final_exists() -> None:
-    """`tag: 'Base final'` is the chip a reader scans to mean "this table is there now".
+def test_every_table_tagged_base_analitica_exists() -> None:
+    """`tag: 'Base analítica'` on a table is the chip a reader scans to mean "this table is
+    there now".
     A planned table carries `tag: 'Planejada'` instead — `gold_nfe_flows` wore the wrong
     one until v1.33.9, reading as existing while SEFAZ NFe has no pipeline at all."""
     models, _ = _schema()
     missing = [
         term
         for term, cat, tag in _tagged_claims()
-        if cat == "Tabela" and tag == "Base final" and term not in models
+        if cat == "Tabela" and tag == _GOLD_TAG and term not in models
     ]
     assert missing == []
 

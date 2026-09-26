@@ -65,7 +65,7 @@ describe('ViewConcentration — Gini/HHI computation renders (H3)', () => {
       container.querySelector(`.kpi[data-label="${l}"] .kpi-value`)?.textContent;
     expect(byLabel('HHI · geográfico (UF)')).toBe('6.250'); // 75² + 25², pt-BR thousands
     expect(byLabel('Gini · geográfico (UF)')).toBe('0,25'); // [25,75] Gini
-    expect(byLabel('Concentração top-5 UFs')).toBe('100%'); // both UFs cover the total
+    expect(byLabel('Concentração nas 5 maiores UFs')).toBe('100%'); // both UFs cover the total
   });
 
   it('falls back to product-only KPIs when the banco has no geography', () => {
@@ -131,8 +131,8 @@ describe('ViewConcentration — conjunto vazio não é "0% de concentração"', 
     const { container } = render(<ViewConcentration summary={{}} conventions={{}} database="ibge_pevs" />);
     const byLabel = (l) =>
       container.querySelector(`.kpi[data-label="${l}"] .kpi-value`)?.textContent;
-    expect(byLabel('Concentração top-5 UFs')).toBe('—');
-    expect(byLabel('Concentração top-3 produtos')).toBe('—');
+    expect(byLabel('Concentração nas 5 maiores UFs')).toBe('—');
+    expect(byLabel('Concentração nos 3 maiores produtos')).toBe('—');
     // E os vizinhos seguem recusando como já recusavam — a mudança não os altera.
     expect(byLabel('HHI · geográfico (UF)')).toBe('n/d');
     expect(byLabel('Gini · geográfico (UF)')).toBe('n/d');
@@ -148,7 +148,7 @@ describe('ViewConcentration — conjunto vazio não é "0% de concentração"', 
     });
     const { container } = render(<ViewConcentration summary={{}} conventions={{}} database="ibge_pevs" />);
     expect(
-      container.querySelector('.kpi[data-label="Concentração top-5 UFs"] .kpi-value')?.textContent,
+      container.querySelector('.kpi[data-label="Concentração nas 5 maiores UFs"] .kpi-value')?.textContent,
     ).toBe('100%');
   });
 });

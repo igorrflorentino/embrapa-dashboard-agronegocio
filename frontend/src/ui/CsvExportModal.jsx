@@ -70,7 +70,7 @@ function CsvExportModal({ preview, chips, conventions, onClose }) {
             <h2 id="csv-title">Confira antes de baixar</h2>
             <p className="caption">
               Isto é <strong>exatamente</strong> o que o arquivo vai conter — o recorte e as
-              convenções ativos já estão aplicados. Nada é recalculado no download.
+              convenções ativos já estão aplicados. Nada é recalculado ao baixar.
             </p>
           </div>
           <button className="fm-close" onClick={onClose} aria-label="Fechar">

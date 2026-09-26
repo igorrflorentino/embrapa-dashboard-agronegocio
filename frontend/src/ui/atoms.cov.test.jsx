@@ -201,7 +201,7 @@ describe('Status indicators', () => {
     expect(container.textContent).toContain('Beta');
     expect(container.textContent).toContain('2026-06');
     // The caveat copy is MATURITY.beta.desc — IDENTICAL to the maturity legend in
-    // "Sobre o dashboard", so the beta description reads the same in both places.
+    // "Sobre o painel", so the beta description reads the same in both places.
     expect(container.textContent).toContain(MATURITY.beta.desc);
   });
 
@@ -320,7 +320,7 @@ describe('DataBoundary widgets', () => {
     const { container } = render(
       h(window.FreshnessBanner, { banco: {}, latestAt: '2026-06-27', onReload: () => {} })
     );
-    expect(container.textContent).toContain('Nova versão da Gold');
+    expect(container.textContent).toContain('Nova versão da base analítica');
     expect(container.textContent).toContain('2026-06-27');
     expect(container.querySelector('.fresh-btn')).toBeTruthy();
   });

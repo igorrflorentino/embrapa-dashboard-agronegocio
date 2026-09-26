@@ -31,7 +31,7 @@ function MainScreen({ filters, view = 'overview', database = 'ibge_pevs', infoPa
             <div className="overline">Informações</div>
             <h1 className="page-title">Glossário global</h1>
             <p className="page-sub">
-              Pesquise termos, códigos e colunas em todos os bancos do dashboard.
+              Pesquise termos, códigos e colunas em todos os bancos do painel.
               Filtre por categoria ou banco de origem.
             </p>
           </div>
@@ -85,16 +85,16 @@ function MainScreen({ filters, view = 'overview', database = 'ibge_pevs', infoPa
 
   if (infoPage) {
     const _INFO_TITLES = {
-      about: 'Sobre o dashboard',
+      about: 'Sobre o painel',
       referencias: 'Tabelas de referência',
       cadastro_produtos: 'Cadastro de produtos',
       health: 'Saúde do sistema',
     };
     const _INFO_SUBS = {
-      about: 'O que é o dashboard, quais bancos compõem a base, como os dados são processados e como interpretar cada perspectiva.',
-      referencias: 'Consulte os valores de referência que o pipeline usa (conversões, fatores de moeda, dimensões de código). Confira se estão corretos e, se notar um erro, avise a equipe pela própria linha.',
-      cadastro_produtos: 'Defina quais produtos entram e saem do dashboard: agrupamento e ciclo de vida (exibir ou ocultar). Edições exigem autorização e ficam registradas com seu e-mail.',
-      health: 'Operacionalidade dos bancos em produção: status das consultas à Gold, cobertura, frescor e maturidade de cada fonte.',
+      about: 'O que é o painel, quais bancos compõem a base, como os dados são processados e como interpretar cada perspectiva.',
+      referencias: 'Consulte os valores de referência que o processamento usa (conversões, fatores de moeda, dimensões de código). Confira se estão corretos e, se notar um erro, avise a equipe pela própria linha.',
+      cadastro_produtos: 'Defina quais produtos entram e saem do painel: agrupamento e ciclo de vida (exibir ou ocultar). Edições exigem autorização e ficam registradas com seu e-mail.',
+      health: 'Operacionalidade dos bancos em produção: status das consultas à base analítica, cobertura, frescor e maturidade de cada fonte.',
     };
     const _infoTitle = _INFO_TITLES[infoPage] || _INFO_TITLES.health;
     const _infoSub = _INFO_SUBS[infoPage] || _INFO_SUBS.health;
@@ -195,7 +195,7 @@ function MainScreen({ filters, view = 'overview', database = 'ibge_pevs', infoPa
             <p className="page-sub">
               {isPicker
                 ? 'Compare séries históricas anuais de bancos diferentes no mesmo eixo de tempo — a evolução não é mais limitada a um banco ativo por vez.'
-                : _cvm.desc}
+                : window.comItalico(_cvm.desc)}
             </p>
           </div>
           <div className="hero-meta">
@@ -446,7 +446,7 @@ function MainScreen({ filters, view = 'overview', database = 'ibge_pevs', infoPa
           <div className="overline">Pesquisa histórica · {BANCO_LABEL[database]}</div>
           <h1 className="page-title">{VIEW_LABEL[view]}</h1>
           <p className="page-sub">
-            {BANCO_SUB[database]}{_vm && _vm.desc ? '. ' + _vm.desc : ''}
+            {BANCO_SUB[database]}{_vm && _vm.desc ? <>{'. '}{window.comItalico(_vm.desc)}</> : ''}
           </p>
         </div>
         <div className="hero-meta">
@@ -456,7 +456,7 @@ function MainScreen({ filters, view = 'overview', database = 'ibge_pevs', infoPa
               <span className="meta-label">Banco</span>
               <span className="meta-val">
                 {prov.source} ·{' '}
-                <code title="Tabela Gold de referência do banco. Os gráficos do painel leem tabelas pré-agregadas (camada Serving) derivadas desta tabela Gold — veja a linhagem completa na perspectiva 'Estrutura de dados'.">
+                <code title="Tabela de referência do banco na camada Gold (a base analítica). Os gráficos do painel leem tabelas pré-agregadas (camada Serving, pronta para o painel) derivadas dela — veja a linhagem completa na perspectiva 'Estrutura de dados'.">
                   {prov.table}
                 </code>
               </span>
@@ -473,7 +473,7 @@ function MainScreen({ filters, view = 'overview', database = 'ibge_pevs', infoPa
               <span className="meta-val tnum">{metaProv.lastCrop || '—'}</span>
             </div>
             <div className="meta-row">
-              <span className="meta-label">Atualização do Gold</span>
+              <span className="meta-label">Atualização da base analítica</span>
               <span className="meta-val tnum">{metaProv.refresh || '—'}</span>
             </div>
           </div>

@@ -112,7 +112,7 @@ describe('MainScreen — info pages (sidebar)', () => {
   it('routes infoPage="about" to ViewAbout with its hero title', () => {
     const { container } = render(<MainScreen infoPage="about" />);
     expect(container.querySelector('.child-about')).toBeTruthy();
-    expect(container.textContent).toContain('Sobre o dashboard');
+    expect(container.textContent).toContain('Sobre o painel');
   });
 
   it('routes referencias / cadastro_produtos / health to their views', () => {

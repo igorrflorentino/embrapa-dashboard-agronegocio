@@ -6,7 +6,7 @@
 // per-banco grouping. window.GLOSSARY + window.Icon are stubbed as plain globals so the
 // component's logic is exercised against a controlled fixture.
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render } from '@testing-library/react';
 
 // A small, controlled glossary: one banco + one tema, each with a couple of terms
@@ -138,5 +138,34 @@ describe('Glossary — per-banco scope', () => {
     expect(container.textContent).toContain('Lenha');
     expect(container.textContent).not.toContain('Açaí');
     expect(container.querySelector('.gloss-count').textContent).toContain('1 de 3 termos');
+  });
+});
+
+// O glossário REAL, não a fixture: é ele que carrega as marcas *termo* (controle
+// editorial, v1.96.0). A marca tem de chegar à tela como itálico, nunca como asterisco.
+describe('Glossary — itálico dos conceitos estrangeiros (glossário real)', () => {
+  let real;
+  beforeAll(async () => {
+    await import('./glossary.js');
+    real = window.GLOSSARY;
+  });
+
+  it('renderiza *drawback* e *Commodity* como <em>, sem asterisco na tela', () => {
+    window.GLOSSARY = real;
+    const { container } = render(<Glossary scope="global" />);
+    const italicos = [...container.querySelectorAll('.gloss-short em')].map((e) => e.textContent);
+    expect(italicos).toEqual(expect.arrayContaining(['drawback', 'Commodity']));
+    // A família val_real_* tem asterisco legítimo — só a MARCA (início de palavra) é defeito.
+    const marcas = [...container.querySelectorAll('.gloss-short')]
+      .map((e) => e.textContent).filter((t) => /(^|[\s(“])\*[^\s*]/.test(t));
+    expect(marcas).toEqual([]);
+  });
+
+  it('a busca acha o termo marcado pelo texto puro', () => {
+    window.GLOSSARY = real;
+    const { container } = render(<Glossary scope="global" />);
+    fireEvent.change(container.querySelector('.gloss-search input'), { target: { value: 'admissão temporária, drawback' } });
+    const termos = [...container.querySelectorAll('.gloss-term')].map((e) => e.textContent);
+    expect(termos).toEqual(expect.arrayContaining(['Par regime × fluxo', 'Regime aduaneiro']));
   });
 });

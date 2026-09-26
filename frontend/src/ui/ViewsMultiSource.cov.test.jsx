@@ -323,7 +323,7 @@ describe('ViewPriceSpread', () => {
     expect(container.querySelector('.mlc')).toBeTruthy(); // FOB vs gate lines
     expect(container.querySelector('.line')).toBeTruthy(); // markup line
     expect(container.textContent).toContain('Preço FOB atual');
-    expect(container.textContent).toContain('Markup');
+    expect(container.textContent).toContain('Multiplicador de preço');
     // Mass-only picker present + the UF scope picker.
     expect(container.querySelector('.uf-picker')).toBeTruthy();
   });

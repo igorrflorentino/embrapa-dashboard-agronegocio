@@ -459,7 +459,7 @@ describe('AppShell — citation modal', () => {
 });
 
 describe('AppShell — share + feedback', () => {
-  it('Share copies the permalink and flips the label to "URL copiada"', async () => {
+  it('Share copies the permalink and flips the label to "Link copiado"', async () => {
     const { container } = render(<AppShell {...baseProps()} />);
     const share = [...container.querySelectorAll('.util-action')].find((b) =>
       b.textContent.includes('Compartilhar'),
@@ -468,7 +468,7 @@ describe('AppShell — share + feedback', () => {
       fireEvent.click(share);
     });
     expect(navigator.clipboard.writeText).toHaveBeenCalled();
-    expect(container.textContent).toContain('URL copiada');
+    expect(container.textContent).toContain('Link copiado');
   });
 
   it('Enviar feedback opens the FeedbackModal with the current view/banco context', () => {

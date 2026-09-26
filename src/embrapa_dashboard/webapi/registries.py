@@ -61,7 +61,7 @@ MATURITY: dict[str, dict] = {
         "has_data": False,
         "order": 3,
         "desc": (
-            "Pipeline construído, mas os dados ainda estão sendo baixados das "
+            "Processamento pronto, mas os dados ainda estão sendo baixados das "
             "fontes oficiais — a cobertura pode mudar."
         ),
     },
@@ -768,9 +768,9 @@ VIEW_GROUPS: list[ViewGroup] = [
                 "Estrutura de dados",
                 "live",
                 desc="A estrutura por trás do banco: percorra as tabelas de cada camada do "
-                "pipeline (Bronze → Silver → Gold → Serving) e investigue qualquer uma linha a "
-                "linha, com paginação, ordenação e filtros por coluna. Para conferir os dados ou "
-                "rastrear de onde vem cada número.",
+                "processamento (Bronze → Silver → Gold → Serving) e investigue qualquer uma "
+                "linha a linha, com paginação, ordenação e filtros por coluna. Para conferir os "
+                "dados ou rastrear de onde vem cada número.",
             ),
             View(
                 "glossary",
@@ -859,7 +859,7 @@ FILTER_SCHEMAS: dict[str, dict] = {
                 "type": "products",
                 "label": "Produtos · PEVS",
                 "column": "product_code",
-                "hint": "Commodities da extração vegetal (floresta nativa).",
+                "hint": "Produtos da extração vegetal (floresta nativa).",
             },
             {
                 "id": "nivel",

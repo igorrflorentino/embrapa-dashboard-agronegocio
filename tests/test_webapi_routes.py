@@ -1160,7 +1160,7 @@ def test_unknown_api_get_path_is_json_404(monkeypatch):
     resp = client.get("/api/not-a-real-endpoint")
     assert resp.status_code == 404
     assert resp.content_type.startswith("application/json")
-    assert resp.get_json()["error"] == "endpoint de API não encontrado"
+    assert resp.get_json()["error"] == "rota da API não encontrada"
 
 
 def test_curation_post_without_identity_is_401(monkeypatch):

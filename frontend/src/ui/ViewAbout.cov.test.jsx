@@ -1,5 +1,5 @@
 // ViewAbout.cov.test.jsx — coverage smoke + branch tests for the institutional
-// "Sobre o dashboard" onboarding page (ViewAbout.jsx). The page is purely
+// "Sobre o painel" onboarding page (ViewAbout.jsx). The page is purely
 // registry-driven: it reads the banco list (visibleBancos/BANCOS), the perspective
 // groups (VIEW_GROUPS), per-banco provenance (bancoMeta/maturityMeta/bancoTable) and
 // the live Gold refresh stamp (dataStore.meta). We stub all of those as plain globals

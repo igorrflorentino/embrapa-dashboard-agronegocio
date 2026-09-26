@@ -282,7 +282,7 @@ describe('ViewGeography — smoke + main branches', () => {
     // chart, same data, a second time on one screen. That card (and the UF-ranking
     // card, equally redundant with the top card in this scope) must be gone.
     expect(container.textContent).not.toContain('Soma por região');
-    expect(container.textContent).not.toContain('Top 10');
+    expect(container.textContent).not.toContain('10 maiores');
   });
 
   // EST-4: the point of the vendored municipal meshes — a sub-UF selection must finally

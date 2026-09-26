@@ -47,8 +47,8 @@ function FreshnessBanner({ banco, latestAt, onReload }) {
     <div className="fresh-banner">
       <span className="fresh-dot"></span>
       <span className="fresh-text">
-        Nova versão da Gold publicada{latestAt && latestAt !== '—' ? ` · ${latestAt}` : ''}.
-        Os resultados em cache estão desatualizados.
+        Nova versão da base analítica publicada{latestAt && latestAt !== '—' ? ` · ${latestAt}` : ''}.
+        Os dados já carregados estão desatualizados.
       </span>
       <button className="fresh-btn" onClick={handle} disabled={reloading}>
         <window.Icon name="refresh" size={14} />
@@ -65,7 +65,7 @@ function DataLoading({ banco }) {
         <span className="dl-spinner"></span>
         <div>
           <div className="dl-title">Consultando {banco ? banco.short : 'dados'}…</div>
-          <div className="dl-sub">Executando consulta no BigQuery (Serving Layer · pré-agregada)</div>
+          <div className="dl-sub">Consultando os dados no BigQuery (tabelas pré-agregadas)</div>
         </div>
       </div>
       <div className="dl-skel-row">
@@ -95,10 +95,10 @@ function DataError({ banco, message, onRetry }) {
           <window.Icon name="warning" size={28} />
         </div>
         <h2 className="derr-title">Não foi possível carregar {banco ? banco.short : 'os dados'}</h2>
-        <p className="derr-msg">{message || 'Ocorreu um erro ao consultar a tabela Gold no BigQuery.'}</p>
+        <p className="derr-msg">{message || 'Ocorreu um erro ao consultar a base analítica no BigQuery.'}</p>
         <p className="derr-hint">
           As consultas são enviadas ao BigQuery sob demanda. Se a falha persistir,
-          verifique a disponibilidade da fonte Gold e tente novamente.
+          verifique a disponibilidade da base analítica e tente novamente.
         </p>
         <button className="derr-btn" onClick={handle} disabled={retrying}>
           <window.Icon name="refresh" size={14} />
