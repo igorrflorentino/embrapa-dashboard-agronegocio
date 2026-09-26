@@ -153,7 +153,7 @@ One annual series per product, keyed by the same `code` as `products`.
 | `uf` | `state_acronym` |
 | `name` | `state_name` |
 | `region` | `region` → **abbrev** (see §7): Norte→`N`, Nordeste→`NE`, Centro-Oeste→`CO`, Sudeste→`SE`, Sul→`S` |
-| `col`, `row` | **frontend's** `../data.js` `UF_DATA` tile-map — NOT in Gold; the BFF copies the grid |
+| `col`, `row` | **frontend's** `frontend/src/ui/data.js` `UF_DATA` tile-map — NOT in Gold; the BFF copies the grid |
 | `value` | `SUM(val_yearfx_usd)` (COMEX) / `SUM(val_real_ipca_brl)` (PEVS) |
 | `q_mass` | `SUM(net_weight_kg)` (COMEX) / `SUM(qty_base WHERE family='massa')` (PEVS) |
 | `q_vol` | `SUM(qty_base WHERE family='volume')` |
@@ -394,7 +394,7 @@ trade mirror (COMEX vs COMTRADE Brazil) compute on a common agrupamento.
 ## 7. Vocabulary the BFF must reconcile
 
 ### 7.1 Physical-unit `family` — Gold is Portuguese
-Gold emits `family` in pt. Map to the frontend `UNIT_FAMILIES` ids (`../data.js`).
+Gold emits `family` in pt. Map to the frontend `UNIT_FAMILIES` ids (`frontend/src/ui/data.js`).
 Proposed mapping (confirm the right-hand ids against the registry; if they differ
 it is a one-line BFF map, never a Gold change):
 

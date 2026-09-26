@@ -8,7 +8,7 @@
 [![uv](https://img.shields.io/badge/pkg-uv-blueviolet)](https://docs.astral.sh/uv/)
 [![dbt](https://img.shields.io/badge/transform-dbt-FF694B)](https://www.getdbt.com/)
 
-Medallion pipeline (**Bronze → Silver → Gold**) for **historical and scientific analysis** of Brazilian extractive vegetable production (IBGE PEVS), enriched with FX rates (USD, EUR) and inflation indices (IPCA, IGP-M, IGP-DI) from Brazil's Central Bank. A tool built for **Embrapa researchers** — the focus is on time series and data exploration, **not** business metrics or real-time analytics (data is ingested and transformed in batch).
+Medallion pipeline (**Bronze → Silver → Gold**) for **historical and scientific analysis** of Brazilian agricultural, livestock and forestry production (IBGE PEVS — native-forest extraction and planted-forest silviculture —, PAM and PPM) and foreign trade (MDIC COMEX, UN Comtrade), enriched with FX rates (USD, EUR) and inflation indices (IPCA, IGP-M, IGP-DI) from Brazil's Central Bank, plus the US CPI-U (BLS) and the euro-area HICP (ECB) to deflate dollar and euro values. A tool built for **Embrapa researchers** — the focus is on time series and data exploration, **not** business metrics or real-time analytics (data is ingested and transformed in batch).
 
 > 📊 **Two consumption paths, in parallel.** The Gold tables are served by two first-class frontends, both reading the same data:
 > 1. **Looker Studio** — direct no-code connection to the Gold table; available today.
@@ -22,6 +22,7 @@ IBGE PAM API     ─┤
 IBGE PPM API     ─┤
 BCB Inflation    ─┼─► Python (src/embrapa_dashboard) — two-phase
 BCB Currency     ─┤   extract → GCS raw/ (verbatim) → filter → BigQuery Bronze
+BLS CPI · ECB HICP┤                                           │
 MDIC COMEX CSV   ─┤                                           │
 UN Comtrade API  ─┘                                           │
                                                               ▼
@@ -44,7 +45,9 @@ UN Comtrade API  ─┘                                           │
 > (`gold_ppm_production`, annual livestock — herd + animal production), MDIC COMEX
 > (`gold_comex_flows`, Brazilian foreign trade export+import) and UN Comtrade
 > (`gold_comtrade_flows`, **global** bilateral trade reporter→partner), all
-> enriched with FX/inflation from the BCB. The `gold_<source>_<form>` design is
+> enriched with FX/inflation from the BCB and the foreign deflators (US CPI-U from the BLS,
+> euro-area HICP from the ECB). PEVS carries both halves of the survey: native-forest
+> extraction (SIDRA t289) and planted-forest silviculture (t291), told apart by `tabela`. The `gold_<source>_<form>` design is
 > extensible — see [docs/adding_a_data_source.md](docs/adding_a_data_source.md).
 
 ## Stack
@@ -114,7 +117,7 @@ make dbt-build
 ## CLI
 
 ```text
-embrapa ingest ibge | ibge-pam | ibge-ppm | bcb-inflation | bcb-currency | foreign-inflation | comex | comtrade | all
+embrapa ingest ibge | ibge-silvicultura | ibge-pam | ibge-ppm | bcb-inflation | bcb-currency | foreign-inflation | comex | comtrade | all
 embrapa ingest <source> [--from-raw]               # two-phase: extract→raw→bronze; --from-raw re-derives Bronze from raw without re-downloading
 embrapa ingest ibge-batch [--chunk-years 5]        # chunked IBGE historical backfill (deadline-safe for large year windows)
 embrapa ingest ibge-pam [--full]                   # IBGE PAM (SIDRA table 5457, annual crops); excluded from `ingest all`
@@ -174,16 +177,17 @@ IBGE "no-data" placeholders (`...`, `..`, `*`, `X`) are converted to `NULL` in S
 
 ## Final output — `gold.gold_pevs_production`
 
-One row per `(reference_year, state_acronym, city_name, product_code)`. Columns:
+One row per `(reference_year, state_acronym, city_code, product_code, tabela)` — the grain the
+dbt uniqueness test enforces. Columns:
 
 **Time / geography / product**
-`reference_year`, `reference_date`, `state_acronym`, `state_name`, `region`, `city_code`, `city_name`, `product_code`, `product_description`.
+`reference_year`, `reference_date`, `state_acronym`, `state_name`, `region`, `city_code`, `city_name`, `product_code`, `tabela` (the SIDRA table: `289` extração · `291` silvicultura — part of the produto's identity with the banco and the code), `product_description`.
 
 **Quantities (by physical unit family)**
 `family` (`massa`|`volume`|`energia`|`contagem`|`area`|`desconhecida`), `unit_native` (source label), `qty_native` (value in the native unit), `qty_base` (converted to the family's base unit), `base_unit` (`t`/`m³`/`MWh`/`un`/`ha`).
 > ⚠️ **Never sum `qty_base` across families.** Every quantity sum requires `GROUP BY family` (build `q_by_family = {massa:Σt, volume:Σm³, …}` at query time). Factors come from the `unit_family_conversions` + `product_unit_factors` seeds; a unit without a conversion → null `qty_base` (curation). Monetary value remains family-agnostic and summable.
 
-**Values by year FX (foreign zeroed pre-1994)**
+**Values by year FX (US$ NULL before 1994, € NULL before 1999 — absent, never 0)**
 `val_yearfx_brl`, `val_yearfx_usd`, `val_yearfx_eur`.
 
 **Real values via IPCA**
@@ -194,6 +198,9 @@ One row per `(reference_year, state_acronym, city_name, product_code)`. Columns:
 
 **Real values via IGP-DI**
 `val_real_igpdi_brl`, `val_real_igpdi_usd`, `val_real_igpdi_eur`.
+
+**Real values via the foreign deflators** (each index corrects only its own economy's currency)
+`val_real_cpi_usd` (US CPI-U), `val_real_hicp_eur` (euro-area HICP).
 
 **Quality / provenance**
 `data_quality_flag`, `last_refresh`.

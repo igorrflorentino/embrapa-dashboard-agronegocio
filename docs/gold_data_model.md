@@ -18,12 +18,16 @@ few**, not every column (each fact carries the full
 erDiagram
     gold_produto_agrupamento ||--o{ gold_pevs_production : "source=pevs · code=product_code · tabela"
     gold_produto_agrupamento ||--o{ gold_pam_production  : "source=pam · code=product_code · tabela"
+    gold_produto_agrupamento ||--o{ gold_ppm_production  : "source=ppm · code=product_code · tabela"
     gold_produto_agrupamento ||--o{ gold_comex_flows     : "source=comex · code=ncm_code · tabela"
     gold_produto_agrupamento ||--o{ gold_comtrade_flows  : "source=comtrade · code=cmd_code · tabela"
     dim_geo_br               ||--o{ gold_pevs_production : "state_acronym"
     dim_geo_br               ||--o{ gold_pam_production  : "state_acronym"
+    dim_geo_br               ||--o{ gold_ppm_production  : "state_acronym"
     dim_geo_br               ||--o{ gold_comex_flows     : "state_acronym (UF of NCM)"
     dim_geo_municipio        ||--o{ gold_pevs_production : "city_code (sub-UF geo cube)"
+    dim_geo_municipio        ||--o{ gold_pam_production  : "city_code (sub-UF geo cube)"
+    dim_geo_municipio        ||--o{ gold_ppm_production  : "city_code (sub-UF geo cube)"
     dim_code_industrialization_scd2  |o--o| gold_produto_agrupamento : "(source, code, tabela) · is_current (gated)"
 
     gold_pevs_production {
@@ -31,11 +35,12 @@ erDiagram
         string   state_acronym      PK "→ dim_geo_br"
         string   city_code          PK "IBGE 7-digit municipality"
         string   product_code       PK "→ crosswalk.code"
+        string   tabela             PK "SIDRA table: 289 extração / 291 silvicultura"
         date     reference_date         "Dec 31 of year"
         string   family                 "massa / volume / … — never SUM qty_base across families"
         float    qty_base               "qty_native to the family base_unit (t / m3 / …)"
         float    val_real_ipca_brl      "deflated R$; plus the full val_ matrix"
-        string   data_quality_flag      "OK / MISSING_VALUE / MISSING_QUANTITY / MISSING_WEIGHT / INCOMPLETE / OUTLIER_VALUE / OUTLIER_QUANTITY / PROBLEMATIC_VALUE / PROBLEMATIC_QUANTITY / ISOLATED_SPIKE / UNSCORED (last 6 gated by enable_quality_outliers; OK means EXAMINED and cleared, UNSCORED means the detector had no basis to run)"
+        string   data_quality_flag      "OK / MISSING_VALUE / MISSING_QUANTITY / INCOMPLETE / OUTLIER_VALUE / OUTLIER_QUANTITY / PROBLEMATIC_VALUE / PROBLEMATIC_QUANTITY / ISOLATED_SPIKE / UNSCORED (the last 6 gated by enable_quality_outliers; OK means EXAMINED and cleared, UNSCORED means the detector had no basis to run; INFERRED_* accepted but reserved, never emitted; no MISSING_WEIGHT: trade only)"
         timestamp last_refresh
     }
     gold_pam_production {
@@ -43,6 +48,7 @@ erDiagram
         string   state_acronym      PK "→ dim_geo_br"
         string   city_code          PK "IBGE 7-digit municipality"
         string   product_code       PK "→ crosswalk.code"
+        string   tabela             PK "SIDRA table 5457 (single-table banco)"
         date     reference_date         "Dec 31 of year"
         string   family                 "massa / volume / … — never SUM qty_base across families"
         float    qty_base               "qty_native to the family base_unit (t / m3 / …)"
@@ -50,7 +56,20 @@ erDiagram
         float    area_harvested_ha      "PAM-only: harvested area (ha)"
         float    yield_kg_ha            "PAM-only: yield (kg/ha)"
         float    val_real_ipca_brl      "deflated R$; plus the full val_ matrix"
-        string   data_quality_flag      "OK / MISSING_VALUE / MISSING_QUANTITY / MISSING_WEIGHT / INCOMPLETE / OUTLIER_VALUE / OUTLIER_QUANTITY / PROBLEMATIC_VALUE / PROBLEMATIC_QUANTITY / ISOLATED_SPIKE / UNSCORED (last 6 gated by enable_quality_outliers; OK means EXAMINED and cleared, UNSCORED means the detector had no basis to run)"
+        string   data_quality_flag      "OK / AREA_INCONSISTENT (planted < harvested, PAM only) / MISSING_VALUE / MISSING_QUANTITY / INCOMPLETE / OUTLIER_VALUE / OUTLIER_QUANTITY / PROBLEMATIC_VALUE / PROBLEMATIC_QUANTITY / ISOLATED_SPIKE / UNSCORED (same gating and meaning as PEVS; INFERRED_* reserved; no MISSING_WEIGHT)"
+        timestamp last_refresh
+    }
+    gold_ppm_production {
+        int      reference_year     PK
+        string   state_acronym      PK "→ dim_geo_br"
+        string   city_code          PK "IBGE 7-digit municipality"
+        string   product_code       PK "→ crosswalk.code"
+        string   tabela             PK "SIDRA table: 3939 rebanho / 74 produção animal"
+        string   measure_kind           "stock (herd heads, no value) / flow (animal production)"
+        string   family                 "contagem for herds; volume/massa/… for products — never SUM across"
+        float    qty_base               "qty_native to the family base_unit"
+        float    val_real_ipca_brl      "deflated R$ (0 for a herd by construction); plus the full val_ matrix"
+        string   data_quality_flag      "same set as PEVS; a stock row is UNSCORED (no price to score) or MISSING_QUANTITY"
         timestamp last_refresh
     }
     gold_comex_flows {
@@ -58,6 +77,7 @@ erDiagram
         int      reference_year     PK
         int      reference_month    PK
         string   ncm_code           PK "8-digit NCM → crosswalk.code"
+        string   tabela             PK "project-chosen table id ncm (single-table banco)"
         string   country_code       PK "MDIC CO_PAIS"
         string   state_acronym      PK "UF of NCM → dim_geo_br (may be EX/ND/ZN)"
         string   transport_route_code PK "CO_VIA (the `via` filter)"
@@ -73,6 +93,8 @@ erDiagram
         string   reporter_code      PK "M49 (origin for exports)"
         string   partner_code       PK "M49 — never '0' (World dropped in Silver)"
         string   cmd_code           PK "HS6 → crosswalk.code"
+        string   tabela             PK "project-chosen table id hs (single-table banco)"
+        string   customs_code       PK "customs procedure; C00 = totals (the only base ingested)"
         string   reporter_iso_a3
         string   partner_iso_a3
         bool     partner_is_group       "true = aggregate area (…, nes)"

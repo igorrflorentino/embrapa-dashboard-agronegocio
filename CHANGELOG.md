@@ -38,6 +38,33 @@ então **sem tag** (CONTRIBUTING, Release Policy).
   hoje são também PAM, PPM, COMEX, COMTRADE e os deflatores do BLS e do BCE. A lista de
   comandos de ingestão ganhou o `foreign-inflation`.
 
+### Corrigido (demais documentos vivos, revisados antes do merge)
+- **README.md:**
+  - A abertura descrevia o projeto como "produção extrativa vegetal (IBGE PEVS)", de antes da
+    renomeação da v1.50.0, e sem os deflatores estrangeiros; o diagrama de fontes não tinha o
+    BLS nem o BCE.
+  - O grão do Gold PEVS dizia `city_name` e não tinha `tabela`; o teste de unicidade do dbt é
+    `(reference_year, state_acronym, city_code, product_code, tabela)`.
+  - "US$/€ **zerados** antes de 1994" estava errado. Medido no Gold: são **nulos**, o dólar
+    antes de 1994 (102.636 linhas) e o euro antes de 1999 (mais 65.365), com 0 linhas zeradas.
+  - Entraram as colunas `val_real_cpi_usd` e `val_real_hicp_eur`, e o comando
+    `ibge-silvicultura` na lista.
+- **docs/gold_data_model.md**, que se apresenta como o modelo autoritativo do Gold:
+  - As listas de `data_quality_flag` do PEVS e do PAM traziam `MISSING_WEIGHT`, que só o
+    comércio emite, e a do PAM omitia `AREA_INCONSISTENT`, a marca exclusiva dela.
+  - O diagrama **não tinha o `gold_ppm_production`**, e agora tem (com `measure_kind`).
+  - A coluna `tabela`, que faz parte da chave nas cinco tabelas, não aparecia em nenhuma
+    entidade; o grão do COMTRADE também omitia `customs_code`.
+  - O cubo municipal passou a ligar aos três bancos do IBGE, e não só ao PEVS.
+- **docs/operations_runbook.md:** o build de produção também roda por push.
+- **docs/frontend_data_contract.md:** `../data.js` apontava para um caminho inexistente; o
+  arquivo é `frontend/src/ui/data.js`.
+
+Fora deste PR, de propósito: o `dbt/models/gold/_gold.yml` também não documenta a coluna
+`tabela` no PEVS, no PAM e no PPM (ela existe no SQL e no BigQuery, e está no teste de
+unicidade). Mexer em `dbt/` dispara um build de produção no merge e pede tag, então isso fica
+para um PR próprio.
+
 ### Conferido
 Os 79 caminhos e 151 identificadores de código citados no CLAUDE.md existem, e as afirmações
 de comportamento conferem: alvos do Makefile e da CLI, as 6 fontes do `all` e suas cadências,
