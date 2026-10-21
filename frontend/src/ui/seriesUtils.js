@@ -72,7 +72,11 @@ window.ratioPresent = (num, den) => {
 // A calibração de minAbs não é chute: varrendo as 11 lavouras da PAM 2024, um
 // rendimento múltiplo EXATO de 1.000 kg/ha — assinatura do arredondamento da fonte —
 // aparece em 20% das UFs abaixo de 100 ha, 6,7% entre 100 e 300 ha e em ZERO acima
-// de 300 ha. 1.000 ha fica com folga do outro lado dessa fronteira.
+// de 300 ha. 1.000 ha fica com folga do outro lado dessa fronteira. Remedido em
+// 2026-10-21 com as 14 lavouras (entraram laranja, limão e tangerina; o abacaxi e o
+// coco, contados, ficam de fora porque seu rendimento é em frutos/ha): 23% abaixo de
+// 100 ha (6 de 26), 5% entre 100 e 300 ha (1 de 19) e zero acima de 300 ha (0 de 235).
+// A fronteira não se mexeu.
 //
 // Devolve { kept, dropped, total, shareOf } — nunca esconde: quem chama é obrigado a
 // receber os descartados para poder NOMEÁ-LOS na tela (regra do projeto: filtragem
@@ -100,7 +104,10 @@ window.materialityFloor = (rows, key, { minShare = 0, minAbs = 0 } = {}) => {
 // A calibração do piso para ÁREA COLHIDA, ao lado da regra que o aplica em vez de
 // escondida no cálculo. Medido nas 11 lavouras da PAM 2024: nenhuma UF excluída
 // chega a 1.000 ha (a maior tem 972), nenhum ranking de 12 fica vazio, e o topo muda
-// em 3 das 11 — sempre tirando de lá uma UF de área desprezível.
+// em 3 das 11 — sempre tirando de lá uma UF de área desprezível. Remedido em 2026-10-21
+// com as 14 lavouras, 2024 e 2025: a maior excluída continua sendo 972 ha (2024, café em
+// PE) e 962 ha (2025, laranja no CE), nenhuma excluída chega a 1.000 ha, e nenhum ranking
+// fica vazio (o menor, a tangerina, mantém 12 UFs de 23).
 window.AREA_FLOOR = { minShare: 0.005, minAbs: 1000 };
 
 // A calibração do piso para PRODUÇÃO — e ela tem SÓ a prova relativa, de propósito.

@@ -458,14 +458,26 @@ seeds:
       for 1974–2000 and the series falls ×0.16 (laranja), ×0.12 (limão), ×0.19 (tangerina)
       or jumps ×10.9 (banana) between 2000 and 2001.
 
+      THE SEED CARRIES ALL 17 FRUITS OF IBGE'S NOTE, not only the four in the catalog: abacate,
+      banana, caqui, figo, goiaba, laranja, limão, maçã, mamão, manga, maracujá, marmelo, pêra,
+      pêssego, tangerina, melancia, melão (grape "sempre foi pesquisada em peso"). The 13 others
+      are inert until the product is registered and ingested — `silver_ibge_pam` joins by
+      (product_code, year), so a code absent from Bronze matches nothing — and correct the day it
+      is. They are here because the build-time detector (assert_pam_quantity_no_unit_cliff, ≥ 4×)
+      is blind to five of them (abacate ×0.45, manga ×0.36, marmelo ×0.25, melão ×1.5, mamão ×0.88:
+      the step IS the weight of one fruit, and a heavy or light-and-growing fruit barely moves), so
+      a guard that waits for a symptom would let them through. The list is pinned in
+      tests/test_pam_counted_fruits.py.
+
       silver_ibge_pam multiplies the quantity (var 214, mil frutos → t) and the yield
       (var 112, frutos/ha → kg/ha) of a matching (product_code, reference_year) by
       `kg_per_unit`, the median weight per fruit IBGE estimated for that very change: each
       state's 2001 yield (kg/ha) divided by its 2000 yield (fruits/ha), then the national
       median. Values as PRINTED in IBGE's table (PAM/COAGRO, "Uso interno / dados
       preliminares / sujeitos a alterações"): laranja 0.16 · limão 0.10 · tangerina 0.15 ·
-      banana 10.20 kg. The unit is a count, so mil frutos × kg/fruit = t (the "mil" and the
-      "/1000 kg→t" cancel). Area and value are untouched.
+      banana 10.20 kg (the four in the catalog; the other 13 are in the file, same source).
+      The unit is a count, so mil frutos × kg/fruit = t (the "mil" and the "/1000 kg→t" cancel).
+      Area and value are untouched.
 
       ⚠ An ESTIMATE, not a measurement: the method assumes the 2001 yield equals 2000's, and
       IBGE itself says these weights serve internal data review and "não deverão ser
@@ -473,7 +485,11 @@ seeds:
       alternative — publishing a count as tonnes — is wrong by 6–11×; every converted row is
       marked `qty_is_estimated` in Gold. Re-measured 2026-10-20 against the API: the national
       2001/2000 yield ratio gives 0.165 · 0.119 · 0.182 · 11.2, consistent with the
-      published 0.16 · 0.10 · 0.15 · 10.20.
+      published 0.16 · 0.10 · 0.15 · 10.20. Re-measured 2026-10-21 for the other 13 (quantity
+      2001÷2000, national): abacate 0.448 · caqui 0.207 · figo 0.075 · goiaba 0.143 · maçã 0.124 ·
+      mamão 0.879 · manga 0.363 · maracujá 0.169 · marmelo 0.252 · melancia 6.40 · melão 1.51 ·
+      pêra 0.190 · pêssego 0.122 — within ±20% of the published weight (the quantity ratio also
+      carries one year of real growth), except marmelo, +33% on a national series of ~5 mil t.
 
       Only products whose unit CHANGED inside the series belong here — a break is what makes
       a conversion defensible, because the two sides of it are then comparable only after it.
@@ -484,9 +500,10 @@ seeds:
       médio em frutos por hectare", the same numbers SIDRA 5457 labels "Toneladas"). They live
       in pam_count_unit_products, as a COUNT — IBGE publishes no weight per fruit for them, so
       none is invented. A product is in one seed or the other, never both
-      (assert_pam_unit_seeds_disjoint). Before adding any PAM product, scan its national
-      series for a year-over-year jump of ≥ 4× (assert_pam_quantity_no_unit_cliff does it at
-      build time) AND check IBGE's footnotes: a constant unit hides no break.
+      (assert_pam_unit_seeds_disjoint). Before adding any OTHER PAM product, scan its national
+      series for a year-over-year jump (assert_pam_quantity_no_unit_cliff does it at build time,
+      ≥ 4×) AND check IBGE's footnotes: a constant unit hides no break, and a SIDRA product NAME
+      ending in an asterisk is a unit warning (assert_pam_asterisked_products_are_counts).
       Ranges for one product must not overlap (assert_pam_unit_eras_no_overlap).
 
       Source: https://sidra.ibge.gov.br/content/documentos/pam/AlteracoesUnidadesMedidaFrutas.pdf
@@ -506,7 +523,7 @@ seeds:
               - year_from
     columns:
       - name: product_code
-        description: "SIDRA classification-782 crop code (e.g. 40151 = Laranja)."
+        description: "SIDRA classification-782 crop code (e.g. 40151 = Laranja), read from the API, not typed from memory."
         tests: [not_null]
       - name: year_from
         tests: [not_null]
@@ -555,9 +572,11 @@ seeds:
       mass-based ratios (export coefficient, gate price). That is correct — those divide a
       trade WEIGHT by a production MASS.
 
-      Different from pam_fruit_unit_eras (laranja, limão, tangerina, banana: counted until
-      2000, weighed since, converted to t with IBGE's preliminary weight). A product is in one
-      seed or the other, never both (assert_pam_unit_seeds_disjoint).
+      Different from pam_fruit_unit_eras (the 17 fruits counted until 2000 and weighed since,
+      converted to t with IBGE's preliminary weight). A product is in one seed or the other,
+      never both (assert_pam_unit_seeds_disjoint). SIDRA marks exactly the products of THIS seed
+      with an asterisk in the product name; assert_pam_asterisked_products_are_counts fails if an
+      asterisked product is ingested without a row here.
     config:
       column_types:
         product_code: string

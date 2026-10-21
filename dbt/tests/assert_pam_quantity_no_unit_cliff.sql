@@ -13,7 +13,18 @@
 -- Calibration, measured on the 14 PAM products over 1974-2024 (national series, SIDRA API):
 -- the largest REAL year-over-year swing was cafe 1975->76 at 0.30x (the 1975 frost; 3.3x
 -- inverted) and castanha-de-caju 2011->12 at 0.35x (drought). The unit breaks were 0.12x-0.19x
--- and 10.9x. 4x separates the two groups with margin on both sides.
+-- and 10.9x. 4x separates the two groups with margin on both sides — FOR THOSE FOURTEEN.
+--
+-- ⚠ BLIND SPOT, measured 2026-10-21 over IBGE's whole fruit list (the note linked in the seed
+-- pam_fruit_unit_eras names 17 fruits counted until 2000, not 4): the 2000->2001 step is the
+-- fruit's weight in kg, so a heavy or light-and-growing fruit barely moves. Five of the 17 sit
+-- INSIDE the 4x band and this test would never fire for them: abacate x0.45, manga x0.36,
+-- marmelo x0.25 (3.97x, a hair under), melão x1.5 and mamão x0.88 (almost invisible — the
+-- yield moves x1.0). None is in the catalog today. This test is a SYMPTOM check: absence of a
+-- warning here proves nothing for them. The guard for the fruits is IBGE's LIST, which the seed
+-- pam_fruit_unit_eras carries in full since v1.102.0 (tests/test_pam_counted_fruits.py pins it),
+-- so those five are converted the day they are registered, whatever this test says. The test
+-- remains the net for a product that is NOT on IBGE's list.
 --
 -- WARN, not error: a real shock can still trip it (a new crop starting from a small base, a
 -- frost, a drought). The row is a prompt to look — and to decide whether the product belongs

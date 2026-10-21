@@ -31,9 +31,9 @@ teste `assert_trade_codes_have_a_description`.
 
 ## comex_ncm (NCM-8 · NO_NCM_POR)
 
-17 divergência(s).
+24 divergência(s).
 
-### nosso mais pleno (8)
+### nosso mais pleno (9)
 
 | código | texto usado | texto do MDIC |
 |---|---|---|
@@ -45,8 +45,9 @@ teste `assert_trade_codes_have_a_description`.
 | `15079090` | Outros óleos de soja e suas frações | Outros óleos de soja |
 | `23040010` | Bagaços e outros resíduos sólidos da extração do óleo de soja, em farinhas e pellets | Farinhas e pellets, da extração do óleo de soja |
 | `10064000` | Arroz quebrado (trinca de arroz) | Arroz quebrado |
+| `08052900` | Mandarinas (incluindo as tangerinas e as satsumas); clementinas, wilkings e citros (citrinos) híbridos semelhantes: Outros | Outros citros híbridos |
 
-### procedência distinta (9)
+### procedência distinta (15)
 
 | código | texto usado | texto do MDIC |
 |---|---|---|
@@ -59,10 +60,16 @@ teste `assert_trade_codes_have_a_description`.
 | `10062010` | Arroz descascado (arroz cargo ou castanho), parboilizado | Arroz descascado (arroz cargo ou castanho), descascado, parboilizado |
 | `10063019` | Arroz semibranqueado ou branqueado, parboilizado, outros | Outros tipode de arroz semibranqueado ou branqueado, parboilizado |
 | `10063029` | Arroz semibranqueado ou branqueado, não parboilizado, outros | Outros tipode de arroz semibranqueado ou branqueado, não parboilizado |
+| `08043000` | Abacaxis (ananases) | Abacaxis frescos ou secos |
+| `08051000` | Laranjas | Laranjas, frescas ou secas |
+| `08055000` | Limões (Citrus limon, Citrus limonum) e limas (Citrus aurantifolia, Citrus latifolia) | Limões (Citrus limon, Citrus limonum) e limas (Citrus aurantifolia, Citrus latifolia), frescos ou secos |
+| `20091100` | Suco (sumo) de laranja: Congelado | Suco (sumo) de laranja, não fermentados, sem adição de álcool, com ou sem adição de açúcar ou de outros edulcorantes, congelado |
+| `20091200` | Suco (sumo) de laranja: Não congelado, com valor Brix não superior a 20 | Suco (sumo) de laranja, não fermentados, sem adição de álcool, com ou sem adição de açúcar ou de outros edulcorantes, não congelado, com valor Brix não superior a 20 |
+| `20091900` | Suco (sumo) de laranja: Outros | Outros sucos de laranjas, não fermentados, sem adição de álcool, com ou sem adição de açúcar ou de outros edulcorantes |
 
 ## comtrade_hs (SH · NO_SH*_POR)
 
-201 divergência(s).
+208 divergência(s).
 
 ### oficial abreviado (11)
 
@@ -80,7 +87,7 @@ teste `assert_trade_codes_have_a_description`.
 | `441223` | Madeira contraplacada ou compensada, madeira folheada, e madeiras estratificadas semelhantes — Outras, contendo pelo menos uma camada de painel de partículas | Outs.madeiras compens.face mad.n/conif.painel particula |
 | `441292` | Madeira compensada; não especificada na posição 4412, com pelo menos uma folha externa de madeira de não coníferas | Outs.madeiras compensadas, c/camada de madeira tropical |
 
-### nosso mais pleno (132)
+### nosso mais pleno (135)
 
 | código | texto usado | texto do MDIC |
 |---|---|---|
@@ -216,8 +223,11 @@ teste `assert_trade_codes_have_a_description`.
 | `100610` | Cereais; arroz com casca (arroz paddy) | Arroz (paddy) com casca |
 | `100620` | Cereais; arroz descascado (arroz cargo ou castanho) | Arroz (cargo ou castanho), descascado |
 | `100640` | Cereais; arroz quebrado (trinca de arroz) | Arroz quebrado (trinca de arroz) |
+| `080529` | Mandarinas (incluindo as tangerinas e as satsumas); clementinas, wilkings e citros (citrinos) híbridos semelhantes: Outros | Outros citros híbridos |
+| `080550` | Limões (Citrus limon, Citrus limonum) e limas (Citrus aurantifolia, Citrus latifolia) | Limões e limas, frescos ou secos |
+| `200912` | Suco (sumo) de laranja: Não congelado, com valor Brix não superior a 20 | Sucos de laranja não congelados, não fermentados, com valor Brix <= 20 |
 
-### procedência distinta (44)
+### procedência distinta (48)
 
 | código | texto usado | texto do MDIC |
 |---|---|---|
@@ -265,6 +275,10 @@ teste `assert_trade_codes_have_a_description`.
 | `120190` | Soja; exceto para semeadura, mesmo triturada | Soja, mesmo triturada, exceto para semeadura |
 | `150790` | Óleos vegetais; óleo de soja e suas frações, exceto em bruto | Óleo de soja e respectivas frações, mesmo refinados, mas não quimicamente modificados |
 | `100630` | Cereais; arroz semibranqueado ou branqueado, mesmo polido ou brunido | Arroz semibranqueado ou branqueado, mesmo polido ou brunido (glaceado) |
+| `080430` | Abacaxis (ananases) | Abacaxis frescos ou secos |
+| `080510` | Laranjas | Laranjas frescas ou secas |
+| `200911` | Suco (sumo) de laranja: Congelado | Sucos de laranjas, congelados, não fermentados |
+| `200919` | Suco (sumo) de laranja: Outros | Outros sucos de laranjas, não fermentados |
 
 ### ausente no MDIC (14)
 

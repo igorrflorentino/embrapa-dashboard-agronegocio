@@ -262,22 +262,33 @@ def test_get_credentials_uses_get_settings_when_none_passed() -> None:
     creds_cls.assert_called_once()
 
 
-def test_pam_abacaxi_is_configured_and_lands_in_mass():
-    """40092 (Abacaxi) must be in the PAM set, and the reason it needs no unit-family
-    seed entry is worth pinning: SIDRA labels it "Abacaxi*", and the asterisk reads like
-    a unit warning — PAM's classic unit for pineapple is *mil frutos*, which the seed
-    does NOT cover, so a reader could reasonably "fix" that by adding a contagem row.
+def test_pam_counted_pair_is_a_count_not_a_weight():
+    """40092 (Abacaxi) and 40145 (Coco-da-baía) are the two asterisked products of SIDRA 5457,
+    and the asterisk is a unit warning: IBGE counts both in mil frutos in EVERY year while
+    the API labels them "Toneladas" (verified 2026-10-21 against the Anuário Estatístico do
+    Brasil 2023, whose tables print the same figures "em 1 000 frutos").
 
-    Table 5457 delivers Toneladas (verified against the API in 2026-08, alongside the
-    equally-asterisked Coco-da-baía). A contagem override would silently divide the
-    series by a thousand-fruit factor that does not apply."""
+    Until v1.100.0 this test pinned the OPPOSITE ("lands in mass") from a check that compared
+    the label to the API — a label that reads "Toneladas" even for the fruits IBGE counted until
+    2000. What must hold is the pairing: both configured AND both declared a COUNT in the seed,
+    never also given a weight-per-fruit era (the two seeds are disjoint)."""
     # _make_settings pins _env_file=None: the assertion is about the DECLARED default,
     # not about whatever the machine running the tests happens to have in its .env.
     codes = _make_settings().pam_product_codes_list
     assert "40092" in codes
-    # The asterisked pair travels together; if one is ever moved to a count family the
-    # other almost certainly must be too.
     assert "40145" in codes
+
+    import csv
+    from pathlib import Path
+
+    seeds = Path(__file__).resolve().parent.parent / "dbt/seeds"
+    with (seeds / "pam_count_unit_products.csv").open(encoding="utf-8") as f:
+        counted = {r["product_code"]: r for r in csv.DictReader(f)}
+    assert {"40092", "40145"} <= set(counted)
+    for code in ("40092", "40145"):
+        assert counted[code]["family"] == "contagem"
+        assert float(counted[code]["to_base"]) == 1000  # mil frutos -> frutos
+    assert not ({r["product_code"] for r in _unit_eras()} & set(counted))
 
 
 def test_env_example_lists_the_same_pam_codes_as_the_default():
@@ -329,8 +340,12 @@ def test_pam_fruit_products_have_a_unit_era():
     for code, nome in _FRUIT_CODES.items():
         assert code in configured, f"{nome} ({code}) is no longer in the PAM set"
         assert code in eras, f"{nome} ({code}) has no row in pam_fruit_unit_eras"
-    # And the other direction: an era for a produto outside the set is dead data.
-    assert eras <= configured
+    # And the other direction: an era for a produto outside the DEFAULT set is dead data — unless
+    # it is one of the 17 fruits IBGE says were counted, which the seed carries on purpose, ahead
+    # of the product being registered (inert until then; tests/test_pam_counted_fruits.py).
+    from tests.test_pam_counted_fruits import IBGE_COUNTED_FRUITS
+
+    assert eras - configured <= set(IBGE_COUNTED_FRUITS)
 
 
 def test_pam_unit_eras_seed_is_well_formed():
@@ -358,12 +373,15 @@ def test_pam_unit_eras_seed_is_well_formed():
 
 
 def test_pam_unit_era_factors_are_the_ones_ibge_printed():
-    """Pins the four numbers to the table in IBGE's note (sidra.ibge.gov.br/content/documentos/
-    pam/AlteracoesUnidadesMedidaFrutas.pdf, 'Peso mediano por unidade de fruto', kg per fruit):
-    laranja 0.16 · limão 0.10 · tangerina 0.15 · banana (cacho) 10.20. A factor is a methodological
-    decision; changing one must be a deliberate edit of this test, not a drive-by."""
+    """Pins the four numbers IN PRODUCTION to the table in IBGE's note (sidra.ibge.gov.br/content/
+    documentos/pam/AlteracoesUnidadesMedidaFrutas.pdf, 'Peso mediano por unidade de fruto', kg per
+    fruit): laranja 0.16 · limão 0.10 · tangerina 0.15 · banana (cacho) 10.20. A factor is a
+    methodological decision; changing one must be a deliberate edit of this test, not a drive-by.
+    The seed also carries the other 13 fruits of IBGE's list, ahead of their registration; the whole
+    list is pinned in tests/test_pam_counted_fruits.py."""
     factors = {r["product_code"]: float(r["kg_per_unit"]) for r in _unit_eras()}
-    assert factors == {"40151": 0.16, "40152": 0.10, "40271": 0.15, "40136": 10.20}
+    for code, kg in {"40151": 0.16, "40152": 0.10, "40271": 0.15, "40136": 10.20}.items():
+        assert factors[code] == kg
 
 
 # ─── silvicultura helpers ─────────────────────────────────────────────────────

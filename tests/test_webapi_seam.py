@@ -1079,8 +1079,9 @@ def test_export_coefficient_sem_codigos_recusa_sem_consultar_os_totais(monkeypat
 def test_export_coefficient_sem_ncm_recusa_com_motivo(monkeypatch):
     """Agrupamento só-PAM sem correspondência aduaneira: recusa COM MOTIVO.
 
-    O gate de família passou a ler as duas pesquisas de produção, então abacaxi, café e
-    cana-de-açúcar — que existem só na PAM — chegam a esta view. Nenhum deles tem NCM no
+    O gate de família passou a ler as duas pesquisas de produção, então café e
+    cana-de-açúcar — que existem só na PAM (o abacaxi era um terceiro até a v1.100.0) —
+    chegam a esta view. Nenhum deles tem NCM no
     cruzamento: sem numerador não há coeficiente, e devolver a carga vazia deixava a tela
     com "—" em tudo, indistinguível de uma falha.
     """

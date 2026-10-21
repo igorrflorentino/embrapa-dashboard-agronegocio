@@ -236,8 +236,9 @@ describe('ViewExportCoef', () => {
 
   it('sem NCM, a recusa diz que falta o NUMERADOR — não repete a nota de família', () => {
     // Desde a v1.58.0 o gate de família lê as DUAS pesquisas de produção, então
-    // agrupamentos só-PAM chegam a esta view. Três deles (abacaxi, café, cana-de-açúcar)
-    // não têm NCM no cruzamento: sem lado aduaneiro não existe coeficiente, e "—" em
+    // agrupamentos só-PAM chegam a esta view. Dois deles (café, cana-de-açúcar; o abacaxi
+    // era um terceiro até a v1.100.0, quando ganhou NCM) não têm NCM no cruzamento: sem
+    // lado aduaneiro não existe coeficiente, e "—" em
     // todos os KPIs deixaria o pesquisador sem saber se falta dado ou se algo quebrou.
     window.exportCoefficient = () => ({
       incompatible: true, incompatibleReason: 'sem-ncm',

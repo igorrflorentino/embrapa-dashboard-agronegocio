@@ -510,7 +510,8 @@ Do this at the release boundary and re-run `embrapa doctor` after. (The dbt guar
 post-hoc: they validate the built output, so they only re-fire once Silver is reprocessed.)
 
 The same applies to **`pam_fruit_unit_eras`** (v1.99.0), which `silver_ibge_pam` joins to turn
-the pre-2001 *mil frutos* / *mil cachos* of laranja, limão, tangerina and banana into tonnes.
+the pre-2001 *mil frutos* / *mil cachos* of laranja, limão, tangerina and banana (and, inert until
+registered, the 13 other fruits of IBGE's list) into tonnes.
 Its first rollout changes already-published banana values, so it needs
 `--select silver_ibge_pam+ --full-refresh` (workflow dispatch with `full_refresh=true`) — and a
 `backup-gold` before it. Until that run, the partitions a plain build does not re-scan stay
@@ -526,7 +527,10 @@ variable (read from `gcloud run jobs describe embrapa-ingest-all`, 2026-10-20), 
 catalog lists for banco `ibge_pam`. Order that avoids publishing a wrong series:
 
 1. Merge the code (seed + Silver conversion) and run the **full-refresh** build above, so the
-   conversion is live BEFORE any new fruit lands.
+   conversion is live BEFORE any new fruit lands. **For a fruit on IBGE's list of 17 this step is
+   already done** (v1.102.0): just confirm its row is in the prod seed table
+   (`select * from <silver-dataset>.pam_fruit_unit_eras where product_code = '<code>'`); no
+   full refresh, because the product is new to Bronze.
 2. Register the produto in "Cadastro de produtos" (banco PAM, ingestão ativa, visível).
 3. Ingest it. **Prefer a run restricted to the NEW codes** (used for laranja/limão/tangerina,
    v1.99.0, ~10 min, 4.3 M rows): the delta notices a code absent from Bronze and re-fetches the
@@ -551,15 +555,18 @@ catalog lists for banco `ibge_pam`. Order that avoids publishing a wrong series:
    the same agrupamento instead of a `*_succession` row. Confirm the HS6 codes expand to themselves
    with `client.list_hs6_codes`.
 3. **Descriptions are official text only** (MDIC `NCM.csv` / `NCM_SH.csv`; Siscomex for current
-   codes). A retired code whose text cannot be had keeps the parent's wording plus
-   "texto oficial pendente"; `assert_trade_descriptions_are_official` (warn) lists them until
-   `make nomenclature-audit` can run again.
+   codes). MDIC's tables KEEP retired codes (the four retired fruit codes got their official text
+   from them on 2026-10-21); the Siscomex API does not. A retired code whose text truly cannot be
+   had keeps the parent's wording plus "texto oficial pendente";
+   `assert_trade_descriptions_are_official` (warn) lists them until
+   `uv run python scripts/audit_nomenclature_seeds.py` can run again.
 4. **Validate in dev without touching the prod raw objects.** `ingest comex --from-raw` STAMPS each
    prod raw object with the filter fingerprint it loaded. For a dev check, filter the raw with
    `client.filter_products` and load a throwaway dataset yourself (no `mark_bronze_loaded`), point
    `BQ_BRONZE_COMEX_DATASET` at it, build `silver_comex_flows gold_comex_flows serving_comex_*`, and
    compare Gold to the raw per (NCM, flow): weight and value must conserve exactly.
-5. **Prod COMEX:** with MDIC unreachable, `ingest comex --from-raw` WITH THE FULL SCOPE (so the
+5. **Prod COMEX:** with MDIC unreachable (it was, 2026-10, until the files moved to
+   `balanca.mdic.gov.br`), `ingest comex --from-raw` WITH THE FULL SCOPE (so the
    stamped fingerprint equals the final one and the next normal run skips). It re-appends the
    products already present (~3.6 M rows, 300 MB; Silver dedups) — cheaper than a second pass later.
 6. **COMTRADE needs nothing extra**: it detects the widened scope (`_codes_added_since`) and
@@ -567,10 +574,29 @@ catalog lists for banco `ibge_pam`. Order that avoids publishing a wrong series:
 7. Register the codes in the Curadoria catalog under their agrupamento (banco `comex` / `comtrade`),
    then classify their industrialization level (a juice is processed; the fresh fruit is not).
 
-**Before adding any PAM fruit, scan its national series for a ≥ 4× year-over-year step** (the
-detector `assert_pam_quantity_no_unit_cliff` runs this at build time, as a warning, AFTER the
-data is already in Gold). SIDRA 5457 labels every quantity "Toneladas"; the label is not
-evidence (laranja, limão, tangerina and banana were counted until 2000).
+**Adding a PAM fruit: IBGE's list is the guard, not a threshold.** SIDRA 5457 labels every
+quantity "Toneladas"; the label is not evidence. IBGE's note (`https://sidra.ibge.gov.br/content/
+documentos/pam/AlteracoesUnidadesMedidaFrutas.pdf`, linked from the seed) names **17** fruits
+counted in *mil frutos* (*mil cachos*, banana) until 2000 and weighed from 2001: abacate, banana,
+caqui, figo, goiaba, laranja, limão, maçã, mamão, manga, maracujá, marmelo, pêra, pêssego,
+tangerina, melancia, melão — plus abacaxi and coco-da-baía, still counted today. **Since v1.102.0
+`pam_fruit_unit_eras` carries all 17** (the 13 not yet in the catalog are inert until their
+product is ingested) and `pam_count_unit_products` carries abacaxi and coco, so registering any
+of them needs **no new seed row** — the conversion is live the day it lands, and
+`tests/test_pam_counted_fruits.py` pins the list. Order for one of these: let a prod `dbt build`
+load the seed (any build after v1.102.0 does), then register and ingest. No `--full-refresh` is
+needed for a product new to Bronze: all its years carry a fresh `ingestion_timestamp`, so the
+incremental Silver rewrites every one of those partitions with the conversion applied.
+
+For a PAM product that is NOT on that list, scan its national series for a year-over-year step
+(what `assert_pam_quantity_no_unit_cliff` does at build time, as a warning, AFTER the data is in
+Gold) — but know it is a symptom check with a blind spot: it would have missed five of the 17
+(abacate ×0.45, manga ×0.36, marmelo ×0.25, melão ×1.5, mamão ×0.88; measured 2026-10-21,
+`docs/audits/unidades_e_deflacao_audit_2026-10-21.md`). SIDRA also marks the two count-based crops
+with an asterisk in the product NAME ("Abacaxi*", "Coco-da-baía*") while the unit label says
+"Toneladas": an asterisk on a new PAM product is a unit warning, and
+`assert_pam_asterisked_products_are_counts` fails the build if such a product is ingested without
+a row in `pam_count_unit_products`.
 
 ## Backing up prod Gold from a local / dev machine
 
