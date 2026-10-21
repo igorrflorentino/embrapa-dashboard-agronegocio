@@ -1939,6 +1939,18 @@ _SEED_CATALOG: list[tuple[str, str, bool, str]] = [
         "medição: as linhas convertidas vêm marcadas na base analítica.",
     ),
     (
+        # The DISCLOSURE of a relabel: abacaxi and coco-da-baía are counted, not weighed.
+        "pam_count_unit_products",
+        "Frutas contadas em todos os anos (PAM)",
+        False,
+        "O IBGE conta a quantidade de abacaxi e de coco-da-baía em mil frutos em todos os anos, "
+        "mas a tabela do SIDRA a rotula como toneladas; o Anuário Estatístico do Brasil 2023 "
+        "traz os mesmos números com a nota “Quantidade obtida em 1 000 frutos”. O "
+        "processamento os trata como contagem e não os converte em peso, porque o IBGE não "
+        "publica peso por fruto para esses dois produtos. Por isso eles saem dos totais em "
+        "toneladas, e o rendimento é dado em frutos por hectare.",
+    ),
+    (
         "comex_ncm",
         "NCM (COMEX)",
         False,

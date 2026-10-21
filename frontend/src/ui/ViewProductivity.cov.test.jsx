@@ -94,6 +94,59 @@ beforeEach(async () => {
 
 afterEach(() => cleanup());
 
+describe('ViewProductivity — cultura CONTADA (abacaxi, coco-da-baía)', () => {
+  // Contagem, não peso: o payload traz yieldUnit 'frutos/ha' e prodUnit 'mil frutos'. A produção
+  // chega em MIL frutos, então 1,57 milhão dela é 1,6 bilhão de frutos.
+  const contada = () => makeData({
+    crop: { code: 'C9', name: 'Abacaxi' },
+    yieldUnit: 'frutos/ha',
+    prodUnit: 'mil frutos',
+    series: [
+      { y: 2019, yieldKgHa: 24000, areaHa: 60_000, prodT: 1_440_000 },
+      { y: 2020, yieldKgHa: 24400, areaHa: 62_000, prodT: 1_573_000 },
+    ],
+  });
+
+  it('chama a produção de frutos e o rendimento de frutos/ha, nunca de t e kg/ha', () => {
+    stubGlobals(contada());
+    const { container } = render(
+      <ViewProductivity summary={{}} conventions={{ currency: 'BRL' }} database="ibge_pam" />
+    );
+    const valores = [...container.querySelectorAll('.kpi-value')].map((e) => e.textContent);
+    expect(valores.some((v) => v.includes('bi frutos'))).toBe(true);
+    expect(valores.some((v) => v.includes('frutos/ha'))).toBe(true);
+    // Nenhuma unidade de peso na produção, nem no rendimento.
+    expect(valores.some((v) => / (mi |mil )?t$/.test(v) || v.includes('kg/ha'))).toBe(false);
+    const rotulos = [...container.querySelectorAll('.kpi-label')].map((e) => e.textContent);
+    expect(rotulos.some((l) => l.includes('Rendimento nacional') && l.includes('frutos/ha'))).toBe(true);
+    // A etiqueta de unidade de MASSA não aparece: ela diria kg/ha.
+    expect(container.querySelector('.uf-tag')).toBeNull();
+  });
+
+  it('abaixo de um milhão de mil frutos cai nas faixas "mi frutos" e "mil frutos"', () => {
+    stubGlobals(makeData({
+      yieldUnit: 'frutos/ha',
+      prodUnit: 'mil frutos',
+      series: [{ y: 2020, yieldKgHa: 9000, areaHa: 500, prodT: 4_500 }],
+    }));
+    const { container } = render(
+      <ViewProductivity summary={{}} conventions={{}} database="ibge_pam" />
+    );
+    expect([...container.querySelectorAll('.kpi-value')].some((e) => e.textContent.includes('mi frutos'))).toBe(true);
+  });
+
+  it('uma cultura em peso (sem prodUnit, como antes) continua em t e kg/ha', () => {
+    stubGlobals(makeData());
+    const { container } = render(
+      <ViewProductivity summary={{}} conventions={{}} database="ibge_pam" />
+    );
+    const valores = [...container.querySelectorAll('.kpi-value')].map((e) => e.textContent);
+    expect(valores.some((v) => v.includes('mi t'))).toBe(true);
+    expect(valores.some((v) => v.includes('frutos'))).toBe(false);
+    expect(container.querySelector('.uf-tag')).toBeTruthy();
+  });
+});
+
 describe('ViewProductivity — empty state', () => {
   it('renders the EmptyCard when the producer returns null (no yield capability)', () => {
     stubGlobals(null);

@@ -564,6 +564,11 @@ unit_tests:
           select '40151' as product_code, 1974 as year_from, 2000 as year_to, 0.16 as kg_per_unit, 'mil frutos' as source_unit, 'x' as reason
           union all
           select '40136', 1974, 2000, 10.2, 'mil cachos', 'x'
+      - input: ref('pam_count_unit_products')
+        # Empty here (this test is about the OTHER seed); `format: sql` for the same reason as above.
+        format: sql
+        rows: |
+          select cast(null as string) as product_code, cast(null as string) as unit_label, cast(null as string) as family, cast(null as string) as base_unit, cast(null as float64) as to_base, cast(null as string) as reason limit 0
     expect:
       rows:
         - {city_code: "3500001", reference_year: 2000, product_code: "40151", variable_code: "214", numeric_value: 160,   qty_native: 160,   qty_base: 160,   is_unit_estimated: true}
@@ -573,6 +578,60 @@ unit_tests:
         - {city_code: "3500001", reference_year: 2000, product_code: "40124", variable_code: "214", numeric_value: 1000,  qty_native: 1000,  qty_base: 1000,  is_unit_estimated: false}
         - {city_code: "3500001", reference_year: 2000, product_code: "40136", variable_code: "214", numeric_value: 10200, qty_native: 10200, qty_base: 10200, is_unit_estimated: true}
         - {city_code: "3500002", reference_year: 2000, product_code: "40151", variable_code: "214", numeric_value: ,      qty_native: ,      qty_base: ,      is_unit_estimated: true}
+
+  # PAM products counted in EVERY year (abacaxi, coco-da-baía): SIDRA labels the quantity
+  # "Toneladas" but it is mil frutos (IBGE Anuário 2023, tables 3.3.1.1/3.3.1.2). The seed
+  # pam_count_unit_products gives those rows the unit they really have — Mil frutos, family
+  # contagem, base unit un, x1000 — and leaves their yield ABSENT (frutos/ha is not kg/ha).
+  # A produto outside the seed (soja) must come out exactly as before, YIELD included.
+  - name: test_pam_count_products_keep_their_real_unit_and_leave_yield_absent
+    model: silver_ibge_pam
+    overrides:
+      macros:
+        is_incremental: false
+    given:
+      - input: source('bronze_pam', 'sidra_raw')
+        rows:
+          # (a) abacaxi 2021: 1000 mil frutos -> 1.000.000 frutos, a COUNT
+          - {ano: "2021", municipio_codigo: "3500001", municipio: "Foo - SP", produto_das_lavouras_temporarias_e_permanentes_codigo: "40092", produto_das_lavouras_temporarias_e_permanentes: "Abacaxi*", variavel_codigo: "214", variavel: "Quantidade produzida", unidade_de_medida: "Toneladas", valor: "1000", nivel_territorial: "Município", ingestion_timestamp: "2024-01-01 00:00:00"}
+          # (b) its yield: frutos/ha mislabelled kg/ha -> ABSENT, not a count wearing a weight's unit
+          - {ano: "2021", municipio_codigo: "3500001", municipio: "Foo - SP", produto_das_lavouras_temporarias_e_permanentes_codigo: "40092", produto_das_lavouras_temporarias_e_permanentes: "Abacaxi*", variavel_codigo: "112", variavel: "Rendimento médio da produção", unidade_de_medida: "Quilogramas por Hectare", valor: "24351", nivel_territorial: "Município", ingestion_timestamp: "2024-01-01 00:00:00"}
+          # (c) area is land, not fruit: untouched
+          - {ano: "2021", municipio_codigo: "3500001", municipio: "Foo - SP", produto_das_lavouras_temporarias_e_permanentes_codigo: "40092", produto_das_lavouras_temporarias_e_permanentes: "Abacaxi*", variavel_codigo: "216", variavel: "Área colhida", unidade_de_medida: "Hectares", valor: "50", nivel_territorial: "Município", ingestion_timestamp: "2024-01-01 00:00:00"}
+          # (d) soja, outside the seed: a mass in tonnes, yield intact
+          - {ano: "2021", municipio_codigo: "3500001", municipio: "Foo - SP", produto_das_lavouras_temporarias_e_permanentes_codigo: "40124", produto_das_lavouras_temporarias_e_permanentes: "Soja (em grão)", variavel_codigo: "214", variavel: "Quantidade produzida", unidade_de_medida: "Toneladas", valor: "1000", nivel_territorial: "Município", ingestion_timestamp: "2024-01-01 00:00:00"}
+          - {ano: "2021", municipio_codigo: "3500001", municipio: "Foo - SP", produto_das_lavouras_temporarias_e_permanentes_codigo: "40124", produto_das_lavouras_temporarias_e_permanentes: "Soja (em grão)", variavel_codigo: "112", variavel: "Rendimento médio da produção", unidade_de_medida: "Quilogramas por Hectare", valor: "3000", nivel_territorial: "Município", ingestion_timestamp: "2024-01-01 00:00:00"}
+          # (e) coco with SIDRA '...' (not available): the family is still a count, the quantity absent
+          - {ano: "2021", municipio_codigo: "3500002", municipio: "Bar - SP", produto_das_lavouras_temporarias_e_permanentes_codigo: "40145", produto_das_lavouras_temporarias_e_permanentes: "Coco-da-baía*", variavel_codigo: "214", variavel: "Quantidade produzida", unidade_de_medida: "Toneladas", valor: "...", nivel_territorial: "Município", ingestion_timestamp: "2024-01-01 00:00:00"}
+      - input: ref('historical_currency_factors')
+        rows:
+          - {unit_of_measure: "Mil Reais", year_from: 1900, year_to: 1901, brl_factor: 1.0}
+      - input: ref('unit_family_conversions')
+        rows:
+          - {unit_raw: "toneladas",               family: "massa", base_unit: "t",  to_base: 1}
+          - {unit_raw: "quilogramas por hectare", family: "massa", base_unit: "t",  to_base: 0.001}
+          - {unit_raw: "hectares",                family: "area",  base_unit: "ha", to_base: 1}
+      - input: ref('product_unit_factors')
+        rows:
+          - {source: "_reference", product_code: "0000", unit_raw: "x", family: "massa", base_unit: "t", to_base: 1}
+      - input: ref('pam_fruit_unit_eras')
+        format: sql
+        rows: |
+          select '40151' as product_code, 1974 as year_from, 2000 as year_to, 0.16 as kg_per_unit, 'mil frutos' as source_unit, 'x' as reason
+      - input: ref('pam_count_unit_products')
+        format: sql
+        rows: |
+          select '40092' as product_code, 'Mil frutos' as unit_label, 'contagem' as family, 'un' as base_unit, 1000.0 as to_base, 'x' as reason
+          union all
+          select '40145', 'Mil frutos', 'contagem', 'un', 1000.0, 'x'
+    expect:
+      rows:
+        - {city_code: "3500001", product_code: "40092", variable_code: "214", numeric_value: 1000,  unit_native: "Mil frutos", family: "contagem", base_unit: "un", qty_native: 1000, qty_base: 1000000, is_unit_estimated: false}
+        - {city_code: "3500001", product_code: "40092", variable_code: "112", numeric_value: ,      unit_native: ,             family: ,           base_unit: ,      qty_native: ,     qty_base: ,        is_unit_estimated: false}
+        - {city_code: "3500001", product_code: "40092", variable_code: "216", numeric_value: 50,    unit_native: ,             family: ,           base_unit: ,      qty_native: ,     qty_base: ,        is_unit_estimated: false}
+        - {city_code: "3500001", product_code: "40124", variable_code: "214", numeric_value: 1000,  unit_native: "Toneladas",  family: "massa",    base_unit: "t",   qty_native: 1000, qty_base: 1000,    is_unit_estimated: false}
+        - {city_code: "3500001", product_code: "40124", variable_code: "112", numeric_value: 3000,  unit_native: ,             family: ,           base_unit: ,      qty_native: ,     qty_base: ,        is_unit_estimated: false}
+        - {city_code: "3500002", product_code: "40145", variable_code: "214", numeric_value: ,      unit_native: "Mil frutos", family: "contagem", base_unit: "un", qty_native: ,     qty_base: ,        is_unit_estimated: false}
 
   # PPM is the multi-table, multi-unit-family source: this pins the headline risks
   # deterministically — the herd STOCK (Cabeças/contagem) vs animal FLOW union, the

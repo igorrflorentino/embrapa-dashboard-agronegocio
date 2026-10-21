@@ -7,6 +7,126 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.100.0] - 2026-10-21
+
+**Abacaxi e coco-da-baía passam a ser contagem (mil frutos), que é o que sempre foram, e o
+comércio exterior de laranja, limão, tangerina, abacaxi e suco de laranja entra no escopo.** Fecha o
+"em aberto" do 1.99.0.
+
+### Corrigido
+- **Abacaxi e coco-da-baía estão em mil frutos em todos os anos, rotulados "toneladas".** Verificado
+  na fonte primária, não por inferência:
+  - O *Anuário Estatístico do Brasil 2023*, do IBGE (tabelas 3.3.1.1 e 3.3.1.2, fonte SIDRA 1613 e
+    1612), traz os dois com a nota *"Quantidade obtida em 1 000 frutos e rendimento médio em frutos
+    por hectare"*.
+  - O SIDRA 5457 entrega **os mesmos números**: em 2021, abacaxi 1.548.990 e coco 1.643.453, idênticos
+    na quantidade e no rendimento (em 2022 a diferença é de até 0,8%, revisão posterior do IBGE).
+  - Quantidade × 1000 ÷ área colhida reproduz exatamente o rendimento publicado (24.438 e 9.652): são
+    **frutos por hectare**.
+  - O rótulo da API **não é evidência**: o metadado declara "Toneladas" para a variável inteira, e as
+    tabelas antigas (1612/1613) rotulam assim até a laranja de 1995, que é contagem.
+  - Por que o 1.99.0 não viu: não há ruptura na série, porque a unidade é *constante*.
+- **O que mudou, por seed `pam_count_unit_products`:** os dois passam a ser **contagem** (família
+  `contagem`, unidade `Mil frutos`, `qty_base` = mil frutos × 1000). **Não** são convertidos em peso:
+  o IBGE não publica peso por fruto para eles, e a Embrapa registra que não há consenso para o
+  abacaxi. Medido em dev contra o Gold de produção, nas **514.588** linhas dos dois: quantidade,
+  valor, área e `data_quality_flag` **idênticos linha a linha**; os outros 2.834.583 registros do
+  PAM, idênticos.
+  - Saem dos totais em **toneladas**. A Visão geral do PAM passa a mostrar *Massa* (1.137.563.661 t
+    em 2025, sem eles) e *Contagem* (3.615.001.000 un = 1,597 bi de abacaxi + 2,018 bi de coco) em
+    cartões separados, sob o aviso de cesta mista.
+  - **O rendimento** deles fica ausente no Gold (`yield_kg_ha` nulo): frutos/ha não é kg/ha. A
+    perspectiva *Produtividade* o calcula de quantidade ÷ área e o diz em **frutos/ha** (abacaxi 2025:
+    26.250 frutos/ha; coco: 10.796); a soja segue em kg/ha. O *Perfil do produto* do abacaxi mostra o
+    preço implícito em **R$ 3,07 por unidade**.
+  - **O coco sai das razões que dividem peso de comércio por produção** (coeficiente de exportação,
+    preço de porteira): o portão de família do cruzamento só aceita produção em massa. Antes ele
+    dividia 876 t exportadas por 1,93 milhão de "t" que eram mil frutos; o erro de magnitude era
+    pequeno (1 mil cocos pesa cerca de 1 t), por isso ficou invisível, mas a unidade estava errada.
+  - `pam_count_unit_products` e `pam_fruit_unit_eras` não podem listar o mesmo produto
+    (`assert_pam_unit_seeds_disjoint`).
+
+### Adicionado
+- **Escopo de comércio exterior das frutas.** COMEX (11 NCM) e COMTRADE (11 SH6), sempre **folhas
+  explícitas**, nunca os capítulos `0804`/`0805`/`2009` (que trariam toranja, outros citros e todos
+  os sucos):
+  - laranja `08051000` + suco `20091100`, `20091200`, `20091900`;
+  - tangerina `08052000` (até 2016) → **desdobrada em 2017** em `08052100`, `08052200`, `08052900`.
+    Um desdobramento não tem sucessor único, então não há linha em `comex_ncm_succession`: os quatro
+    são membros do mesmo agrupamento e a série é contínua por ele;
+  - limão `08053000` (1997–2008) e `08055000` (2002 em diante) **coexistem** seis anos: dois códigos em
+    uso, não uma renumeração;
+  - abacaxi `08043000`.
+  Os códigos foram lidos do **arquivo bruto sem filtro** (todas as NCM, 1997–2026), não da tabela
+  vigente, e os SH6 foram confirmados na referência da ONU com a própria função do pipeline.
+- **O COMEX não precisa esperar o MDIC.** A Fase 1 guarda no bucket todas as NCM de cada ano; a
+  Fase 2 só filtra. Um código novo recupera o histórico inteiro a partir do nosso bruto
+  (`ingest comex --from-raw`). Em dev, as 11 NCM carregadas do bruto (127.402 linhas) passam por
+  Silver, Gold e Serving (PASS=62, 0 erros) e o Gold **conserva o bruto exatamente** em peso e valor:
+  0,00% de diferença nas 22 combinações código × fluxo.
+- **O COMTRADE detecta o escopo ampliado sozinho** (`cmd_scope` no bruto → `_codes_added_since`) e
+  completa o histórico nos próximos ciclos, respeitando a cota da API.
+- **Descrições oficiais.** Os 9 códigos vigentes vêm da tabela oficial do Siscomex (Resolução Gecex
+  nº 926/2026), compostos com o título-pai onde a folha é fragmento ("Outros", "Congelado").
+- Perspectiva *Produtividade*: unidade dinâmica (`yieldUnit`, `prodUnit`); glossário e *Referências*
+  explicam abacaxi e coco; `.env.example` sincronizado com os escopos de comércio (já estava
+  defasado, sem coco nem caju) e teste de paridade.
+
+### Em aberto
+- **4 descrições provisórias** (as de `08052000` e `08053000`, no COMEX, e de `080520` e `080530`, no
+  COMTRADE), todos códigos **aposentados** pelas revisões da NCM/SH. Seu texto oficial é o da tabela
+  histórica do MDIC, e o servidor do MDIC está com o certificado TLS expirado; a API do Siscomex só
+  serve a tabela vigente (ignora parâmetro de data). Levam o texto oficial do título-pai e a marca
+  *"texto oficial pendente"*, e `assert_trade_descriptions_are_official` (aviso) é a lista de
+  pendências até o MDIC voltar.
+- **O suco de laranja entra no agrupamento da laranja**, mas o nível de industrialização dos 4 códigos
+  de suco (e dos demais códigos novos) está **por classificar** na Curadoria: é o que separa suco de
+  fruta nas análises de valor agregado.
+- O histórico do COMTRADE para os 11 SH6 chega nos próximos ciclos do Job, não de uma vez.
+
+### Conferência em produção (2026-10-21, antes do merge)
+Feita nesta ordem, com cada passo verificado antes do seguinte:
+1. **Backup de retorno:** `run=20261021T142049Z` (`"dataset": "gold"`, 6 tabelas + 12 de curadoria + o
+   histórico de qualidade).
+2. **Build de produção com `full_refresh=true`**, da própria branch: PASS=431, ERROR=0, 3 avisos (os 2
+   de sempre e a lista das 4 descrições provisórias). Abacaxi e coco em produção: `contagem` /
+   `Mil frutos` / `un`, 257.294 linhas cada, rendimento retido, 2023 = **1.587.545.000** e
+   **1.932.582.000** frutos; a Serving carrega a família; os outros **2.834.583** registros do PAM com
+   o mesmo fingerprint medido em dev.
+3. **Catálogo:** 22 entradas (11 `comex` + 11 `comtrade`) nos agrupamentos `laranja`, `limao`,
+   `tangerina` e `abacaxi`, que já existiam; autor `operator:frutas-comercio-2026-10`.
+4. **COMEX a partir do nosso bruto**, localmente, com o escopo completo: 60 arquivos, Bronze
+   3.648.752 → 4.250.168 linhas (+601.416 = 474.014 do escopo anterior + **127.402 das frutas**, o
+   mesmo número carregado em dev). Uma passada completa do escopo são só ~600 mil linhas; os 3,65 mi
+   anteriores eram o acúmulo de várias passadas ao longo do tempo.
+   - ⚠ **O `ingest --from-raw` terminou com exit 1** (`403 PATCH` nos 60 arquivos): a credencial local
+     não pode **carimbar** o metadado dos arquivos brutos no GCS. A carga no BigQuery, que vem antes,
+     funcionou. Consequência: os brutos não levam a impressão do escopo novo, e o próximo ciclo normal do
+     COMEX refaz a Fase 2 **uma vez** (~600 mil linhas, o Silver deduplica). Inofensivo; o Job
+     (`sa-data-pipeline-prod`) tem a permissão.
+5. **Build de produção seguinte:** PASS=431, ERROR=0, 3 avisos.
+6. **COMEX em produção:**
+   - O Gold **conserva o bruto** em peso e valor nas 11 NCM × 2 fluxos (22 combinações, **0
+     divergências**).
+   - As NCM do escopo anterior ficaram **idênticas ao backup** anterior à mudança (391.914 linhas, mesmo
+     peso).
+   - As 11 NCM estão ligadas aos agrupamentos (agora PAM + COMEX) e a Serving carrega os quatro, de 1997
+     a 2026.
+7. **No painel**, servido localmente contra os dados de produção:
+   - Coeficiente de exportação de **laranja, limão e tangerina**: 29 pontos (1997–2025). O da
+     **tangerina atravessa o desdobramento da NCM de 2017** sem quebra, e o primeiro ponto vem do código
+     aposentado.
+   - **Abacaxi e coco são recusados** (`incompatibleReason: familia`): são contagem. A soja segue igual.
+   - ⚠ **A laranja agora soma fruta fresca e suco** no numerador (peso de comércio) sobre a produção da
+     fruta: é o que o nível de industrialização separa, e ele está por classificar (ver *Em aberto*).
+
+**`doctor`:** todos os checks ✓, exceto o `COMEX reachable` (certificado expirado do MDIC, alheio a esta
+mudança). *Catalog → Gold arrival* avisa que os 11 códigos do COMTRADE ainda não têm dado, como esperado
+logo após o registro. **Gasto do BigQuery:** 1,03 TiB em 30 dias, 0,03 TiB acima da cota gratuita
+(≈ US$ 0,17 a preço de lista).
+
+---
+
 ## [1.99.0] - 2026-10-20
 
 **Laranja, limão e tangerina entram no IBGE PAM — e a quantidade de quatro frutas deixa de

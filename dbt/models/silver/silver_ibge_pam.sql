@@ -134,6 +134,12 @@ select
             -- "Mil Cruzeiros" value is magnitude-Cruzados; realigns it with 1984/1986. No-op else.
             then p.raw_numeric_value * fx.brl_factor
                  * {{ ibge_1985_cruzado_correction('p.reference_year', 'p.unit_of_measure') }}
+        -- COUNT, NOT WEIGHT (pam_count_unit_products): the yield of a product whose quantity
+        -- is a fruit COUNT is fruits/ha, and SIDRA labels it "kg/ha". There is no kg/ha to
+        -- report, so it is ABSENT rather than a count wearing a weight's unit; it is
+        -- recomputable (qty_base ÷ area) in whatever unit the reader needs.
+        when p.variable_code = '{{ var("pam_variable_yield") }}' and cu.product_code is not null
+            then null
         -- COUNT → WEIGHT (pam_fruit_unit_eras): up to 2000 IBGE counted these fruits and SIDRA
         -- still labels the number "Toneladas"/"kg/ha". The same kg-per-fruit takes the quantity
         -- (mil frutos → t) and the yield (frutos/ha → kg/ha) to the unit the label claims.
@@ -153,19 +159,24 @@ select
 
     -- ── Physical-unit family (quantity rows only, var 214) ───────────────────
     -- Mirrors silver_ibge_pevs: unit_native is the source label; family/base_unit
-    -- /to_base come from the generic unit-family seed (PAM has no per-product unit
-    -- overrides). For the lean crop set the unit is always 'Toneladas' → massa/t.
+    -- /to_base come from the generic unit-family seed. For almost every crop the unit is
+    -- 'Toneladas' → massa/t. TWO seeds say where the label is not the truth:
+    --   pam_fruit_unit_eras      — counted until 2000, weighed since (laranja, limão,
+    --                              tangerina, banana): converted to t, marked as estimate.
+    --   pam_count_unit_products  — counted in EVERY year (abacaxi, coco-da-baía): the label
+    --                              is wrong, so the unit, family and base unit are the
+    --                              count's (mil frutos → un). Never converted to a weight.
     case when p.variable_code = '{{ var_quantity }}'
-        then p.unit_of_measure end                          as unit_native,
+        then coalesce(cu.unit_label, p.unit_of_measure) end as unit_native,
     case when p.variable_code = '{{ var_quantity }}'
-        then coalesce(ufp.family, ufc.family, 'desconhecida') end as family,
+        then coalesce(cu.family, ufp.family, ufc.family, 'desconhecida') end as family,
     case when p.variable_code = '{{ var_quantity }}'
-        then coalesce(ufp.base_unit, ufc.base_unit) end     as base_unit,
+        then coalesce(cu.base_unit, ufp.base_unit, ufc.base_unit) end as base_unit,
     case when p.variable_code = '{{ var_quantity }}'
         then p.raw_numeric_value * coalesce(ue.kg_per_unit, 1) end as qty_native,
     case when p.variable_code = '{{ var_quantity }}'
         then p.raw_numeric_value * coalesce(ue.kg_per_unit, 1)
-             * coalesce(ufp.to_base, ufc.to_base) end       as qty_base,
+             * coalesce(cu.to_base, ufp.to_base, ufc.to_base) end as qty_base,
 
     p.ingestion_timestamp
 from parsed p
@@ -179,6 +190,9 @@ left join {{ ref('unit_family_conversions') }} ufc
 left join {{ ref('pam_fruit_unit_eras') }} ue
     on ue.product_code = p.product_code
     and p.reference_year between ue.year_from and ue.year_to
+-- One row per product (unique-tested), so this cannot fan the rows out.
+left join {{ ref('pam_count_unit_products') }} cu
+    on cu.product_code = p.product_code
 -- Per-product unit override, wired identically to silver_ibge_pevs so all three IBGE
 -- silvers behave uniformly (DBT-4). Staged/inert today: product_unit_factors ships only
 -- source='_reference' sentinel rows, so no 'pam' unit is overridden yet — but a future

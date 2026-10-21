@@ -957,12 +957,16 @@ def productivity(banco_id: str, crop: str | None, summary: dict | None = None) -
     codes = {c["code"] for c in crops}
     active = crop if (crop and crop in codes) else crops[0]["code"]
     active_name = next((c["name"] for c in crops if c["code"] == active), active)
+    # The crop's unit FAMILY decides the unit the serializer prints: a mass yield is kg/ha, but
+    # abacaxi and coco-da-baía are counted (mil frutos), and their ratio is fruits/ha.
+    active_family = next((c["family"] for c in crops if c["code"] == active), None)
     y0, y1 = _years_from_summary(summary)
     states = _states(summary)
     return {
         "crops": crops,
         "active": active,
         "active_name": active_name,
+        "active_family": active_family,
         "states": list(states),
         "rows": gateway.fetch_productivity(
             active, source=banco_id, year_start=y0, year_end=y1, uf_codes=states
@@ -971,13 +975,19 @@ def productivity(banco_id: str, crop: str | None, summary: dict | None = None) -
 
 
 def _productivity_crops(products: pd.DataFrame | None) -> list[dict]:
-    """Shape the products frame into [{code, name}] (name falls back to code)."""
+    """Shape the products frame into [{code, name, family}] (name falls back to code).
+
+    ``family`` is the unit family of the crop's quantity ('massa', or 'contagem' for the
+    two crops IBGE counts in fruits); ``None`` when the frame has none."""
     if products is None or products.empty:
         return []
     return [
         {
             "code": str(r.code),
             "name": (r.name if isinstance(r.name, str) and r.name else str(r.code)),
+            "family": (
+                getattr(r, "family", None) if isinstance(getattr(r, "family", None), str) else None
+            ),
         }
         for r in products.itertuples()
     ]
