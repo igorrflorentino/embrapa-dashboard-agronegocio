@@ -108,7 +108,8 @@ PPM), dos rótulos de unidade de comércio e da deflação:
   com `*` no **nome** exatamente os dois produtos sempre contados (Abacaxi*, Coco-da-baía*).
 - **Um defeito análogo e vivo: a deflação por índice de dezembro.** O valor anual corrigido pela
   inflação usa o índice de **dezembro**, e o valor é um fluxo do ano. Na hiperinflação dezembro vale
-  3,2× a média do ano (1993) e 3,5× (1989); de 1995 em diante, de 1,0× a 1,08×. Efeito: o preço
+  3,2× a média do ano (1993) e 3,5× (1989); de 1995 em diante, quase sempre de 0,99× a 1,05×, com
+  picos de 1,17× (2002) e 1,13× (2020). Efeito: o preço
   corrigido de **todos** os produtos do IBGE salta entre 1993 e 1994 (mediana ×3,77 na PAM; ×2,27 no
   PEVS; ×2,14 no PPM; soja de R$ 420 para R$ 1.737 por tonelada). Com o índice médio do ano, o salto
   da soja cai de ×4,1 para ×1,9. **Não conserta nesta versão**: muda números publicados, e a escolha é

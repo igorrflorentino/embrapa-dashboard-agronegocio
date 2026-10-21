@@ -132,8 +132,10 @@ longo do ano; em baixa inflação dezembro e a média do ano quase coincidem, e 
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | IGP-DI, dezembro ÷ média do ano | 1,15 | 1,82 | 2,64 | **3,49** | 1,94 | 2,19 | 2,52 | **3,21** | 1,46 | 1,05 | 1,03 | 1,01 |
 
-Ou seja, o valor de 1993 é **subestimado em 3,2×** e o de 1989 em 3,5×, contra 1,0–1,05× de 1995 em
-diante. É por isso que a soja, em R$ de hoje por tonelada, aparece assim:
+Ou seja, o valor de 1993 é **subestimado em 3,2×** e o de 1989 em 3,5×. De 1995 em diante a razão fica,
+na maior parte dos anos, entre 0,99 e 1,05; **os picos são 1,17 em 2002 e 1,13 em 2020**, anos de forte
+desvalorização (a tabela acima para em 1998; uma versão anterior deste texto dizia "no máximo 1,08",
+o que só valia até 1999 — corrigido em 2026-10-21 com a série inteira). É por isso que a soja, em R$ de hoje por tonelada, aparece assim:
 
 | ano | 1991 | 1992 | 1993 | **1994** | 1995 | 1996 |
 |---|---:|---:|---:|---:|---:|---:|
@@ -163,8 +165,7 @@ da zona do euro são baixas), e o COMEX/COMTRADE começam em 1997 e 2000.
 | | o que faz | custo | efeito |
 |---|---|---|---|
 | a. só avisar | nota nas telas corrigidas e recusa de variação entre 2 pontos quando o intervalo tem ano com razão dezembro÷média > 1,15 | sem reconstruir o Gold | o número continua errado, mas deixa de ser comparado em silêncio |
-| **b. índice médio do ano** | `inflation_year_end` → média dos 12 índices mensais do ano (os atuais, `inflation_latest`, ficam) | reconstrução do Gold (`--full-refresh`) e `backup-gold` antes; muda todo `val_real_*` de IBGE antes de 1995 (×1,15 a ×3,5) e em até 8% de 1995 em diante (o
-máximo é 1999, 1,08) | remove a parte dominante do degrau (soja ×4,1 → ×1,9) |
+| **b. índice médio do ano** | `inflation_year_end` → média dos 12 índices mensais do ano (os atuais, `inflation_latest`, ficam) | `backup-gold` antes e um build comum (o Gold é `table`: **não** precisa de `--full-refresh`, e o Silver não muda); muda todo `val_real_*` de IBGE antes de 1995 (×1,15 a ×3,5) e em até 17% de 1995 em diante (IGP-DI: 1,17 em 2002, 1,13 em 2020) | remove a parte dominante do degrau (soja ×4,1 → ×1,9) |
 | c. ponderar pela safra do produto | índice médio ponderado pelo perfil mensal de cada produto | inviável: o IBGE publica só o valor anual | — |
 
 Recomendação: **b**, mais **a** para o resíduo de 1994. Os índices estrangeiros (CPI, HICP) usam a
