@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.102.0] - 2026-10-21
+
+**A guarda das frutas contadas passa a ser a lista do IBGE, não um limiar.** Fecha o ponto em aberto
+da auditoria do 1.101.0: o detector de saltos de 4× não via cinco das 17 frutas que o IBGE contou até
+2000, e nenhuma fruta nova deveria depender de alguém lembrar disso.
+
+### Adicionado
+- **A seed `pam_fruit_unit_eras` agora tem as 17 frutas da nota do IBGE** (eram 4): abacate, caqui,
+  figo, goiaba, maçã, mamão, manga, maracujá, marmelo, melancia, melão, pêra e pêssego entram ao
+  lado de banana, laranja, limão e tangerina. Os códigos foram lidos da classificação 782 do SIDRA
+  (não digitados), os pesos são os impressos na nota, `1974–2000`, `mil frutos` (`mil cachos` na
+  banana). As quatro linhas de produção ficaram **byte a byte** como estavam (13 inserções, 0
+  deleções).
+  - **Inertes até o produto ser ingerido**: o Silver junta por produto × ano, e um código que não
+    está no Bronze não casa com nada. Cadastrar uma delas deixa de exigir linha nova de seed — só o
+    código — e a conversão vale no dia em que o dado chega, inclusive para as cinco que o detector
+    não veria (abacate ×0,45, manga ×0,36, marmelo ×0,25, melão ×1,5, mamão ×0,88).
+  - A razão 2001÷2000 medida para as 13 confere com o peso publicado (±20%), com uma exceção: o
+    marmelo, +33%, numa série nacional de ~5 mil t.
+- **`tests/test_pam_counted_fruits.py`** fixa a lista: a seed tem **exatamente** as 17 (um peso
+  diferente, uma linha a menos ou uma fruta que o IBGE diz ser pesada — a uva — falham), o texto de
+  cada linha cita o mesmo peso que a coluna multiplica, e as duas seeds (`pam_fruit_unit_eras` e
+  `pam_count_unit_products`) continuam disjuntas. Contraprova: três adulterações da seed, cada uma
+  derruba o teste certo.
+- **`assert_pam_asterisked_products_are_counts`** (erro): o SIDRA marca com `*` no **nome** os dois
+  produtos sempre contados, e só eles entre os 86 da t5457. Se um produto com asterisco for ingerido
+  sem linha em `pam_count_unit_products`, o build para e diz qual. Lê só os quatro últimos anos do
+  Silver (poda de partição). Contraprova em produção: com a seed real devolve zero linhas; sem o coco,
+  devolve `40145`; sem nada, os dois.
+
+### Alterado
+- O teste que dizia "uma era sem produto configurado é dado morto" (`assert eras <= configured`)
+  passou a admitir as frutas da lista do IBGE fora do conjunto padrão, sem perder o resto da checagem;
+  e o que fixava os quatro pesos por igualdade exata agora os confere como subconjunto (a lista toda
+  está no teste novo).
+- A página *Referências* ("Frutas contadas até 2000") diz que são 17, quais estão no painel hoje e
+  que as outras 13 já têm o peso aqui para quando forem cadastradas.
+- Onde a recomendação era "varra um salto de 4×" (`.env.example`, runbook, `CLAUDE.md`, `config.py`,
+  o cabeçalho do detector) agora está "a lista do IBGE é a guarda; o detector é a rede para o que
+  **não** está na lista".
+
+### Prova
+- **Silver de dev, construído com a seed de 17 linhas, idêntico ao de produção**: 20.250.265 linhas,
+  mesmo fingerprint, 1.201.770 linhas estimadas nos dois, 14 produtos — nenhum número de Gold muda.
+- Dev: `PASS=26 WARN=0 ERROR=0` (a seed, `silver_ibge_pam`, os testes de guarda e os dois testes
+  unitários); 2.371 testes Python, 1.496 do frontend, Ruff, ESLint, SQLFluff e `dbt parse` verdes.
+
+---
+
 ## [1.101.0] - 2026-10-21
 
 **O comércio exterior (COMEX) volta a ser alcançável: o MDIC mudou os arquivos de endereço, e a

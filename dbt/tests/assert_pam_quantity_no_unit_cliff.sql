@@ -20,8 +20,11 @@
 -- fruit's weight in kg, so a heavy or light-and-growing fruit barely moves. Five of the 17 sit
 -- INSIDE the 4x band and this test would never fire for them: abacate x0.45, manga x0.36,
 -- marmelo x0.25 (3.97x, a hair under), melão x1.5 and mamão x0.88 (almost invisible — the
--- yield moves x1.0). None is in the catalog today. Before adding ANY fruit, check IBGE's
--- list, not this test: absence of a warning here proves nothing for them.
+-- yield moves x1.0). None is in the catalog today. This test is a SYMPTOM check: absence of a
+-- warning here proves nothing for them. The guard for the fruits is IBGE's LIST, which the seed
+-- pam_fruit_unit_eras carries in full since v1.102.0 (tests/test_pam_counted_fruits.py pins it),
+-- so those five are converted the day they are registered, whatever this test says. The test
+-- remains the net for a product that is NOT on IBGE's list.
 --
 -- WARN, not error: a real shock can still trip it (a new crop starting from a small base, a
 -- frost, a drought). The row is a prompt to look — and to decide whether the product belongs

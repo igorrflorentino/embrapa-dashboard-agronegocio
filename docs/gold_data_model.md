@@ -52,7 +52,7 @@ erDiagram
         date     reference_date         "Dec 31 of year"
         string   family                 "massa / volume / … — never SUM qty_base across families"
         float    qty_base               "qty_native to the family base_unit (t / m3 / …)"
-        boolean  qty_is_estimated       "PAM-only: TRUE when the quantity was converted from a COUNT (mil frutos / mil cachos, 1974-2000) by IBGE's preliminary weight per fruit — seed pam_fruit_unit_eras; laranja, limao, tangerina, banana"
+        boolean  qty_is_estimated       "PAM-only: TRUE when the quantity was converted from a COUNT (mil frutos / mil cachos, 1974-2000) by IBGE's preliminary weight per fruit — seed pam_fruit_unit_eras; today in the catalog: laranja, limao, tangerina, banana (the seed carries IBGE's 17 fruits)"
         float    area_planted_ha        "PAM-only: planted area (ha)"
         float    area_harvested_ha      "PAM-only: harvested area (ha)"
         float    yield_kg_ha            "PAM-only: yield (kg/ha)"
