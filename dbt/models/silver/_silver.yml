@@ -554,9 +554,16 @@ unit_tests:
         rows:
           - {source: "_reference", product_code: "0000", unit_raw: "x", family: "massa", base_unit: "t", to_base: 1}
       - input: ref('pam_fruit_unit_eras')
-        rows:
-          - {product_code: "40151", year_from: 1974, year_to: 2000, kg_per_unit: 0.16, source_unit: "mil frutos", reason: "x"}
-          - {product_code: "40136", year_from: 1974, year_to: 2000, kg_per_unit: 10.2, source_unit: "mil cachos", reason: "x"}
+        # `format: sql`, not rows: a dict fixture makes dbt read the COLUMNS of the real relation,
+        # and the CI gate (`dbt test --select test_type:unit --target prod`) runs before the merge —
+        # when this seed does not exist in prod yet. A new seed would fail the PR gate with "Not
+        # able to get columns ... because the relation doesn't exist" (v1.99.0). A SQL fixture
+        # carries its own schema, so the test no longer depends on the warehouse for this input.
+        format: sql
+        rows: |
+          select '40151' as product_code, 1974 as year_from, 2000 as year_to, 0.16 as kg_per_unit, 'mil frutos' as source_unit, 'x' as reason
+          union all
+          select '40136', 1974, 2000, 10.2, 'mil cachos', 'x'
     expect:
       rows:
         - {city_code: "3500001", reference_year: 2000, product_code: "40151", variable_code: "214", numeric_value: 160,   qty_native: 160,   qty_base: 160,   is_unit_estimated: true}

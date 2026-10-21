@@ -30,6 +30,13 @@ no ar na banana.
 - **Dois testes do dbt:** `assert_pam_unit_eras_no_overlap` (uma faixa sobreposta duplicaria as
   linhas do Silver) e `assert_pam_quantity_no_unit_cliff` (aviso; ver abaixo).
 - Laranja, limão e tangerina no glossário, e a nota de estimativa na banana.
+- **Um seed novo não pode ser mockado por linhas num teste unitário.** O gate do CI roda
+  `dbt test --select test_type:unit --target prod` *antes* do merge, e uma fixture em linhas faz o
+  dbt ler as colunas da relação real — que, para um seed novo, só existe depois do primeiro build
+  de produção ("Not able to get columns … because the relation doesn't exist"; foi o que
+  reprovou este PR). A fixture de `pam_fruit_unit_eras` é `format: sql`, que traz o próprio
+  esquema. Reproduzido localmente com a tabela ausente, antes e depois. Declarar `data_type`
+  nas colunas do seed **não** resolve.
 
 ### Corrigido
 - **A quantidade de banana, laranja, limão e tangerina até 2000 estava em outra unidade.** A
