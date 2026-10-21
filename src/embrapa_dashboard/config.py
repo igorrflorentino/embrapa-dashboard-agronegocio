@@ -200,13 +200,14 @@ class Settings(BaseSettings):
     # 40330 "Caju" (the pseudofruit) is deliberately NOT included: it is a different produto
     # from the nut, and folding it into the "Castanha-de-caju" agrupamento would conflate
     # fruit with nut. It deserves its own agrupamento if a researcher wants it.
-    # 40092 Abacaxi added 2026-08. SIDRA labels it "Abacaxi*" — the asterisk is a
-    # footnote marker, NOT a unit warning: table 5457 delivers it in Toneladas, verified
-    # against the API alongside the equally-asterisked Coco-da-baía (both 'Toneladas',
-    # 2023). So it lands in massa/t like the rest and needs no unit-family seed entry.
-    # (Re-read 2026-10: that check compared the LABEL to the API, which says "Toneladas" in
-    # every year even where IBGE counted fruits — see the next note. A constant label proves
-    # no unit break, not the unit; abacaxi/coco are still UNVERIFIED against the source.)
+    # 40092 Abacaxi added 2026-08. SIDRA labels it "Abacaxi*" and the asterisk IS a unit
+    # warning: IBGE counts abacaxi and coco-da-baía in mil frutos in EVERY year (the only two
+    # asterisked products of table 5457, and the two IBGE's own note says "continuam a ser
+    # pesquisados por unidade"), while the API labels both "Toneladas". The 2026-08 check
+    # compared that label to the API, which proves nothing: the label is "Toneladas" even for
+    # the fruits that were counted until 2000. Verified 2026-10-21 against IBGE's Anuário
+    # Estatístico do Brasil 2023; both are COUNTS through the seed pam_count_unit_products
+    # (family contagem, ×1000), never weight (test_pam_counted_pair_is_a_count_not_a_weight).
     # 40151 Laranja · 40152 Limão · 40271 Tangerina added 2026-10. Codes confirmed with
     # `discover ibge-products --table-id 5457`. Until 2000 IBGE counted these fruits (mil
     # frutos) and only from 2001 weighed them (t), while SIDRA labels every year "Toneladas":
@@ -372,8 +373,11 @@ class Settings(BaseSettings):
     foreign_inflation_start_year: int = Field(default=1974)
 
     # ─── COMEX (MDIC Comex Stat bulk CSV) ─────────────────────────────────────
+    # MDIC moved the files from balanca.economia.gov.br (leaf certificate EXPIRED) to
+    # balanca.mdic.gov.br (measured 2026-10-21). The new host also omits its intermediate,
+    # which comex/_ca.py vendors, so verification stays ON.
     comex_csv_base_url: str = Field(
-        default="https://balanca.economia.gov.br/balanca/bd/comexstat-bd/ncm"
+        default="https://balanca.mdic.gov.br/balanca/bd/comexstat-bd/ncm"
     )
     # Which flows to ingest — closed domain {export, import}, mapped to the
     # EXP_/IMP_ file prefixes by the client.

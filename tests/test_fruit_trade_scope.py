@@ -88,15 +88,27 @@ def test_every_scoped_code_has_a_description_before_it_reaches_gold():
     assert not [c for c in _HS6 if not hs.get(c, {}).get("description", "").strip()]
 
 
-def test_only_the_retired_codes_carry_the_pending_marker():
-    """Their official text is not obtainable today (see the dbt warning test). A CURRENT code with
-    the marker would be a description we could and should have taken from the Siscomex table."""
+def test_no_code_carries_the_pending_marker():
+    """The four retired codes carried the marker for a day; MDIC's NCM.csv / NCM_SH.csv (which,
+    unlike the Siscomex API, keep retired codes) gave their official text on 2026-10-21. A marker
+    back in the seed means a description left provisional — the dbt warning lists it too."""
     ncm = _rows("comex_ncm.csv", "co_ncm")
     hs = _rows("comtrade_hs.csv", "cmd_code")
-    marked_ncm = {c for c in _NCM if _PENDING in ncm[c]["ncm_description"]}
-    marked_hs = {c for c in _HS6 if _PENDING in hs[c]["description"]}
-    assert marked_ncm == _RETIRED_NCM
-    assert marked_hs == _RETIRED_HS6
+    assert not [c for c in _NCM if _PENDING in ncm[c]["ncm_description"]]
+    assert not [c for c in _HS6 if _PENDING in hs[c]["description"]]
+
+
+def test_the_retired_codes_use_mdics_own_wording():
+    """Pin the four texts: they were copied from NO_NCM_POR / NO_SH6_POR, not paraphrased, and the
+    old provisional wording (the parent's, with the 'Citrus limon' binomials) must not return."""
+    ncm = _rows("comex_ncm.csv", "co_ncm")
+    hs = _rows("comtrade_hs.csv", "cmd_code")
+    assert ncm["08053000"]["ncm_description"] == "Limões e limas, frescos ou secos"
+    assert hs["080530"]["description"] == "Limões e limas, frescos ou secos"
+    assert ncm["08052000"]["ncm_description"].startswith("Tangerinas, mandarinas e satsumas;")
+    assert hs["080520"]["description"].startswith("Tangerinas, mandarinas, satsumas;")
+    for c in _RETIRED_NCM:
+        assert "Citrus" not in ncm[c]["ncm_description"]
 
 
 def test_env_example_carries_the_same_trade_scopes_as_the_defaults():

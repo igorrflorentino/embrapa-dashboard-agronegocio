@@ -26,7 +26,9 @@ design (the `flows` form — origin→destination flow — did not exist yet).
 **Included (decided with the user):**
 
 - **Data source:** Comex Stat bulk CSV — `EXP_<ano>.csv` / `IMP_<ano>.csv`
-  at `https://balanca.economia.gov.br/balanca/bd/comexstat-bd/ncm/`
+  at `https://balanca.mdic.gov.br/balanca/bd/comexstat-bd/ncm/`
+  (the files were at `balanca.economia.gov.br` until 2026-10, when that host's TLS
+  certificate expired and MDIC moved them — see § 10)
   (`;`-separated, latin-1, one file per year per flow, history since 1997).
   **Do NOT use the JSON API** (see Risks).
 - **Flow:** export **and** import (`flow` column).
@@ -114,14 +116,24 @@ instead of codes; `country_iso.csv` to resolve `CO_PAIS`.
 parsing + ch.44/NCM filter); `test_comex_pipeline.py` (delta by year + GCP
 mocks, copy the pattern of `test_bcb_series.py`).
 
-**10. Secret:** none — public source, no auth. **But:** the host
-`balanca.economia.gov.br` serves only the leaf cert and **omits the TLS
-intermediate** (Sectigo R36) — `requests`/certifi fails with `CERTIFICATE_VERIFY_FAILED`
-(`curl` gets by because it fetches the intermediate via AIA / the OS trust store).
-Without it the real ingestion does not work anywhere (incl. CI Linux/Cloud Run).
-Mitigation **without disabling verification**: the public intermediate is
-vendored in `comex/_ca.py` and the client appends it to the `certifi` bundle at
-runtime (`verify=`). Re-vendor it if the host rotates the CA (valid until 2036).
+**10. Secret:** none — public source, no auth. **But:** the host serves only the
+leaf cert and **omits the TLS intermediate** — `requests`/certifi fails with
+`CERTIFICATE_VERIFY_FAILED` (`curl` gets by because it fetches the intermediate via
+AIA / the OS trust store). Without it the real ingestion does not work anywhere
+(incl. CI Linux/Cloud Run). Mitigation **without disabling verification**: the
+public intermediate is vendored in `comex/_ca.py` and the client appends it to the
+`certifi` bundle at runtime (`verify=`).
+
+There have been TWO hosts. `balanca.economia.gov.br` (Sectigo R36, valid until 2036)
+had its **leaf certificate expire** in 2026-10 — no bundle can verify an expired leaf,
+and the only way through would have been to disable verification, which this
+project does not do. MDIC moved the files to **`balanca.mdic.gov.br`** (SERPRO AR46,
+issued under GlobalSign Root R46, valid until 2030-10-15), now the default, which also
+omits its intermediate: the SERPRO one is vendored beside the Sectigo one. The
+intermediate comes from the leaf's AIA over plain http, so its authenticity is
+established by two signature checks (leaf → intermediate → a root already in certifi),
+and `tests/test_comex_client.py` pins its SHA-256. Re-vendor if the host rotates the
+CA; the symptom is `unable to get local issuer certificate`.
 
 **11. Docs:** README/ARCHITECTURE (Bronze+Consumption boxes), CONTRIBUTING (`comex`
 scope), CHANGELOG (`[Unreleased]/Added`).
@@ -163,7 +175,7 @@ scope), CHANGELOG (`[Unreleased]/Added`).
   **silently returned the aggregated Brazil total when the filter came in
   malformed, with HTTP 200** — a risk of ingesting wrong data with no error. So
   we use the bulk CSV (authoritative raw base, filtered and inspected locally).
-- **Host blocked in the web environment.** `balanca.economia.gov.br` fails on
+- **Host blocked in the web environment.** The MDIC file host fails on
   the Claude Code on the web proxy (`upstream connect error ... CERTIFICATE_VERIFY_FAILED`,
   host outside the allowlist). **Mitigation:** develop on local Claude Code
   (network open). Alternative: adjust the environment's network policy

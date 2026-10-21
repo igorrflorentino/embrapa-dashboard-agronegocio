@@ -7,6 +7,88 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.101.0] - 2026-10-21
+
+**O comércio exterior (COMEX) volta a ser alcançável: o MDIC mudou os arquivos de endereço, e a
+verificação de TLS continua ligada.** Os quatro textos "oficial pendente" ganham o texto oficial, e
+uma auditoria de unidades e de deflação registra o que a v1.99–1.100 ensinou sobre o resto do projeto.
+
+### Corrigido
+- **Host do COMEX.** O certificado de `balanca.economia.gov.br` venceu (o `doctor` marca
+  ✗ *COMEX reachable* desde ~2026-09-28), e nenhum pacote de CAs verifica um certificado vencido. O
+  MDIC publica os mesmos arquivos em **`balanca.mdic.gov.br`**, agora o padrão
+  (`COMEX_CSV_BASE_URL`). Medido com o pacote do próprio repositório e a verificação **ligada**:
+  `EXP_2025.csv` (113.715.007 bytes), `IMP_2025.csv` (175.549.886), `NCM.csv` e `NCM_SH.csv`
+  respondem 200.
+  - O servidor novo também entrega só a folha, sem a intermediária. A intermediária **SERPRO AR46**
+    (emissora do certificado, sob a *GlobalSign Root R46*, que o certifi já traz) foi vendorizada em
+    `comex/_ca.py` ao lado da Sectigo, e `_ca_bundle()` acrescenta as duas.
+  - A intermediária vem do AIA do certificado, por http simples: a autenticidade **não** vem do
+    transporte. Provada por duas verificações de assinatura (`openssl verify`: folha → intermediária →
+    raiz do certifi) e fixada pelo SHA-256 em `test_vendored_intermediates_are_the_ones_proved`.
+    Contraprova: o certifi puro **falha** no host novo com `SSLError`.
+  - A folha `*.mdic.gov.br` medida vence em **2026-10-22**. Renovada pela mesma emissora, não exige
+    mudança; outra emissora reproduz *unable to get local issuer certificate*, e o remédio é
+    vendorizar a intermediária nova (`_ca.py` explica).
+  - O Job de ingestão não define `COMEX_CSV_BASE_URL`, então segue o padrão da imagem: vale no
+    próximo deploy da imagem, que este merge dispara.
+- **Os quatro textos "oficial pendente" têm o texto oficial** (`08052000`, `08053000`, `080520`,
+  `080530`). A conclusão da v1.100.0 estava errada em parte: a API do Siscomex só serve a tabela
+  vigente, mas o `NCM.csv` / `NCM_SH.csv` do MDIC **guardam os códigos aposentados**. Os textos agora
+  são os de `NO_NCM_POR` / `NO_SH6_POR`, sem a marca; `assert_trade_descriptions_are_official` devolve
+  zero linhas. O registro `docs/nomenclatura_divergencias.md` foi regerado e agora cobre também os
+  códigos de fruta e suco (que ele nunca pôde conferir).
+- **`test_pam_abacaxi_is_configured_and_lands_in_mass` afirmava o contrário da verdade** (abacaxi em
+  massa) a partir de uma checagem que comparava o rótulo da API com a API. Reescrito como
+  `test_pam_counted_pair_is_a_count_not_a_weight`: os dois produtos asteriscados estão configurados,
+  são **contagem** na seed e não têm também um peso por fruto. O comentário de `config.py` dizia
+  "abacaxi/coco ainda NÃO verificados" depois de verificados na v1.100.0.
+- **Comentários que chamavam o abacaxi de "só-PAM"** (ele tem NCM desde a v1.100.0): `producers.js`,
+  `ViewsMultiSource.jsx`, `seam_cross.py` e os testes ao lado. Só texto; o comportamento já era
+  dirigido pelos dados.
+
+### Medido (auditoria `docs/audits/unidades_e_deflacao_audit_2026-10-21.md`)
+Sem mudar nenhum número publicado. Varredura do **universo** do SIDRA (todo produto de PAM, PEVS e
+PPM), dos rótulos de unidade de comércio e da deflação:
+- **O mesmo defeito, em frutas fora do catálogo.** A nota do IBGE lista **17** frutas contadas até
+  2000; a razão 2001÷2000 de cada uma confere com o peso por fruto que o IBGE publica. Treze não estão
+  convertidas, nenhuma está no catálogo (**nada errado publicado hoje**), e `assert_pam_quantity_no_unit_cliff`
+  (≥ 4×) é **cego para cinco delas**: abacate ×0,45, manga ×0,36, marmelo ×0,25, melão ×1,5, mamão
+  ×0,88. A recomendação "varra um salto de 4×" estava errada onde aparecia (`.env.example`, runbook,
+  `CLAUDE.md`, o cabeçalho do teste) e foi corrigida: a referência é a lista do IBGE. O SIDRA marca
+  com `*` no **nome** exatamente os dois produtos sempre contados (Abacaxi*, Coco-da-baía*).
+- **Um defeito análogo e vivo: a deflação por índice de dezembro.** O valor anual corrigido pela
+  inflação usa o índice de **dezembro**, e o valor é um fluxo do ano. Na hiperinflação dezembro vale
+  3,2× a média do ano (1993) e 3,5× (1989); de 1995 em diante, de 1,0× a 1,08×. Efeito: o preço
+  corrigido de **todos** os produtos do IBGE salta entre 1993 e 1994 (mediana ×3,77 na PAM; ×2,27 no
+  PEVS; ×2,14 no PPM; soja de R$ 420 para R$ 1.737 por tonelada). Com o índice médio do ano, o salto
+  da soja cai de ×4,1 para ×1,9. **Não conserta nesta versão**: muda números publicados, e a escolha é
+  do pesquisador (a auditoria traz as opções). O detector de qualidade **não** é afetado (parcela de
+  `OUTLIER_*` plana de 1984 a 1999), nem o padrão da tela (Nominal).
+- **Limpos**: PEVS, PPM, COMEX e COMTRADE nos bancos ingeridos (PPM: fatores corretos; COMEX:
+  nenhuma NCM muda de unidade; COMTRADE: a unidade varia por país, por natureza, e as linhas sem
+  unidade — 4,2% — caem no peso líquido).
+- **A calibração de `AREA_FLOOR` foi remedida com as 14 lavouras** (eram 11): a maior UF excluída
+  continua com 972 ha, nenhuma excluída chega a 1.000 ha, nenhum ranking fica vazio. A fronteira não
+  se mexeu, e os comentários de `seriesUtils.js` registram a remedição.
+
+### Em produção, fora do repositório (2026-10-21)
+- **26 níveis de industrialização** gravados pelo mesmo escritor do editor
+  (`record_code_industrialization`, autor `operator:industrializacao-frutas-2026-10`, uma versão
+  vigente por código, nenhuma duplicata): fruta *in natura* como **commodity pura**, o critério da
+  banana (COMEX 8, COMTRADE 8, PAM 4: laranja, limão, tangerina, abacaxi); suco de laranja a granel
+  (`20091100`, `20091200`, `20091900`, `200911`, `200912`, `200919`) como **commodity consumível**. Cada linha
+  carrega a nota *"Proposta inicial (Claude, 21/10/2026), a confirmar pelo pesquisador"*; o suco é o
+  caso de fronteira (a alternativa é manufaturado industrial), e o editor sobrescreve qualquer linha.
+
+### Em aberto
+- Escolher o conserto da deflação (acima).
+- Pré-carregar os pesos das 13 frutas restantes e fixar a lista do IBGE num teste.
+- PEVS fora do catálogo, antes de cadastrar: séries sem rótulo de unidade, `Mil árvores` e a quebra
+  simultânea de vários produtos extrativos menores em 1987–1990 (auditoria, item D).
+
+---
+
 ## [1.100.0] - 2026-10-21
 
 **Abacaxi e coco-da-baía passam a ser contagem (mil frutos), que é o que sempre foram, e o

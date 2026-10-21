@@ -41,7 +41,7 @@ import pyarrow.parquet as pq
 import requests
 
 from embrapa_dashboard import observability
-from embrapa_dashboard.comex._ca import SECTIGO_INTERMEDIATE_PEM
+from embrapa_dashboard.comex._ca import SECTIGO_INTERMEDIATE_PEM, SERPRO_INTERMEDIATE_PEM
 from embrapa_dashboard.core import SourceTransientError
 from embrapa_dashboard.core import http as core_http
 
@@ -84,11 +84,11 @@ _ca_bundle_path: str | None = None
 
 
 def _ca_bundle() -> str:
-    """Path to a CA bundle = certifi + the vendored Sectigo intermediate.
+    """Path to a CA bundle = certifi + the vendored intermediates.
 
-    The Comex host omits its issuing intermediate from the TLS handshake, so
+    Both Comex hosts omit their issuing intermediate from the TLS handshake, so
     plain certifi verification fails (see :mod:`embrapa_dashboard.comex._ca`).
-    Appending the intermediate to certifi's roots lets ``requests`` verify
+    Appending the intermediates to certifi's roots lets ``requests`` verify
     without ever disabling TLS checks. Built once and cached for the process.
     """
     global _ca_bundle_path
@@ -100,6 +100,8 @@ def _ca_bundle() -> str:
         fh.write(base)
         fh.write("\n")
         fh.write(SECTIGO_INTERMEDIATE_PEM)
+        fh.write("\n")
+        fh.write(SERPRO_INTERMEDIATE_PEM)
     _ca_bundle_path = path
     # Best-effort cleanup at interpreter exit so the (public-cert) temp PEM doesn't
     # linger after the process ends (COMEX-2). Created at most once per process; the OS

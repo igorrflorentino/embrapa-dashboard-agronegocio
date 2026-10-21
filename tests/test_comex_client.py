@@ -246,8 +246,41 @@ def test_ca_bundle_appends_intermediate_to_certifi() -> None:
     path = client._ca_bundle()
     content = Path(path).read_text(encoding="ascii")
     assert client.SECTIGO_INTERMEDIATE_PEM.strip() in content
+    assert client.SERPRO_INTERMEDIATE_PEM.strip() in content
     assert len(content) > len(Path(certifi.where()).read_text(encoding="ascii"))
     assert client._ca_bundle() == path  # cached
+
+
+def test_vendored_intermediates_are_the_ones_proved() -> None:
+    """The vendored certificates are public CA material downloaded over plain http (AIA), so the
+    only thing that makes them trustworthy is that they are the ones whose chain was proved
+    (leaf -> intermediate -> certifi root). Pin the SHA-256: any edit — a re-vendor included —
+    has to repeat the proof and update the fingerprint on purpose."""
+    import hashlib
+    import ssl
+
+    from embrapa_dashboard.comex import _ca
+
+    def fingerprint(pem: str) -> str:
+        digest = hashlib.sha256(ssl.PEM_cert_to_DER_cert(pem)).hexdigest().upper()
+        return ":".join(digest[i : i + 2] for i in range(0, len(digest), 2))
+
+    assert fingerprint(_ca.SERPRO_INTERMEDIATE_PEM) == (
+        "F2:70:95:D0:B4:0D:F7:65:59:94:04:01:1C:F8:B1:67:DA:06:26:0E:81:DD:A7:27:F1:63:EF:08:22:10:71:E4"
+    )
+    assert fingerprint(_ca.SECTIGO_INTERMEDIATE_PEM) != fingerprint(_ca.SERPRO_INTERMEDIATE_PEM)
+
+
+def test_default_comex_host_is_the_one_whose_intermediate_is_vendored() -> None:
+    """The default points at the CURRENT MDIC host. The legacy balanca.economia.gov.br leaf
+    certificate expired (2026-10), so no bundle could verify it: defaulting back to it would
+    silently stop every COMEX run."""
+    from urllib.parse import urlparse
+
+    from embrapa_dashboard.config import Settings
+
+    host = urlparse(Settings.model_fields["comex_csv_base_url"].default).hostname
+    assert host == "balanca.mdic.gov.br"
 
 
 def test_ca_bundle_reads_non_ascii_certifi_comment_via_utf8(
