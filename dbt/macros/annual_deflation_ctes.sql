@@ -16,8 +16,29 @@
    intentionally NOT part of this macro.
 
    Emits the four CTE definitions WITHOUT a trailing comma; the caller adds the `,` before
-   its own `enriched as (...)` CTE. #}
+   its own `enriched as (...)` CTE.
+
+   WHICH INDEX DEFLATES A YEAR — the `inflation_year_basis` var (PROTOTYPE, default 'year_end').
+     'year_end' (the default, the shipped behaviour): the DECEMBER index of the year.
+     'year_avg': the MEAN of the year's monthly indices.
+   An annual value is a FLOW accrued through the year, so its price level is the year's mean,
+   not December's. The two coincide when inflation is low and part ways in hyperinflation:
+   IGP-DI December ÷ yearly mean is 1.00-1.08 from 1995 on but 3.2 in 1993 and 3.5 in 1989
+   (docs/audits/unidades_e_deflacao_audit_2026-10-21.md), so under 'year_end' every pre-1995
+   corrected value is understated by that factor and the deflated price of EVERY IBGE product
+   jumps ×2-4 between 1993 and 1994. The CTE keeps its name and its `*_year_end` columns so
+   the four Gold consumers are untouched; under 'year_avg' they carry the yearly mean.
+   'year_avg' deflates a year only when its index covers all 12 months — except the LAST year
+   of that series, which is still open and uses the mean of the months present. A series that
+   starts mid-year (IGP-M, 1989-06) therefore has no corrected value for that first year,
+   instead of a mean over the part of the year it covers; the gap shows on screen by itself,
+   because `valueGap` is measured on the data, not on the index's first year.
+   Default 'year_end' compiles to the SAME SQL as before this var existed. #}
 {%- macro annual_deflation_ctes() -%}
+{%- set basis = var('inflation_year_basis', 'year_end') -%}
+{%- if basis not in ['year_end', 'year_avg'] -%}
+    {{ exceptions.raise_compiler_error("inflation_year_basis must be 'year_end' or 'year_avg', got '" ~ basis ~ "'") }}
+{%- endif -%}
 inflation_year_end as (
 
     select
@@ -33,6 +54,23 @@ inflation_year_end as (
         max(case when series_code = '{{ var("inflation_series_cpi")   }}' then index_value end) as cpi_year_end,
         max(case when series_code = '{{ var("inflation_series_hicp")  }}' then index_value end) as hicp_year_end
     from (
+{%- if basis == 'year_avg' %}
+        select reference_year, series_code, avg(index_value) as index_value
+        from (
+            select
+                reference_year,
+                reference_month,
+                series_code,
+                index_value,
+                -- the series' own last year: still open, so it may be partial
+                max(reference_year) over (partition by series_code) as series_last_year
+            from {{ ref('silver_inflation') }}
+            where index_value is not null
+        )
+        group by reference_year, series_code, series_last_year
+        having count(distinct reference_month) = 12
+            or reference_year = series_last_year
+{%- else %}
         select reference_year, series_code, index_value
         from {{ ref('silver_inflation') }}
         where index_value is not null
@@ -40,6 +78,7 @@ inflation_year_end as (
             partition by reference_year, series_code
             order by reference_month desc
         ) = 1
+{%- endif %}
     )
     group by reference_year
 

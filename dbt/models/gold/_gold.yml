@@ -880,6 +880,12 @@ unit_tests:
 
   - name: test_pevs_deflation_and_fx_arithmetic
     model: gold_pevs_production
+    # The fixture gives ONE month (December) per year: that IS the year_end contract (b) above,
+    # and under `year_avg` a one-month year has no yearly mean. Pinned, so the test holds
+    # whatever the run's `inflation_year_basis` is.
+    overrides:
+      vars:
+        inflation_year_basis: year_end
     given:
       - input: ref('silver_ibge_pevs')
         rows:
@@ -927,6 +933,101 @@ unit_tests:
       # monetary outputs are asserted; igpm/igpdi/eur columns are NULL here by design.
       rows:
         - {reference_year: 2000, product_code: "0001", val_yearfx_brl: 1000, val_yearfx_usd: 500, val_real_ipca_brl: 3000, val_real_ipca_usd: 600, val_real_cpi_usd: 1500}
+
+  # ── WHICH index deflates a year: the `inflation_year_basis` var (PROTOTYPE) ──────────
+  # One fixture, two answers. IPCA 2000 runs 10, 20, … 120 (December 120, mean 65) and "today"
+  # is 195, so the same R$ 1000 is worth 195/120 → 1625 on the December basis (the default,
+  # unchanged) and 195/65 → 3000 on the yearly mean. The pair proves the var is what moves
+  # the number. The December test PINS `year_end` instead of trusting the project default, so
+  # it holds when a build sets the var for the whole run (`--vars inflation_year_basis: year_avg`);
+  # that the DEFAULT is year_end is dbt_project.yml's to say and the compiled-SQL diff's to prove.
+  - name: test_pevs_year_end_basis_deflates_by_the_december_index
+    model: gold_pevs_production
+    overrides:
+      vars:
+        inflation_year_basis: year_end
+    given:
+      - input: ref('silver_ibge_pevs')
+        rows:
+          - {reference_year: 2000, state_acronym: "PA", city_code: "1500800", city_name: "Belém", product_code: "0001", product_description: "Açaí", is_monetary_value: true,  numeric_value: 1000, qty_native: , qty_base: , family: , unit_native: , base_unit: , ingestion_timestamp: "2024-01-01 00:00:00"}
+          - {reference_year: 2000, state_acronym: "PA", city_code: "1500800", city_name: "Belém", product_code: "0001", product_description: "Açaí", is_monetary_value: false, numeric_value: 5,    qty_native: 5, qty_base: 5, family: "massa", unit_native: "t", base_unit: "t", ingestion_timestamp: "2024-01-01 00:00:00"}
+      - input: ref('silver_ibge_silvicultura')
+        rows: []
+      - input: ref('silver_inflation')
+        format: sql
+        rows: |
+          select 2000 as reference_year, '433' as series_code, m as reference_month,
+                 date(2000, m, 1) as reference_date, cast(m * 10 as float64) as index_value
+          from unnest(generate_array(1, 12)) as m
+          union all
+          select 2024, '433', 12, date '2024-12-01', cast(195 as float64)
+      - input: ref('silver_currency')
+        rows: []
+    expect:
+      rows:
+        - {reference_year: 2000, product_code: "0001", val_real_ipca_brl: 1625}
+
+  - name: test_pevs_year_avg_basis_deflates_by_the_yearly_mean
+    model: gold_pevs_production
+    overrides:
+      vars:
+        inflation_year_basis: year_avg
+    given:
+      - input: ref('silver_ibge_pevs')
+        rows:
+          - {reference_year: 2000, state_acronym: "PA", city_code: "1500800", city_name: "Belém", product_code: "0001", product_description: "Açaí", is_monetary_value: true,  numeric_value: 1000, qty_native: , qty_base: , family: , unit_native: , base_unit: , ingestion_timestamp: "2024-01-01 00:00:00"}
+          - {reference_year: 2000, state_acronym: "PA", city_code: "1500800", city_name: "Belém", product_code: "0001", product_description: "Açaí", is_monetary_value: false, numeric_value: 5,    qty_native: 5, qty_base: 5, family: "massa", unit_native: "t", base_unit: "t", ingestion_timestamp: "2024-01-01 00:00:00"}
+      - input: ref('silver_ibge_silvicultura')
+        rows: []
+      - input: ref('silver_inflation')
+        format: sql
+        rows: |
+          select 2000 as reference_year, '433' as series_code, m as reference_month,
+                 date(2000, m, 1) as reference_date, cast(m * 10 as float64) as index_value
+          from unnest(generate_array(1, 12)) as m
+          union all
+          select 2024, '433', 12, date '2024-12-01', cast(195 as float64)
+      - input: ref('silver_currency')
+        rows: []
+    expect:
+      rows:
+        - {reference_year: 2000, product_code: "0001", val_real_ipca_brl: 3000}
+
+  # A year the index only PARTLY covers has no yearly mean, so it has no corrected value — a
+  # mean over the months that exist would be measured from a different part of the year than
+  # every other year it is compared to (IGP-M starts in 1989-06). The series' LAST year is the
+  # exception: it is still open, and the mean of the months present is the honest reading.
+  # 2000 (months 1-6, not the last year) → no value; 2001 (months 1-6, the last year) → mean
+  # 125, latest 150 → 150/125 = 1.2 → 1200.
+  - name: test_pevs_year_avg_basis_needs_twelve_months_except_in_the_open_year
+    model: gold_pevs_production
+    overrides:
+      vars:
+        inflation_year_basis: year_avg
+    given:
+      - input: ref('silver_ibge_pevs')
+        rows:
+          - {reference_year: 2000, state_acronym: "PA", city_code: "1500800", city_name: "Belém", product_code: "0001", product_description: "Açaí", is_monetary_value: true,  numeric_value: 1000, qty_native: , qty_base: , family: , unit_native: , base_unit: , ingestion_timestamp: "2024-01-01 00:00:00"}
+          - {reference_year: 2000, state_acronym: "PA", city_code: "1500800", city_name: "Belém", product_code: "0001", product_description: "Açaí", is_monetary_value: false, numeric_value: 5,    qty_native: 5, qty_base: 5, family: "massa", unit_native: "t", base_unit: "t", ingestion_timestamp: "2024-01-01 00:00:00"}
+          - {reference_year: 2001, state_acronym: "PA", city_code: "1500800", city_name: "Belém", product_code: "0001", product_description: "Açaí", is_monetary_value: true,  numeric_value: 1000, qty_native: , qty_base: , family: , unit_native: , base_unit: , ingestion_timestamp: "2024-01-01 00:00:00"}
+          - {reference_year: 2001, state_acronym: "PA", city_code: "1500800", city_name: "Belém", product_code: "0001", product_description: "Açaí", is_monetary_value: false, numeric_value: 5,    qty_native: 5, qty_base: 5, family: "massa", unit_native: "t", base_unit: "t", ingestion_timestamp: "2024-01-01 00:00:00"}
+      - input: ref('silver_ibge_silvicultura')
+        rows: []
+      - input: ref('silver_inflation')
+        format: sql
+        rows: |
+          select 2000 as reference_year, '433' as series_code, m as reference_month,
+                 date(2000, m, 1) as reference_date, cast(m * 10 as float64) as index_value
+          from unnest(generate_array(1, 6)) as m
+          union all
+          select 2001, '433', m, date(2001, m, 1), cast(90 + m * 10 as float64)
+          from unnest(generate_array(1, 6)) as m
+      - input: ref('silver_currency')
+        rows: []
+    expect:
+      rows:
+        - {reference_year: 2000, product_code: "0001", val_real_ipca_brl: }
+        - {reference_year: 2001, product_code: "0001", val_real_ipca_brl: 1200}
 
 
   # ── O gate de visibilidade casa a TABELA, não só o código ────────────────────
