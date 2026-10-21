@@ -528,10 +528,15 @@ catalog lists for banco `ibge_pam`. Order that avoids publishing a wrong series:
 1. Merge the code (seed + Silver conversion) and run the **full-refresh** build above, so the
    conversion is live BEFORE any new fruit lands.
 2. Register the produto in "Cadastro de produtos" (banco PAM, ingestão ativa, visível).
-3. Run `embrapa ingest ibge-pam` (the Job). The delta notices a code absent from Bronze and
-   re-fetches the FULL window for every resolved code (`pam_pipeline._delta_start_year`), so
-   expect a long run. Bronze is append-only, so the existing crops' history is appended again:
-   see "Pruning superseded Bronze rows" below.
+3. Ingest it. **Prefer a run restricted to the NEW codes** (used for laranja/limão/tangerina,
+   v1.99.0, ~10 min, 4.3 M rows): the delta notices a code absent from Bronze and re-fetches the
+   FULL window for every code it resolves (`pam_pipeline._delta_start_year`), so letting the Job
+   resolve all 14 from the catalog re-appends the history of the 11 crops already present
+   (~16.8 M rows, Bronze is append-only — see "Pruning superseded Bronze rows" below). Locally,
+   with the prod env injected (read it from `gcloud run jobs describe embrapa-ingest-all`):
+   `CATALOG_AUTHORITATIVE_INGESTION=false PAM_PRODUCT_CODES=<new codes> GCP_IMPERSONATION_SA=
+   uv run embrapa ingest ibge-pam` — with the flag off the resolver returns exactly the env list.
+   Check Bronze against the SIDRA API (sum of municipalities = the national value) before building.
 4. Build prod (`dbt-build-prod`), then `embrapa doctor`.
 
 **Before adding any PAM fruit, scan its national series for a ≥ 4× year-over-year step** (the

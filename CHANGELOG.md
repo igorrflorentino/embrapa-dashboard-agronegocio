@@ -97,6 +97,44 @@ no ar na banana.
   ficam sem conversão (`qty_is_estimated` = `FALSE`) e o novo aviso acusa a banana.
 - O Gold ganhou uma coluna; os marts da Serving não a leem.
 
+### Conferência em produção (2026-10-20, antes do merge)
+Feita nesta ordem, com cada passo verificado antes do seguinte:
+1. **Backup de retorno:** `run=20261021T003133Z` (`"dataset": "gold"`, 6 tabelas + 12 de
+   curadoria + o histórico de qualidade).
+2. **Build de produção com `full_refresh=true`**, disparado da própria branch: PASS=419, ERROR=0,
+   os mesmos 2 avisos de sempre (`assert_pam_area_planted_ge_harvested`,
+   `assert_unconvertible_quantities_for_curation`). Banana contínua (razão 2001/2000 = 1,069, era
+   10,9) e os outros 2.319.995 registros do PAM com fingerprint idêntico ao de antes.
+3. **Catálogo:** 3 agrupamentos (`laranja`, `limao`, `tangerina`) e 3 entradas `pam` (`ativa` /
+   `visivel`), autor `operator:citros-2026-10`. Nenhum cítrico existia em nenhum banco.
+4. **Ingestão só dos 3 códigos** (`CATALOG_AUTHORITATIVE_INGESTION=false` e `PAM_PRODUCT_CODES`
+   limitado a eles, localmente), em vez de rodar o Job: o Job reanexaria a janela completa dos 11
+   produtos já presentes (~16,8 mi de linhas) para buscar três. **4.339.920 linhas** no Bronze
+   (5 variáveis × 52 anos × 5.564 municípios × 3 produtos); a soma dos municípios bate **exatamente**
+   com o valor nacional do SIDRA nos 18 pontos conferidos (1974, 1990, 2000, 2001, 2010, 2023).
+5. **Build de produção seguinte:** PASS=419, ERROR=0, os mesmos 2 avisos. Gold de 2,6 para
+   **3,3 mi de linhas**; `assert_pam_quantity_no_unit_cliff` passou com os cítricos dentro.
+6. **Gold contra o esperado:** os 21 pontos (3 produtos × 7 anos) batem com *SIDRA × fator* até
+   2000 e com o valor cru de 2001 em diante; `qty_is_estimated` certo em cada ano. Continuidade
+   2001/2000: laranja ×0,995, limão ×1,17, tangerina ×1,25 (eram ×0,16 / ×0,12 / ×0,19) — os dois
+   últimos refletem a incerteza dos fatores declarada acima. 52 anos × 5.564 municípios por produto;
+   27 UFs na Serving.
+7. **No painel** (servido localmente contra os dados de produção): o catálogo lista os três
+   agrupamentos, a perspectiva *Comparativo entre produtos* os abre, e *Referências* mostra
+   `pam_fruit_unit_eras` com o texto em português.
+
+**`doctor`:** todos os checks do projeto ✓, inclusive *Catalog → Gold arrival* (todo produto do
+catálogo tem dado no Gold) e *Catalog↔env product codes* (`pam OK(14)`). Dois avisos esperados e um
+✗ alheio:
+- **`quality-drift` aceso, esperado:** `ibge_pam` `OK` 40,9% → 37,1% das linhas, `UNSCORED`
+  58,9% → 62,4%, `OUTLIER_QUANTITY` 1.103 → 5.283 linhas (×5), `PROBLEMATIC_VALUE` 5 → 27 (×5). É o
+  efeito de acrescentar três produtos (771.882 linhas, a maioria sem base para avaliar) mais o
+  recalibração da banana descrita acima — não uma regressão do detector.
+- **✗ `COMEX reachable`, sem relação com esta mudança:** o certificado TLS de
+  `balanca.economia.gov.br` (MDIC) está **expirado** (`SEC_E_CERT_EXPIRED`, reproduzido com
+  `curl`). É o que explica o aviso do heartbeat de que o COMEX roda e não conclui há 23 dias.
+  Decisão do MDIC, não do repositório; o COMEX segue com os dados de 2026-08.
+
 ---
 
 ## [1.98.0] - 2026-09-26
