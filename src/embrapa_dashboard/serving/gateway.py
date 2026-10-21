@@ -1925,6 +1925,20 @@ _SEED_CATALOG: list[tuple[str, str, bool, str]] = [
         "(saca, arroba, bushel, barril).",
     ),
     (
+        # The DISCLOSURE of a unit estimate: where a researcher sees that the pre-2001 quantity
+        # of these four fruits is converted, with which weight, and why (cf. the foreign
+        # publisher-gaps seed below for the same role on the deflators).
+        "pam_fruit_unit_eras",
+        "Frutas contadas até 2000 (PAM)",
+        False,
+        "Até 2000 o IBGE media a quantidade de laranja, limão, tangerina e banana por "
+        "contagem (mil frutos; mil cachos, na banana), mas a tabela do SIDRA a rotula como "
+        "toneladas em todos os anos. O processamento converte o período contado pelo peso "
+        "mediano por fruto que o próprio IBGE estimou ao mudar a unidade, em 2001. É uma "
+        "estimativa preliminar, que o IBGE não recomenda como referência final, e não uma "
+        "medição: as linhas convertidas vêm marcadas na base analítica.",
+    ),
+    (
         "comex_ncm",
         "NCM (COMEX)",
         False,

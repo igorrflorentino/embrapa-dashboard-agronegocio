@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -292,6 +293,77 @@ def test_env_example_lists_the_same_pam_codes_as_the_default():
     )
     example = sorted(c.strip() for c in line.split("=", 1)[1].split(",") if c.strip())
     assert example == sorted(_make_settings().pam_product_codes_list)
+
+
+# ─── PAM fruit counted until 2000 (laranja, limão, tangerina, banana) ──────────
+# SIDRA 5457 labels every quantity "Toneladas", but up to 2000 IBGE COUNTED these fruits
+# (mil frutos; mil cachos for banana). Measured 2026-10-20 on the national series: laranja
+# x0.16, limão x0.12, tangerina x0.19 and banana x10.9 between 2000 and 2001, with the yield
+# moving the same way (115 mil -> 20 mil "kg/ha"). The pairing below is what keeps a fruit code
+# from being ingested without its conversion.
+_FRUIT_CODES = {"40151": "laranja", "40152": "limão", "40271": "tangerina", "40136": "banana"}
+
+
+def _unit_eras() -> list[dict]:
+    import csv
+    from pathlib import Path
+
+    seed = Path(__file__).resolve().parent.parent / "dbt/seeds/pam_fruit_unit_eras.csv"
+    with seed.open(encoding="utf-8") as f:
+        return list(csv.DictReader(f))
+
+
+def test_pam_citrus_codes_are_configured():
+    """40151 Laranja · 40152 Limão · 40271 Tangerina — codes confirmed against the SIDRA
+    classification-782 listing (`discover ibge-products --table-id 5457`), not typed from memory."""
+    codes = _make_settings().pam_product_codes_list
+    for code in ("40151", "40152", "40271"):
+        assert code in codes
+
+
+def test_pam_fruit_products_have_a_unit_era():
+    """Adding a counted fruit WITHOUT its era would publish mil frutos as tonnes: a 6-11x error
+    that the price detector tolerates (it accepts up to 100x) and that no label reveals."""
+    eras = {r["product_code"] for r in _unit_eras()}
+    configured = set(_make_settings().pam_product_codes_list)
+    for code, nome in _FRUIT_CODES.items():
+        assert code in configured, f"{nome} ({code}) is no longer in the PAM set"
+        assert code in eras, f"{nome} ({code}) has no row in pam_fruit_unit_eras"
+    # And the other direction: an era for a produto outside the set is dead data.
+    assert eras <= configured
+
+
+def test_pam_unit_eras_seed_is_well_formed():
+    """Mirrors the dbt guards (assert_pam_unit_eras_no_overlap + the column tests), so a bad edit
+    fails in `make test`, not only in the next prod build: overlapping ranges would fan the Silver
+    rows out, and a non-positive weight would zero or negate a whole series."""
+    rows = _unit_eras()
+    assert len(rows) >= len(_FRUIT_CODES), "the seed reader found no rows"
+    by_product: dict[str, list[tuple[int, int]]] = {}
+    for r in rows:
+        year_from, year_to, kg = int(r["year_from"]), int(r["year_to"]), float(r["kg_per_unit"])
+        assert year_from <= year_to, r
+        assert kg > 0, r
+        assert r["reason"].strip(), (
+            f"{r['product_code']}: the sentence a researcher would cite is empty"
+        )
+        # The break is documented at 2001: IBGE weighs from that year, so a range reaching
+        # into it would convert a quantity that is already in tonnes.
+        assert year_to <= 2000, r
+        by_product.setdefault(r["product_code"], []).append((year_from, year_to))
+    for code, ranges in by_product.items():
+        ranges.sort()
+        for (_, prev_to), (next_from, _) in itertools.pairwise(ranges):
+            assert next_from > prev_to, f"{code}: overlapping year ranges {ranges}"
+
+
+def test_pam_unit_era_factors_are_the_ones_ibge_printed():
+    """Pins the four numbers to the table in IBGE's note (sidra.ibge.gov.br/content/documentos/
+    pam/AlteracoesUnidadesMedidaFrutas.pdf, 'Peso mediano por unidade de fruto', kg per fruit):
+    laranja 0.16 · limão 0.10 · tangerina 0.15 · banana (cacho) 10.20. A factor is a methodological
+    decision; changing one must be a deliberate edit of this test, not a drive-by."""
+    factors = {r["product_code"]: float(r["kg_per_unit"]) for r in _unit_eras()}
+    assert factors == {"40151": 0.16, "40152": 0.10, "40271": 0.15, "40136": 10.20}
 
 
 # ─── silvicultura helpers ─────────────────────────────────────────────────────

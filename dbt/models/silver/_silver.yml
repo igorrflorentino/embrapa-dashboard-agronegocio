@@ -115,6 +115,8 @@ models:
           - dbt_utils.expression_is_true:
               arguments:
                 expression: "is null or numeric_value >= 0"
+      - name: is_unit_estimated
+        description: "TRUE on the quantity (214) and yield (112) rows converted from a COUNT to weight by seed pam_fruit_unit_eras. FALSE on every other row. NULL only on partitions not yet rebuilt after the column was added (incremental model) — hence no not_null test here; gold_pam_production coalesces it and tests the result."
 
   - name: silver_ibge_ppm
     description: "PPM livestock (SIDRA 3939 herd + 74 animal production) cleaned, typed, deduplicated, UNIONed. LONG: one row per (year, city, product, variable); measure_kind = stock|flow."
@@ -511,6 +513,66 @@ unit_tests:
         # '-' → exact zero (qty_base 0), NOT dropped/NULL like the '...' row (qty_base NULL).
         - {product_code: "0006", unit_native: "Toneladas",     family: "massa",    qty_base: 0}
         - {product_code: "0007", unit_native: "Toneladas",     family: "massa",    qty_base: }
+
+  # PAM fruit counts: up to 2000 IBGE measured laranja/limão/tangerina in mil frutos and
+  # banana in mil cachos, while SIDRA labels every year "Toneladas". The seed
+  # pam_fruit_unit_eras converts quantity (214) and yield (112) — and ONLY those, ONLY for
+  # the declared product and years, and marks them as estimates. Each ending is chosen so
+  # the float product is exact (0.16 x 1000 = 160, 10.2 x 1000 = 10200): the test pins the
+  # rule, not a rounding.
+  - name: test_pam_fruit_count_converted_to_weight_only_where_declared
+    model: silver_ibge_pam
+    overrides:
+      macros:
+        is_incremental: false
+    given:
+      - input: source('bronze_pam', 'sidra_raw')
+        rows:
+          # (a) laranja 2000, in mil frutos: quantity 1000 mil frutos x 0.16 kg = 160 t
+          - {ano: "2000", municipio_codigo: "3500001", municipio: "Foo - SP", produto_das_lavouras_temporarias_e_permanentes_codigo: "40151", produto_das_lavouras_temporarias_e_permanentes: "Laranja", variavel_codigo: "214", variavel: "Quantidade produzida", unidade_de_medida: "Toneladas", valor: "1000", nivel_territorial: "Município", ingestion_timestamp: "2024-01-01 00:00:00"}
+          # (b) its yield, frutos/ha labelled kg/ha: 100000 x 0.16 = 16000 kg/ha
+          - {ano: "2000", municipio_codigo: "3500001", municipio: "Foo - SP", produto_das_lavouras_temporarias_e_permanentes_codigo: "40151", produto_das_lavouras_temporarias_e_permanentes: "Laranja", variavel_codigo: "112", variavel: "Rendimento médio da produção", unidade_de_medida: "Quilogramas por Hectare", valor: "100000", nivel_territorial: "Município", ingestion_timestamp: "2024-01-01 00:00:00"}
+          # (c) area is a measure of land, not of fruit: untouched
+          - {ano: "2000", municipio_codigo: "3500001", municipio: "Foo - SP", produto_das_lavouras_temporarias_e_permanentes_codigo: "40151", produto_das_lavouras_temporarias_e_permanentes: "Laranja", variavel_codigo: "216", variavel: "Área colhida", unidade_de_medida: "Hectares", valor: "50", nivel_territorial: "Município", ingestion_timestamp: "2024-01-01 00:00:00"}
+          # (d) the SAME produto in 2001, already in tonnes: untouched (the range ends in 2000)
+          - {ano: "2001", municipio_codigo: "3500001", municipio: "Foo - SP", produto_das_lavouras_temporarias_e_permanentes_codigo: "40151", produto_das_lavouras_temporarias_e_permanentes: "Laranja", variavel_codigo: "214", variavel: "Quantidade produzida", unidade_de_medida: "Toneladas", valor: "1000", nivel_territorial: "Município", ingestion_timestamp: "2024-01-01 00:00:00"}
+          # (e) another produto in 2000 (soja): not declared, untouched
+          - {ano: "2000", municipio_codigo: "3500001", municipio: "Foo - SP", produto_das_lavouras_temporarias_e_permanentes_codigo: "40124", produto_das_lavouras_temporarias_e_permanentes: "Soja (em grão)", variavel_codigo: "214", variavel: "Quantidade produzida", unidade_de_medida: "Toneladas", valor: "1000", nivel_territorial: "Município", ingestion_timestamp: "2024-01-01 00:00:00"}
+          # (f) banana 2000, in mil cachos: 1000 x 10.2 kg = 10200 t
+          - {ano: "2000", municipio_codigo: "3500001", municipio: "Foo - SP", produto_das_lavouras_temporarias_e_permanentes_codigo: "40136", produto_das_lavouras_temporarias_e_permanentes: "Banana (cacho)", variavel_codigo: "214", variavel: "Quantidade produzida", unidade_de_medida: "Toneladas", valor: "1000", nivel_territorial: "Município", ingestion_timestamp: "2024-01-01 00:00:00"}
+          # (g) SIDRA '...' (not available) stays ABSENT after the conversion: NULL x 0.16 is NULL
+          - {ano: "2000", municipio_codigo: "3500002", municipio: "Bar - SP", produto_das_lavouras_temporarias_e_permanentes_codigo: "40151", produto_das_lavouras_temporarias_e_permanentes: "Laranja", variavel_codigo: "214", variavel: "Quantidade produzida", unidade_de_medida: "Toneladas", valor: "...", nivel_territorial: "Município", ingestion_timestamp: "2024-01-01 00:00:00"}
+      - input: ref('historical_currency_factors')
+        rows:
+          - {unit_of_measure: "Mil Reais", year_from: 1900, year_to: 1901, brl_factor: 1.0}
+      - input: ref('unit_family_conversions')
+        rows:
+          - {unit_raw: "toneladas",              family: "massa", base_unit: "t",  to_base: 1}
+          - {unit_raw: "quilogramas por hectare", family: "massa", base_unit: "t", to_base: 0.001}
+          - {unit_raw: "hectares",               family: "area",  base_unit: "ha", to_base: 1}
+      - input: ref('product_unit_factors')
+        rows:
+          - {source: "_reference", product_code: "0000", unit_raw: "x", family: "massa", base_unit: "t", to_base: 1}
+      - input: ref('pam_fruit_unit_eras')
+        # `format: sql`, not rows: a dict fixture makes dbt read the COLUMNS of the real relation,
+        # and the CI gate (`dbt test --select test_type:unit --target prod`) runs before the merge —
+        # when this seed does not exist in prod yet. A new seed would fail the PR gate with "Not
+        # able to get columns ... because the relation doesn't exist" (v1.99.0). A SQL fixture
+        # carries its own schema, so the test no longer depends on the warehouse for this input.
+        format: sql
+        rows: |
+          select '40151' as product_code, 1974 as year_from, 2000 as year_to, 0.16 as kg_per_unit, 'mil frutos' as source_unit, 'x' as reason
+          union all
+          select '40136', 1974, 2000, 10.2, 'mil cachos', 'x'
+    expect:
+      rows:
+        - {city_code: "3500001", reference_year: 2000, product_code: "40151", variable_code: "214", numeric_value: 160,   qty_native: 160,   qty_base: 160,   is_unit_estimated: true}
+        - {city_code: "3500001", reference_year: 2000, product_code: "40151", variable_code: "112", numeric_value: 16000, qty_native: ,      qty_base: ,      is_unit_estimated: true}
+        - {city_code: "3500001", reference_year: 2000, product_code: "40151", variable_code: "216", numeric_value: 50,    qty_native: ,      qty_base: ,      is_unit_estimated: false}
+        - {city_code: "3500001", reference_year: 2001, product_code: "40151", variable_code: "214", numeric_value: 1000,  qty_native: 1000,  qty_base: 1000,  is_unit_estimated: false}
+        - {city_code: "3500001", reference_year: 2000, product_code: "40124", variable_code: "214", numeric_value: 1000,  qty_native: 1000,  qty_base: 1000,  is_unit_estimated: false}
+        - {city_code: "3500001", reference_year: 2000, product_code: "40136", variable_code: "214", numeric_value: 10200, qty_native: 10200, qty_base: 10200, is_unit_estimated: true}
+        - {city_code: "3500002", reference_year: 2000, product_code: "40151", variable_code: "214", numeric_value: ,      qty_native: ,      qty_base: ,      is_unit_estimated: true}
 
   # PPM is the multi-table, multi-unit-family source: this pins the headline risks
   # deterministically — the herd STOCK (Cabeças/contagem) vs animal FLOW union, the

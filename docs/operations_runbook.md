@@ -509,6 +509,41 @@ Do this at the release boundary and re-run `embrapa doctor` after. (The dbt guar
 `assert_currency_factor_no_overlap`, `assert_pre1994_real_per_unit_bounded`, … — are
 post-hoc: they validate the built output, so they only re-fire once Silver is reprocessed.)
 
+The same applies to **`pam_fruit_unit_eras`** (v1.99.0), which `silver_ibge_pam` joins to turn
+the pre-2001 *mil frutos* / *mil cachos* of laranja, limão, tangerina and banana into tonnes.
+Its first rollout changes already-published banana values, so it needs
+`--select silver_ibge_pam+ --full-refresh` (workflow dispatch with `full_refresh=true`) — and a
+`backup-gold` before it. Until that run, the partitions a plain build does not re-scan stay
+unconverted (`gold_pam_production.qty_is_estimated` reads FALSE there by design) and
+`assert_pam_quantity_no_unit_cliff` warns on the banana 2000→2001 step: that warning is the
+signal that the full refresh has not happened yet.
+
+### Adding a PAM product in prod (the catalog decides, not `config.py`)
+
+The ingest Job runs with `CATALOG_AUTHORITATIVE_INGESTION=true` and carries **no** `PAM_*`
+variable (read from `gcloud run jobs describe embrapa-ingest-all`, 2026-10-20), so
+`PAM_PRODUCT_CODES` is only the dev/fallback list. What enters prod is what the Curadoria
+catalog lists for banco `ibge_pam`. Order that avoids publishing a wrong series:
+
+1. Merge the code (seed + Silver conversion) and run the **full-refresh** build above, so the
+   conversion is live BEFORE any new fruit lands.
+2. Register the produto in "Cadastro de produtos" (banco PAM, ingestão ativa, visível).
+3. Ingest it. **Prefer a run restricted to the NEW codes** (used for laranja/limão/tangerina,
+   v1.99.0, ~10 min, 4.3 M rows): the delta notices a code absent from Bronze and re-fetches the
+   FULL window for every code it resolves (`pam_pipeline._delta_start_year`), so letting the Job
+   resolve all 14 from the catalog re-appends the history of the 11 crops already present
+   (~16.8 M rows, Bronze is append-only — see "Pruning superseded Bronze rows" below). Locally,
+   with the prod env injected (read it from `gcloud run jobs describe embrapa-ingest-all`):
+   `CATALOG_AUTHORITATIVE_INGESTION=false PAM_PRODUCT_CODES=<new codes> GCP_IMPERSONATION_SA=
+   uv run embrapa ingest ibge-pam` — with the flag off the resolver returns exactly the env list.
+   Check Bronze against the SIDRA API (sum of municipalities = the national value) before building.
+4. Build prod (`dbt-build-prod`), then `embrapa doctor`.
+
+**Before adding any PAM fruit, scan its national series for a ≥ 4× year-over-year step** (the
+detector `assert_pam_quantity_no_unit_cliff` runs this at build time, as a warning, AFTER the
+data is already in Gold). SIDRA 5457 labels every quantity "Toneladas"; the label is not
+evidence (laranja, limão, tangerina and banana were counted until 2000).
+
 ## Backing up prod Gold from a local / dev machine
 
 `embrapa backup-gold` snapshots the Gold tables to

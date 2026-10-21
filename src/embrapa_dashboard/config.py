@@ -204,8 +204,21 @@ class Settings(BaseSettings):
     # footnote marker, NOT a unit warning: table 5457 delivers it in Toneladas, verified
     # against the API alongside the equally-asterisked Coco-da-baía (both 'Toneladas',
     # 2023). So it lands in massa/t like the rest and needs no unit-family seed entry.
+    # (Re-read 2026-10: that check compared the LABEL to the API, which says "Toneladas" in
+    # every year even where IBGE counted fruits — see the next note. A constant label proves
+    # no unit break, not the unit; abacaxi/coco are still UNVERIFIED against the source.)
+    # 40151 Laranja · 40152 Limão · 40271 Tangerina added 2026-10. Codes confirmed with
+    # `discover ibge-products --table-id 5457`. Until 2000 IBGE counted these fruits (mil
+    # frutos) and only from 2001 weighed them (t), while SIDRA labels every year "Toneladas":
+    # the national quantity falls x0.16 / x0.12 / x0.19 between 2000 and 2001. The same break
+    # sits in Banana (cacho), x10.9 the other way. silver_ibge_pam converts the counted years
+    # with IBGE's own weight per fruit through the seed pam_fruit_unit_eras and marks them
+    # `qty_is_estimated`; adding any of these codes WITHOUT that seed publishes a count as
+    # tonnes (test_pam_fruit_products_have_a_unit_era pins the pairing).
     pam_product_codes: str = Field(
-        default="40124,40122,40139,40106,40102,40136,40119,45982,40143,40145,40092"
+        default=(
+            "40124,40122,40139,40106,40102,40136,40119,45982,40143,40145,40092,40151,40152,40271"
+        )
     )
     # Full PAM history (SIDRA 5457 runs to 1974). The monetary value is now
     # reform-correct via the historical_currency_factors join in silver_ibge_pam,

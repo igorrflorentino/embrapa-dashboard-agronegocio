@@ -49,6 +49,16 @@ with base_pam as (
         max(base_unit)                  as base_unit,
         max(qty_native)                 as qty_native,
         max(qty_base)                   as qty_base,
+        -- TRUE when the quantity was CONVERTED from a count (mil frutos / mil cachos, up to
+        -- 2000) by IBGE's preliminary weight per fruit — see seed pam_fruit_unit_eras. An
+        -- estimate, so anyone filtering or citing it can tell it from a measured quantity.
+        -- coalesce: silver_ibge_pam is incremental with append_new_columns, so the partitions a
+        -- plain (non full-refresh) build does not re-scan keep a NULL in the new column until
+        -- the one-time full refresh. NULL means "not converted", i.e. FALSE — never let it
+        -- through, or a not_null test would skip the serving marts downstream.
+        logical_or(coalesce(is_unit_estimated, false)
+                   and variable_code = '{{ var("pam_variable_quantity") }}')
+                                        as qty_is_estimated,
         -- Pivot the remaining PAM measures by their SIDRA variable code.
         -- area_planted_ha / area_harvested_ha are SIDRA's reported hectares AS-IS; a few
         -- historical source rows even violate the agronomic invariant planted >= harvested
@@ -147,6 +157,7 @@ select
     qty_native,
     qty_base,
     base_unit,
+    qty_is_estimated,
 
     -- ── PAM-specific agronomic measures (carried for the área/rendimento expansion) ─
     area_planted_ha,

@@ -447,3 +447,78 @@ seeds:
       - name: reason
         description: "Why the publisher has no value — the sentence a researcher would cite."
         tests: [not_null]
+
+  # ─── PAM: fruit quantities measured by COUNT before 2001 ───────────────────
+  - name: pam_fruit_unit_eras
+    description: |
+      PAM fruit quantities that SIDRA table 5457 labels "Toneladas" in EVERY year although,
+      up to 2000, IBGE measured them by COUNT (mil frutos; mil cachos for banana) and only
+      from 2001 by weight. IBGE announced the change itself (PAM/LSPA, "Mudança da unidade
+      de medida das frutíferas") and never back-converted the table, so the label is wrong
+      for 1974–2000 and the series falls ×0.16 (laranja), ×0.12 (limão), ×0.19 (tangerina)
+      or jumps ×10.9 (banana) between 2000 and 2001.
+
+      silver_ibge_pam multiplies the quantity (var 214, mil frutos → t) and the yield
+      (var 112, frutos/ha → kg/ha) of a matching (product_code, reference_year) by
+      `kg_per_unit`, the median weight per fruit IBGE estimated for that very change: each
+      state's 2001 yield (kg/ha) divided by its 2000 yield (fruits/ha), then the national
+      median. Values as PRINTED in IBGE's table (PAM/COAGRO, "Uso interno / dados
+      preliminares / sujeitos a alterações"): laranja 0.16 · limão 0.10 · tangerina 0.15 ·
+      banana 10.20 kg. The unit is a count, so mil frutos × kg/fruit = t (the "mil" and the
+      "/1000 kg→t" cancel). Area and value are untouched.
+
+      ⚠ An ESTIMATE, not a measurement: the method assumes the 2001 yield equals 2000's, and
+      IBGE itself says these weights serve internal data review and "não deverão ser
+      utilizados como referência final". The conversion is applied anyway because the
+      alternative — publishing a count as tonnes — is wrong by 6–11×; every converted row is
+      marked `qty_is_estimated` in Gold. Re-measured 2026-10-20 against the API: the national
+      2001/2000 yield ratio gives 0.165 · 0.119 · 0.182 · 11.2, consistent with the
+      published 0.16 · 0.10 · 0.15 · 10.20.
+
+      Only products whose unit CHANGED inside the series belong here — a break is what makes
+      a conversion defensible, because the two sides of it are then comparable only after it.
+      Abacaxi and coco-da-baía show NO break in 1974–2024 and are not listed. That proves the
+      unit is CONSTANT, not that it is tonnes: IBGE's same note says both "continuam a ser
+      pesquisados por unidade (mil frutos)", so the "Toneladas" label of those two is still
+      UNVERIFIED against the source (open question, see CHANGELOG 1.99.0). Before adding
+      any PAM product, scan its national series for a year-over-year jump of ≥ 4×
+      (assert_pam_quantity_no_unit_cliff does it at build time).
+      Ranges for one product must not overlap (assert_pam_unit_eras_no_overlap).
+
+      Source: https://sidra.ibge.gov.br/content/documentos/pam/AlteracoesUnidadesMedidaFrutas.pdf
+    config:
+      column_types:
+        product_code: string
+        year_from: int64
+        year_to: int64
+        kg_per_unit: float64
+        source_unit: string
+        reason: string
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - product_code
+              - year_from
+    columns:
+      - name: product_code
+        description: "SIDRA classification-782 crop code (e.g. 40151 = Laranja)."
+        tests: [not_null]
+      - name: year_from
+        tests: [not_null]
+      - name: year_to
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: ">= year_from"
+      - name: kg_per_unit
+        description: "Median weight of one fruit (one bunch for banana) in kg, as printed by IBGE."
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: "> 0"
+      - name: reason
+        description: "Why the quantity is converted — the sentence a researcher would cite."
+        tests: [not_null]
