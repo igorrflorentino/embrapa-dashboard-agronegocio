@@ -84,6 +84,47 @@ comércio exterior de laranja, limão, tangerina, abacaxi e suco de laranja entr
   fruta nas análises de valor agregado.
 - O histórico do COMTRADE para os 11 SH6 chega nos próximos ciclos do Job, não de uma vez.
 
+### Conferência em produção (2026-10-21, antes do merge)
+Feita nesta ordem, com cada passo verificado antes do seguinte:
+1. **Backup de retorno:** `run=20261021T142049Z` (`"dataset": "gold"`, 6 tabelas + 12 de curadoria + o
+   histórico de qualidade).
+2. **Build de produção com `full_refresh=true`**, da própria branch: PASS=431, ERROR=0, 3 avisos (os 2
+   de sempre e a lista das 4 descrições provisórias). Abacaxi e coco em produção: `contagem` /
+   `Mil frutos` / `un`, 257.294 linhas cada, rendimento retido, 2023 = **1.587.545.000** e
+   **1.932.582.000** frutos; a Serving carrega a família; os outros **2.834.583** registros do PAM com
+   o mesmo fingerprint medido em dev.
+3. **Catálogo:** 22 entradas (11 `comex` + 11 `comtrade`) nos agrupamentos `laranja`, `limao`,
+   `tangerina` e `abacaxi`, que já existiam; autor `operator:frutas-comercio-2026-10`.
+4. **COMEX a partir do nosso bruto**, localmente, com o escopo completo: 60 arquivos, Bronze
+   3.648.752 → 4.250.168 linhas (+601.416 = 474.014 do escopo anterior + **127.402 das frutas**, o
+   mesmo número carregado em dev). Uma passada completa do escopo são só ~600 mil linhas; os 3,65 mi
+   anteriores eram o acúmulo de várias passadas ao longo do tempo.
+   - ⚠ **O `ingest --from-raw` terminou com exit 1** (`403 PATCH` nos 60 arquivos): a credencial local
+     não pode **carimbar** o metadado dos arquivos brutos no GCS. A carga no BigQuery, que vem antes,
+     funcionou. Consequência: os brutos não levam a impressão do escopo novo, e o próximo ciclo normal do
+     COMEX refaz a Fase 2 **uma vez** (~600 mil linhas, o Silver deduplica). Inofensivo; o Job
+     (`sa-data-pipeline-prod`) tem a permissão.
+5. **Build de produção seguinte:** PASS=431, ERROR=0, 3 avisos.
+6. **COMEX em produção:**
+   - O Gold **conserva o bruto** em peso e valor nas 11 NCM × 2 fluxos (22 combinações, **0
+     divergências**).
+   - As NCM do escopo anterior ficaram **idênticas ao backup** anterior à mudança (391.914 linhas, mesmo
+     peso).
+   - As 11 NCM estão ligadas aos agrupamentos (agora PAM + COMEX) e a Serving carrega os quatro, de 1997
+     a 2026.
+7. **No painel**, servido localmente contra os dados de produção:
+   - Coeficiente de exportação de **laranja, limão e tangerina**: 29 pontos (1997–2025). O da
+     **tangerina atravessa o desdobramento da NCM de 2017** sem quebra, e o primeiro ponto vem do código
+     aposentado.
+   - **Abacaxi e coco são recusados** (`incompatibleReason: familia`): são contagem. A soja segue igual.
+   - ⚠ **A laranja agora soma fruta fresca e suco** no numerador (peso de comércio) sobre a produção da
+     fruta: é o que o nível de industrialização separa, e ele está por classificar (ver *Em aberto*).
+
+**`doctor`:** todos os checks ✓, exceto o `COMEX reachable` (certificado expirado do MDIC, alheio a esta
+mudança). *Catalog → Gold arrival* avisa que os 11 códigos do COMTRADE ainda não têm dado, como esperado
+logo após o registro. **Gasto do BigQuery:** 1,03 TiB em 30 dias, 0,03 TiB acima da cota gratuita
+(≈ US$ 0,17 a preço de lista).
+
 ---
 
 ## [1.99.0] - 2026-10-20
