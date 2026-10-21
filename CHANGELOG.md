@@ -7,6 +7,91 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.99.0] - 2026-10-20
+
+**Laranja, limão e tangerina entram no IBGE PAM — e a quantidade de quatro frutas deixa de
+misturar contagem com peso.** Ao adicionar os três cítricos apareceu um defeito que já estava
+no ar na banana.
+
+### Adicionado
+- **Laranja (SIDRA 40151), Limão (40152) e Tangerina (40271)** no conjunto PAM
+  (`config.py`, `.env.example`). Códigos conferidos na própria fonte com
+  `discover ibge-products --table-id 5457`, não de memória.
+  - ⚠ **Em produção o `config.py` não decide o que entra.** O Job de ingestão roda com
+    `CATALOG_AUTHORITATIVE_INGESTION=true` e sem nenhuma variável `PAM_*` (lido de
+    `gcloud run jobs describe`, 2026-10-20): o que é ingerido é o que o catálogo da Curadoria
+    lista. **Este lançamento não coloca os produtos no ar sozinho** — falta registrá-los no
+    "Cadastro de produtos" e rodar a ingestão (passos em
+    `docs/operations_runbook.md` § *Adding a PAM product in prod*).
+- **Seed `pam_fruit_unit_eras`** — a conversão de contagem para peso, com o texto que o
+  pesquisador cita (`reason`) e a fonte. Listado em **Referências**, que é onde a estimativa se
+  divulga.
+- **`qty_is_estimated`** no `gold_pam_production`: `TRUE` na quantidade que foi convertida.
+- **Dois testes do dbt:** `assert_pam_unit_eras_no_overlap` (uma faixa sobreposta duplicaria as
+  linhas do Silver) e `assert_pam_quantity_no_unit_cliff` (aviso; ver abaixo).
+- Laranja, limão e tangerina no glossário, e a nota de estimativa na banana.
+
+### Corrigido
+- **A quantidade de banana, laranja, limão e tangerina até 2000 estava em outra unidade.** A
+  tabela 5457 rotula **todos** os anos como "Toneladas", mas até 2000 o IBGE **contava** as
+  frutas (mil frutos; mil cachos na banana) e só a partir de 2001 passou a pesar
+  ([nota do IBGE](https://sidra.ibge.gov.br/content/documentos/pam/AlteracoesUnidadesMedidaFrutas.pdf)).
+  A tabela nunca foi reconvertida. Medido na API, Brasil, 2000 → 2001:
+
+  | Produto | Quantidade | Rendimento (kg/ha) |
+  |---|---|---|
+  | Laranja | ×0,16 | 124.531 → 20.593 |
+  | Limão | ×0,12 | 163.964 → 19.541 |
+  | Tangerina | ×0,19 | 97.823 → 17.762 |
+  | **Banana (já no ar)** | **×10,9** | 1.079 → 12.104 |
+
+  Dos 14 produtos PAM varridos (1974–2024), só esses quatro têm a ruptura; o maior salto
+  *real* foi o do café em 1975 (×0,30, a geada). Nada no pipeline a via: o rótulo concordava, e
+  o detector de preço tolera 100×. **A banana ficou assim em produção até agora.**
+- **Como:** o `silver_ibge_pam` multiplica a quantidade (mil frutos → t) e o rendimento
+  (frutos/ha → kg/ha) pelo **peso mediano por fruto que o próprio IBGE estimou** ao mudar a
+  unidade: laranja 0,16 · limão 0,10 · tangerina 0,15 · banana 10,20 kg. Só o produto e os anos
+  declarados no seed; área e valor não são tocados.
+
+### Impacto analítico
+- ⚠ **É uma estimativa, não uma medição.** O próprio IBGE chama esses pesos de "dados
+  preliminares, uso interno" e diz que "não deverão ser utilizados como referência final". O
+  método supõe que o rendimento de 2001 igualou o de 2000. A incerteza é da ordem de 10–20%:
+  a razão nacional dos rendimentos dá 0,165 · 0,119 · 0,182 · 11,2 contra os 0,16 · 0,10 ·
+  0,15 · 10,20 publicados. Foi a opção escolhida (2026-10-20) em vez de ocultar o período; ocultar
+  perde 27 anos de quantidade, e editar o seed desfaz a conversão.
+- **A banana de 1974–2000 muda ×10,2 em quantidade.** Medido em dev contra o Gold de produção:
+  razão exata de 10,200 em todos os anos até 2000 e 1,000 de 2001 em diante; o degrau
+  (5,78 mi t em 2000 → 6,18 mi t em 2001) vira continuidade. Quem citou a banana antes e quem
+  cita agora citaram séries diferentes.
+- **Os outros 2.319.995 registros do PAM não mudam**: mesmo fingerprint em prod e dev,
+  medidas e `data_quality_flag`.
+- **O detector de qualidade se recalibra na banana.** A mediana de preço do produto estava
+  contaminada pela unidade errada (R$ 12.534/t até 2000 contra R$ 1.735/t depois, um degrau de
+  7,2×; agora R$ 1.230 contra R$ 1.735). Efeito nas linhas de **2001 em diante**, cujas medidas
+  não mudaram: 6.333 passam de `OK` a `UNSCORED` e 594 de `OUTLIER_QUANTITY` a `OK`. Nas de
+  1974–2000: `OK` 62.003 → 70.097, `OUTLIER_QUANTITY` 0 → 139, `PROBLEMATIC_VALUE` 1 → 23.
+  Pode acender `quality-drift` no `doctor`; é esperado.
+- **`assert_pam_quantity_no_unit_cliff`** (aviso, salto nacional ≥ 4× entre anos consecutivos)
+  roda sobre o Gold já convertido. Contra o Gold de produção atual acusa a banana (×10,907);
+  contra o de dev, nada. Calibrado nos 14 produtos: o maior salto real é 3,3×.
+
+### Em aberto (não verificado)
+- **Abacaxi e coco-da-baía podem estar rotulados "toneladas" quando são mil frutos o tempo
+  todo.** Não têm ruptura porque a unidade é *constante*, o que não prova que seja peso: a nota do
+  IBGE diz que os dois "continuam a ser pesquisados por unidade (mil frutos)", e um texto da
+  Embrapa situa a produção brasileira de abacaxi em ~2,4 mi t (FAO), contra os 1,59 mi "t" que a
+  tabela traz. A verificação do v1.33.0 comparou o *rótulo* com a API, que diz "Toneladas" em
+  todos os anos até onde a unidade é comprovadamente outra. Não foi alterado nada nesses dois.
+
+### Operação
+- O seed muda valores já publicados e o Silver é incremental: é preciso um build de produção
+  com **`full_refresh=true`** (precedido de `backup-gold`). Até lá, as partições não relidas
+  ficam sem conversão (`qty_is_estimated` = `FALSE`) e o novo aviso acusa a banana.
+- O Gold ganhou uma coluna; os marts da Serving não a leem.
+
+---
+
 ## [1.98.0] - 2026-09-26
 
 ### Adicionado

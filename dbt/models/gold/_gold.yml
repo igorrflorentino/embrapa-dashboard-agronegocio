@@ -224,9 +224,13 @@ models:
       - name: unit_native
         description: "Unit the source publishes the quantity in (e.g. 't', 'mil litros')."
       - name: qty_native
-        description: "Quantity in unit_native — the source's own number, unconverted."
+        description: "Quantity in unit_native — the source's own number, unconverted. EXCEPTION (PAM only): the fruits IBGE counted until 2000 (laranja, limão, tangerina, banana) are converted to tonnes in Silver — see qty_is_estimated."
       - name: qty_base
         description: "qty_native converted to this row's family base unit (base_unit). NEVER sum across families."
+      - name: qty_is_estimated
+        description: "TRUE when the quantity was converted from a COUNT (mil frutos / mil cachos, 1974–2000) to tonnes by IBGE's preliminary median weight per fruit (seed pam_fruit_unit_eras) — an estimate, not a measurement. FALSE for every other row; PAM only."
+        tests:
+          - not_null
       - name: base_unit
         description: "Base unit that qty_base is expressed in for this row's family (e.g. kg for massa)."
       - name: val_yearfx_brl

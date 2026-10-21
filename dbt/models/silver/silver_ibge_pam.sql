@@ -134,8 +134,20 @@ select
             -- "Mil Cruzeiros" value is magnitude-Cruzados; realigns it with 1984/1986. No-op else.
             then p.raw_numeric_value * fx.brl_factor
                  * {{ ibge_1985_cruzado_correction('p.reference_year', 'p.unit_of_measure') }}
+        -- COUNT → WEIGHT (pam_fruit_unit_eras): up to 2000 IBGE counted these fruits and SIDRA
+        -- still labels the number "Toneladas"/"kg/ha". The same kg-per-fruit takes the quantity
+        -- (mil frutos → t) and the yield (frutos/ha → kg/ha) to the unit the label claims.
+        -- `coalesce(.., 1)` leaves every other product and year exactly as the source gave it.
+        when p.variable_code in ('{{ var_quantity }}', '{{ var("pam_variable_yield") }}')
+            then p.raw_numeric_value * coalesce(ue.kg_per_unit, 1)
         else p.raw_numeric_value
     end as numeric_value,
+
+    -- TRUE on the quantity/yield rows converted from a COUNT: an estimate, not a measurement
+    -- (IBGE's own preliminary weight per fruit). Carried to Gold as qty_is_estimated.
+    (ue.kg_per_unit is not null
+        and p.variable_code in ('{{ var_quantity }}', '{{ var("pam_variable_yield") }}'))
+                                                            as is_unit_estimated,
 
     case when p.variable_code = '{{ var_value }}' then true else false end as is_monetary_value,
 
@@ -150,9 +162,10 @@ select
     case when p.variable_code = '{{ var_quantity }}'
         then coalesce(ufp.base_unit, ufc.base_unit) end     as base_unit,
     case when p.variable_code = '{{ var_quantity }}'
-        then p.raw_numeric_value end                        as qty_native,
+        then p.raw_numeric_value * coalesce(ue.kg_per_unit, 1) end as qty_native,
     case when p.variable_code = '{{ var_quantity }}'
-        then p.raw_numeric_value * coalesce(ufp.to_base, ufc.to_base) end as qty_base,
+        then p.raw_numeric_value * coalesce(ue.kg_per_unit, 1)
+             * coalesce(ufp.to_base, ufc.to_base) end       as qty_base,
 
     p.ingestion_timestamp
 from parsed p
@@ -161,6 +174,11 @@ left join {{ ref('historical_currency_factors') }} fx
     and p.reference_year between fx.year_from and fx.year_to
 left join {{ ref('unit_family_conversions') }} ufc
     on lower(trim(p.unit_of_measure)) = ufc.unit_raw
+-- Date-aware, like the currency join above: a product's ranges must not overlap or this
+-- would fan the rows out (assert_pam_unit_eras_no_overlap pins it).
+left join {{ ref('pam_fruit_unit_eras') }} ue
+    on ue.product_code = p.product_code
+    and p.reference_year between ue.year_from and ue.year_to
 -- Per-product unit override, wired identically to silver_ibge_pevs so all three IBGE
 -- silvers behave uniformly (DBT-4). Staged/inert today: product_unit_factors ships only
 -- source='_reference' sentinel rows, so no 'pam' unit is overridden yet — but a future
