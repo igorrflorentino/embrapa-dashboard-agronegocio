@@ -893,6 +893,35 @@ def test_productivity_threads_year_window_to_gateway(monkeypatch):
     assert recorded["year_end"] == 2020
 
 
+def test_productivity_carries_the_unit_family_of_the_active_crop(monkeypatch):
+    """The serializer needs the crop's family to say fruits/ha for a COUNTED crop (abacaxi,
+    coco-da-baía) and kg/ha for a mass. The seam reads it off the products frame."""
+    seam = _seam()
+    monkeypatch.setattr(
+        seam.gateway,
+        "fetch_products",
+        lambda banco_id: pd.DataFrame(
+            [
+                {"code": "40124", "name": "Soja", "family": "massa"},
+                {"code": "40092", "name": "Abacaxi", "family": "contagem"},
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        seam.gateway,
+        "fetch_productivity",
+        lambda *a, **k: pd.DataFrame(columns=["reference_year", "state_acronym"]),
+    )
+    soja = seam.productivity("ibge_pam", "40124")
+    abacaxi = seam.productivity("ibge_pam", "40092")
+    assert soja["active_family"] == "massa"
+    assert abacaxi["active_family"] == "contagem"
+    assert {c["code"]: c["family"] for c in abacaxi["crops"]} == {
+        "40124": "massa",
+        "40092": "contagem",
+    }
+
+
 # ── exp_price: a year without weight is a gap (None), never value ÷ 1 ──────────
 
 
@@ -2560,6 +2589,22 @@ def test_is_mass_basis_true_only_for_pure_massa(monkeypatch):
     assert seam._is_mass_basis("castanha") is True
     assert seam._is_mass_basis("madeira") is False
     assert seam._is_mass_basis(None) is False  # the "*" all-products basket is mixed
+
+
+def test_a_counted_crop_is_not_a_mass_basis_so_it_leaves_the_weight_ratios(monkeypatch):
+    """Coco-da-baía is counted in mil frutos (IBGE Anuário 2023), so its PAM side is the family
+    'contagem'. The export coefficient and the gate price divide a trade WEIGHT by a production
+    MASS: the family gate must refuse a count — before the reclassification the coconut passed it
+    as 'massa' and the ratio divided kilos by thousands of fruits."""
+    seam = _seam()
+    monkeypatch.setattr(
+        _cross(),
+        "_production_family_by_agrupamento",
+        lambda: {"soja": {"massa"}, "coco": {"contagem"}, "abacaxi": {"contagem"}},
+    )
+    assert seam._is_mass_basis("soja") is True
+    assert seam._is_mass_basis("coco") is False
+    assert seam._is_mass_basis("abacaxi") is False
 
 
 # ── market_share / price_spread / trade_mirror: happy paths ───────────────────

@@ -724,11 +724,18 @@ def serialize_productivity(payload: dict | None) -> dict | None:
     if not payload:
         return None
     df = payload.get("rows")
+    # A crop whose quantity is a COUNT (abacaxi, coco-da-baía: mil frutos) has a ratio in fruits
+    # per hectare, not kg/ha. The arithmetic is the same (qty × 1000 ÷ area); only the unit the
+    # reader is told differs, and saying "kg/ha" there would be exactly the label error the
+    # reclassification removed from the data.
+    counted = payload.get("active_family") == "contagem"
     base = {
         "preview": False,
         "crop": {"code": payload.get("active", ""), "name": payload.get("active_name", "")},
         "crops": payload.get("crops", []),
-        "yieldUnit": "kg/ha",
+        "yieldUnit": "frutos/ha" if counted else "kg/ha",
+        # The unit `prodT` is in: tonnes, or thousands of fruits (the source's own count unit).
+        "prodUnit": "mil frutos" if counted else "t",
         "areaUnit": "ha",
         "series": [],
         # ProductivityData.national is {yieldKgHa, areaHa, prodT, yieldCagr} — the

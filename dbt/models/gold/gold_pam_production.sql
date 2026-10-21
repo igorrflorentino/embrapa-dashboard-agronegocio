@@ -151,7 +151,7 @@ select
     product_code,
     product_description,
 
-    -- ── Quantities (physical-unit family — always 'massa'/t for the lean crops) ─
+    -- ── Quantities (physical-unit family: 'massa'/t, or 'contagem'/un for abacaxi and coco) ─
     family,
     unit_native,
     qty_native,

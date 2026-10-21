@@ -234,3 +234,14 @@ cmd_code,hs_level,standard_unit,description
 100620,6,kg,"Cereais; arroz descascado (arroz cargo ou castanho)"
 100630,6,kg,"Cereais; arroz semibranqueado ou branqueado, mesmo polido ou brunido"
 100640,6,kg,"Cereais; arroz quebrado (trinca de arroz)"
+080430,6,kg,Abacaxis (ananases)
+080510,6,kg,Laranjas
+080520,6,kg,"Mandarinas (incluindo as tangerinas e as satsumas); clementinas, wilkings e citros (citrinos) híbridos semelhantes [código antigo do SH; texto oficial pendente]"
+080521,6,kg,Mandarinas (incluindo as tangerinas e as satsumas)
+080522,6,kg,Clementinas
+080529,6,kg,"Mandarinas (incluindo as tangerinas e as satsumas); clementinas, wilkings e citros (citrinos) híbridos semelhantes: Outros"
+080530,6,kg,"Limões (Citrus limon, Citrus limonum) e limas (Citrus aurantifolia) [código antigo do SH; texto oficial pendente]"
+080550,6,kg,"Limões (Citrus limon, Citrus limonum) e limas (Citrus aurantifolia, Citrus latifolia)"
+200911,6,kg,Suco (sumo) de laranja: Congelado
+200912,6,kg,"Suco (sumo) de laranja: Não congelado, com valor Brix não superior a 20"
+200919,6,kg,Suco (sumo) de laranja: Outros

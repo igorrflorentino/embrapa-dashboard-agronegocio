@@ -700,6 +700,30 @@ def test_serialize_productivity_recomputes_yield_and_aggregates():
     assert by_uf["MT"]["prodT"] == 2400.0 and by_uf["MT"]["areaHa"] == 400.0
 
 
+def test_serialize_productivity_counted_crop_speaks_fruits_per_hectare():
+    """Abacaxi and coco-da-baía are counted in mil frutos (IBGE Anuário 2023), so their ratio is
+    FRUITS per hectare. The arithmetic is the one a mass uses (qty × 1000 ÷ area); what changes is
+    the unit the reader is told — "kg/ha" there would be the label error the reclassification
+    removed from the data, reappearing one screen later."""
+    payload = _productivity_payload()
+    payload["active_family"] = "contagem"
+    out = s.serialize_productivity(payload)
+    assert out["yieldUnit"] == "frutos/ha"
+    assert out["prodUnit"] == "mil frutos"
+    # Same ratio as the mass case: 3000 mil frutos over 900 ha = 3333 frutos/ha.
+    assert out["series"][0]["yieldKgHa"] == pytest.approx(3000.0 * 1000 / 900)
+
+
+def test_serialize_productivity_mass_crop_keeps_kg_per_hectare_and_tonnes():
+    """The default (and a payload from before `active_family` existed) is unchanged."""
+    for family in ("massa", None):
+        payload = _productivity_payload()
+        if family:
+            payload["active_family"] = family
+        out = s.serialize_productivity(payload)
+        assert out["yieldUnit"] == "kg/ha" and out["prodUnit"] == "t"
+
+
 def test_serialize_productivity_handles_zero_area_and_empty():
     assert s.serialize_productivity(None) is None  # banco lacks the yield capability
     # Empty frame → a valid contract with empty series (the view renders empty charts).

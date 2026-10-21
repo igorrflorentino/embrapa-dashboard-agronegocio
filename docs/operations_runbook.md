@@ -539,6 +539,34 @@ catalog lists for banco `ibge_pam`. Order that avoids publishing a wrong series:
    Check Bronze against the SIDRA API (sum of municipalities = the national value) before building.
 4. Build prod (`dbt-build-prod`), then `embrapa doctor`.
 
+### Widening the COMEX / COMTRADE scope for a product (v1.100.0)
+
+1. **Read the real code history, never the current table.** The raw COMEX archive is UNFILTERED
+   (every NCM, `raw/comex/comex_flows/{EXP,IMP}_<year>.parquet`, 1997–2026): scan `CO_NCM` by year
+   to see which codes existed when, which were retired and which were split. The Siscomex API
+   (`portalunico.siscomex.gov.br/classif/api/publico/nomenclatura/download/json`) serves only the
+   CURRENT table and ignores a date parameter, so it names today's codes, not the old ones.
+2. **Scope = explicit leaves** in `comex_ncm_codes` / `comtrade_cmd_codes`, never a heading that
+   holds other products. A SPLIT (one retired code → several) has no successor: list every code in
+   the same agrupamento instead of a `*_succession` row. Confirm the HS6 codes expand to themselves
+   with `client.list_hs6_codes`.
+3. **Descriptions are official text only** (MDIC `NCM.csv` / `NCM_SH.csv`; Siscomex for current
+   codes). A retired code whose text cannot be had keeps the parent's wording plus
+   "texto oficial pendente"; `assert_trade_descriptions_are_official` (warn) lists them until
+   `make nomenclature-audit` can run again.
+4. **Validate in dev without touching the prod raw objects.** `ingest comex --from-raw` STAMPS each
+   prod raw object with the filter fingerprint it loaded. For a dev check, filter the raw with
+   `client.filter_products` and load a throwaway dataset yourself (no `mark_bronze_loaded`), point
+   `BQ_BRONZE_COMEX_DATASET` at it, build `silver_comex_flows gold_comex_flows serving_comex_*`, and
+   compare Gold to the raw per (NCM, flow): weight and value must conserve exactly.
+5. **Prod COMEX:** with MDIC unreachable, `ingest comex --from-raw` WITH THE FULL SCOPE (so the
+   stamped fingerprint equals the final one and the next normal run skips). It re-appends the
+   products already present (~3.6 M rows, 300 MB; Silver dedups) — cheaper than a second pass later.
+6. **COMTRADE needs nothing extra**: it detects the widened scope (`_codes_added_since`) and
+   re-fetches the settled years for the added codes on its next runs, over the daily API quota.
+7. Register the codes in the Curadoria catalog under their agrupamento (banco `comex` / `comtrade`),
+   then classify their industrialization level (a juice is processed; the fresh fruit is not).
+
 **Before adding any PAM fruit, scan its national series for a ≥ 4× year-over-year step** (the
 detector `assert_pam_quantity_no_unit_cliff` runs this at build time, as a warning, AFTER the
 data is already in Gold). SIDRA 5457 labels every quantity "Toneladas"; the label is not

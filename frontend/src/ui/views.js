@@ -38,7 +38,7 @@ window.VIEW_GROUPS = [
       // to true only alongside a 'productivity' buildRows case that carries the recomputed
       // rendimento (kg/ha) + área colhida series.
       { id: 'productivity', label: 'Produtividade', status: 'live', exportable: false, requires: ['yield'], selfData: true,
-        desc: 'Rendimento (kg/ha) e área colhida por lavoura: trajetória nacional de produtividade e a geografia do rendimento por UF. Disponível para bancos de produção agrícola (IBGE PAM).',
+        desc: 'Rendimento (kg/ha; frutos/ha no abacaxi e no coco-da-baía, que o IBGE conta em mil frutos) e área colhida por lavoura: trajetória nacional de produtividade e a geografia do rendimento por UF. Disponível para bancos de produção agrícola (IBGE PAM).',
         planned: ['Série de rendimento médio (kg/ha)', 'Série de área colhida', 'Mapa de produtividade por UF', 'Ranking de UFs mais produtivas'] },
     ],
   },

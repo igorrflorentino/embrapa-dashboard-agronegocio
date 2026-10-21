@@ -183,7 +183,7 @@ models:
           (banco, tabela, code) and of this table's grain — stamped in Silver; every human
           label for a table is derived from it, never stored beside it.
       - name: family
-        description: "Physical-unit family of the quantity (always 'massa'/t for the lean crops)."
+        description: "Physical-unit family of the quantity: 'massa'/t for almost every crop, 'contagem'/un for abacaxi and coco-da-baía (counted in mil frutos in every year — seed pam_count_unit_products)."
         tests:
           - accepted_values:
               arguments:
@@ -201,7 +201,7 @@ models:
               arguments:
                 expression: "is null or area_harvested_ha >= 0"
       - name: yield_kg_ha
-        description: "Rendimento médio da produção (kg/ha), as reported by SIDRA (not summable — recompute as qty/area at coarser grains)."
+        description: "Rendimento médio da produção (kg/ha), as reported by SIDRA (not summable — recompute as qty/area at coarser grains). NULL for the count-family products (abacaxi, coco-da-baía): SIDRA's number is fruits/ha under a kg/ha label, so it is withheld — qty_base ÷ area_harvested_ha gives it in the right unit."
         tests:
           - dbt_utils.expression_is_true:
               arguments:

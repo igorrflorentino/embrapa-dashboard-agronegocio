@@ -477,12 +477,16 @@ seeds:
 
       Only products whose unit CHANGED inside the series belong here — a break is what makes
       a conversion defensible, because the two sides of it are then comparable only after it.
-      Abacaxi and coco-da-baía show NO break in 1974–2024 and are not listed. That proves the
-      unit is CONSTANT, not that it is tonnes: IBGE's same note says both "continuam a ser
-      pesquisados por unidade (mil frutos)", so the "Toneladas" label of those two is still
-      UNVERIFIED against the source (open question, see CHANGELOG 1.99.0). Before adding
-      any PAM product, scan its national series for a year-over-year jump of ≥ 4×
-      (assert_pam_quantity_no_unit_cliff does it at build time).
+      Abacaxi and coco-da-baía show NO break in 1974–2024 and are not listed, but NOT because
+      they are in tonnes: they are counted in EVERY year (mil frutos), as IBGE's own note says
+      ("continuam a ser pesquisados por unidade") and its Anuário Estatístico do Brasil 2023
+      prints for both (tables 3.3.1.1 / 3.3.1.2: "Quantidade obtida em 1 000 frutos e rendimento
+      médio em frutos por hectare", the same numbers SIDRA 5457 labels "Toneladas"). They live
+      in pam_count_unit_products, as a COUNT — IBGE publishes no weight per fruit for them, so
+      none is invented. A product is in one seed or the other, never both
+      (assert_pam_unit_seeds_disjoint). Before adding any PAM product, scan its national
+      series for a year-over-year jump of ≥ 4× (assert_pam_quantity_no_unit_cliff does it at
+      build time) AND check IBGE's footnotes: a constant unit hides no break.
       Ranges for one product must not overlap (assert_pam_unit_eras_no_overlap).
 
       Source: https://sidra.ibge.gov.br/content/documentos/pam/AlteracoesUnidadesMedidaFrutas.pdf
@@ -521,4 +525,69 @@ seeds:
                 expression: "> 0"
       - name: reason
         description: "Why the quantity is converted — the sentence a researcher would cite."
+        tests: [not_null]
+
+  # ─── PAM: quantities that are a COUNT in every year ────────────────────────
+  - name: pam_count_unit_products
+    description: |
+      PAM products whose quantity SIDRA table 5457 labels "Toneladas" although IBGE counts
+      them in thousands of fruits in EVERY year: abacaxi (40092) and coco-da-baía (40145).
+      The label is wrong, not the number. IBGE's Anuário Estatístico do Brasil 2023 prints both
+      (tables 3.3.1.2 and 3.3.1.1, sourced from SIDRA 1612 / 1613) with the footnote
+      "Quantidade obtida em 1 000 frutos e rendimento médio em frutos por hectare" and the SAME
+      figures the 5457 serves (2021: abacaxi 1.548.990, coco 1.643.453, quantity and yield), and
+      quantity × 1000 ÷ harvested area reproduces the published yield exactly (frutos/ha).
+      Measured 2026-10-21. The SIDRA metadata cannot say it: it declares "Toneladas" for the
+      whole variable, and the legacy tables 1612/1613 label even laranja 1995 (a fruit count)
+      the same way. The asterisk on "Abacaxi*" / "Coco-da-baía*" is the only marker, and it
+      carries no text in the API.
+
+      silver_ibge_pam reads this seed to give those rows the unit they really have —
+      `unit_label`, family `contagem`, base unit `un`, `qty_base` = mil frutos × `to_base`
+      (1000) — and to leave their YIELD absent (frutos/ha is not kg/ha; qty_base ÷ area gives
+      it in the right unit). They are NOT converted to a weight: IBGE publishes no weight per
+      fruit for either (its own conversion note lists them as "continuam a ser pesquisados
+      por unidade"), and an Embrapa text records there is no consensus on the pineapple's. A
+      count is the honest unit; a weight would be a number nobody measured.
+
+      Consequence, by design: they leave every 'massa' total (a fruit count was being summed
+      with tonnes) and the family gate of the cross-source views keeps them out of the
+      mass-based ratios (export coefficient, gate price). That is correct — those divide a
+      trade WEIGHT by a production MASS.
+
+      Different from pam_fruit_unit_eras (laranja, limão, tangerina, banana: counted until
+      2000, weighed since, converted to t with IBGE's preliminary weight). A product is in one
+      seed or the other, never both (assert_pam_unit_seeds_disjoint).
+    config:
+      column_types:
+        product_code: string
+        unit_label: string
+        family: string
+        base_unit: string
+        to_base: float64
+        reason: string
+    columns:
+      - name: product_code
+        description: "SIDRA classification-782 crop code (e.g. 40092 = Abacaxi). One row per product."
+        tests: [not_null, unique]
+      - name: unit_label
+        description: "The unit the quantity REALLY has, shown as the native unit (instead of the wrong 'Toneladas')."
+        tests: [not_null]
+      - name: family
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ["contagem"]
+      - name: base_unit
+        tests: [not_null]
+      - name: to_base
+        description: "Base units per source unit (1000 frutos per mil frutos)."
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: "> 0"
+      - name: reason
+        description: "Why the unit is a count — the sentence a researcher would cite."
         tests: [not_null]

@@ -37,7 +37,14 @@ function ViewProductivity({ summary, conventions, database }) {
   // Sub-1000 values get the bare unit — without this tier they'd divide by 1e3 and round,
   // so 500 ha rendered as "1 mil ha" and the empty/loading frame (0) as "0 mil ha".
   const fmtArea = (v) => v >= 1e6 ? window.numBR(v / 1e6, 1) + ' mi ha' : v >= 1e3 ? window.numBR(v / 1e3, 0) + ' mil ha' : window.numBR(Math.round(v), 0) + ' ha';
-  const fmtProd = (v) => v >= 1e6 ? window.numBR(v / 1e6, 1) + ' mi t'  : v >= 1e3 ? window.numBR(v / 1e3, 0) + ' mil t'  : window.numBR(Math.round(v), 0) + ' t';
+  // Abacaxi e coco-da-baía são CONTADOS (mil frutos), não pesados: o payload diz a unidade da
+  // produção (`prodUnit`) e do rendimento (`yUnit`, frutos/ha). Sem isto, a tela os chamaria de
+  // "t" e "kg/ha" — o rótulo errado que a fonte traz e que a base analítica deixou de repetir.
+  // A produção chega em MIL frutos: 1 mi dela = 1 bi de frutos.
+  const counted = data.prodUnit === 'mil frutos';
+  const fmtProd = counted
+    ? (v) => v >= 1e6 ? window.numBR(v / 1e6, 1) + ' bi frutos' : v >= 1e3 ? window.numBR(v / 1e3, 0) + ' mi frutos' : window.numBR(Math.round(v), 0) + ' mil frutos'
+    : (v) => v >= 1e6 ? window.numBR(v / 1e6, 1) + ' mi t'  : v >= 1e3 ? window.numBR(v / 1e3, 0) + ' mil t'  : window.numBR(Math.round(v), 0) + ' t';
 
   const series = data.series;
   const last = series[series.length - 1] || { y: 0, yieldKgHa: 0, areaHa: 0, prodT: 0 };
@@ -95,7 +102,7 @@ function ViewProductivity({ summary, conventions, database }) {
       {/* KPI strip */}
       <div className="kpi-row">
         <window.KpiCardSpark
-          label={<>Rendimento {scopeWord} · <window.UnitFamilyTag family="rendimento" conv={conventions}/></>}
+          label={<>Rendimento {scopeWord} · {counted ? yUnit : <window.UnitFamilyTag family="rendimento" conv={conventions}/>}</>}
           value={fmtY(last.yieldKgHa)}
           delta={window.fmtSigned(yDelta)}
           deltaPositive={window.deltaUp(yDelta)}

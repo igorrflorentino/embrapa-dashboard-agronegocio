@@ -430,7 +430,29 @@ class Settings(BaseSettings):
             # pair onto 08011100 (a merge has an unambiguous target, unlike a split).
             "08011100:coco_seco,08011110:coco_seco_sem_casca,08011190:coco_seco_outros,"
             "08011200:coco_endocarpo,08011900:coco_fresco,"
-            "08013100:caju_com_casca,08013200:caju_sem_casca"
+            "08013100:caju_com_casca,08013200:caju_sem_casca,"
+            # Laranja, limão, tangerina e abacaxi (2026-10), with the PAM crops of the same
+            # names. EXPLICIT leaves, never the 0805/0804/2009 headings: 0805 also holds
+            # toranja and "outros citros", 0804 tâmaras/figos/abacates/mangas, and 2009 every
+            # juice there is — none of them in the PAM. The codes were read off the UNFILTERED
+            # raw archive (every NCM, 1997-2026), not from the current table, because the NCM
+            # was revised and a code retired by a revision is still in the history:
+            #   laranja   08051000 (stable) + suco 20091100 / 20091200 (desde 2002) / 20091900
+            #   tangerina 08052000 (until 2016) -> SPLIT in 2017 into 08052100 mandarinas,
+            #             08052200 clementinas and 08052900 outros. A split has no single
+            #             successor, so there is NO comex_ncm_succession row: all four are
+            #             members of the same agrupamento and the series is continuous by it.
+            #   limão     08053000 (1997-2008) and 08055000 (2002-) COEXIST for six years — two
+            #             codes in use at once, not a renumbering, so no succession either.
+            #   abacaxi   08043000 (stable)
+            # The juice is a PROCESSED product: it joins the agrupamento of its fruit, and the
+            # industrialization level (Curadoria) is what keeps it apart from the fresh fruit.
+            "08051000:laranja_fresca,20091100:suco_laranja_congelado,"
+            "20091200:suco_laranja_nao_congelado,20091900:suco_laranja_outros,"
+            "08052000:tangerina_ate_2016,08052100:tangerina_mandarina,"
+            "08052200:tangerina_clementina,08052900:tangerina_outros,"
+            "08053000:limao_ate_2008,08055000:limao_lima,"
+            "08043000:abacaxi_fresco"
         )
     )
     # CODE:LABEL of 2-digit HS chapters to keep wholesale. Empty by default —
@@ -506,7 +528,22 @@ class Settings(BaseSettings):
             "140110:bambu_cestaria,200591:bambu_brotos,"
             # Coco + castanha de caju — the HS6 twins of the NCMs in comex_ncm_codes.
             "080111:coco_seco,080112:coco_endocarpo,080119:coco_fresco,"
-            "080131:caju_com_casca,080132:caju_sem_casca"
+            "080131:caju_com_casca,080132:caju_sem_casca,"
+            # Laranja, limão, tangerina, abacaxi + suco de laranja (2026-10): the HS6 twins of
+            # the NCMs above, listed as 6-digit leaves (NOT the 0805/0804/2009 prefixes, which
+            # would pull toranja, "outros citros" and every other juice). 080520 (mandarinas,
+            # before it was split into 080521/22/29) and 080530 (limões e limas, retired) are the
+            # codes a reporter used in the older HS revisions; they are in the scope so those
+            # reporter-years are not lost. Confirmed to expand to exactly themselves in the UN
+            # HS reference (client.list_hs6_codes). A widened scope back-fills by itself: the
+            # raw archive records its cmd_scope and the pipeline re-fetches the settled years
+            # for the codes added (_codes_added_since) — quota permitting, over the next runs.
+            "080510:laranja_fresca,200911:suco_laranja_congelado,"
+            "200912:suco_laranja_nao_congelado,200919:suco_laranja_outros,"
+            "080520:tangerina_historica,080521:tangerina_mandarina,"
+            "080522:tangerina_clementina,080529:tangerina_outros,"
+            "080530:limao_historico,080550:limao_lima,"
+            "080430:abacaxi_fresco"
         )
     )
     # Bambu: os SH6 equivalentes aos NCM em comex_ncm_codes (140110 cestaria / 200591
