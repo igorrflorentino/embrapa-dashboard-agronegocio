@@ -103,9 +103,11 @@ describe('ValueGapNote — a correção que alcança (v1.81.0)', () => {
   });
 
   it('duas alternativas concordam no plural, na nota e na variação', () => {
-    // ÂNCORA EXTERNA, medida no preview contra produção 2026-09-13: PEVS em R$ · IGP-M não
-    // tem 1986–1988 (o IGP-M começa em 1989); o IPCA e o IGP-DI têm.
-    const gap = { years: [1986, 1987, 1988], partial: [], months: {}, valuedRange: [1989, 2024],
+    // ÂNCORA EXTERNA, medida em dev contra a produção em 2026-10-21 (regra da média do ano,
+    // v1.103.0): PEVS em R$ · IGP-M não tem 1986–1989 — o IGP-M começa em junho de 1989 e um ano
+    // só é corrigido quando o índice cobre os doze meses (até a v1.102.0 eram 1986–1988); o
+    // IPCA e o IGP-DI têm.
+    const gap = { years: [1986, 1987, 1988, 1989], partial: [], months: {}, valuedRange: [1990, 2024],
       coveredBy: ['IPCA', 'IGP-DI'], share: null };
     expect(texto({ gap, unit: 'R$', correcao: 'IGP-M' })).toContain('IPCA e IGP-DI alcançam esses anos.');
     const motivo = window.valueGapMotivo(gap, { currency: 'BRL', correction: 'IGP-M' });

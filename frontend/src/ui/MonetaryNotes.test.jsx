@@ -78,3 +78,49 @@ describe('NominalSeriesNote', () => {
     expect(texto).toContain('não para comparar anos distantes');
   });
 });
+
+// A correção pela média do índice do ano (v1.103.0) deixa os anos até 1994 indicativos: com
+// inflação de dois dígitos por mês, o valor anual não diz como se distribuiu entre os meses. O
+// aviso só vale para R$ corrigido por índice brasileiro, e só quando o período começa em 1994 ou
+// antes — senão diria "indicativo" numa série de comércio que começa em 1997.
+describe('inflacaoAltaNoPeriodo / HighInflationNote', () => {
+  const ipca = { currency: 'BRL', correction: 'IPCA' };
+
+  it('vale para as três correções brasileiras em R$, e para mais nenhuma convenção', () => {
+    for (const c of ['IPCA', 'IGP-M', 'IGP-DI']) {
+      expect(window.inflacaoAltaNoPeriodo({ currency: 'BRL', correction: c }, '1974-01-01')).toBe(true);
+    }
+    // nominal: tem a regra própria das reformas monetárias; US$/€: só existem depois de 1994/1999
+    expect(window.inflacaoAltaNoPeriodo({ currency: 'BRL', correction: 'Nominal' }, '1974-01-01')).toBe(false);
+    expect(window.inflacaoAltaNoPeriodo({ currency: 'USD', correction: 'CPI' }, '1974-01-01')).toBe(false);
+    expect(window.inflacaoAltaNoPeriodo({ currency: 'EUR', correction: 'HICP' }, '1974-01-01')).toBe(false);
+    expect(window.inflacaoAltaNoPeriodo(null, '1974-01-01')).toBe(false);
+  });
+
+  it('o limite é 1994: começar em 1994 mostra, em 1995 não; sem início conhecido não afirma nada', () => {
+    expect(window.inflacaoAltaNoPeriodo(ipca, '1994-01-01')).toBe(true);
+    expect(window.inflacaoAltaNoPeriodo(ipca, 1994)).toBe(true);
+    expect(window.inflacaoAltaNoPeriodo(ipca, '1995-01-01')).toBe(false);
+    expect(window.inflacaoAltaNoPeriodo(ipca, null)).toBe(false);
+    expect(window.inflacaoAltaNoPeriodo(ipca, '')).toBe(false);
+    expect(window.inflacaoAltaNoPeriodo(ipca, 'não é data')).toBe(false);
+  });
+
+  it('o comércio, que começa em 1997 e 2000, nunca vê o aviso', () => {
+    expect(window.inflacaoAltaNoPeriodo(ipca, '1997-01-01')).toBe(false);
+    expect(window.inflacaoAltaNoPeriodo(ipca, '2000-01-01')).toBe(false);
+  });
+
+  it('o texto diz o que é indicativo, por quê, e o que não fazer', () => {
+    const texto = render(<window.HighInflationNote conventions={ipca} start="1974-01-01" />).container.textContent;
+    expect(texto).toContain('Valores corrigidos de anos até 1994 são indicativos');
+    expect(texto).toContain('mais de 10% ao mês em pelo menos seis meses de cada ano');
+    expect(texto).toContain('média do índice do ano');
+    expect(texto).toContain('Comparar esses anos com 1995 em diante pode distorcer');
+  });
+
+  it('fora da regra não renderiza nada', () => {
+    expect(render(<window.HighInflationNote conventions={{ currency: 'BRL', correction: 'Nominal' }} start="1974-01-01" />).container.textContent).toBe('');
+    expect(render(<window.HighInflationNote conventions={ipca} start="2000-01-01" />).container.textContent).toBe('');
+  });
+});

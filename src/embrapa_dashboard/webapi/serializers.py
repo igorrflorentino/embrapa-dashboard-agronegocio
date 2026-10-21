@@ -173,9 +173,9 @@ def _snapshot_gap(df: pd.DataFrame | None) -> dict | None:
     (agosto)", never "2026" (v1.79.0).
 
     The annual bancos (v1.80.0): a year counts only when NONE of its rows has a value. Their
-    Gold deflates by the year-end index, so the convention's reach is all-or-nothing per
-    year; a year with some valued rows is a row-level absence, which the quality flag
-    covers, not a hole in the convention.
+    Gold deflates by the year's mean index (all twelve months, v1.103.0), so the convention's
+    reach is all-or-nothing per year; a year with some valued rows is a row-level absence,
+    which the quality flag covers, not a hole in the convention.
 
     ``valuedRange`` — the first and last year WITH value — lets the note say why: a hole
     before it is an index series that starts later, one after it an index not ingested yet.

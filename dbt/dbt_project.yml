@@ -112,15 +112,8 @@ vars:
   inflation_series_igpm:  "{{ env_var('BCB_INFLATION_SERIES_IGPM_CODE',  '189') }}"
   inflation_series_igpdi: "{{ env_var('BCB_INFLATION_SERIES_IGPDI_CODE', '190') }}"
 
-  # WHICH index deflates an ANNUAL value (IBGE PEVS/PAM/PPM, COMTRADE): 'year_end' (the
-  # December index — shipped behaviour) or 'year_avg' (the mean of the year's monthly
-  # indices; PROTOTYPE, see macros/annual_deflation_ctes.sql and
-  # docs/audits/deflacao_indice_medio_2026-10-21.md). COMEX is monthly and deflates by its
-  # own month's index, so it ignores this. Changing it rewrites every val_real_* of those
-  # bancos before 1995 (×1.15-×3.5) and by up to 17% after (IGP-DI 2002); IGP-M loses 1989
-  # (the series starts 1989-06): take a backup-gold first. Gold is `table`, so a plain
-  # build rewrites it — no --full-refresh, Silver is untouched.
-  inflation_year_basis: "year_end"
+  # The annual deflation rule (the MEAN of the year's monthly indices, one rule for the five
+  # series) lives in macros/annual_deflation_ctes.sql — it is not a var.
 
   # The FOREIGN deflators, feeding val_real_cpi_usd / val_real_hicp_eur. Same env_var
   # NAME + default coupling as the three above (config.py declares the identical keys;

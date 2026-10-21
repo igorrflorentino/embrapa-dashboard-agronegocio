@@ -133,9 +133,10 @@ def test_o_snapshot_carrega_a_lacuna():
 
 # ── the annual bancos (v1.80.0) ────────────────────────────────────────────────
 #
-# IBGE and COMTRADE deflate by the YEAR-END index, so where the index series does not reach
-# the whole year has no corrected value. Measured on the serving marts 2026-09-13: PAM and
-# PPM have no R$ · IPCA — the convention the dashboard opens with — in 1974–1979.
+# IBGE and COMTRADE deflate by the MEAN of the year's monthly indices (v1.103.0; December's
+# before), so where the index series does not reach the whole year has no corrected value.
+# Measured on the serving marts 2026-09-13: PAM and PPM have no R$ · IPCA — the convention the
+# dashboard opens with — in 1974–1979.
 
 
 def test_o_construtor_anual_so_conta_a_linha_que_tem_valor_na_moeda_do_banco():

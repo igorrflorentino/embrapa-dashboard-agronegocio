@@ -200,9 +200,9 @@ models:
       deliberately not normalised: every downstream use is a ratio within one series,
       which is base-invariant.
     tests:
-      # One row per (series, month). A duplicate would make the year-end pivot's
-      # "last month of the year" ambiguous, and max() would pick by value rather than
-      # by date — a wrong deflator that still looks like an index.
+      # One row per (series, month). A duplicate would count one month twice in the Gold's
+      # yearly-mean pivot (and break its "exactly twelve months" test) — a wrong deflator
+      # that still looks like an index.
       - dbt_utils.unique_combination_of_columns:
           arguments:
             combination_of_columns:

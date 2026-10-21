@@ -11,6 +11,11 @@
 // anos, e "Variação acumulada" dividia por esse zero e imprimia "+0%" — para uma
 // série de abacaxi que foi de R$ 0,474 bi (1980) a R$ 4,724 bi (2024), +896% real.
 //
+// (Valores e coberturas medidos em 2026-09-06 com o índice de DEZEMBRO. Desde a v1.103.0 o valor
+// anual é corrigido pela MÉDIA do índice do ano, o que os muda — o abacaxi em 1980 passa de
+// R$ 0,4768 bi para R$ 0,6506 bi, medido em 2026-10-21 — e o IGP-M passa a começar em 1990. A
+// âncora que importa aqui é a AUSÊNCIA (os anos sem valor chegam como null), não o valor.)
+//
 // A âncora destes testes é EXTERNA ao código: a tabela de cobertura acima veio de
 // `SELECT MIN(IF(col IS NOT NULL, reference_year, NULL))` nas marts de produção, e os
 // números do abacaxi de `serving_pam_annual`. Um teste que só comparasse a função

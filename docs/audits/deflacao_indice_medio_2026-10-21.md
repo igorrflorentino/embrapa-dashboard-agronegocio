@@ -1,9 +1,12 @@
-# Protótipo: deflação pelo índice médio do ano — 2026-10-21
+# Deflação pelo índice médio do ano — protótipo, medição e adoção — 2026-10-21
 
-> **STATUS — PROTÓTIPO EM DEV, NADA EM PRODUÇÃO, DECISÃO PENDENTE.** A variável nasce desligada
-> (`inflation_year_basis: year_end`) e, desligada, o SQL compilado é **byte a byte o de antes**.
-> Este documento mede o que a opção (b) da auditoria `unidades_e_deflacao_audit_2026-10-21.md`
-> (PR #538) faria, contra a produção, para o Igor decidir com números.
+> **STATUS — ADOTADA NA v1.103.0 (PR #540); EM PRODUÇÃO SÓ DEPOIS DO BACKUP E DO BUILD.** O Igor
+> decidiu em 2026-10-21 adotar a opção (b) com **uma só regra para as cinco séries** (IPCA, IGP-M,
+> IGP-DI, CPI-U, HICP), aceitar que o **IGP-M passe a começar em 1990** e implementar o aviso (a).
+> A versão final **não tem variável**: a regra é a média, fixa, em `annual_deflation_ctes`. As
+> seções abaixo são a medição que sustentou a decisão (feita com a variável `inflation_year_basis`,
+> do protótipo) e foi **repetida na versão final, com resultado idêntico**. O que está feito e o que
+> falta vai em "Estado da adoção".
 
 ## Resumo para quem decide
 
@@ -19,9 +22,9 @@
    o IGP-M deixa de ter valor em 1989 (746 linhas a menos nos três bancos somados); e o
    alarme de deriva do `doctor` **vai disparar** (3 etiquetas) numa reconstrução, como numa mudança
    deliberada da taxonomia.
-4. **Minha recomendação**: adotar (b) **junto com** o aviso (a), e escrever o aviso para o período
-   inteiro 1986–1994, não só para 1994, porque a série corrigida desses anos continua indicativa.
-   A decisão é sua: muda números que pesquisadores já podem ter citado.
+4. **Minha recomendação** (que o Igor aceitou): adotar (b) **junto com** o aviso (a), e escrever o
+   aviso para os **anos até 1994**, não só para 1994, porque a série corrigida desses anos continua
+   indicativa. Muda números que pesquisadores já podem ter citado.
 
 ## O que o protótipo faz
 
@@ -157,35 +160,51 @@ custo é mexer em `val_real_cpi_usd` e `val_real_hicp_eur` em até 3%, sem defei
 preferir o menor raio de efeito numa primeira rodada, separar os estrangeiros é uma mudança de ~10
 linhas na macro (um segundo valor de variável); a medição acima é o que sustenta qualquer das duas.
 
-## Opção (a): o aviso, em texto proposto (não implementado)
+## Opção (a): o aviso, como foi implementado
 
-Para as telas com correção em R$ (IPCA, IGP-M, IGP-DI), quando o período inclui anos de 1986 a 1994:
+`window.HighInflationNote` (`frontend/src/ui/MonetaryNotes.jsx`), montada uma vez em `MainScreen.jsx`:
 
-> *Em 1986–1994 a inflação passava de 20% ao mês. O valor anual de cada produto é corrigido pela
-> média do índice do ano, e a distribuição do valor ao longo do ano não é conhecida. Os valores
-> corrigidos desses anos são indicativos: comparações com 1995 em diante podem estar distorcidas.*
+> **Valores corrigidos de anos até 1994 são indicativos.** A inflação era muito alta (de 1987 a 1994,
+> mais de 10% ao mês em pelo menos seis meses de cada ano), e o valor anual é corrigido pela média do
+> índice do ano, sem saber como ele se distribuiu entre os meses. Comparar esses anos com 1995 em
+> diante pode distorcer.
 
-Onde viveria: ao lado da nota de reforma monetária (`MonetaryNotes`), com a mesma regra de aparecer só
-quando o intervalo escolhido toca esses anos. É independente de (b): faz sentido mesmo se (b) não for
-adotada, e com `year_end` o texto seria "índice de dezembro" e a distorção, bem maior.
+- **Quando aparece** (`window.inflacaoAltaNoPeriodo`): só em **R$ corrigido por índice brasileiro**
+  (IPCA, IGP-M, IGP-DI) e quando o período da tela começa em **1994 ou antes**. O nominal tem a regra
+  própria das reformas monetárias; US$ e € só existem depois de 1994/1999; o COMEX (1997) e a COMTRADE
+  (2000) nunca o veem. Fica de fora das telas sem valor em moeda (qualidade, dados, rebanho,
+  produtividade).
+- **O intervalo mudou em relação ao rascunho** (que dizia 1986–1994): medi o IGP-DI mês a mês e,
+  de **1987 a 1994, todo ano teve pelo menos seis meses acima de 10%** (1988, 1992 e 1993: os doze;
+  o máximo mensal foi 81% em 1990), enquanto de **1995 a 2026 nenhum mês passa de 10%** (máximo 5,8%).
+  Mas a razão dezembro ÷ média já ficava entre 1,29 e 1,68 de 1979 a 1985, então a nota diz "anos **até 1994**",
+  não "1986–1994": o que a medição sustenta é o corte em 1995.
+- O glossário do painel ganhou a regra ("o valor de cada ano é corrigido pela média dos índices dos
+  seus doze meses") e o IGP-M passou a "começa em 1990".
 
-## Se a decisão for adotar (b) — passos, não executados
+## Estado da adoção
 
-1. `backup-gold` (`make backup-gold` ou `uv run embrapa backup-gold`).
-2. Trocar o padrão para `year_avg` em `dbt_project.yml`. **Sem `--full-refresh`**: o Gold é `table`, um
-   build comum o reescreve, e o Silver não muda (corrijo aqui o que o brief desta tarefa dizia).
-3. Um build de produção disparado à mão; depois `embrapa doctor`, onde o `quality-drift` vai avisar
-   (esperado) e o `bq-spend` conta um build a mais.
-4. **Renomear** as colunas `*_year_end` da macro (`*_year_index`) quando for definitivo; ficaram com o
-   nome antigo só para o protótipo não tocar os quatro consumidores.
-5. Atualizar o que diz "índice de dezembro" / "fim do ano": `_gold.yml` (descrições de coluna, o IGP-M
-   "NULL antes de 1989" passa a 1990, e o bloco de testes unitários), `ARCHITECTURE.md:358`,
-   `docs/frontend_data_contract.md:202`, os docstrings de `serving/sql.py` (`annual_value_gap`),
-   `webapi/seam.py` e `webapi/serializers.py`, `tests/test_snapshot_value_gap.py`,
-   `tests/test_webapi_seam.py`, `tests/test_foreign_inflation.py`, o comentário de
-   `assert_foreign_inflation_no_month_gaps.sql`, `CLAUDE.md` e o glossário do painel; o ABNT/Referências
-   se citarem a regra.
-6. Registrar no CHANGELOG, como mudança de número publicado, com os fatores desta tabela.
+**Feito no PR #540**
+- Regra única e fixa na macro (CTE `inflation_year_avg`; colunas `*_year_avg`), sem variável; os quatro
+  Golds usam os novos nomes (internos: o esquema do Gold não muda).
+- Testes unitários da regra (média contra dezembro, ano parcial sem valor, último ano aberto); o
+  teste aritmético existente ganhou doze meses de fixture.
+- Descrições de coluna (IGP-M "NULL antes de 1990", regra da média), `ARCHITECTURE.md`,
+  `docs/frontend_data_contract.md`, docstrings de `serving/sql.py`, `webapi/seam.py`,
+  `webapi/serializers.py` e do cliente de inflação, testes e comentários que diziam "índice de
+  dezembro", e `CLAUDE.md`.
+- O aviso (a) e o glossário.
+- **Prova da versão final**: reconstruída em dev sem a variável, reproduz a medição do protótipo (as
+  saídas dos dois scripts de medição são idênticas, exceto o ruído de último bit do `avg()`:
+  3,55×10⁻¹⁵ contra 2,66×10⁻¹⁵), com `PASS=120 WARN=2 ERROR=0`.
+- **Em produção, a pedido:** as 26 classificações de industrialização das frutas passaram a versão 2,
+  sem o aviso de "proposta" (as versões antigas ficam no histórico, o log é append-only).
+
+**Falta, e depende do Igor**
+1. `backup-gold` (um snapshot do Gold atual, o caminho de volta).
+2. Merge do #538, do #539 e do #540, nessa ordem.
+3. Um build de produção (o push dispara; o Gold é `table`, **sem `--full-refresh`**; o Silver não muda).
+4. `embrapa doctor`: o `quality-drift` **vai avisar** (esperado) e o `bq-spend` conta um build a mais.
 
 ## O que fica por medir
 

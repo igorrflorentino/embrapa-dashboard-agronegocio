@@ -160,8 +160,9 @@ def _bls_window(base_url: str, series_id: str, start: int, end: int, api_key: st
     for row in rows:
         period = str(row.get("period", ""))
         # M01..M12 are the monthly readings; M13 is the ANNUAL AVERAGE BLS ships in the
-        # same list. Keeping it would put a 13th "month" in the series and, worse, give
-        # December two candidate readings for the year-end index.
+        # same list. Keeping it would put a 13th "month" in the series: the year would stop
+        # having exactly twelve months (the Gold deflates by the yearly MEAN, and only for a
+        # twelve-month year) and the mean would include the average itself.
         if not period.startswith("M") or period == "M13":
             continue
         year = int(row["year"])

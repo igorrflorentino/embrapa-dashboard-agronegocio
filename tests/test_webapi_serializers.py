@@ -1775,7 +1775,8 @@ def test_series_de_valor_emitem_null_no_ano_sem_deflator():
     """productTS/overviewTS devolvem `null`, não 0, no ano que o índice não alcança.
 
     Os anos e os valores são os da PAM em produção (abacaxi, val_real_ipca_brl):
-    1974–1979 sem IPCA, 1980 em R$ 0,4745 bi.
+    1974–1979 sem IPCA, 1980 em R$ 0,4745 bi (medido em 2026-09 com o índice de dezembro; a média
+    do ano, v1.103.0, dá R$ 0,6506 bi em 2026-10-21 — o que se prova aqui é a ausência).
     """
     import numpy as np
     import pandas as pd

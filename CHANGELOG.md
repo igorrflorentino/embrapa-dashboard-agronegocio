@@ -7,6 +7,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.103.0] - 2026-10-21
+
+**O valor anual passa a ser corrigido pela MÉDIA dos doze índices do ano, não pelo de dezembro, e o
+painel avisa que o valor corrigido de anos até 1994 é indicativo.** Muda número publicado: todo
+`val_real_*` de PAM, PEVS, PPM e COMTRADE. Medição completa em
+`docs/audits/deflacao_indice_medio_2026-10-21.md`.
+
+### Alterado (muda número publicado)
+- **Regra única e fixa**, em um só lugar (`macros/annual_deflation_ctes.sql`, CTE `inflation_year_avg`,
+  colunas `*_year_avg`; antes `*_year_end`): o deflator de um ano é a **média** dos seus índices
+  mensais. Um valor anual é um fluxo acumulado ao longo do ano, e com volume real uniforme o valor
+  real é `soma ÷ média do índice`. Vale para as **cinco** séries (IPCA, IGP-M, IGP-DI, CPI-U, HICP):
+  uma frase só para enunciar e defender, e os estrangeiros mexem no máximo 3,2%. O COMEX é mensal e
+  continua usando o índice do **próprio mês**.
+- **Só deflaciona ano com os doze meses do índice**, exceto o último ano da série (aberto: média dos
+  meses presentes). Por isso o **IGP-M passa a começar em 1990**: a série começa em 1989-06, e o
+  primeiro ano, parcial, deixa de receber valor (**−351 linhas na PAM, −233 no PEVS, −162 no PPM**).
+  A lacuna aparece na tela sozinha, porque o `valueGap` é medido nos dados.
+- **Quanto muda**: o valor corrigido de IBGE antes de 1995 sobe ×1,15 a ×3,5 (dezembro ÷ média do
+  IGP-DI: 3,21 em 1993, 3,49 em 1989); de 1995 em diante a mudança é, na maior parte dos anos, de
+  −1% a +5%, com picos de **+17% (2002) e +13% (2020)**. Na COMTRADE (2000–2025): IGP-DI de −0,6% a
+  +16,6%, IPCA +1,3% a +7,6%, CPI-U −2,4% a +2,9%, HICP 0,0% a +3,2%.
+- **O que a mudança faz e não faz**, medido em dev contra a produção:
+  - O degrau de 1993→1994 **cai**: mediana do salto do preço corrigido PAM ×3,77 → ×1,71, PEVS
+    ×2,27 → ×1,03, PPM ×2,15 → ×0,97; nenhuma série passa de 3× (eram 11); a soja, ×4,14 → ×1,88.
+  - **Não é uma cura.** Parte do movimento muda de ano (1994÷93 e 1995÷94: de ~0,9–1,0 para 0,65–0,72)
+    e a aspereza de 1987–96 só cai 32% (PAM), 14% (PPM) e **3% (PEVS)**. A medição não separa preço
+    real de artefato; por isso o aviso abaixo.
+  - O detector de qualidade reclassifica **0,4–1,1%** das linhas (PAM 37.024, PEVS 13.394, PPM
+    14.789), quase todas `UNSCORED → OK`: o piso de materialidade é em R$ reais, então mais linhas o
+    alcançam. 1989 ganha `OUTLIER_*` (PEVS 1,5% → 3,3% das linhas pontuadas) e a PAM perde 22 linhas
+    `PROBLEMATIC_VALUE`. O `quality-drift` do `doctor` **vai avisar** na primeira reconstrução de
+    produção (3 etiquetas), como numa mudança deliberada de taxonomia (v1.17, v1.49, v1.73, v1.90).
+
+### Adicionado
+- **Aviso no painel** (`window.HighInflationNote`): *"Valores corrigidos de anos até 1994 são
+  indicativos."* — a inflação era muito alta (de 1987 a 1994, mais de 10% ao mês em pelo menos seis
+  meses de cada ano; de 1995 a 2026, nenhum mês passa de 10%), e o valor anual é corrigido pela média
+  do índice do ano, sem saber como se distribuiu entre os meses. Só aparece em **R$ corrigido por
+  índice brasileiro** e quando o período começa em 1994 ou antes; o COMEX e a COMTRADE nunca o veem.
+  O glossário do painel ganhou a regra e o IGP-M em 1990.
+- Testes: três unitários da regra no `gold_pevs_production` (média contra dezembro; ano parcial sem
+  valor; último ano aberto), e os da função de exibição e da montagem do aviso.
+
+### Corrigido
+- Toda descrição que dizia "índice de dezembro" / "fim do ano" / "IGP-M desde 1989": descrições de
+  coluna do Gold, `ARCHITECTURE.md`, `docs/frontend_data_contract.md`, `CLAUDE.md`, docstrings e
+  testes de `serving/sql.py`, `webapi/seam.py`, `webapi/serializers.py` e do cliente de inflação.
+  O comentário do `assert_foreign_inflation_no_month_gaps` agora explica que uma lacuna dentro de um
+  ano passa a anular o ano, em vez de deslocar o mês de referência.
+
+### Em produção, fora do repositório (2026-10-21, a pedido)
+- As **26 classificações de industrialização** das frutas passaram à versão 2, **sem** o aviso
+  *"Proposta inicial (Claude), a confirmar pelo pesquisador"*: mesmo nível, nota só com o critério. O
+  log é append-only, então as 26 linhas antigas ficam no histórico e a view SCD2 mostra a nova como
+  vigente (nenhum código com duas versões vigentes). O pesquisador pode mudar qualquer uma no editor.
+
+### Operação (antes e depois do merge — nada disso foi executado)
+1. `backup-gold` antes: é o caminho de volta.
+2. **Sem `--full-refresh`**: o Gold é `table` e um build comum o reescreve; o Silver não muda.
+3. Depois do build: `embrapa doctor` (o `quality-drift` avisa; esperado) e conferir no painel um
+   produto antigo em R$ · IGP-DI (o aviso aparece) e em Nominal (não aparece).
+
+---
+
 ## [1.102.0] - 2026-10-21
 
 **A guarda das frutas contadas passa a ser a lista do IBGE, não um limiar.** Fecha o ponto em aberto
