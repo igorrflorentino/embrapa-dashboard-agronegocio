@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.103.2] - 2026-10-22
+
+**Correção de duas afirmações do item D da auditoria `unidades_e_deflacao_audit_2026-10-21.md`**, achadas ao
+reconferir cada candidato do PEVS no SIDRA. Só documentação; nenhum número, tela ou comportamento muda
+(sem tag, pela política de release).
+
+### Corrigido
+- **"Séries sem rótulo de unidade" (`83410`–`83418`) não era um problema de unidade.** O rótulo vem vazio
+  só nas células `...` (sem dado) de 2018 a 2024; em 2025, primeiro ano dessas nove categorias novas
+  (baru, buriti, cajá, cupuaçu, juçara, macaúba, pupunha, tucumã, andiroba), a unidade é **toneladas**.
+  O que vale saber antes de cadastrar é que a série tem **um ano**. O `Em aberto` do 1.101.0 repete a
+  versão errada e fica como estava, por ser registro histórico.
+- **O "nó de pinho" (`3448`) não é um degrau de ×3,5 em 1996:** é uma série errática (350 mil m³ em 1996,
+  20 mil em 1997, 499 mil em 1999), o que não é troca de unidade.
+- Detalhados também o `3449` (`Mil árvores`: a seed só tem `milheiro`; cairia em `desconhecida` com
+  `qty_base` nulo, e o conserto é uma linha) e o `3462` (eucalipto folha, nível persistente em 1996).
+
+---
+
 ## [1.103.1] - 2026-10-22
 
 **Limpeza do que as v1.101–1.103 deixaram para trás.** Só documentação e um comentário de tipo; nenhum
