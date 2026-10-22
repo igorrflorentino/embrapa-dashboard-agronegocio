@@ -1926,17 +1926,21 @@ _SEED_CATALOG: list[tuple[str, str, bool, str]] = [
     ),
     (
         # The DISCLOSURE of a unit estimate: where a researcher sees that the pre-2001 quantity
-        # of these four fruits is converted, with which weight, and why (cf. the foreign
-        # publisher-gaps seed below for the same role on the deflators).
+        # of these fruits is converted, with which weight, and why (cf. the foreign
+        # publisher-gaps seed below for the same role on the deflators). The seed carries all 17
+        # fruits of IBGE's note; four are in the catalog today and the text says which.
         "pam_fruit_unit_eras",
         "Frutas contadas até 2000 (PAM)",
         False,
-        "Até 2000 o IBGE media a quantidade de laranja, limão, tangerina e banana por "
-        "contagem (mil frutos; mil cachos, na banana), mas a tabela do SIDRA a rotula como "
-        "toneladas em todos os anos. O processamento converte o período contado pelo peso "
-        "mediano por fruto que o próprio IBGE estimou ao mudar a unidade, em 2001. É uma "
-        "estimativa preliminar, que o IBGE não recomenda como referência final, e não uma "
-        "medição: as linhas convertidas vêm marcadas na base analítica.",
+        "Até 2000 o IBGE media a quantidade de 17 frutas por contagem (mil frutos; mil "
+        "cachos, na banana), mas a tabela do SIDRA a rotula como toneladas em todos os anos. "
+        "O processamento converte o período contado pelo peso mediano por fruto que o próprio "
+        "IBGE estimou ao mudar a unidade, em 2001. Hoje estão no painel a laranja, o limão, a "
+        "tangerina e a banana; as outras 13 (abacate, caqui, figo, goiaba, maçã, mamão, manga, "
+        "maracujá, marmelo, melancia, melão, pêra e pêssego) já têm o peso aqui, para o dia em "
+        "que forem cadastradas. É uma estimativa preliminar, que o IBGE não recomenda como "
+        "referência final, e não uma medição: as linhas convertidas vêm marcadas na base "
+        "analítica.",
     ),
     (
         # The DISCLOSURE of a relabel: abacaxi and coco-da-baía are counted, not weighed.

@@ -215,7 +215,11 @@ class Settings(BaseSettings):
     # sits in Banana (cacho), x10.9 the other way. silver_ibge_pam converts the counted years
     # with IBGE's own weight per fruit through the seed pam_fruit_unit_eras and marks them
     # `qty_is_estimated`; adding any of these codes WITHOUT that seed publishes a count as
-    # tonnes (test_pam_fruit_products_have_a_unit_era pins the pairing).
+    # tonnes (test_pam_fruit_products_have_a_unit_era pins the pairing). The seed carries ALL 17
+    # fruits of IBGE's note (abacate, caqui, figo, goiaba, maçã, mamão, manga, maracujá,
+    # marmelo, melancia, melão, pêra, pêssego beyond these four), so registering one of them
+    # later needs no new seed row — only the product code, read from SIDRA 782 (the seed has
+    # it). The detector alone would NOT have caught five of them (a step under 4x).
     pam_product_codes: str = Field(
         default=(
             "40124,40122,40139,40106,40102,40136,40119,45982,40143,40145,40092,40151,40152,40271"

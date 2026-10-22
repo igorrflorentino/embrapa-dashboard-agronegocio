@@ -1,8 +1,9 @@
 # Auditoria de unidades e de deflação — 2026-10-21 (v1.100.x)
 
-> **STATUS — ABERTO nos itens C e D.** O item A (frutas contadas) está descrito e protegido por
-> documentação, **sem número errado publicado hoje** (nenhuma das frutas em risco está no catálogo);
-> a guarda automática é uma proposta. O item B (bancos ingeridos) está limpo. O item C (deflação por
+> **STATUS — ABERTO nos itens C e D.** O item A (frutas contadas) teve **sem número errado
+> publicado** em momento algum (nenhuma das frutas em risco está no catálogo) e está **fechado na
+> v1.102.0**: a seed passou a carregar as 17 frutas da nota do IBGE, com teste da lista e guarda do
+> asterisco. O item B (bancos ingeridos) está limpo. O item C (deflação por
 > índice de fim de ano) é um defeito **vivo** nas colunas corrigidas pela inflação antes de 1995, e a
 > escolha do conserto é do pesquisador: muda números publicados.
 
@@ -78,11 +79,14 @@ Dois sinais legíveis por máquina que o SIDRA já dá, e que nenhuma guarda usa
   por unidade". O rótulo de unidade diz "Toneladas" nos dois. O asterisco é aviso de unidade.
 - **A lista do IBGE.** É finita (17 + as duas contadas) e oficial. Uva "sempre foi pesquisada em peso".
 
-**Proposta (não feita nesta rodada):** pré-carregar em `pam_fruit_unit_eras` os pesos das 13 frutas
-restantes (inertes enquanto o produto não é ingerido) e fixar a lista do IBGE num teste, mais um
-teste de que todo produto de nome com `*` está em `pam_count_unit_products`. Mexe em seed, em testes
-que hoje dizem "uma era sem produto configurado é dado morto" e na página Referências, por isso é uma
-rodada própria.
+**Feito na v1.102.0** (proposto aqui, executado na rodada seguinte): `pam_fruit_unit_eras` carrega as
+13 frutas restantes com os pesos da nota (inertes enquanto o produto não é ingerido, porque o Silver
+junta por produto × ano); `tests/test_pam_counted_fruits.py` fixa os códigos, os pesos e os anos das
+17; e `assert_pam_asterisked_products_are_counts` (erro) derruba o build se um produto com `*` no
+nome for ingerido sem linha em `pam_count_unit_products`. O teste que dizia "uma era sem produto
+configurado é dado morto" passou a admitir as frutas da lista, e a página Referências diz quais
+estão no painel. Prova: o Silver de dev com a seed de 17 linhas é **idêntico** ao de produção
+(20.250.265 linhas, mesmo fingerprint, 1.201.770 linhas estimadas nos dois).
 
 ## B — Bancos ingeridos: limpos
 
@@ -209,7 +213,7 @@ Só documentação, comentários e testes (nenhum número de produção muda por
 ## Pendente
 
 1. **Decidir C** (opção b + a, ou só a): muda números publicados.
-2. **Pré-carregar as 13 frutas e fixar a lista do IBGE em teste** (A): rodada própria.
+2. ~~Pré-carregar as 13 frutas e fixar a lista do IBGE em teste (A)~~ — feito na v1.102.0.
 3. **Antes de cadastrar qualquer produto de D**: resolver a unidade (rótulo vazio, `Mil árvores`) e
    explicar os níveis de 1996.
 

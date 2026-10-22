@@ -161,8 +161,10 @@ select
     -- Mirrors silver_ibge_pevs: unit_native is the source label; family/base_unit
     -- /to_base come from the generic unit-family seed. For almost every crop the unit is
     -- 'Toneladas' → massa/t. TWO seeds say where the label is not the truth:
-    --   pam_fruit_unit_eras      — counted until 2000, weighed since (laranja, limão,
-    --                              tangerina, banana): converted to t, marked as estimate.
+    --   pam_fruit_unit_eras      — counted until 2000, weighed since (IBGE's 17 fruits; in the
+    --                              catalog: laranja, limão, tangerina, banana): converted to
+    --                              t, marked as estimate. A join by (product, year): the 13
+    --                              fruits not yet ingested match nothing.
     --   pam_count_unit_products  — counted in EVERY year (abacaxi, coco-da-baía): the label
     --                              is wrong, so the unit, family and base unit are the
     --                              count's (mil frutos → un). Never converted to a weight.

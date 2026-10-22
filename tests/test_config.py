@@ -340,8 +340,12 @@ def test_pam_fruit_products_have_a_unit_era():
     for code, nome in _FRUIT_CODES.items():
         assert code in configured, f"{nome} ({code}) is no longer in the PAM set"
         assert code in eras, f"{nome} ({code}) has no row in pam_fruit_unit_eras"
-    # And the other direction: an era for a produto outside the set is dead data.
-    assert eras <= configured
+    # And the other direction: an era for a produto outside the DEFAULT set is dead data — unless
+    # it is one of the 17 fruits IBGE says were counted, which the seed carries on purpose, ahead
+    # of the product being registered (inert until then; tests/test_pam_counted_fruits.py).
+    from tests.test_pam_counted_fruits import IBGE_COUNTED_FRUITS
+
+    assert eras - configured <= set(IBGE_COUNTED_FRUITS)
 
 
 def test_pam_unit_eras_seed_is_well_formed():
@@ -369,12 +373,15 @@ def test_pam_unit_eras_seed_is_well_formed():
 
 
 def test_pam_unit_era_factors_are_the_ones_ibge_printed():
-    """Pins the four numbers to the table in IBGE's note (sidra.ibge.gov.br/content/documentos/
-    pam/AlteracoesUnidadesMedidaFrutas.pdf, 'Peso mediano por unidade de fruto', kg per fruit):
-    laranja 0.16 · limão 0.10 · tangerina 0.15 · banana (cacho) 10.20. A factor is a methodological
-    decision; changing one must be a deliberate edit of this test, not a drive-by."""
+    """Pins the four numbers IN PRODUCTION to the table in IBGE's note (sidra.ibge.gov.br/content/
+    documentos/pam/AlteracoesUnidadesMedidaFrutas.pdf, 'Peso mediano por unidade de fruto', kg per
+    fruit): laranja 0.16 · limão 0.10 · tangerina 0.15 · banana (cacho) 10.20. A factor is a
+    methodological decision; changing one must be a deliberate edit of this test, not a drive-by.
+    The seed also carries the other 13 fruits of IBGE's list, ahead of their registration; the whole
+    list is pinned in tests/test_pam_counted_fruits.py."""
     factors = {r["product_code"]: float(r["kg_per_unit"]) for r in _unit_eras()}
-    assert factors == {"40151": 0.16, "40152": 0.10, "40271": 0.15, "40136": 10.20}
+    for code, kg in {"40151": 0.16, "40152": 0.10, "40271": 0.15, "40136": 10.20}.items():
+        assert factors[code] == kg
 
 
 # ─── silvicultura helpers ─────────────────────────────────────────────────────
