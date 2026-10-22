@@ -588,11 +588,29 @@ load the seed (any build after v1.102.0 does), then register and ingest. No `--f
 needed for a product new to Bronze: all its years carry a fresh `ingestion_timestamp`, so the
 incremental Silver rewrites every one of those partitions with the conversion applied.
 
-For a PAM product that is NOT on that list, scan its national series for a year-over-year step
-(what `assert_pam_quantity_no_unit_cliff` does at build time, as a warning, AFTER the data is in
-Gold) — but know it is a symptom check with a blind spot: it would have missed five of the 17
-(abacate ×0.45, manga ×0.36, marmelo ×0.25, melão ×1.5, mamão ×0.88; measured 2026-10-21,
-`docs/audits/unidades_e_deflacao_audit_2026-10-21.md`). SIDRA also marks the two count-based crops
+**Before registering ANY product of an IBGE table (PAM, PEVS, PPM), run the check on its
+national series** — it takes seconds and reads only SIDRA:
+
+```bash
+uv run embrapa discover ibge-series-check --table-id 5457 --codes 40124,40151
+```
+
+It exits 1 and says why for: a persistent level shift (the median of the 3 years from a year on
+at ≥ 3× or ≤ 1/3 of the 3 before it), a unit with no row in `unit_family_conversions`, a `*` in
+the name that `pam_count_unit_products` lacks, a category with a single year, a hole in the series,
+a unit label that changes inside it. A fruit already in `pam_fruit_unit_eras` has its 2001 step
+reported as explained, not as a finding. Without `--codes` it scans the whole table (the 193 series
+of the five tables give 109 shifts, so the full scan is a map, not an alarm). **A shift is a prompt,
+not proof**: a crop that really vanished (juta, rami) leaves a new stable level too — read IBGE's
+notes for the table, then either add the unit change to the seeds BEFORE registering or accept it.
+The same rule runs after ingestion as `assert_ibge_production_no_persistent_level_shift` (warn).
+
+The cheaper check by year-over-year step is what `assert_pam_quantity_no_unit_cliff` does at build
+time, as a warning, AFTER the data is in Gold — a symptom check with a blind spot: it would have
+missed five of the 17 (abacate ×0.45, manga ×0.36, marmelo ×0.25, melão ×1.5, mamão ×0.88;
+measured 2026-10-21, `docs/audits/unidades_e_deflacao_audit_2026-10-21.md`). The level check
+catches marmelo; abacate, manga, melão and mamão stay inside both, which is why IBGE's list is the
+guard for those. SIDRA also marks the two count-based crops
 with an asterisk in the product NAME ("Abacaxi*", "Coco-da-baía*") while the unit label says
 "Toneladas": an asterisk on a new PAM product is a unit warning, and
 `assert_pam_asterisked_products_are_counts` fails the build if such a product is ingested without

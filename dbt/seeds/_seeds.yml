@@ -68,6 +68,13 @@ seeds:
       A unit outside these five maps to 'desconhecida' downstream (no seed row)
       with a NULL qty_base — never an invented conversion.
 
+      EVERY quantity unit label of IBGE's whole SIDRA universe (PAM t5457, PEVS t289/t291, PPM
+      t74/t3939) has a row here, measured 2026-10-22 over every product and year: Toneladas, Metros
+      cúbicos, Mil dúzias, Mil litros, Quilogramas, Cabeças and, since v1.104.0, Mil árvores (PEVS
+      3449, not in the catalog; 1 mil árvores = 1000 un). tests/test_sidra_unit_universe.py pins
+      that list, so a unit cannot go missing silently and a PEVS product counted in thousands of
+      trees lands in the 'contagem' family instead of 'desconhecida' with a NULL qty_base.
+
       `unit_raw` holds the source label(s) lowercased (both canonical tokens
       like 't'/'m³' and the literal strings each source emits, e.g.
       'toneladas', 'metro cubico', 'quilograma liquido'). Add a row when a new

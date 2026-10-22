@@ -100,6 +100,7 @@ cp .env.example .env       # adjust GCP_PROJECT_ID and other fields
 # 4. (Optional) Discover codes before pinning them in .env
 uv run embrapa discover ibge-periods --table-id 289
 uv run embrapa discover ibge-products --keywords castanha,madeira,pinheiro
+uv run embrapa discover ibge-series-check --table-id 5457 --codes 40124,40151   # BEFORE registering a product
 uv run embrapa discover bcb-series 433
 
 # 5. dbt profile (once)
@@ -129,6 +130,7 @@ embrapa ingest reconcile                            # operator-triggered deep-re
 embrapa reconcile-check                             # read-only: did any OLD year actually change? compares live sources vs Bronze; exit 1 if yes (run this BEFORE reconcile)
 embrapa discover ibge-periods   [--table-id 289]
 embrapa discover ibge-products  --keywords castanha,madeira
+embrapa discover ibge-series-check [--table-id 5457] [--codes 40124,40151] [--all]   # read the NATIONAL series of candidates BEFORE registering them: unit never converted, persistent level shift, '*' count marker, a category born last year; exit 1 if any
 embrapa discover bcb-series     <code>            # e.g.: 433
 embrapa doctor                                      # environment health check (.env, ADC, BQ/GCS, source APIs, backup freshness)
 embrapa backup-gold                                 # snapshot prod Gold + research_inputs (curadoria) to gs://${GCS_BUCKET}/backups/run=<ts>/
