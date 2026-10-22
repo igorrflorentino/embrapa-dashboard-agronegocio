@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.104.1] - 2026-10-22
+
+**Correção de uma contagem na entrada 1.104.0 deste arquivo.** Só documentação; nenhum número, tela ou
+comportamento muda (sem tag, pela política de release).
+
+### Corrigido
+- A entrada 1.104.0 dizia "**44 testes** (`tests/test_discover_series_check.py`)", atribuindo ao arquivo
+  da ferramenta a soma de dois. Contados com `pytest`: **37** em `tests/test_discover_series_check.py` e
+  **7** em `tests/test_sidra_unit_universe.py`, **44 no total** (o "44 testes novos" do corpo do PR #546
+  estava certo; a atribuição no CHANGELOG, não). A linha da 1.104.0 foi corrigida no lugar, por ser
+  uma contagem, e não uma decisão registrada.
+
+---
+
 ## [1.104.0] - 2026-10-22
 
 **Proteções contra o que o item D da auditoria `unidades_e_deflacao_audit_2026-10-21.md` achou.** O item
@@ -35,8 +49,9 @@ aviso (`warn`) que não derruba o build.
   conversão, `Mil árvores` (PEVS `3449`, pinheiro-brasileiro abatido), que cairia em `desconhecida` com
   `qty_base` nulo, achado só **depois** de a quantidade entrar no Gold. Os 7 rótulos de unidade das 5
   tabelas ficam fixados.
-- **44 testes** (`tests/test_discover_series_check.py`), com a regra, cada achado, o pedido ao SIDRA, a
-  paridade dos ids com `config.py` e a paridade dos números com o arquivo SQL.
+- **37 testes** em `tests/test_discover_series_check.py` (a regra, cada achado, o pedido ao SIDRA, a
+  paridade dos ids com `config.py` e a paridade dos números com o arquivo SQL) **e 7** em
+  `tests/test_sidra_unit_universe.py`: 44 novos no total.
 
 ### Medido (2026-10-22), não suposto
 - **Python e SQL dão o mesmo resultado**: 109 mudanças em cada, nas **193 séries nacionais reais**
