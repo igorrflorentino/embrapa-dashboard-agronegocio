@@ -292,7 +292,18 @@ describe('MainScreen — aviso de anos de inflação muito alta', () => {
     );
   });
 
-  it('monta o aviso com a convenção ativa e o início do período', () => {
+  // A série filtrada começando em y0 (a de PAM/PPM na tela padrão começa em 1974): o stub padrão
+  // do arquivo, só com a série trocada.
+  const serieDesde = (y0, y1 = 2024) => {
+    const padrao = window.applyFilters;
+    return (...args) => ({
+      ...padrao(...args),
+      ts: Array.from({ length: y1 - y0 + 1 }, (_, i) => ({ y: y0 + i, v: 1 })),
+    });
+  };
+
+  it('monta o aviso com a convenção ativa e o primeiro ano que a tela mostra', () => {
+    window.applyFilters = serieDesde(1974);
     const { container } = render(
       <MainScreen filters={{ startDate: '1974-01-01' }} view="overview" database="ibge_pevs" basket={['P1']}
                   conventions={{ currency: 'BRL', correction: 'IGP-DI' }} />
@@ -300,7 +311,37 @@ describe('MainScreen — aviso de anos de inflação muito alta', () => {
     const nota = container.querySelector('.child-inflacao-alta');
     expect(nota).toBeTruthy();
     expect(nota.getAttribute('data-correction')).toBe('IGP-DI');
-    expect(nota.getAttribute('data-start')).toBe('1974-01-01');
+    expect(nota.getAttribute('data-start')).toBe('1974');
+  });
+
+  // O defeito da v1.103.0: o painel abre sem filtro de período (`startDate` vazio = a cobertura
+  // inteira), e a nota lia o vazio como "não se sabe" — sumindo justamente na tela padrão, que
+  // mostra 1974–1994 corrigidos.
+  it('sem filtro de período (a tela padrão), o início é o primeiro ano da série', () => {
+    window.applyFilters = serieDesde(1974);
+    const { container } = render(
+      <MainScreen filters={{}} view="overview" database="ibge_pevs" basket={['P1']}
+                  conventions={{ currency: 'BRL', correction: 'IGP-DI' }} />
+    );
+    expect(container.querySelector('.child-inflacao-alta').getAttribute('data-start')).toBe('1974');
+  });
+
+  it('um filtro anterior ao dado não conta: vale o primeiro ano que a série tem', () => {
+    window.applyFilters = serieDesde(2001);
+    const { container } = render(
+      <MainScreen filters={{ startDate: '1974-01-01' }} view="overview" database="ibge_pevs" basket={['P1']}
+                  conventions={{ currency: 'BRL', correction: 'IGP-DI' }} />
+    );
+    expect(container.querySelector('.child-inflacao-alta').getAttribute('data-start')).toBe('2001');
+  });
+
+  it('sem a série filtrada, recai no início do filtro', () => {
+    delete window.applyFilters;
+    const { container } = render(
+      <MainScreen filters={{ startDate: '1986-01-01' }} view="overview" database="ibge_pevs" basket={['P1']}
+                  conventions={{ currency: 'BRL', correction: 'IGP-DI' }} />
+    );
+    expect(container.querySelector('.child-inflacao-alta').getAttribute('data-start')).toBe('1986-01-01');
   });
 
   it('sem convenção própria, usa a padrão do painel', () => {
