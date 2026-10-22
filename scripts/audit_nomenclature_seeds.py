@@ -34,14 +34,14 @@ from embrapa_dashboard.comex.client import _ca_bundle
 
 RAIZ = Path(__file__).resolve().parents[1]
 DESTINO = RAIZ / "docs/nomenclatura_divergencias.md"
-BASE_MDIC = "https://balanca.economia.gov.br/balanca/bd/tabelas"
+BASE_MDIC = "https://balanca.mdic.gov.br/balanca/bd/tabelas"
 
 
 def _baixar(nome: str) -> list[dict]:
     """Reusa o bundle de CAs do cliente COMEX: o servidor do MDIC serve uma cadeia
-    incompleta, e `comex.client._ca_bundle()` já é certifi + o intermediário Sectigo
-    vendorizado justamente por isso. Refazer a verificação aqui seria uma segunda cópia
-    da mesma decisão."""
+    incompleta, e `comex.client._ca_bundle()` já é certifi + os intermediários vendorizados
+    (Sectigo e SERPRO) justamente por isso. Refazer a verificação aqui seria uma segunda
+    cópia da mesma decisão."""
     r = requests.get(f"{BASE_MDIC}/{nome}", timeout=180, verify=_ca_bundle())
     r.raise_for_status()
     return list(csv.DictReader(io.StringIO(r.content.decode("latin-1")), delimiter=";"))

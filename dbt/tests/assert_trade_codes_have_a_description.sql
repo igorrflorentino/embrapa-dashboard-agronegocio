@@ -13,7 +13,7 @@
 -- nomenclature: it fails exactly when a code arrives that nobody can name.
 --
 -- Fix a failure by adding the code to the seed with its OFFICIAL Portuguese description,
--- from MDIC's own table (https://balanca.economia.gov.br/balanca/bd/tabelas/NCM.csv,
+-- from MDIC's own table (https://balanca.mdic.gov.br/balanca/bd/tabelas/NCM.csv,
 -- column NO_NCM_POR) — never a description written from memory.
 
 select 'comex' as banco, ncm_code as code

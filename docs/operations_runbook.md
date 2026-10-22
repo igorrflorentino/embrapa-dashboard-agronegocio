@@ -551,15 +551,18 @@ catalog lists for banco `ibge_pam`. Order that avoids publishing a wrong series:
    the same agrupamento instead of a `*_succession` row. Confirm the HS6 codes expand to themselves
    with `client.list_hs6_codes`.
 3. **Descriptions are official text only** (MDIC `NCM.csv` / `NCM_SH.csv`; Siscomex for current
-   codes). A retired code whose text cannot be had keeps the parent's wording plus
-   "texto oficial pendente"; `assert_trade_descriptions_are_official` (warn) lists them until
-   `make nomenclature-audit` can run again.
+   codes). MDIC's tables KEEP retired codes (the four retired fruit codes got their official text
+   from them on 2026-10-21); the Siscomex API does not. A retired code whose text truly cannot be
+   had keeps the parent's wording plus "texto oficial pendente";
+   `assert_trade_descriptions_are_official` (warn) lists them until
+   `uv run python scripts/audit_nomenclature_seeds.py` can run again.
 4. **Validate in dev without touching the prod raw objects.** `ingest comex --from-raw` STAMPS each
    prod raw object with the filter fingerprint it loaded. For a dev check, filter the raw with
    `client.filter_products` and load a throwaway dataset yourself (no `mark_bronze_loaded`), point
    `BQ_BRONZE_COMEX_DATASET` at it, build `silver_comex_flows gold_comex_flows serving_comex_*`, and
    compare Gold to the raw per (NCM, flow): weight and value must conserve exactly.
-5. **Prod COMEX:** with MDIC unreachable, `ingest comex --from-raw` WITH THE FULL SCOPE (so the
+5. **Prod COMEX:** with MDIC unreachable (it was, 2026-10, until the files moved to
+   `balanca.mdic.gov.br`), `ingest comex --from-raw` WITH THE FULL SCOPE (so the
    stamped fingerprint equals the final one and the next normal run skips). It re-appends the
    products already present (~3.6 M rows, 300 MB; Silver dedups) — cheaper than a second pass later.
 6. **COMTRADE needs nothing extra**: it detects the widened scope (`_codes_added_since`) and
@@ -567,10 +570,22 @@ catalog lists for banco `ibge_pam`. Order that avoids publishing a wrong series:
 7. Register the codes in the Curadoria catalog under their agrupamento (banco `comex` / `comtrade`),
    then classify their industrialization level (a juice is processed; the fresh fruit is not).
 
-**Before adding any PAM fruit, scan its national series for a ≥ 4× year-over-year step** (the
-detector `assert_pam_quantity_no_unit_cliff` runs this at build time, as a warning, AFTER the
-data is already in Gold). SIDRA 5457 labels every quantity "Toneladas"; the label is not
-evidence (laranja, limão, tangerina and banana were counted until 2000).
+**Before adding any PAM fruit, check IBGE's own list of the fruits counted until 2000, and scan
+its national series too.** SIDRA 5457 labels every quantity "Toneladas"; the label is not
+evidence. IBGE's note (`https://sidra.ibge.gov.br/content/documentos/pam/
+AlteracoesUnidadesMedidaFrutas.pdf`, linked from the seed) names **17** fruits counted in
+*mil frutos* (*mil cachos*, banana) until 2000 and weighed from 2001: abacate, banana, caqui,
+figo, goiaba, laranja, limão, maçã, mamão, manga, maracujá, marmelo, pêra, pêssego, tangerina,
+melancia, melão — plus abacaxi and coco-da-baía, which are still counted today. Only banana,
+laranja, limão and tangerina are in `pam_fruit_unit_eras` (and abacaxi/coco in
+`pam_count_unit_products`); any other fruit on that list needs its row (weight per fruit from the
+note) BEFORE it is registered. A scan for a ≥ 4× year-over-year step — what the build-time
+detector `assert_pam_quantity_no_unit_cliff` does, as a warning, AFTER the data is already in
+Gold — is NOT enough: five of the 17 (abacate ×0.45, manga ×0.36, marmelo ×0.25, melão ×1.5,
+mamão ×0.88) sit inside the band and trip nothing (measured 2026-10-21, `docs/audits/
+unidades_e_deflacao_audit_2026-10-21.md`). Also: SIDRA marks the two count-based crops with an
+asterisk in the product NAME ("Abacaxi*", "Coco-da-baía*") while the unit label says
+"Toneladas" — an asterisk on a new PAM product is a unit warning, not a footnote.
 
 ## Backing up prod Gold from a local / dev machine
 

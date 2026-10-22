@@ -62,7 +62,7 @@ function ViewExportCoef() {
   // incompatible here) — the user lands on a working indicator, not a fallback note.
   const massProds = window.agrupamentoCatalog().filter(p => p.family === 'mass');
   // O padrão é o primeiro agrupamento CALCULÁVEL, não o primeiro da ordem alfabética:
-  // abrir no Abacaxi, que não tem NCM, dava as boas-vindas com uma recusa. Os sem lado
+  // abrir no Café, que não tem NCM, dava as boas-vindas com uma recusa. Os sem lado
   // aduaneiro seguem na lista, escolhíveis, e explicam-se quando escolhidos.
   const primeiro = massProds.find(p => p.hasCustoms) || massProds[0];
   const effProduct = product || (primeiro && primeiro.code) || null;
@@ -280,7 +280,7 @@ function ViewPriceSpread() {
   // commodities and default to the first, so the user opens on a real spread.
   const massProds = window.agrupamentoCatalog().filter(p => p.family === 'mass');
   // O padrão é o primeiro agrupamento CALCULÁVEL, não o primeiro da ordem alfabética:
-  // abrir no Abacaxi, que não tem NCM, dava as boas-vindas com uma recusa. Os sem lado
+  // abrir no Café, que não tem NCM, dava as boas-vindas com uma recusa. Os sem lado
   // aduaneiro seguem na lista, escolhíveis, e explicam-se quando escolhidos.
   const primeiro = massProds.find(p => p.hasCustoms) || massProds[0];
   const effProduct = product || (primeiro && primeiro.code) || null;

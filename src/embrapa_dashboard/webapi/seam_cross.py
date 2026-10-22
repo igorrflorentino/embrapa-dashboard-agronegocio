@@ -392,8 +392,9 @@ def export_coefficient(agrupamento_id: str | None, uf_codes: tuple = ()) -> dict
     ncms = seam_base._codes(agrupamento_id, "comex")
     if agrupamento_id and not ncms:
         # No customs side: since v1.58.0 the family gate reads BOTH production bancos,
-        # so PAM-only agrupamentos reach this view — and three of them (abacaxi, café,
-        # cana-de-açúcar) have no NCM in the crosswalk. Without a numerator there is no
+        # so PAM-only agrupamentos reach this view — and two of them (café, cana-de-açúcar;
+        # abacaxi was a third until v1.100.0 gave it an NCM) have no NCM in the crosswalk.
+        # Without a numerator there is no
         # coefficient, and rendering "—" everywhere would leave the researcher guessing
         # whether the data is missing or the pipeline broke. Refuse with a REASON, the
         # same honest-note path the volume/mixed refusal already uses.

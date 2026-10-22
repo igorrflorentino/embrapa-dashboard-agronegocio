@@ -88,8 +88,9 @@ describe('agrupamentoCatalog', () => {
   });
 
   it('hasCustoms é false quando o agrupamento não tem NCM no cruzamento', async () => {
-    // Abacaxi, café e cana-de-açúcar existem só na PAM e não têm correspondência
-    // aduaneira. Desde a v1.58.0 eles chegam aos pickers de massa, e sem esta bandeira
+    // Café e cana-de-açúcar existem só na PAM e não têm correspondência aduaneira (o
+    // abacaxi também não tinha, até a v1.100.0). Desde a v1.58.0 eles chegam aos pickers
+    // de massa, e sem esta bandeira
     // a view abria no primeiro da ordem alfabética — uma recusa como tela inicial.
     const f = vi.fn(() => jsonRes({
       cafe: { id: 'cafe', name: 'Café', family: 'massa', pevs: [], pam: ['40139'],
