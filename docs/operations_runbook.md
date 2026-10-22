@@ -275,14 +275,22 @@ one row to `research_inputs.ingestion_heartbeat` (source, timestamp, outcome, du
 |---|---|
 | no row inside the source's window | the **trigger** did not fire — check Cloud Scheduler and the Job's executions |
 | row, `outcome='ok'`, data unchanged | it ran and the source had nothing new — the healthy quiet state |
-| row, `outcome='failed'` | it ran and broke — the Cloud Monitoring alert also fires |
+| row, `outcome='failed'` | it ran and did not complete. A hard failure also fires the Cloud Monitoring alert; a transient-only failure and a COMTRADE quota stop exit 0, so this row is the only trace of them. `detail` says which, and a chunked run adds its tally (`1/2 chunk(s) ok`) |
 
 Windows come from each source's own `IngestSpec.cadence_days` in `cli.INGESTS` (1 for BCB
 câmbio, 7 for the weekly batch, 31 for the monthly triggers) plus `HEARTBEAT_SLACK_DAYS`
 (default 3) of grace — so a daily source trips at 4 days, a weekly one at 10, a monthly one
-at 34. That cadence is declared per source rather than inferred from `in_all`, which stopped
-meaning "daily" when the batch went weekly. A source that has NEVER reported is not flagged
-— the table only fills forward from the day this shipped.
+at 34, measured on the last `ok`. That cadence is declared per source rather than inferred
+from `in_all`, which stopped meaning "daily" when the batch went weekly. A source that has
+NEVER reported is flagged (`nunca rodou`) only once the table itself is older than that
+source's window.
+
+**`ingest comtrade` wrote no heartbeat until v1.104.3.** Its monthly trigger runs it outside
+`ingest all`, through `chunked_run` alone, so the 2026-10-15 run finished all 432 chunks with
+exit 0 and doctor still reported `nunca rodou: comtrade`. The first row lands with the next
+monthly run after the ingestion Job is redeployed (automatic on merge). A quota stop is
+recorded as `failed`, on purpose: it exits 0, and an `ok` would let a run that keeps stopping
+short read green.
 
 The heartbeat write can never fail an ingest (`ingestion_heartbeat.record` swallows every
 error with a warning): a monitor that can take down what it monitors is worse than none.

@@ -599,6 +599,118 @@ def test_ingest_comtrade_from_raw_skips_api(
     sync.assert_not_called()
 
 
+# The monthly trigger runs `ingest comtrade` on its own, outside `ingest all`, so this
+# command is the only thing that can tell doctor the trigger fired. Until v1.104.3 it
+# wrote no heartbeat: the 2026-10-15 run finished all 432 chunks and exited 0, and
+# doctor still reported "nunca rodou: comtrade".
+@pytest.fixture
+def heartbeat_rows(monkeypatch: pytest.MonkeyPatch, settings: Settings) -> list[dict]:
+    """The heartbeat rows an ingest command writes, captured at the BigQuery client.
+
+    The real `ingestion_heartbeat.record` runs; only the client is fake, so each row
+    asserted below is the row the warehouse would receive.
+    """
+    rows: list[dict] = []
+    client = MagicMock()
+    client.insert_rows_json.side_effect = lambda _fqn, batch: rows.extend(batch) or []
+    monkeypatch.setattr(cli.ingestion_heartbeat, "get_settings", lambda: settings)
+    monkeypatch.setattr(cli.ingestion_heartbeat, "_bq_client", lambda *a, **k: client)
+    return rows
+
+
+def test_ingest_comtrade_records_an_ok_heartbeat(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, heartbeat_rows: list[dict]
+) -> None:
+    _wire_comtrade(monkeypatch, settings)
+    settings.comtrade_start_year = 2023
+    settings.comtrade_end_year = 2023
+    monkeypatch.setattr(cli.comtrade_pipeline, "sync_raw", lambda *a, **k: True)
+
+    result = runner.invoke(cli.app, ["ingest", "comtrade"])
+
+    assert result.exit_code == 0, result.output
+    assert [(r["source"], r["outcome"], r["detail"]) for r in heartbeat_rows] == [
+        ("comtrade", "ok", None)
+    ]
+    assert heartbeat_rows[0]["duration_s"] >= 0
+
+
+def test_ingest_comtrade_records_failed_when_a_chunk_fails(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, heartbeat_rows: list[dict]
+) -> None:
+    """A chunked command does not raise for a failed chunk, so "nothing escaped" must
+    not be read as success: the tally decides, and the detail names the chunk."""
+    _wire_comtrade(monkeypatch, settings)
+    settings.comtrade_start_year = 2022
+    settings.comtrade_end_year = 2023
+
+    def flaky(_s: Settings, year: int, _batch: object, **kwargs: object) -> bool:
+        if year == 2022:
+            raise RuntimeError("HTTP 500 from comtrade")
+        return True
+
+    monkeypatch.setattr(cli.comtrade_pipeline, "sync_raw", flaky)
+
+    result = runner.invoke(cli.app, ["ingest", "comtrade"])
+
+    assert result.exit_code == 1
+    [row] = heartbeat_rows
+    assert (row["source"], row["outcome"]) == ("comtrade", "failed")
+    assert "1/2 chunk(s) ok, 1 failed (NOT all transient)" in row["detail"]
+    assert "first: 2022_r" in row["detail"]
+    assert "HTTP 500 from comtrade" in row["detail"]
+
+
+def test_ingest_comtrade_quota_stop_exits_0_but_records_failed(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, heartbeat_rows: list[dict]
+) -> None:
+    """Exit 0 keeps the Cloud Monitoring alert quiet on a quota stop, so the heartbeat is
+    the one place it can show. Recorded as `ok`, a run that keeps stopping short would
+    read green in doctor month after month."""
+    from embrapa_dashboard.comtrade.client import ComtradeQuotaError
+
+    _wire_comtrade(monkeypatch, settings)
+    settings.comtrade_start_year = 2022
+    settings.comtrade_end_year = 2023
+
+    def quota_on_2023(_s: Settings, year: int, _batch: object, **kwargs: object) -> bool:
+        if year == 2023:
+            raise ComtradeQuotaError("quota exhausted (HTTP 403) — re-run to resume")
+        return True
+
+    monkeypatch.setattr(cli.comtrade_pipeline, "sync_raw", quota_on_2023)
+
+    result = runner.invoke(cli.app, ["ingest", "comtrade"])
+
+    assert result.exit_code == 0, result.output
+    [row] = heartbeat_rows
+    assert (row["source"], row["outcome"]) == ("comtrade", "failed")
+    assert row["detail"] == "quota exhausted (HTTP 403) — re-run to resume (1/2 chunk(s) ok)"
+
+
+def test_ingest_comtrade_records_failed_when_the_pipeline_raises(
+    monkeypatch: pytest.MonkeyPatch, settings: Settings, heartbeat_rows: list[dict]
+) -> None:
+    """An error outside the per-chunk guard (here, creating the Bronze table) escapes
+    the tracked block: recorded, then re-raised so the Job still fails."""
+    _wire_comtrade(monkeypatch, settings)
+    settings.comtrade_start_year = 2023
+    settings.comtrade_end_year = 2023
+
+    def no_table(_s: Settings, _c: object) -> str:
+        raise PermissionError("403 bigquery.tables.create denied")
+
+    monkeypatch.setattr(cli.comtrade_pipeline, "ensure_destination", no_table)
+
+    result = runner.invoke(cli.app, ["ingest", "comtrade"])
+
+    assert result.exit_code == 1
+    assert isinstance(result.exception, PermissionError)
+    [row] = heartbeat_rows
+    assert (row["source"], row["outcome"]) == ("comtrade", "failed")
+    assert row["detail"] == "403 bigquery.tables.create denied (0/1 chunk(s) ok)"
+
+
 # ─── ingest comex ─────────────────────────────────────────────────────────────
 def _wire_comex(
     monkeypatch: pytest.MonkeyPatch, settings: Settings, chunks: list[tuple[str, int]]

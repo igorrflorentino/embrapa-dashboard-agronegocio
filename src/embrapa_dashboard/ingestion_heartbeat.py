@@ -15,7 +15,9 @@ The heartbeat separates the two by recording the RUN, not its output:
     row with outcome='ok'          →  it ran; whether data arrived is a separate
                                       question, answered by doctor's
                                       "Source data freshness" check
-    row with outcome='failed'      →  it ran and broke (the alert also fires)
+    row with outcome='failed'      →  it ran and did not complete; the alert fires only
+                                      for a hard failure (a transient-only run and a
+                                      COMTRADE quota stop exit 0)
 
 Writing here must NEVER break an ingest: every failure is swallowed with a warning. A
 monitor that can take down the thing it monitors is worse than no monitor.

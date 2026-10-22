@@ -7,6 +7,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.104.3] - 2026-10-22
+
+**`embrapa ingest comtrade` passa a gravar o heartbeat de cada execução.** É o achado que a 1.104.2
+registrou sem corrigir: o gatilho mensal rodou em 2026-10-15 de ponta a ponta (432 blocos, `exit(0)`)
+e o doctor seguiu dizendo "nunca rodou: comtrade (55d observando)". Muda o Job de ingestão (com tag,
+pela política de release); nenhum número, tela ou tabela do Gold muda.
+
+### Corrigido
+- **`ingest comtrade` passava só por `chunked_run`, que não grava heartbeat.** Toda outra ingestão
+  agendada passa por `_tracked_run`. O gatilho mensal roda o comando sozinho, fora do `ingest all`, e
+  por isso nada registrava que ele tinha rodado.
+  - `_tracked_chunked_run` (`cli.py`) é o `chunked_run` mais uma linha na tabela. Um comando em
+    blocos não levanta exceção quando um bloco falha: conta o resultado e escolhe o código de saída
+    depois. Por isso "nada escapou" não basta: a execução é `ok` só quando nada escapou **e** nenhum
+    bloco falhou.
+  - Qualquer outro caso é `failed`, com a contagem de blocos no `detail` (`1/2 chunk(s) ok, 1
+    failed (...); first: <bloco> — <erro>`). É o mesmo veredito do `_tracked_run` no `ingest all`.
+
+### Decidido
+- **Parada por cota é `failed`, não `ok` parcial.** A parada sai com 0, então o alerta do Cloud
+  Monitoring não dispara, e o heartbeat é o único lugar onde ela aparece.
+  - O doctor mede a janela do COMTRADE (31 + 3 = 34 dias) a partir do último `ok`. Com `ok` na parada
+    por cota, uma execução que para antes do fim todo mês ficaria verde para sempre: é o caso que a
+    docstring do check já descreve, de três camadas que delegam a pergunta uma para a outra.
+  - Uma parada isolada aparece como "roda mas não conclui" quando o último `ok` sai da janela. Isso
+    é verdade: os blocos não arquivados esperam a próxima execução.
+  - O `detail` traz a mensagem da cota e quanto foi feito: `quota exhausted (...) — re-run to resume
+    (1/2 chunk(s) ok)`.
+- **A cadência mensal não alarma entre execuções.** O gatilho dispara no dia 15 (`0 4 15 * *`, BRT).
+  O maior intervalo entre dois dias 15 é de 31 dias, e a execução dura no máximo o timeout da tarefa,
+  6 h (`21600s` em `schedule_comtrade.sh`). Entre dois heartbeats `ok` passam, no máximo, ~31,25
+  dias, contra os 34 da janela.
+
+### Verificado, sem mudança
+- **PAM, PPM e câmbio** (`ibge-pam`, `ibge-ppm`, `bcb-currency`, cada um com gatilho próprio) já
+  passavam por `_tracked_run` com o nome certo.
+- **`ibge-batch`** não tem gatilho, é ferramenta de carga histórica do operador.
+- **`reconcile`**: a fase completa grava heartbeat por fonte. A fase do IBGE PEVS usa
+  `_ibge_batch_ingest` e não grava a linha `ibge`, mas a rodada semanal grava, então o doctor não vê
+  diferença. O gatilho do reconcile está pausado desde 2026-09-25.
+- **`ingest comex`** sozinho também não grava heartbeat, mas nenhum gatilho o roda sozinho: o COMEX
+  vem do `ingest all`, que grava. Ficou como está.
+
+### Testes
+- **Quatro testes novos em `tests/test_cli.py`**, que capturam a linha no cliente do BigQuery (o
+  `ingestion_heartbeat.record` real roda): execução completa → `ok`; bloco com falha → `failed` e
+  saída 1; parada por cota → `failed` e saída **0**; erro fora dos blocos → `failed` e a exceção
+  propagada.
+- **Um teste estrutural** em `tests/test_ingest_cadence_matches_schedulers.py`: todo comando que um
+  gatilho roda sozinho grava o heartbeat **com o próprio nome**, porque o doctor busca a linha por
+  `IngestSpec.name`. Os comandos são lidos dos `"args":["…"]` dos `schedule*.sh`, então um gatilho
+  novo entra no teste no dia em que o script é escrito.
+- **Contraprova:** com o `cli.py` da 1.104.2, os cinco falham. Com a mudança, passam.
+- **Execução local a seco** (clientes falsos, nada sai da máquina), linha que o código grava:
+  `{"source": "comtrade", "outcome": "ok", "duration_s": 0.03, "detail": null}`; na parada por cota,
+  `{"source": "comtrade", "outcome": "failed", "detail": "quota exhausted (HTTP 403: Out of call
+  volume quota) — re-run to resume (1/2 chunk(s) ok)"}`.
+
+### O que esperar em produção
+- O Job de ingestão é reimplantado sozinho no merge (`ingestion-job-deploy.yml`). Até a próxima
+  execução, o doctor segue dizendo "nunca rodou: comtrade". A primeira linha chega com o gatilho de
+  **2026-11-15**.
+- Essa execução é a que refaz os anos fechados para os 11 códigos de fruta (escopo ampliado na
+  v1.100.0, ver 1.104.2). Ela planeja 432 blocos. O backfill de 2026-08-18 recebeu 403 de cota depois
+  de 508 blocos, então deve caber, mas isso não está garantido. Se a cota acabar antes, o heartbeat
+  sai `failed` com "quota exhausted" e a contagem. Uma execução manual do Job com
+  `--args=comtrade` no dia seguinte conclui o que faltou e grava o `ok`.
+
+---
+
 ## [1.104.2] - 2026-10-22
 
 **Revisão de tudo o que entrou de 1.99.0 a 1.104.1.** Lidos os 80 arquivos do intervalo, o painel
