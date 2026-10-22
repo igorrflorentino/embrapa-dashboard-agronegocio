@@ -95,6 +95,17 @@ On the data source configuration screen, adjust:
 | `data_quality_flag` | Text | — |
 | `last_refresh` | Date and time | Maximum |
 
+> ⚠️ **The `val_real_*` numbers changed in v1.103.0 — an EXISTING report shows new values with no
+> schema change to warn you.** For the annual bancos (PEVS, PAM, PPM, COMTRADE) each year is now
+> deflated by the MEAN of its twelve monthly indices, not December's. Years before 1995 come out
+> **×1.15 to ×3.5 higher** (December was up to 3.5× the mean in the hyperinflation years), later
+> years move by up to 17% (mostly −1% to +5%), and **IGP-M has no value before 1990** (its first,
+> partial year no longer gets one). The dashboard now says that corrected values up to 1994 are
+> indicative; **a Looker Studio report has no such notice, so put one on any chart that draws
+> `val_real_*` across those years** — the within-year distribution of the value is unknown, and
+> comparing them with 1995 onward can distort. `val_yearfx_*` (nominal) did not change. See
+> `docs/audits/deflacao_indice_medio_2026-10-21.md`.
+
 ---
 
 ## 3. Recommended default filter

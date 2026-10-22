@@ -228,19 +228,24 @@ Location: `dbt/models/gold/gold_<source>_<form>.sql` — e.g. `gold_comex_flows.
 
 **One comprehensive table per source** — ad-hoc aggregation at query time via `GROUP BY`; pre-aggregated marts (the dashboard's Pushdown) live in the `serving/` layer, not in the Gold dataset. And **do not** join the source into `gold_pevs_production`: incompatible grains and geographies.
 
-For monetary deflation: reuse the shared Silver models via `ref()`:
+For monetary deflation of an ANNUAL source, do not copy CTEs: call the shared macro, which emits
+the four CTEs (`inflation_year_avg`, `inflation_latest`, `fx_year`, `fx_latest`) over `silver_inflation`
+and `silver_currency`:
 
 ```sql
-inflation_year_end as (
-  -- see the deflation CTEs in gold_pevs_production.sql
-  select ... from {{ ref('silver_bcb_inflation') }} ...
-),
+{{ annual_deflation_ctes() }},
 
-fx_year as (
-  -- see the FX CTEs in gold_pevs_production.sql
-  select ... from {{ ref('silver_bcb_currency') }} ...
+enriched as (
+  select ... b.val_raw * safe_divide(il.ipca_current, iy.ipca_year_avg) as val_real_ipca_brl, ...
+  from base b
+  left join inflation_year_avg iy on b.reference_year = iy.reference_year
+  cross join inflation_latest il
 )
 ```
+
+The rule lives in `dbt/macros/annual_deflation_ctes.sql`: a year is deflated by the MEAN of its twelve
+monthly indices (v1.103.0; December's before), only when the index covers all twelve months. A MONTHLY
+source (like COMEX) deflates by its own month's index instead — see `gold_comex_flows.sql`.
 
 Apply the project's four monetary conventions (`val_yearfx_*`, `val_real_ipca_*`, `val_real_igpm_*`, `val_real_igpdi_*`) if the source has monetary values.
 

@@ -1,11 +1,13 @@
 # Auditoria de unidades e de deflação — 2026-10-21 (v1.100.x)
 
-> **STATUS — ABERTO nos itens C e D.** O item A (frutas contadas) teve **sem número errado
-> publicado** em momento algum (nenhuma das frutas em risco está no catálogo) e está **fechado na
-> v1.102.0**: a seed passou a carregar as 17 frutas da nota do IBGE, com teste da lista e guarda do
-> asterisco. O item B (bancos ingeridos) está limpo. O item C (deflação por
-> índice de fim de ano) é um defeito **vivo** nas colunas corrigidas pela inflação antes de 1995, e a
-> escolha do conserto é do pesquisador: muda números publicados.
+> **STATUS — FECHADO nos itens A, B e C; ABERTO só no D.** O item A (frutas contadas) **nunca teve
+> número errado publicado** (nenhuma das frutas em risco está no catálogo) e foi fechado na
+> **v1.102.0**: a seed carrega as 17 frutas da nota do IBGE, com teste da lista e guarda do asterisco.
+> O item B (bancos ingeridos) está limpo. O item C (deflação por índice de dezembro) era um defeito
+> **vivo** e foi corrigido na **v1.103.0**: o valor anual passou a ser corrigido pela média dos doze
+> índices do ano, em produção desde 2026-10-22 (medição e raciocínio em
+> `deflacao_indice_medio_2026-10-21.md`). Fica o D: candidatos do PEVS fora do catálogo, para olhar
+> antes de cadastrar.
 
 Pergunta que abriu a auditoria, feita ao fim da v1.100.0: *existe outra parte do código com o mesmo
 problema nos dados — um rótulo de unidade que não é a unidade — ou com um problema análogo?*
@@ -212,7 +214,7 @@ Só documentação, comentários e testes (nenhum número de produção muda por
 
 ## Pendente
 
-1. **Decidir C** (opção b + a, ou só a): muda números publicados.
+1. ~~Decidir C (opção b + a, ou só a)~~ — decidido e feito na v1.103.0: opção (b) com uma regra para as cinco séries, IGP-M começando em 1990, e o aviso (a) no painel.
 2. ~~Pré-carregar as 13 frutas e fixar a lista do IBGE em teste (A)~~ — feito na v1.102.0.
 3. **Antes de cadastrar qualquer produto de D**: resolver a unidade (rótulo vazio, `Mil árvores`) e
    explicar os níveis de 1996.

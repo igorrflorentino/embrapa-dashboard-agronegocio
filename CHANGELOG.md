@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.103.1] - 2026-10-22
+
+**Limpeza do que as v1.101–1.103 deixaram para trás.** Só documentação e um comentário de tipo; nenhum
+número, tela ou comportamento muda (sem tag, pela política de release).
+
+### Corrigido
+- **`docs/adding_a_data_source.md` ensinava a copiar um CTE `inflation_year_end`** que não existe mais
+  (desde a v1.103.0 a deflação anual é a macro `annual_deflation_ctes()`, com o índice **médio** do ano;
+  o guia já estava defasado desde que a macro substituiu as cópias). O trecho agora mostra a macro e
+  diz que a fonte mensal usa o índice do próprio mês.
+- **`docs/frontend_data_contract.md`** ainda dizia "IGP-M to 1989" numa segunda passagem (a edição da
+  v1.103.0 só trocou a da seção 3.7): agora 1990.
+- **`docs/gold_data_model.md`** descrevia as colunas `val_real_*` sem dizer qual índice do ano usam.
+- **`docs/looker_studio_setup.md` ganhou o aviso de que os `val_real_*` mudaram na v1.103.0**: um
+  relatório do Looker Studio já existente passa a mostrar valores novos sem nenhuma mudança de esquema,
+  e o Looker **não tem** o aviso de "anos até 1994 são indicativos" do painel, então o relatório precisa
+  carregar o seu.
+- **`frontend/src/ui/contracts.js`**: a frase "índice de fim de ano" do `valueGap` e o typedef de
+  produtividade, que não citava `prodUnit` nem a unidade `frutos/ha` das culturas contadas (v1.100.0).
+- O bloco de status da auditoria `unidades_e_deflacao_audit_2026-10-21.md` ainda dizia que o item C
+  estava aberto e "vivo".
+
+### Registrado, não corrigido
+- **15 entradas ativas do catálogo estão sem nível de industrialização** (COMEX: bambu ×2, castanha-de-
+  caju ×2, coco ×3; COMTRADE: bambu ×2; PAM: açaí, banana, café, castanha-de-caju, coco, soja). Nenhuma
+  veio das v1.99–1.103; cinco estão em grupos de fruta que essas versões tocaram.
+
+---
+
 ## [1.103.0] - 2026-10-21
 
 **O valor anual passa a ser corrigido pela MÉDIA dos doze índices do ano, não pelo de dezembro, e o
