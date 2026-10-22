@@ -190,12 +190,24 @@ produto a produto. O que sobra de relevante:
   vizinhos, em produtos sem relação entre si, são a assinatura de **quebra de metodologia ou de
   cobertura**, não de safra — ou de uma restrição real (a do palmito de juçara). Não foi explicado.
   Nenhum está no catálogo, e nenhuma das 10 séries de PEVS do catálogo tem degrau nesses anos.
-- **Séries sem rótulo de unidade** no SIDRA (`MN` vazio): 83410–83418 (baru, buriti, cajá, cupuaçu,
-  juçara, macaúba, pupunha, tucumã, andiroba). Sem unidade, a família cairia em `desconhecida`.
+- **Nove categorias NOVAS de 2025, não séries "sem unidade"** (`83410`–`83418`: baru, buriti, cajá,
+  cupuaçu, juçara, macaúba, pupunha, tucumã, andiroba). **Correção (2026-10-22):** a versão anterior
+  deste item dizia que faltava o rótulo de unidade. Conferido linha a linha: o rótulo vem vazio só nas
+  células `...` (sem dado) de 2018 a 2024; em 2025, primeiro ano em que existem, vêm em **toneladas**
+  (de 38 t a juçara a 3.955 t o tucumã). Não há problema de unidade. O que vale saber antes de
+  cadastrar uma delas: a série tem **um único ano**.
 - **`3449` Pinheiro brasileiro (árvores abatidas)**, unidade `Mil árvores`: é contagem, e
-  `unit_family_conversions` não tem `mil árvores` — cairia em `desconhecida`.
-- **`3448` nó de pinho** (m³): nível ×3,5 em 1996 (70,9 mil → 349,9 mil m³), sem explicação nos dados.
-- **`3462` eucalipto (folha)** (t, t291): nível ×3,5 em 1996 (26 mil → 119 mil t).
+  `unit_family_conversions` só tem `milheiro` (×1000) entre as de contagem em milhar — não tem `mil
+  árvores`. Se fosse ingerida, a família cairia em `desconhecida` com `qty_base` **nulo** (o Silver
+  nunca inventa uma conversão). A série em si é calma (282 mil árvores em 1993, 142 mil em 1997, 157 mil
+  em 1999). O conserto é uma linha na seed: `mil árvores,contagem,un,1000`.
+- **`3448` nó de pinho** (m³): **série errática, não um degrau**. A versão anterior dizia "nível ×3,5 em
+  1996"; o dado é 90 mil m³ (1993), 81 mil, 71 mil, **350 mil (1996)**, **20 mil (1997)**, 280 mil
+  (1998) e 499 mil (1999). Sobe e desce por fatores de 5 a 18 sem padrão, o que não é troca de
+  unidade (essa deixaria um nível novo estável) e sem explicação nos dados.
+- **`3462` eucalipto (folha)** (t, t291): **nível persistente em 1996**: vinha caindo (73 mil t em 1993,
+  26 mil t em 1995), vai a 119 mil t em 1996 e fica em 110–120 mil t depois. Sem explicação nos dados
+  (expansão real do óleo essencial ou quebra de cobertura).
 
 ## O que esta rodada mudou
 
@@ -216,8 +228,9 @@ Só documentação, comentários e testes (nenhum número de produção muda por
 
 1. ~~Decidir C (opção b + a, ou só a)~~ — decidido e feito na v1.103.0: opção (b) com uma regra para as cinco séries, IGP-M começando em 1990, e o aviso (a) no painel.
 2. ~~Pré-carregar as 13 frutas e fixar a lista do IBGE em teste (A)~~ — feito na v1.102.0.
-3. **Antes de cadastrar qualquer produto de D**: resolver a unidade (rótulo vazio, `Mil árvores`) e
-   explicar os níveis de 1996.
+3. **Antes de cadastrar qualquer produto de D**: acrescentar `mil árvores` à seed de unidades (3449),
+   explicar a quebra de 1987–1990 e os níveis de 1996 (3462, 3448); as nove categorias de 2025 só
+   precisam de que se saiba que têm um ano de história.
 
 ## Reproduzir
 
