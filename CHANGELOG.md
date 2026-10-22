@@ -7,6 +7,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.104.2] - 2026-10-22
+
+**Revisão de tudo o que entrou de 1.99.0 a 1.104.1.** Lidos os 80 arquivos do intervalo, o painel
+aberto com dados de produção e o `embrapa doctor` rodado. Um defeito de tela, dois textos
+desatualizados e uma expectativa que eu tinha dado sem data.
+
+### Corrigido
+- **O aviso "valores corrigidos de anos até 1994 são indicativos" (v1.103.0) não aparecia na tela
+  padrão.** A nota recebia `filters.startDate`, que fica vazio enquanto ninguém mexe no filtro de
+  período, e tratava o vazio como "não se sabe". Mas vazio quer dizer "a cobertura inteira": é assim
+  que o painel abre, e é assim que `windowValueGap` já o lia. Quem abria a PAM e escolhia IGP-DI via
+  a série corrigida de 1974 a 2025 sem aviso nenhum, que é justamente o caso para o qual a nota
+  existe. O aviso só aparecia depois de alguém mexer no filtro de período.
+  - Agora o `MainScreen` passa o **primeiro ano da série filtrada**. Isso acerta também o caso
+    oposto: um filtro que começa em 1974 sobre um produto com dado só de 2001 em diante não mostra
+    ano nenhum até 1994, e o aviso não aparece.
+  - Três testes novos. Contraprova: com a montagem antiga, os três falham.
+  - **Conferido no painel com dados de produção** (servidor local, só leitura):
+    - PAM, IGP-DI, sem `sd` na URL, série de 1974 a 2025: o aviso aparece.
+    - PAM em Nominal: não aparece.
+    - COMEX em IGP-DI, série de 1997 em diante: não aparece.
+    - Nenhum erro no console.
+- **`CLAUDE.md`, sobre ampliar o escopo do COMEX:** ainda dizia que o servidor do MDIC estava fora do
+  ar e que dois códigos aposentados esperavam o "texto oficial pendente". Desde a v1.101.0 os
+  arquivos estão em `balanca.mdic.gov.br`, os **quatro** códigos têm o texto oficial e
+  `assert_trade_descriptions_are_official` não devolve nada. O runbook já estava certo.
+- **"R$ · IPCA é a convenção com que o painel abre":** deixou de ser verdade na v1.88.0, quando o
+  painel passou a abrir em Nominal, e eu repeti a frase nos textos que editei na v1.103.0.
+  - Arquivos corrigidos: `serving/sql.py`, `webapi/seam.py`, `contracts.js`,
+    `docs/frontend_data_contract.md`, e comentários do `MainScreen` e do `MonetaryNotes`.
+  - Agora dizem que o IPCA é o primeiro índice oferecido para R$.
+  - No mesmo `CLAUDE.md`, "os 13 frutos ainda não convertidos" passou a ser "fora do catálogo":
+    desde a v1.102.0 os 17 estão na seed.
+
+### Verificado na revisão, sem mudança de código
+- **Correção pela inflação (v1.103.0):**
+  - Nenhum resto da regra de dezembro (`year_end`) no projeto.
+  - Os quatro modelos do Gold usam o macro único.
+  - As colunas do Gold não mudaram de nome.
+- **Conversão de unidades da PAM:**
+  - A produtividade usa `qty_native`: toneladas para os frutos convertidos e mil frutos para os
+    contados.
+  - Por isso "frutos/ha" e "mil frutos" saem com a conta certa (mil frutos × 1000 ÷ ha).
+- **COMEX:**
+  - O certificado de `balanca.mdic.gov.br` verifica com o bundle do repositório.
+  - O folha atual vence hoje às 19:17 UTC.
+  - A conferência agendada roda às 20:00 UTC, depois do vencimento.
+- **Frutas do COMTRADE: a data em que chegam ao painel.** Os 11 códigos de fruta do COMTRADE ainda
+  não têm linha no Gold, e o doctor avisa ("Catalog → Gold arrival").
+  - A última execução do gatilho mensal (2026-10-15) é anterior à v1.100.0, que ampliou o escopo.
+  - O próximo gatilho é **2026-11-15**, seguido de um build.
+  - Ele refaz os anos fechados só para os códigos novos (`_codes_added_since`), dentro da cota da
+    API. Antes eu tinha dito que isso se resolvia sozinho, sem dar data.
+- **Encontrado e anterior a esta sessão (não corrigido aqui):** `embrapa ingest comtrade` não grava
+  heartbeat. Ele usa `chunked_run`, não `_tracked_run`. Por isso o doctor diz "comtrade nunca rodou
+  (55d observando)", mas a execução de 2026-10-15 rodou de ponta a ponta (432 blocos, `exit(0)`).
+- **Falhas externas no doctor de hoje:**
+  - **IBGE `servicodados`:** tempo esgotado nas quatro sondas. A API `apisidra` respondeu no mesmo
+    momento.
+  - **BCB:** tempo esgotado na rodada semanal de 2026-10-19, por isso `bcb-inflation` não concluiu.
+  - **COMEX:** a mesma rodada de 2026-10-19 falhou pelo certificado expirado do host antigo, que a
+    v1.101.0 trocou dois dias depois.
+  - A rodada de 2026-10-26 é a que confirma `bcb-inflation` e COMEX.
+
+---
+
 ## [1.104.1] - 2026-10-22
 
 **Correção de uma contagem na entrada 1.104.0 deste arquivo.** Só documentação; nenhum número, tela ou

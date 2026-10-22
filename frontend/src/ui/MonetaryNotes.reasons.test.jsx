@@ -2,8 +2,8 @@
 //
 // Three holes exist, each with its own cause, and the note names the cause only when the
 // facts it has settle it: the euro before 1999; an index series that begins after the
-// history does (a hole at the START — PAM/PPM have no IPCA in 1974–1979, and R$ · IPCA is
-// the dashboard's default convention); an index not ingested yet (a hole at the END — the
+// history does (a hole at the START — PAM/PPM have no IPCA in 1974–1979, and IPCA is the
+// first index offered for R$); an index not ingested yet (a hole at the END — the
 // latest COMEX month, measured 2026-09-13).
 
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';

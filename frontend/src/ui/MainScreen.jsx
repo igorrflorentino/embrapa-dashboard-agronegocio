@@ -372,6 +372,14 @@ function MainScreen({ filters, view = 'overview', database = 'ibge_pevs', infoPa
   // leftovers (e.g. PEVS shows 12 products / 11,2 mi rows when the live Gold has
   // 3 products / 1,35 mi rows); the live snapshot is the source of truth.
   const _fAll = window.applyFilters ? window.applyFilters({}, database) : null;
+  // O primeiro ano que a tela MOSTRA, lido da série já filtrada — e não de `filters.startDate`.
+  // Sem filtro de período o `startDate` é vazio, e vazio quer dizer "a cobertura inteira": é assim
+  // que o painel abre, e é assim que windowValueGap o lê. Lido como "não se sabe", a nota de
+  // inflação alta sumia justamente na tela padrão, que vai de 1974 (PAM, PPM) ou 1986 (PEVS) até
+  // hoje. A série também acerta o caso oposto: um filtro que começa em 1974 sobre um produto que só
+  // tem dado de 2001 em diante não mostra ano nenhum até 1994.
+  const _anosNaTela = ((_f && _f.ts) || []).map((d) => d.y).filter(Number.isFinite);
+  const inicioNaTela = _anosNaTela.length ? Math.min(..._anosNaTela) : (filters && filters.startDate);
   const _shares = (_f && _f._shares) || {};
   // UFs that survive the state filter AND still carry production — REAL Brazilian
   // states only. A trade banco's ufData includes non-state pseudo-origins
@@ -506,8 +514,8 @@ function MainScreen({ filters, view = 'overview', database = 'ibge_pevs', infoPa
 
       {/* Os períodos que a convenção ativa não alcança, cortados ao período da tela: o mês
           mais recente do COMEX sem índice de correção (v1.79.0) e os anos do IBGE que a série
-          do índice não alcança — PAM e PPM não têm IPCA em 1974–1979, e R$ · IPCA é a
-          convenção com que o painel abre (v1.80.0). As três telas de comércio têm a sua
+          do índice não alcança — PAM e PPM não têm IPCA em 1974–1979, o primeiro índice
+          oferecido para R$ (v1.80.0; o painel abre em Nominal desde a v1.88.0). As três telas de comércio têm a sua
           própria nota, com a fração do recorte; Qualidade, Dados, Rebanho e Produtividade
           não mostram valor em moeda. */}
       {window.ValueGapNote && window.windowValueGap
@@ -524,14 +532,14 @@ function MainScreen({ filters, view = 'overview', database = 'ibge_pevs', infoPa
       )}
 
       {/* Anos de inflação muito alta: o valor corrigido até 1994 é indicativo (v1.103.0). Só
-          aparece em R$ corrigido por índice brasileiro e quando o período começa em 1994 ou
-          antes — o COMEX (1997) e a COMTRADE (2000) nunca o mostram. Telas sem valor em moeda
-          ficam de fora, como na nota de lacuna. */}
+          aparece em R$ corrigido por índice brasileiro e quando a tela mostra 1994 ou antes —
+          o COMEX (1997) e a COMTRADE (2000) nunca o mostram. Telas sem valor em moeda ficam de
+          fora, como na nota de lacuna. O início vem da série filtrada (ver inicioNaTela). */}
       {window.HighInflationNote
         && !['quality', 'dados', 'rebanho', 'productivity'].includes(view) && (
         <window.HighInflationNote
           conventions={conventions || window.DEFAULT_CONVENTIONS}
-          start={filters && filters.startDate} />
+          start={inicioNaTela} />
       )}
 
       {/* Registry lookup, not a component created during render — see the note on the

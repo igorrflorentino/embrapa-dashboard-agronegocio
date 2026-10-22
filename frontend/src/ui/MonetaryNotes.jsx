@@ -16,7 +16,8 @@
 // The WHY, from what the note knows (and only then): € sem correção before 1999 is the
 // euro's own birth; a corrected convention missing at the START of the history is an
 // index series that does not reach that far (PAM/PPM have no IPCA in 1974–1979 — and
-// R$ · IPCA is the dashboard's default); missing at the END, an index not ingested yet.
+// IPCA is the first index offered for R$; the panel opens on Nominal since v1.88.0);
+// missing at the END, an index not ingested yet.
 //
 // NominalSeriesNote says what a nominal series over many years is good for. The
 // Multi-fonte and curated views have no conventions strip (they compare sources, not
@@ -163,13 +164,16 @@ window.valueGapMotivo = (gap, conv) => {
 // certo para um fluxo de volume uniforme ao longo do ano, mas o IBGE só publica o valor do ano:
 // não se sabe como ele se distribuiu entre os meses, e com inflação de dois dígitos por mês isso
 // pesa. Medido em produção 2026-10-21: de 1987 a 1994, em CADA ano, houve pelo menos seis
-// meses acima de 10% no IGP-DI (de 1995 a 2026: nenhum, o máximo mensal é 5,8%). Por isso os valores corrigidos dos
-// anos até 1994 são indicativos — e a nota existe para que ninguém leia a série corrigida desses
-// anos como uma trajetória real (docs/audits/deflacao_indice_medio_2026-10-21.md).
+// meses acima de 10% no IGP-DI (de 1995 a 2026: nenhum, o máximo mensal é 5,8%). Por isso os
+// valores corrigidos dos anos até 1994 são indicativos — e a nota existe para que ninguém leia a
+// série corrigida desses anos como uma trajetória real
+// (docs/audits/deflacao_indice_medio_2026-10-21.md).
 //
 // Só vale para R$ corrigido por índice brasileiro: o nominal tem a sua própria regra (as
-// reformas monetárias), e US$/€ só começam em 1994/1999. O período é o da tela; sem início
-// conhecido, não se afirma nada.
+// reformas monetárias), e US$/€ só começam em 1994/1999. `start` é o primeiro ano que a tela
+// mostra, e quem o calcula é o MainScreen, a partir da série filtrada: um `startDate` vazio quer
+// dizer a cobertura inteira, não "não se sabe" (v1.104.2; até então a nota sumia na tela padrão).
+// Sem início nenhum, não se afirma nada.
 const _CORRECOES_DO_REAL = ['IPCA', 'IGP-M', 'IGP-DI'];
 const _ULTIMO_ANO_INFLACAO_ALTA = 1994;
 

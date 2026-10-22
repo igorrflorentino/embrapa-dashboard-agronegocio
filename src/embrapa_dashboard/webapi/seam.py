@@ -539,8 +539,8 @@ def _value_gap_rows(banco_id: str, value_col: str):
     The annual bancos year by year: IBGE and COMTRADE deflate by the MEAN of the year's
     monthly indices (v1.103.0; December's before), and only when the index covers its twelve
     months, so where the index series does not reach, the whole year has no corrected value —
-    PAM and PPM have no R$ · IPCA, the dashboard's DEFAULT convention, in 1974–1979 (v1.80.0),
-    and no IGP-M in 1974–1989 (the series starts in 1989-06).
+    PAM and PPM have no R$ · IPCA, the first index offered for R$, in 1974–1979 (v1.80.0), and
+    no IGP-M in 1974–1989 (the series starts in 1989-06).
 
     Global in both cases: a missing index nulls every row of its period, so the list holds
     for any product/UF/flow the browser selects.
