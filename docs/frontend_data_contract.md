@@ -202,9 +202,9 @@ Since v1.80.0 every banco carries it, not only COMEX. The annual bancos (IBGE PE
 COMTRADE) deflate by the MEAN of the year's monthly indices (v1.103.0; December's before)
 and only when the index covers all twelve months, so where the index series does not reach, a
 whole year has no corrected value — measured on the serving marts 2026-09-13: **PAM and PPM
-have no R$ · IPCA in 1974–1979** (the convention the dashboard opens with, over the whole
-history), no IGP-M in 1974–1989 (1974–1988 until v1.102.0); PEVS has no IGP-M in 1986–1989; all three have no € sem
-correção before 1999. They are read by `gateway.fetch_annual_value_gap` from their annual
+have no R$ · IPCA in 1974–1979** (the first index offered for R$; the dashboard opens on
+Nominal since v1.88.0), no IGP-M in 1974–1989 (1974–1988 until v1.102.0); PEVS has no IGP-M
+in 1986–1989; all three have no € sem correção before 1999. They are read by `gateway.fetch_annual_value_gap` from their annual
 mart; a row only counts when it has a value in the banco's own currency (`val_yearfx_brl`,
 or `val_yearfx_usd` for COMTRADE), so PPM's herd — valueless in every convention — is not a
 gap. `valuedRange` (first and last year with value) lets the note say WHY: a hole at the

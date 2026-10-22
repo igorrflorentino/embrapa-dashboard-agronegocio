@@ -952,8 +952,9 @@ def annual_value_gap(
 
     Their Gold deflates by the MEAN of the year's monthly indices (v1.103.0; December's before)
     and only when the index covers all twelve months, so where the index series does not reach
-    a whole year has no corrected value — PAM and PPM have no R$ · IPCA (the dashboard's
-    DEFAULT convention) in 1974–1979, no IGP-M in 1974–1989 (1974–1988 until v1.102.0: the
+    a whole year has no corrected value — PAM and PPM have no R$ · IPCA (the first index the
+    panel offers for R$; it opens on Nominal since v1.88.0) in 1974–1979, no IGP-M in 1974–1989
+    (1974–1988 until v1.102.0: the
     series starts in 1989-06, and its first, partial year no longer gets a value), and no €
     sem correção before 1999 (measured on the serving marts 2026-09-13, IGP-M updated). A row
     only counts when it has a value in the banco's own currency (``native_column``): PPM's
