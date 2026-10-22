@@ -685,9 +685,7 @@ def test_ingest_comtrade_quota_stop_exits_0_but_records_failed(
     assert result.exit_code == 0, result.output
     [row] = heartbeat_rows
     assert (row["source"], row["outcome"]) == ("comtrade", "failed")
-    assert row["detail"] == (
-        "quota exhausted (HTTP 403) — re-run to resume (1/2 chunk(s) ok)"
-    )
+    assert row["detail"] == "quota exhausted (HTTP 403) — re-run to resume (1/2 chunk(s) ok)"
 
 
 def test_ingest_comtrade_records_failed_when_the_pipeline_raises(
