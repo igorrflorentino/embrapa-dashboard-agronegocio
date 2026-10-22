@@ -8,10 +8,14 @@ and a dead trigger goes unreported, too narrow and it cries wolf every cycle.
 This bit already: the heartbeat check originally derived "daily" from `in_all`, which
 stopped being true the moment the batch moved to weekly (2026-08-28). The window is a
 fact about the SCHEDULER, so pin it to the scheduler's own file.
+
+The last test pins the other half of the same contract: the command a trigger runs must
+write the row the check reads.
 """
 
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path
 
@@ -90,3 +94,62 @@ def test_every_source_is_covered_by_some_scheduler() -> None:
     triggered = {n for names in SCRIPTS.values() if names for n in names}
     triggered |= {n for n, s in specs.items() if s.in_all}
     assert sorted(set(specs) - triggered) == []
+
+
+# The context managers in cli.py that write one heartbeat row per run.
+_HEARTBEAT_WRAPPERS = {"_tracked_run", "_tracked_chunked_run"}
+
+
+def _commands_recording_their_own_heartbeat() -> set[str]:
+    """`ingest <name>` commands whose body opens a heartbeat wrapper under that same name.
+
+    The NAME matters, not just the call: doctor looks the row up by `IngestSpec.name`, so
+    a run recorded as, say, `ibge-batch` would leave `ibge` looking dead.
+    """
+    tree = ast.parse((REPO / "src" / "embrapa_dashboard" / "cli.py").read_text(encoding="utf-8"))
+    found: set[str] = set()
+    for fn in ast.walk(tree):
+        if not isinstance(fn, ast.FunctionDef):
+            continue
+        for deco in fn.decorator_list:
+            if not (
+                isinstance(deco, ast.Call)
+                and isinstance(deco.func, ast.Attribute)
+                and isinstance(deco.func.value, ast.Name)
+                and deco.func.value.id == "ingest_app"
+                and deco.args
+                and isinstance(deco.args[0], ast.Constant)
+            ):
+                continue
+            name = deco.args[0].value
+            if any(
+                isinstance(call, ast.Call)
+                and isinstance(call.func, ast.Name)
+                and call.func.id in _HEARTBEAT_WRAPPERS
+                and call.args
+                and isinstance(call.args[0], ast.Constant)
+                and call.args[0].value == name
+                for call in ast.walk(fn)
+            ):
+                found.add(name)
+    return found
+
+
+def test_every_command_a_trigger_runs_on_its_own_records_its_heartbeat() -> None:
+    """The window checked above means nothing if the command the trigger runs writes no row.
+
+    `ingest comtrade` went through bare `chunked_run` until v1.104.3: its monthly trigger
+    fired on 2026-10-15, finished all 432 chunks with exit 0, and doctor still said
+    "nunca rodou: comtrade". The batch is covered by `ingest all`, which wraps every spec;
+    this pins the triggers that override the Job's args to run ONE source. The args are
+    read off the scripts themselves, so a new trigger is covered the day it is written.
+    `reconcile` is not a source (doctor watches no `reconcile` row) and is left out.
+    """
+    sources = set(_specs())
+    standalone: set[str] = set()
+    for script in sorted(DEPLOY.glob("schedule*.sh")):
+        for arg in re.findall(r'"args":\["([^"]+)"\]', script.read_text(encoding="utf-8")):
+            if arg in sources:
+                standalone.add(arg)
+    assert standalone >= {"comtrade", "ibge-pam", "ibge-ppm", "bcb-currency"}
+    assert sorted(standalone - _commands_recording_their_own_heartbeat()) == []

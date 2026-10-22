@@ -216,6 +216,55 @@ def _tracked_run(name: str, *, params: dict | None = None):
         ingestion_heartbeat.record(name, "ok", duration_s=round(time.monotonic() - started, 2))
 
 
+def _chunk_tally(tracker: ChunkTracker) -> str:
+    """How far a chunked run got, plus its first failure — the heartbeat's `detail`."""
+    tally = f"{len(tracker.chunks_ok)}/{tracker.total} chunk(s) ok"
+    if tracker.chunks_failed:
+        kind = "all transient" if tracker.all_failures_transient else "NOT all transient"
+        chunk_id, err = tracker.chunks_failed[0]
+        tally += f", {len(tracker.chunks_failed)} failed ({kind}); first: {chunk_id} — {err}"
+    return tally
+
+
+@contextmanager
+def _tracked_chunked_run(
+    name: str, *, total: int, params: dict | None = None
+) -> Iterator[ChunkTracker]:
+    """`chunked_run`, plus the heartbeat row `_tracked_run` writes for single-shot ingests.
+
+    Needed wherever a scheduler runs a chunked command on its own: `ingest comtrade` went
+    through bare `chunked_run`, so its monthly trigger fired, finished green, and doctor
+    still reported it as never having run.
+
+    A chunked command does not raise for a failed chunk — it tallies the outcome and picks
+    its exit code afterwards — so "nothing escaped" does not mean "it worked". The run is
+    `ok` only when nothing escaped AND no chunk failed; anything else is `failed`, the same
+    verdict `_tracked_run` reaches under `ingest all`, where the pipeline's aggregated
+    `IngestPartialFailure` is what escapes. As there, `failed` does not imply a non-zero
+    exit: a transient-only run exits 0 and still records `failed`.
+    """
+    started = time.monotonic()
+    tracker: ChunkTracker | None = None
+    try:
+        with chunked_run(name, total=total, params=params) as tracker:
+            yield tracker
+    except Exception as exc:
+        detail = str(exc) if tracker is None else f"{exc} ({_chunk_tally(tracker)})"
+        ingestion_heartbeat.record(
+            name, "failed", duration_s=round(time.monotonic() - started, 2), detail=detail
+        )
+        raise
+    if tracker.chunks_failed:
+        ingestion_heartbeat.record(
+            name,
+            "failed",
+            duration_s=round(time.monotonic() - started, 2),
+            detail=_chunk_tally(tracker),
+        )
+    else:
+        ingestion_heartbeat.record(name, "ok", duration_s=round(time.monotonic() - started, 2))
+
+
 def _echo_chunk_result(tracker: ChunkTracker, outcome: ChunkOutcome) -> None:
     """Print one finished chunk's result line, mirroring its status."""
     duration = tracker.last_duration_s
@@ -812,14 +861,14 @@ def ingest_comtrade(
     # The (year, reporter-batch) loop, continue-on-failure, and stop-on-quota all
     # live in comtrade_pipeline.run; the CLI presents the ChunkOutcome stream.
     quota_hit = False
-    with chunked_run("comtrade", total=total) as tracker:
-        console.print(f"[dim]event log:[/dim] {tracker.log_path}")
-        console.print(
-            f"[bold]COMTRADE ingest:[/bold] {total} chunk(s) "
-            f"[dim]({mode}, {len(reporters)} reporters)[/dim]"
-        )
-        on_chunk_start, on_chunk = _make_chunk_handlers(tracker)
-        try:
+    try:
+        with _tracked_chunked_run("comtrade", total=total) as tracker:
+            console.print(f"[dim]event log:[/dim] {tracker.log_path}")
+            console.print(
+                f"[bold]COMTRADE ingest:[/bold] {total} chunk(s) "
+                f"[dim]({mode}, {len(reporters)} reporters)[/dim]"
+            )
+            on_chunk_start, on_chunk = _make_chunk_handlers(tracker)
             comtrade_pipeline.run(
                 settings,
                 full=full,
@@ -829,14 +878,22 @@ def ingest_comtrade(
                 on_chunk_start=on_chunk_start,
                 on_chunk=on_chunk,
             )
-        except ComtradeQuotaError as exc:
-            # Daily quota exhausted mid-run — stop cleanly; re-running resumes
-            # from the un-archived chunks. (pipeline_end still emits on __exit__.)
-            quota_hit = True
-            console.print(
-                f"\n[yellow bold]⚠ COMTRADE quota exhausted[/yellow bold] [dim]({exc})[/dim]\n"
-                "[dim]Re-run to resume — archived chunks are skipped.[/dim]"
-            )
+    except ComtradeQuotaError as exc:
+        # Daily quota exhausted mid-run — stop cleanly; re-running resumes
+        # from the un-archived chunks. (pipeline_end still emits on __exit__.)
+        #
+        # Caught OUTSIDE the tracked block on purpose, so the heartbeat records the run
+        # as `failed` with the quota message and the chunk tally. doctor measures this
+        # source's window on its last `ok`, and this exit is 0, so the Cloud Monitoring
+        # alert stays quiet: an `ok` here would let a run that keeps stopping short read
+        # green month after month. One quota stop shows as "roda mas não conclui" once
+        # the last complete run leaves the window, and that is true: the un-archived
+        # chunks wait for the next run.
+        quota_hit = True
+        console.print(
+            f"\n[yellow bold]⚠ COMTRADE quota exhausted[/yellow bold] [dim]({exc})[/dim]\n"
+            "[dim]Re-run to resume — archived chunks are skipped.[/dim]"
+        )
 
     if quota_hit:
         # Daily quota exhaustion is EXPECTED and self-healing: the next scheduled run
