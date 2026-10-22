@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.104.4] - 2026-10-22
+
+**O aviso `quality-drift` do `doctor` de hoje, explicado build a build.** Só documentação; nenhum
+número, tela ou comportamento muda (sem tag, pela política de release). O aviso lista 10 mudanças nas
+marcas de qualidade em quatro builds de produção de 21 e 22/10 e pede que, se foram intencionais, o
+CHANGELOG diga. Foram: todas vêm de três versões deste intervalo. Cada uma foi medida contra
+`serving_quality_history` e o Gold de hoje, com consultas só de leitura (~320 MB no total).
+
+### Registrado
+- **21/10 00:51: banana convertida (v1.99.0, build disparado do ramo antes do merge).**
+  - PAM `PROBLEMATIC_VALUE` 5 → 27, sem nenhuma linha nova.
+  - A entrada 1.99.0 já previa isso, e as diferenças batem exatamente com as transições que ela
+    listou: `PROBLEMATIC_VALUE` +22; `OUTLIER_QUANTITY` −455 (+139 − 594); `OK` +2.355
+    (+8.094 − 6.333 + 594).
+- **21/10 01:11: laranja, limão e tangerina entram na PAM (v1.99.0, mesmo ramo).**
+  - +771.882 linhas (257.294 por produto), exatamente as dos três citros no Gold de hoje.
+  - O detector compara cada linha com a mediana do **próprio** produto, então os que já estavam não
+    são afetados; as diferenças por marca somam exatamente as linhas novas. Os avisos são de
+    proporção.
+  - `OK` 40,9% → 37,1% e `UNSCORED` 58,9% → 62,4% das linhas: 72,6% das linhas novas não têm base
+    para avaliar, contra 58,0% no resto da PAM. Não é defeito.
+  - `OUTLIER_QUANTITY` 1.103 → 5.283 e `OUTLIER_VALUE` 6,0% → 9,1% do valor. `OUTLIER_VALUE` é
+    magnitude alta com preço coerente, e é onde está a maior parte do valor dos citros: laranja
+    65,0%, limão 62,2%, tangerina 44,7%. É a concentração da produção: na laranja, 84,6% desse valor
+    está em municípios de SP.
+- **21/10 14:51: NCM de fruta e de suco de laranja no COMEX (v1.100.0, build disparado do ramo).**
+  - +105.110 linhas, iguais marca por marca às dessas NCM no Gold de hoje.
+  - `UNSCORED` 61,8% → 66,0% e `OK` 37,5% → 33,0%: 81,4% das linhas novas não são avaliadas, e
+    85.505 das 85.506 estão abaixo de US$ 100 mil. São fluxos mensais pequenos, sob o piso de
+    materialidade.
+- **22/10 00:26: valor anual corrigido pela média dos índices (v1.103.0, merge em `main`).**
+  - PAM `PROBLEMATIC_VALUE` 28 → 6: as 22 linhas que a entrada 1.103.0 previu.
+  - PEVS `OUTLIER_VALUE` 21,3% → 26,3% e `OK` 77,7% → 72,7% **do valor**, com `OUTLIER_VALUE` indo
+    de 1.383 para 1.379 linhas. Quase nada mudou de marca; o que mudou foi o **peso** das linhas.
+  - A regra nova eleva os valores corrigidos até 1994 (IGP-DI, média ÷ dezembro: 0,29 em 1989, 0,31
+    em 1993). 73% do valor `OUTLIER_VALUE` do PEVS está nesses anos, contra 23,5% do valor `OK`.
+  - Contraprova: com as marcas de hoje e o peso da regra de dezembro, `OUTLIER_VALUE` volta a 19,9%.
+    A mudança de peso responde por +6,4 p.p., e as linhas que trocaram de marca por −1,4 p.p. (a
+    v1.103.0 já avisava que 1989 ganharia `OUTLIER_*`). A reconstrução é aproximada: uma marca com 87
+    linhas nos dois builds sai 0,129%, contra os 0,133% registrados.
+
+### Observado
+- O `doctor` mostra 8 das 10 linhas e corta o resto em "+2 more". As duas cortadas são as do PEVS,
+  a maior mudança em **valor**.
+- O aviso sai da janela de 14 dias em **2026-11-05**, com a mudança de 22/10 00:26. Uma mudança nova
+  antes disso aparece junto destas; as que esta entrada explica são as dez acima.
+
+---
+
 ## [1.104.3] - 2026-10-22
 
 **`embrapa ingest comtrade` passa a gravar o heartbeat de cada execução.** É o achado que a 1.104.2
