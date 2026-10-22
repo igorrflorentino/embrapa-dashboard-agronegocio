@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.104.0] - 2026-10-22
+
+**Proteções contra o que o item D da auditoria `unidades_e_deflacao_audit_2026-10-21.md` achou.** O item
+D descrevia, à mão e depois do fato, problemas que uma leitura curta da série nacional mostra antes de
+cadastrar. Esta versão transforma essa leitura em ferramenta (antes de cadastrar), em teste de build
+(depois de ingerir) e em medição do universo de unidades do SIDRA. **Nenhum número publicado muda**: a
+seed ganha duas linhas que só valem para um produto que ainda não está no catálogo, e o teste novo é um
+aviso (`warn`) que não derruba o build.
+
+### Adicionado
+- **`embrapa discover ibge-series-check`** (`--table-id`, `--codes`, `--all`; sai com 1 se algum produto
+  tem achado). Lê no SIDRA a série **nacional** de quantidade dos candidatos, nas cinco tabelas do IBGE
+  (5457, 289, 291, 74, 3939), e relata: **mudança de nível persistente** (a mediana dos 3 anos de um ano
+  em diante a ≥ 3× ou ≤ 1/3 da dos 3 anteriores — uma troca de unidade ou de método deixa um nível novo
+  que fica; uma oscilação de **um** ano nunca move a mediana de três), unidade sem linha em
+  `unit_family_conversions`, `*` no nome fora de `pam_count_unit_products`, categoria de um ano só,
+  buraco dentro da série, rótulo de unidade que muda. Um fruto já coberto por `pam_fruit_unit_eras` tem
+  o degrau de 2001 relatado como *explicado*, não como achado. A unidade só é lida das células **com
+  valor**: o SIDRA devolve `MN` preenchido em células `...` e vazio em outras, e nenhum dos dois diz
+  nada sobre a unidade.
+- **`assert_ibge_production_no_persistent_level_shift`** (`warn`): a mesma regra em SQL sobre
+  `serving_{pam,pevs,ppm}_annual`, **depois** da conversão de unidade, para o que já foi ingerido. Uma
+  linha por mudança (um degrau no ano Y marca as janelas de Y−1, Y e Y+1; elas são uma só).
+- **`tests/test_sidra_unit_universe.py`** + **`mil árvores`** (e a grafia sem acento) em
+  `unit_family_conversions`: a varredura do universo do SIDRA achou **uma** unidade de quantidade sem
+  conversão, `Mil árvores` (PEVS `3449`, pinheiro-brasileiro abatido), que cairia em `desconhecida` com
+  `qty_base` nulo, achado só **depois** de a quantidade entrar no Gold. Os 7 rótulos de unidade das 5
+  tabelas ficam fixados.
+- **44 testes** (`tests/test_discover_series_check.py`), com a regra, cada achado, o pedido ao SIDRA, a
+  paridade dos ids com `config.py` e a paridade dos números com o arquivo SQL.
+
+### Medido (2026-10-22), não suposto
+- **Python e SQL dão o mesmo resultado**: 109 mudanças em cada, nas **193 séries nacionais reais**
+  (6.457 pontos) das cinco tabelas, alimentando o SQL compilado com as séries brutas do SIDRA no lugar
+  da CTE `annual`.
+- **Contraprova sintética** (9 séries): degrau ×5 e queda ×0,25 saem no ano certo; uma oscilação de um
+  ano, ruído de ±30%, um buraco no degrau e 2,9× **não** saem; 3,1× sai; dois degraus dão duas linhas.
+- **Calibração**: nos 38 produtos que as tabelas pré-agregadas de produção têm (PAM 14, PEVS 10, PPM 14)
+  o teste dá **0 linhas a 3×** e 13 a 2× (variações reais: castanha de caju, madeira nativa, rebanhos,
+  leite, razões 2,0–2,6). 3× é o primeiro fator sem alarme falso no que está em produção.
+- **O que continua sem pegar**, dito no teste e na auditoria: abacate (×0,45), manga (×0,36), melão
+  (×1,5) e mamão (×0,88) ficam dentro da banda de 3×; a proteção deles continua sendo a **lista do
+  IBGE** em `pam_fruit_unit_eras`. O marmelo (×0,25), que o teste de degrau de 4× deixa passar por
+  3,97×, este pega. Um episódio de **dois** anos aparece como um par subida/descida.
+
+### Documentação
+- Runbook (§ Adding a PAM product), `CLAUDE.md`, `README.md`, skill `ingest-data` e `.env.example`
+  passam a mandar rodar o comando **antes** de cadastrar. A auditoria ganha a seção "As proteções contra
+  o que D achou", com a tabela do que cada camada mede e os limites.
+
+---
+
 ## [1.103.2] - 2026-10-22
 
 **Correção de duas afirmações do item D da auditoria `unidades_e_deflacao_audit_2026-10-21.md`**, achadas ao

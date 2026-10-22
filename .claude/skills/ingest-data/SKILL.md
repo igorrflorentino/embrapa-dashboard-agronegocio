@@ -115,6 +115,7 @@ For finding codes and periods before adding new products/series:
 ```powershell
 uv run embrapa discover ibge-periods   --table-id 289
 uv run embrapa discover ibge-products  --keywords castanha,madeira
+uv run embrapa discover ibge-series-check --table-id 5457 --codes 40124,40151   # BEFORE registering a product (unit, level shift, '*')
 uv run embrapa discover bcb-series     433
 ```
 

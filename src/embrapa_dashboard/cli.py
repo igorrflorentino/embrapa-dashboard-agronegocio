@@ -1106,6 +1106,56 @@ def discover_ibge_periods(
     )
 
 
+@discover_app.command("ibge-series-check")
+def discover_ibge_series_check(
+    table_id: str = typer.Option(
+        "5457", "--table-id", "-t", help="SIDRA table (5457, 289, 291, 74, 3939)"
+    ),
+    codes: str = typer.Option(
+        "",
+        "--codes",
+        "-c",
+        help="Comma-separated product codes to check; empty = every product of the table",
+    ),
+    all_findings: bool = typer.Option(
+        False, "--all", help="Also list the products with nothing to report"
+    ),
+) -> None:
+    """Check candidate products' NATIONAL series BEFORE registering them.
+
+    Reads the series straight from SIDRA and looks for what the 2026-10 audit found by hand: a unit
+    printed as 'Toneladas' that IBGE counted, a persistent level shift, a unit with no conversion in
+    the seeds, a category born last year, an erratic series. Exits 1 if any product has a finding.
+    """
+    wanted = [c.strip() for c in codes.split(",") if c.strip()]
+    try:
+        checks = discover.scan_ibge_series(table_id, wanted or None)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=2) from exc
+    flagged = [c for c in checks if c.findings]
+    for c in sorted(checks, key=lambda c: (not c.findings, c.code)):
+        if not c.findings and not all_findings:
+            continue
+        mark = "[red]✗[/red]" if c.findings else "[green]✓[/green]"
+        console.print(f"{mark} [cyan]{c.code}[/cyan] {c.name}")
+        for finding in c.findings:
+            console.print(f"    [red]•[/red] {finding}")
+        console.print(f"    [dim]{'; '.join(c.notes)}[/dim]")
+    console.print(
+        f"\n[bold]Table {table_id}[/bold] — {len(checks)} products checked, "
+        f"{len(flagged)} with something to look at before registering"
+    )
+    if flagged:
+        console.print(
+            "[dim]A persistent level shift is a prompt to look, not proof: a change of unit or "
+            "method leaves a new stable level, but so does a crop that really vanished (juta, "
+            "rami). Read IBGE's notes for the table before deciding; a unit change goes in the "
+            "seeds BEFORE the product is registered.[/dim]"
+        )
+        raise typer.Exit(code=1)
+
+
 @discover_app.command("bcb-series")
 def discover_bcb_series(
     code: str = typer.Argument(..., help="SGS series code (e.g. 433)"),

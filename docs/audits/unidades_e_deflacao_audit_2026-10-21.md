@@ -228,9 +228,43 @@ Só documentação, comentários e testes (nenhum número de produção muda por
 
 1. ~~Decidir C (opção b + a, ou só a)~~ — decidido e feito na v1.103.0: opção (b) com uma regra para as cinco séries, IGP-M começando em 1990, e o aviso (a) no painel.
 2. ~~Pré-carregar as 13 frutas e fixar a lista do IBGE em teste (A)~~ — feito na v1.102.0.
-3. **Antes de cadastrar qualquer produto de D**: acrescentar `mil árvores` à seed de unidades (3449),
-   explicar a quebra de 1987–1990 e os níveis de 1996 (3462, 3448); as nove categorias de 2025 só
-   precisam de que se saiba que têm um ano de história.
+3. ~~Acrescentar `mil árvores` à seed de unidades (3449)~~ — feito na v1.104.0, junto das proteções
+   abaixo. **Antes de cadastrar qualquer produto de D**, ainda falta (só documentação; nada publicado
+   é afetado) explicar a quebra de 1987–1990 e os níveis de 1996 (3462, 3448); as nove categorias de
+   2025 só precisam de que se saiba que têm um ano de história. O comando `discover
+   ibge-series-check` reproduz cada um desses achados em segundos.
+
+## As proteções contra o que D achou (v1.104.0)
+
+Três camadas, uma antes e uma depois de cadastrar, e uma que fecha o universo:
+
+| camada | o que faz | medido |
+|---|---|---|
+| `embrapa discover ibge-series-check` | **antes de cadastrar**: lê a série nacional dos candidatos no SIDRA e relata mudança de nível persistente, unidade sem conversão, `*` fora de `pam_count_unit_products`, categoria de um ano só, buraco na série, rótulo de unidade que muda | contra o SIDRA real (2026-10-22): banana ×12,21 e laranja ×0,16 em 2001 saem como *explicados pela seed*; o marmelo (×0,25 em 2001) sai como achado; o `3449` (`Mil árvores`) passa limpo depois da linha na seed; as categorias de 2025 saem como "um ano só"; o `3462` na t289 é nomeado como código inexistente na tabela (ele é da t291, onde sai como ×3,49 a partir de 1996); o `3448` sai como um par ×3,46 em 1997 / ×0,08 em 2002, um episódio de cinco anos |
+| `assert_ibge_production_no_persistent_level_shift` (warn) | **depois de ingerir**: a mesma regra em SQL sobre as três tabelas pré-agregadas do IBGE, já com a conversão aplicada | **idêntico ao Python**: 109 mudanças em 193 séries reais (6.457 pontos) das cinco tabelas; **0 linhas** nos 38 produtos em produção a 3× e 13 a 2×, por isso o fator é 3 |
+| `tests/test_sidra_unit_universe.py` + 2 linhas na seed | **fecha o universo**: toda unidade de quantidade que o SIDRA usa em PAM, PEVS e PPM (medida) tem linha em `unit_family_conversions`; `Mil árvores` era a única que faltava | 5 tabelas, 7 rótulos de unidade |
+
+**A regra** compara NÍVEIS, não degraus: a mediana dos 3 anos de um ano em diante contra a dos 3
+anteriores, a ≥ 3× ou ≤ 1/3. Uma troca de unidade ou de método deixa um nível novo que fica; uma
+safra, uma geada ou um surto oscila e volta, e **uma oscilação de UM ano nunca move a mediana de
+três**.
+
+**Limites, medidos, não escondidos:**
+
+- Cego a mudança de unidade dentro da banda de 3×: dos 17 frutos do IBGE, abacate (×0,45), manga
+  (×0,36), melão (×1,5) e mamão (×0,88) passam sem ser vistos. A proteção deles continua sendo a
+  **lista do IBGE** na seed `pam_fruit_unit_eras`; o marmelo (×0,25), que o teste de degrau de 4×
+  deixa passar por 3,97×, este pega.
+- Um episódio de **dois** anos aparece como um par subida/descida, não como nada: leia o par junto.
+- Uma mudança de nível é um **convite para olhar**, não prova: uma lavoura que acabou de verdade
+  (juta, rami) também deixa um nível novo. A varredura da tabela inteira dá 109 mudanças em 193
+  séries — é um mapa, não um alarme.
+- O critério "persistente" **precisa de 3 anos de cada lado**: uma mudança nos 2 últimos anos da série
+  só é vista quando o terceiro chegar.
+
+Reprodução: `uv run embrapa discover ibge-series-check --table-id 5457 --all` (ou `-t 289`, `291`, `74`,
+`3939`). A paridade Python×SQL foi medida em 2026-10-22 alimentando o SQL compilado com as séries
+brutas do SIDRA no lugar da CTE `annual`.
 
 ## Reproduzir
 
