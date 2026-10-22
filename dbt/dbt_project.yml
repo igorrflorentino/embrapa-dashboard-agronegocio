@@ -112,6 +112,9 @@ vars:
   inflation_series_igpm:  "{{ env_var('BCB_INFLATION_SERIES_IGPM_CODE',  '189') }}"
   inflation_series_igpdi: "{{ env_var('BCB_INFLATION_SERIES_IGPDI_CODE', '190') }}"
 
+  # The annual deflation rule (the MEAN of the year's monthly indices, one rule for the five
+  # series) lives in macros/annual_deflation_ctes.sql — it is not a var.
+
   # The FOREIGN deflators, feeding val_real_cpi_usd / val_real_hicp_eur. Same env_var
   # NAME + default coupling as the three above (config.py declares the identical keys;
   # `embrapa doctor` validates the parity). These are the PUBLISHER's series ids, not

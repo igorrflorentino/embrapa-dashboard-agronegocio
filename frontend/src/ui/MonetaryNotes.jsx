@@ -1,4 +1,5 @@
-// MonetaryNotes — two honest-labelling atoms for monetary series.
+// MonetaryNotes — three honest-labelling atoms for monetary series (ValueGapNote,
+// NominalSeriesNote and HighInflationNote, the last one at the end of this header).
 //
 // ValueGapNote names the part of the window the chosen currency × correction cannot
 // value. A SUM skips a NULL in silence: € sem correção only exists from 1999, COMEX
@@ -156,6 +157,41 @@ window.valueGapMotivo = (gap, conv) => {
   };
 };
 
+// ── Anos de inflação muito alta ─────────────────────────────────────────────────────────────
+// O valor anual de cada produto é corrigido pela MÉDIA do índice do ano (v1.103.0; antes era o
+// índice de dezembro, que subestimava os anos até 1994 em 1,1× a 3,5×). A média é o estimador
+// certo para um fluxo de volume uniforme ao longo do ano, mas o IBGE só publica o valor do ano:
+// não se sabe como ele se distribuiu entre os meses, e com inflação de dois dígitos por mês isso
+// pesa. Medido em produção 2026-10-21: de 1987 a 1994, em CADA ano, houve pelo menos seis
+// meses acima de 10% no IGP-DI (de 1995 a 2026: nenhum, o máximo mensal é 5,8%). Por isso os valores corrigidos dos
+// anos até 1994 são indicativos — e a nota existe para que ninguém leia a série corrigida desses
+// anos como uma trajetória real (docs/audits/deflacao_indice_medio_2026-10-21.md).
+//
+// Só vale para R$ corrigido por índice brasileiro: o nominal tem a sua própria regra (as
+// reformas monetárias), e US$/€ só começam em 1994/1999. O período é o da tela; sem início
+// conhecido, não se afirma nada.
+const _CORRECOES_DO_REAL = ['IPCA', 'IGP-M', 'IGP-DI'];
+const _ULTIMO_ANO_INFLACAO_ALTA = 1994;
+
+window.inflacaoAltaNoPeriodo = (conv, start) => {
+  if (!conv || conv.currency !== 'BRL' || !_CORRECOES_DO_REAL.includes(conv.correction)) return false;
+  if (start == null || start === '') return false;
+  const ano = Number(String(start).slice(0, 4));
+  return Number.isFinite(ano) && ano <= _ULTIMO_ANO_INFLACAO_ALTA;
+};
+
+function HighInflationNote({ conventions, start }) {
+  if (!window.inflacaoAltaNoPeriodo(conventions, start)) return null;
+  return (
+    <p className="caption high-inflation-note" style={{ marginTop: 8 }}>
+      <strong>Valores corrigidos de anos até {_ULTIMO_ANO_INFLACAO_ALTA} são indicativos.</strong>{' '}
+      A inflação era muito alta (de 1987 a 1994, mais de 10% ao mês em pelo menos seis meses de
+      cada ano), e o valor anual é corrigido pela média do índice do ano, sem saber como ele se
+      distribuiu entre os meses. Comparar esses anos com 1995 em diante pode distorcer.
+    </p>
+  );
+}
+
 function NominalSeriesNote() {
   return (
     <p className="caption nominal-series-note" style={{ padding: '10px 2px 2px' }}>
@@ -170,3 +206,4 @@ function NominalSeriesNote() {
 window.listaAnosBR = _anos;
 window.ValueGapNote = ValueGapNote;
 window.NominalSeriesNote = NominalSeriesNote;
+window.HighInflationNote = HighInflationNote;

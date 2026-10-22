@@ -125,9 +125,9 @@ enriched as (
         b.*,
         fy.brl_per_usd_avg,
         fy.brl_per_eur_avg,
-        iy.ipca_year_end,
-        iy.igpm_year_end,
-        iy.igpdi_year_end,
+        iy.ipca_year_avg,
+        iy.igpm_year_avg,
+        iy.igpdi_year_avg,
         il.ipca_current,
         il.igpm_current,
         il.igpdi_current,
@@ -137,11 +137,11 @@ enriched as (
         -- Real-IPCA BRL: val_raw is already in present-day BRL (Silver applied
         -- the historical_currency_factors seed); we now apply the IPCA chain
         -- ratio to bring the year-of-record purchasing power up to today.
-        b.val_raw * safe_divide(il.ipca_current,  iy.ipca_year_end)  as val_real_ipca_brl,
+        b.val_raw * safe_divide(il.ipca_current,  iy.ipca_year_avg)  as val_real_ipca_brl,
         -- Real-IGPM BRL: same logic with the alternative series.
-        b.val_raw * safe_divide(il.igpm_current,  iy.igpm_year_end)  as val_real_igpm_brl,
+        b.val_raw * safe_divide(il.igpm_current,  iy.igpm_year_avg)  as val_real_igpm_brl,
         -- Real-IGPDI BRL: same logic, broader index (wholesale + consumer + construction).
-        b.val_raw * safe_divide(il.igpdi_current, iy.igpdi_year_end) as val_real_igpdi_brl,
+        b.val_raw * safe_divide(il.igpdi_current, iy.igpdi_year_avg) as val_real_igpdi_brl,
         -- ── Correção no PRÓPRIO nível de preços da moeda ────────────────────────
         -- The columns above answer "what is this worth in R$ of today" and then, in the
         -- final select, divide by TODAY's exchange rate — so the dollar figure they
@@ -161,14 +161,14 @@ enriched as (
         -- through brl_per_eur_avg, which the macro already nulls at the source.
         case when b.reference_year >= 1994
             then safe_divide(b.val_raw, fy.brl_per_usd_avg)
-                 * safe_divide(il.cpi_current, iy.cpi_year_end) end     as val_real_cpi_usd,
+                 * safe_divide(il.cpi_current, iy.cpi_year_avg) end     as val_real_cpi_usd,
         case when b.reference_year >= 1994
             then safe_divide(b.val_raw, fy.brl_per_eur_avg)
-                 * safe_divide(il.hicp_current, iy.hicp_year_end) end   as val_real_hicp_eur
+                 * safe_divide(il.hicp_current, iy.hicp_year_avg) end   as val_real_hicp_eur
 
     from base_pevs b
     left join fx_year            fy  on b.reference_year = fy.reference_year
-    left join inflation_year_end iy  on b.reference_year = iy.reference_year
+    left join inflation_year_avg iy  on b.reference_year = iy.reference_year
     cross join inflation_latest  il
     cross join fx_latest         fxl
 

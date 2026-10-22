@@ -367,9 +367,10 @@ def test_snapshot_comex_names_the_months_the_convention_cannot_value(monkeypatch
 
 
 def test_snapshot_ibge_names_the_years_the_convention_cannot_value(monkeypatch):
-    """v1.80.0: the IBGE Gold deflates by the year-end index, so where the index series does
-    not reach, the whole year is valueless — PAM/PPM have no R$ · IPCA, the DEFAULT
-    convention, in 1974–1979 (measured 2026-09-13). The snapshot asks the annual mart."""
+    """v1.80.0: the IBGE Gold deflates by the year's index (the mean of its months since
+    v1.103.0), so where the index series does not reach, the whole year is valueless —
+    PAM/PPM have no R$ · IPCA, the DEFAULT convention, in 1974–1979 (measured 2026-09-13).
+    The snapshot asks the annual mart."""
     seam = _seam()
     _stub_snapshot_readers(seam, monkeypatch, uf_yearly=pd.DataFrame(), source="ibge_pevs")
     pedidos: list = []

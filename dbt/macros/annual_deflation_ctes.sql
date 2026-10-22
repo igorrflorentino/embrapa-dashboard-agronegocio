@@ -1,6 +1,6 @@
 {# Shared inflation-index + FX CTEs for the annual deflation pipeline.
 
-   These four CTEs (inflation_year_end, inflation_latest, fx_year, fx_latest) were
+   These four CTEs (inflation_year_avg, inflation_latest, fx_year, fx_latest) were
    copy-pasted byte-for-byte into gold_pevs_production, gold_pam_production,
    gold_ppm_production and gold_comtrade_flows. Verified identical: the COMPILED SQL of
    this block is byte-for-byte equal across all four models (only comment wording
@@ -16,30 +16,59 @@
    intentionally NOT part of this macro.
 
    Emits the four CTE definitions WITHOUT a trailing comma; the caller adds the `,` before
-   its own `enriched as (...)` CTE. #}
+   its own `enriched as (...)` CTE.
+
+   WHICH INDEX DEFLATES A YEAR: the MEAN of the year's twelve monthly indices (v1.103.0; until
+   then it was the DECEMBER index). An annual value is a FLOW accrued through the year, so its
+   price level is the year's mean, not December's. If the real volume is the same every month
+   the nominal value of each month is proportional to that month's index, the year sums to
+   q × Σ index, and the real value is `sum ÷ mean index`. December and the mean coincide when
+   inflation is low and part ways in hyperinflation: IGP-DI December ÷ mean is 3.2 in 1993 and
+   3.5 in 1989, and mostly 0.99-1.05 from 1995 on with peaks of 1.17 (2002) and 1.13 (2020)
+   (docs/audits/deflacao_indice_medio_2026-10-21.md). Under the December rule every pre-1995
+   corrected value was understated by that factor and the deflated price of EVERY IBGE product
+   jumped ×2-4 between 1993 and 1994.
+   ONE rule for the five series (IPCA, IGP-M, IGP-DI, CPI-U, HICP): a single sentence to state
+   and to defend. CPI-U and HICP move at most 3.2% with it, with no visible defect to justify a
+   separate rule. COMEX is monthly and deflates by its OWN month's index (gold_comex_flows).
+   A year is deflated only when its index covers all 12 months, except the LAST year of that
+   series, which is still open and uses the mean of the months present. A series that starts
+   mid-year (IGP-M, 1989-06) therefore has no corrected value for that first year — IGP-M
+   starts in 1990 — instead of a mean over the part of the year it covers; the gap shows on
+   screen by itself, because `valueGap` is measured on the data, not on the index's first year.
+   Internal month gaps are guarded by assert_inflation_series_no_month_gaps and
+   assert_foreign_inflation_no_month_gaps. #}
 {%- macro annual_deflation_ctes() -%}
-inflation_year_end as (
+inflation_year_avg as (
 
     select
         reference_year,
-        max(case when series_code = '{{ var("inflation_series_ipca")  }}' then index_value end) as ipca_year_end,
-        max(case when series_code = '{{ var("inflation_series_igpm")  }}' then index_value end) as igpm_year_end,
-        max(case when series_code = '{{ var("inflation_series_igpdi") }}' then index_value end) as igpdi_year_end,
-        -- The FOREIGN deflators. Same pivot, same year-end rule, different question:
+        max(case when series_code = '{{ var("inflation_series_ipca")  }}' then index_value end) as ipca_year_avg,
+        max(case when series_code = '{{ var("inflation_series_igpm")  }}' then index_value end) as igpm_year_avg,
+        max(case when series_code = '{{ var("inflation_series_igpdi") }}' then index_value end) as igpdi_year_avg,
+        -- The FOREIGN deflators. Same pivot, same yearly-mean rule, different question:
         -- these correct a dollar by US prices and a euro by euro-area prices, which is
         -- what a value denominated in those currencies actually needs. A Brazilian
         -- index can only ever say what something is worth in R$ — expressing that in
         -- US$ afterwards changes the symbol, not the price level it was measured at.
-        max(case when series_code = '{{ var("inflation_series_cpi")   }}' then index_value end) as cpi_year_end,
-        max(case when series_code = '{{ var("inflation_series_hicp")  }}' then index_value end) as hicp_year_end
+        max(case when series_code = '{{ var("inflation_series_cpi")   }}' then index_value end) as cpi_year_avg,
+        max(case when series_code = '{{ var("inflation_series_hicp")  }}' then index_value end) as hicp_year_avg
     from (
-        select reference_year, series_code, index_value
-        from {{ ref('silver_inflation') }}
-        where index_value is not null
-        qualify row_number() over (
-            partition by reference_year, series_code
-            order by reference_month desc
-        ) = 1
+        select reference_year, series_code, avg(index_value) as index_value
+        from (
+            select
+                reference_year,
+                reference_month,
+                series_code,
+                index_value,
+                -- the series' own last year: still open, so it may be partial
+                max(reference_year) over (partition by series_code) as series_last_year
+            from {{ ref('silver_inflation') }}
+            where index_value is not null
+        )
+        group by reference_year, series_code, series_last_year
+        having count(distinct reference_month) = 12
+            or reference_year = series_last_year
     )
     group by reference_year
 

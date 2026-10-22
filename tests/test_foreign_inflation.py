@@ -6,7 +6,8 @@ on, because both were the shape of a real defect elsewhere in this pipeline:
 1. **What is dropped is dropped deliberately.** BLS ships the ANNUAL AVERAGE in the same
    list as the months (period ``M13``), and the ECB will serve an annual or quarterly row
    for a differently-keyed series. Either one, kept, gives a year a second candidate
-   "last month" — and the Gold year-end index is exactly ``the last month of the year``.
+   13th "month" — and the Gold deflates a year by the MEAN of its twelve monthly indices, only
+   when it has exactly twelve.
 2. **A deflator that never arrives fails LOUDLY.** A typo'd series id answers empty, and
    an empty cold series that is merely skipped leaves ``val_real_cpi_usd`` NULL forever
    with every layer reporting success — the failure mode this whole feature exists to
@@ -79,7 +80,7 @@ def test_bls_maps_monthly_periods_to_the_shared_date_shape() -> None:
 @responses.activate
 def test_bls_drops_the_annual_average_row() -> None:
     """M13 is the year's average, not a 13th month. Kept, it would compete with
-    December for the year-end index the Gold deflation reads."""
+    the twelve months whose mean the Gold deflation reads."""
     responses.add(
         responses.GET,
         _BLS_URL,

@@ -280,3 +280,42 @@ describe('MainScreen — o contador de linhas ignora a seleção de qualidade', 
     expect(linhasLidas(container)).toContain('500');
   });
 });
+
+// O aviso de "valores corrigidos de anos até 1994 são indicativos" (v1.103.0) é montado aqui,
+// uma vez, em vez de em cada perspectiva. A regra de QUANDO aparece é de window.inflacaoAltaNoPeriodo
+// (MonetaryNotes.test.jsx); o que se prova aqui é a montagem: recebe a convenção ativa e o início
+// do período da tela, e as perspectivas sem valor em moeda não o recebem.
+describe('MainScreen — aviso de anos de inflação muito alta', () => {
+  beforeEach(() => {
+    window.HighInflationNote = ({ conventions, start }) => (
+      <div className="child-inflacao-alta" data-correction={conventions && conventions.correction} data-start={start} />
+    );
+  });
+
+  it('monta o aviso com a convenção ativa e o início do período', () => {
+    const { container } = render(
+      <MainScreen filters={{ startDate: '1974-01-01' }} view="overview" database="ibge_pevs" basket={['P1']}
+                  conventions={{ currency: 'BRL', correction: 'IGP-DI' }} />
+    );
+    const nota = container.querySelector('.child-inflacao-alta');
+    expect(nota).toBeTruthy();
+    expect(nota.getAttribute('data-correction')).toBe('IGP-DI');
+    expect(nota.getAttribute('data-start')).toBe('1974-01-01');
+  });
+
+  it('sem convenção própria, usa a padrão do painel', () => {
+    const { container } = render(
+      <MainScreen filters={{ startDate: '1986-01-01' }} view="overview" database="ibge_pevs" basket={['P1']} />
+    );
+    expect(container.querySelector('.child-inflacao-alta').getAttribute('data-correction')).toBe('IPCA');
+  });
+
+  it.each(['quality', 'dados', 'rebanho', 'productivity'])(
+    'não monta o aviso em %s, que não mostra valor em moeda', (view) => {
+      window.viewById = (id) => ({ id, label: id, group: { label: 'grupo' }, status: 'live' });
+      const { container } = render(
+        <MainScreen filters={{ startDate: '1974-01-01' }} view={view} database="ibge_pevs" basket={['P1']} />
+      );
+      expect(container.querySelector('.child-inflacao-alta')).toBeNull();
+    });
+});

@@ -30,8 +30,8 @@
 -- via comtrade_country.
 --
 -- Monetary conventions (mirror gold_comex_flows — source value is nominal US$,
--- but annual, so FX is the year average and inflation the year-end index like
--- gold_pevs_production):
+-- but annual, so FX is the year average and inflation the year's MEAN index, like
+-- gold_pevs_production; gold_comex_flows is monthly and uses the month's own index):
 --   • val_yearfx_*   = primary_value_usd converted at THAT year's avg FX. usd is
 --                      the source value; brl/eur triangulate through BRL.
 --                      Nominal — no inflation correction.
@@ -129,13 +129,13 @@ enriched as (
         -- Real BRL today: nominal BRL projected forward via each inflation chain.
         case when b.reference_year >= 1994
             then (b.primary_value_usd * fy.brl_per_usd_avg)
-                * safe_divide(il.ipca_current, iy.ipca_year_end) end                          as val_real_ipca_brl,
+                * safe_divide(il.ipca_current, iy.ipca_year_avg) end                          as val_real_ipca_brl,
         case when b.reference_year >= 1994
             then (b.primary_value_usd * fy.brl_per_usd_avg)
-                * safe_divide(il.igpm_current, iy.igpm_year_end) end                          as val_real_igpm_brl,
+                * safe_divide(il.igpm_current, iy.igpm_year_avg) end                          as val_real_igpm_brl,
         case when b.reference_year >= 1994
             then (b.primary_value_usd * fy.brl_per_usd_avg)
-                * safe_divide(il.igpdi_current, iy.igpdi_year_end) end                        as val_real_igpdi_brl,
+                * safe_divide(il.igpdi_current, iy.igpdi_year_avg) end                        as val_real_igpdi_brl,
 
         -- ── Correção no PRÓPRIO nível de preços da moeda ────────────────────────
         -- The source value here IS US$ — a customs declaration, not a conversion — so
@@ -148,18 +148,18 @@ enriched as (
         -- 1994 because the PTAX of the year is in the currency of the year, while this
         -- column has no such hole — there is no FX in it to go wrong.
         b.primary_value_usd
-            * safe_divide(il.cpi_current, iy.cpi_year_end)                                    as val_real_cpi_usd,
+            * safe_divide(il.cpi_current, iy.cpi_year_avg)                                    as val_real_cpi_usd,
         -- € has no such shortcut: the source is US$, so reaching euros costs one
         -- conversion at the year's rate (triangulated through R$, as val_yearfx_eur is),
         -- and only then the euro-area deflation. Inherits the pre-1994 / pre-1999 NULLs
         -- of the rates it passes through.
         case when b.reference_year >= 1994
             then safe_divide(b.primary_value_usd * fy.brl_per_usd_avg, fy.brl_per_eur_avg)
-                * safe_divide(il.hicp_current, iy.hicp_year_end) end                          as val_real_hicp_eur
+                * safe_divide(il.hicp_current, iy.hicp_year_avg) end                          as val_real_hicp_eur
 
     from base_flows b
     left join fx_year            fy  on b.reference_year = fy.reference_year
-    left join inflation_year_end iy  on b.reference_year = iy.reference_year
+    left join inflation_year_avg iy  on b.reference_year = iy.reference_year
     cross join inflation_latest  il
     cross join fx_latest         fxl
 

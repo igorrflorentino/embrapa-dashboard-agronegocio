@@ -950,13 +950,16 @@ def annual_value_gap(
     """Which years of an annual banco's history ``value_column`` cannot value (backs the
     snapshot's ``valueGap`` for IBGE PEVS/PAM/PPM and COMTRADE).
 
-    Their Gold deflates by the YEAR-END index, so where the index series does not reach, a
-    whole year has no corrected value — measured on the serving marts 2026-09-13: PAM and
-    PPM have no R$ · IPCA (the dashboard's DEFAULT convention) in 1974–1979, no IGP-M in
-    1974–1988, and no € sem correção before 1999. A row only counts when it has a value in
-    the banco's own currency (``native_column``): PPM's herd has no price in ANY
-    convention, and that is not a gap in this one. Unfiltered: the index is per year for
-    every row, so the list holds for any product/UF the browser selects.
+    Their Gold deflates by the MEAN of the year's monthly indices (v1.103.0; December's before)
+    and only when the index covers all twelve months, so where the index series does not reach
+    a whole year has no corrected value — PAM and PPM have no R$ · IPCA (the dashboard's
+    DEFAULT convention) in 1974–1979, no IGP-M in 1974–1989 (1974–1988 until v1.102.0: the
+    series starts in 1989-06, and its first, partial year no longer gets a value), and no €
+    sem correção before 1999 (measured on the serving marts 2026-09-13, IGP-M updated). A row
+    only counts when it has a value in the banco's own currency (``native_column``): PPM's
+    herd has no price in ANY convention, and that is not a gap in this one. Unfiltered: the
+    index is per year for every row, so the list holds for any product/UF the browser
+    selects.
     """
     value_column = _validate_column(value_column, ALLOWED_VALUE_COLUMNS, "value_column")
     native_column = _validate_column(native_column, ALLOWED_VALUE_COLUMNS, "native_column")

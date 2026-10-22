@@ -523,6 +523,17 @@ function MainScreen({ filters, view = 'overview', database = 'ibge_pevs', infoPa
           alvo="somas" />
       )}
 
+      {/* Anos de inflação muito alta: o valor corrigido até 1994 é indicativo (v1.103.0). Só
+          aparece em R$ corrigido por índice brasileiro e quando o período começa em 1994 ou
+          antes — o COMEX (1997) e a COMTRADE (2000) nunca o mostram. Telas sem valor em moeda
+          ficam de fora, como na nota de lacuna. */}
+      {window.HighInflationNote
+        && !['quality', 'dados', 'rebanho', 'productivity'].includes(view) && (
+        <window.HighInflationNote
+          conventions={conventions || window.DEFAULT_CONVENTIONS}
+          start={filters && filters.startDate} />
+      )}
+
       {/* Registry lookup, not a component created during render — see the note on the
           cross-source branch above. Identity changes only when `view` changes, and that
           remount is intended. */}
