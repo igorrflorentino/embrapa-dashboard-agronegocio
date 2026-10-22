@@ -61,7 +61,7 @@ magnitude. Get this wrong and axes/KPIs break.
 
 > **A VALUE field may be `null`, and that is not zero (v1.49.0).** A banco's year range is
 > not its MEASURE's year range: PAM/PPM start in 1974 but IPCA/IGP-DI only reach back to
-> 1980, IGP-M to 1989, USD to 1994 and EUR to **1999** — in EUR, 25 of PAM's 51 years have
+> 1980, IGP-M to 1990 (the series starts in 1989-06 and a year needs its twelve months), USD to 1994 and EUR to **1999** — in EUR, 25 of PAM's 51 years have
 > no value at all. The BFF serializes those as JSON `null` (`serializers._measure`), NOT
 > 0.0, so the chart draws a GAP and the KPI formatters render '—'. Consumers must never do
 > plain arithmetic on these fields: in JS `null * 1e9 === 0`, which silently re-fabricates

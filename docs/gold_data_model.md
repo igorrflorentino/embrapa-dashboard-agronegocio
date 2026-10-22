@@ -223,7 +223,10 @@ worth in THAT economy's money.
 - `val_yearfx_{brl,usd,eur}` — **nominal**, at the FX of the record's period.
 - `val_real_ipca_{brl,usd,eur}` / `val_real_igpm_*` / `val_real_igpdi_*` —
   **deflated to today** via the respective BCB chain index, then converted to a
-  foreign currency at **today's** FX. Under US$ or € this measures **Brazilian**
+  foreign currency at **today's** FX. For the ANNUAL bancos (PEVS, PAM, PPM, COMTRADE) the
+  index of the record's year is the **mean of its twelve monthly indices** (v1.103.0; December's
+  before), and only a year the index covers in full is deflated — so IGP-M has no value before
+  1990. COMEX is monthly: each row uses its own month's index. Under US$ or € this measures **Brazilian**
   purchasing power printed in that currency — it is not US or euro-area inflation.
 - `val_real_cpi_usd` / `val_real_hicp_eur` — converted at the **record's** FX and
   then deflated by **US CPI-U** / **euro-area HICP**. The dollar (or euro)
