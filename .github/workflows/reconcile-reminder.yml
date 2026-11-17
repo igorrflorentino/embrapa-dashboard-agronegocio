@@ -21,7 +21,7 @@ permissions:
 jobs:
   remind:
     if: github.event.repository.fork == false
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned, not -latest: see tests/test_workflow_runner_pin.py
     steps:
       - name: Open the monthly reconcile-reminder issue
         env:

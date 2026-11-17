@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.104.5] - 2026-11-17
+
+**O build de produção volta a rodar: todo job de CI passa a usar a imagem fixa `ubuntu-24.04`.** O
+GitHub trocou a imagem por trás de `ubuntu-latest`, e o Python 3.12.11 do projeto não existe na
+nova. Mudam só workflows e um teste; nenhum número, tela ou imagem servida (sem tag, pela política
+de release). O merge desta versão dispara sozinho o build de produção, porque `dbt-build-prod.yml`
+está no próprio filtro de caminhos, e esse build leva ao Gold as quatro semanas de Bronze paradas.
+
+### Corrigido
+- **Sete builds agendados de produção seguidos falharam**: 26/10, 29/10, 02/11, 05/11, 09/11,
+  12/11 e 16/11. Todos morreram cerca de 8 s depois de começar, no passo do Python:
+  `The version '3.12.11' with architecture 'x64' was not found for Ubuntu 26.04`.
+  - **A causa não está no repositório.** O GitHub moveu `ubuntu-latest` de 24.04 para 26.04 entre
+    22/10 15:57 UTC (o último build bem-sucedido, ainda em `ubuntu-24.04`) e 23/10 15:36 UTC (a
+    primeira execução em `ubuntu-26.04`), sem nenhum commit aqui.
+  - **Por que isso derruba o Python.** O `actions/setup-python` publica o CPython compilado para
+    cada versão do Ubuntu e não recompila versões antigas para uma nova. No manifesto dele, o
+    3.12.11 existe só para 22.04 e 24.04; no 26.04 as versões começam no 3.12.13.
+  - **A mesma causa** derrubou o `dbt source freshness` todos os dias desde 23/10 e os três jobs
+    Python de todo PR aberto ou atualizado desde então. O job de frontend, só Node, passava.
+  - **Efeito, medido em 17/11** (consultas só de leitura): Silver, Gold e as tabelas pré-agregadas
+    pararam no build de 22/10 16:00 UTC. A inflação parou em 2026-09 nas cinco séries e o câmbio em
+    21/10, enquanto a ingestão seguiu gravando no Bronze. Por quatro semanas, o painel mostrou os
+    dados de 22/10.
+- **A correção.** Os 13 jobs dos 9 workflows rodam em `ubuntu-24.04`, a imagem do último build
+  bem-sucedido. Os 7 passos `setup-python` leem a versão de `.python-version` em vez de repetir
+  `"3.12.11"`: é o mesmo arquivo que o pyenv e o uv já leem, como o `.nvmrc` para o Node.
+  - **Fixar a imagem, e não trocar o Python:** a imagem era a única entrada do build de produção
+    que mudava sem passar por um PR, e por isso nenhum CI de PR podia pegar a quebra. Fixada, uma
+    imagem nova chega por PR, e o CI desse PR prova a troca.
+  - **Os jobs sem Python também foram fixados.** Os deploys do webapi e do Job de ingestão rodam a
+    cada bump de versão e nunca rodaram no 26.04; no 24.04 rodaram 8 vezes com sucesso em 22/10.
+    E uma imagem só se migra de uma vez.
+  - **Instalar o 3.12.11 pelo uv** também resolveria, mas trocaria a origem do interpretador
+    justamente no build de produção, que o CI de PR não executa.
+
+### Testes
+- `tests/test_workflow_runner_pin.py` falha se um job usar uma imagem `*-latest`, se os jobs usarem
+  imagens diferentes ou se um `setup-python` trouxer versão própria. Contraprova: sobre os workflows
+  de antes desta versão, ele falha nomeando os 13 jobs e os 7 passos.
+
+### Notas
+- **Para sair do 24.04** (o GitHub um dia aposenta a imagem): mova todos os jobs juntos, de
+  preferência com a troca de Python. O 26.04 tem `setup-python` a partir do 3.12.13 e do 3.13.13,
+  e o Python 3.12 sai de suporte em 10/2028.
+- **Nada avisou.** O único aviso de cada falha foi a notificação padrão do GitHub, que em três
+  semanas não levou a nenhuma ação. Um alerta por e-mail, fora do GitHub, vem numa versão separada.
+
+---
+
 ## [1.104.4] - 2026-10-22
 
 **O aviso `quality-drift` do `doctor` de hoje, explicado build a build.** Só documentação; nenhum
