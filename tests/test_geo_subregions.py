@@ -102,7 +102,33 @@ def test_serialize_municipio_yearly_scales_like_uf_cube():
 def test_serialize_municipio_yearly_empty():
     from embrapa_dashboard.webapi import serializers
 
-    assert serializers.serialize_municipio_yearly(None) == {"municipioYearly": []}
+    assert serializers.serialize_municipio_yearly(None) == {
+        "municipioYearly": [],
+        "priceBase": None,
+    }
+
+
+def test_serialize_municipio_yearly_names_the_base_and_drops_its_columns():
+    """The cube reads Gold directly, so its price base can differ from the snapshot's
+    (a build between the two requests): it carries its own, read off the same select, and
+    the DATE columns never reach the rows (v1.105.0)."""
+    from embrapa_dashboard.webapi import serializers
+
+    df = pd.DataFrame(
+        [
+            {
+                "reference_year": 2023,
+                "city_code": "1500602",
+                "state_acronym": "PA",
+                "total_value": 5e6,
+                "price_base_month": pd.Timestamp("2026-10-01"),
+                "price_base_fx_date": pd.NaT,
+            }
+        ]
+    )
+    out = serializers.serialize_municipio_yearly(df)
+    assert out["priceBase"] == {"column": None, "month": "2026-10", "fxDate": None}
+    assert not {"price_base_month", "price_base_fx_date"} & set(out["municipioYearly"][0])
 
 
 def test_serialize_municipio_yearly_keeps_absence_absent_and_zero_zero():

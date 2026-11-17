@@ -100,6 +100,13 @@ function ViewGeography({ families, conventions, summary, database, territoryComp
   const mapPartial  = filtered.ufYearPartial || mapYearCalPartial;
   const mapYearTag  = mapPartial ? `${mapYear} (parcial)` : `${mapYear}`;
 
+  // The "Base de dados" card's read (rendered at the bottom), hoisted so its price base can
+  // join the skew check at the top (v1.105.0). Same call and cache key as before: one fetch.
+  const pbuSummary = (summary && Array.isArray(summary.states) && summary.states.length > 0)
+    ? { ...summary, startDate: `${mapYear}-01-01`, endDate: `${mapYear}-12-01` }
+    : null;
+  const pbu = pbuSummary ? window.productsByUf(database, pbuSummary, conv) : null;
+
   const [dim, setDim]     = useGeoState('value');
   // A banco with no município grain (COMEX/Comtrade is origin-UF only) stops at UF:
   // a state there is the end of the road, not a doorway. Defensive fallback: assume
@@ -210,6 +217,10 @@ function ViewGeography({ families, conventions, summary, database, territoryComp
   const localMuniCube = (wantMuniFallback && ufCityCodes && ufCityCodes.length && window.municipioYearly)
     ? window.municipioYearly(database, summary, ufCityCodes, [filtered.yearStart, filtered.yearEnd])
     : null; // null = pending fetch (or not wanted); [] = loaded-empty; [...] = rows
+  // The month that cube's corrected values are at — same request, no second fetch (v1.105.0).
+  const localMuniBase = (wantMuniFallback && ufCityCodes && ufCityCodes.length && window.municipioYearlyPriceBase)
+    ? window.municipioYearlyPriceBase(database, summary, ufCityCodes, [filtered.yearStart, filtered.yearEnd])
+    : null;
   // Two municipal paths reach this view and BOTH can be in flight:
   //   the view-local fallback (a single UF selected, no sub-UF facet), and
   //   dataFilters' shared cube (a município/meso facet — which is exactly what clicking
@@ -601,6 +612,16 @@ function ViewGeography({ families, conventions, summary, database, territoryComp
     <>
       <window.UnitFamilyBanner families={families} />
       <window.RecorteNote recorte={filtered.recorte} />
+      {/* This perspective's OWN reads — the single-UF município cube and the "Base de dados"
+          card — against the snapshot's month (v1.105.0). The cubes applyFilters reads are
+          already compared by MainScreen's note, so they go in as `jaComparadas`. */}
+      {window.PriceBaseSkewNote && (
+        <window.PriceBaseSkewNote
+          bases={[localMuniBase, pbu && pbu.priceBase]}
+          jaComparadas={[filtered.muniPriceBase, filtered.geoPriceBase]}
+          database={database}
+          conventions={conv} />
+      )}
 
       {filtered.notFilteredByBasket && (
         <div className="card subtle" style={{ marginBottom: 12 }}>
@@ -919,9 +940,7 @@ function ViewGeography({ families, conventions, summary, database, territoryComp
           fixed and the products are ranked. Only shown when a UF is selected (the
           per-(product × UF) grain the rest of this view lacks comes from the
           dedicated /api/products-by-uf reader). */}
-      {summary && Array.isArray(summary.states) && summary.states.length > 0 && (() => {
-        const pbuSummary = { ...summary, startDate: `${mapYear}-01-01`, endDate: `${mapYear}-12-01` };
-        const pbu = window.productsByUf(database, pbuSummary, conv);
+      {pbu && (() => {
         // Mesma desambiguação de "O que <lugar> produz": duas metades do PEVS podem trazer
         // o mesmo NOME, e o BarChart usa o nome como categoria (o Plotly funde homônimas).
         const rows = window.labelProductRows(pbu.products || [], database)

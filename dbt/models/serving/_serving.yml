@@ -32,6 +32,20 @@ models:
         tests: [not_null]
       - name: agrupamento_id
         description: "Cross-source commodity slug (NULL when the product is unlinked)."
+      - name: ipca_base_month
+        description: "Price base of val_real_ipca_* — the IPCA's latest month when Gold was built (Gold's ipca_base_month, lifted with max(); constant). The BFF reads it in the same SELECT that sums the value it dates."
+      - name: igpm_base_month
+        description: "Price base of val_real_igpm_* (Gold's igpm_base_month; constant)."
+      - name: igpdi_base_month
+        description: "Price base of val_real_igpdi_* (Gold's igpdi_base_month; constant)."
+      - name: cpi_base_month
+        description: "Price base of val_real_cpi_usd (Gold's cpi_base_month; constant). NULL when the foreign deflators are off."
+      - name: hicp_base_month
+        description: "Price base of val_real_hicp_eur (Gold's hicp_base_month; constant). NULL when the foreign deflators are off."
+      - name: fx_usd_base_date
+        description: "PTAX day the cross column val_real_ipca_usd converts at (Gold's fx_usd_base_date; constant)."
+      - name: fx_eur_base_date
+        description: "PTAX day the cross columns val_real_{ipca,igpm,igpdi}_eur convert at (Gold's fx_eur_base_date; constant)."
 
   - name: serving_pam_annual
     description: |
@@ -64,6 +78,20 @@ models:
         tests: [not_null]
       - name: area_harvested_ha
         description: "Área colhida summed across cities (additive). Yield is NOT carried (a ratio is not summable)."
+      - name: ipca_base_month
+        description: "Price base of val_real_ipca_* — the IPCA's latest month when Gold was built (Gold's ipca_base_month, lifted with max(); constant). The BFF reads it in the same SELECT that sums the value it dates."
+      - name: igpm_base_month
+        description: "Price base of val_real_igpm_* (Gold's igpm_base_month; constant)."
+      - name: igpdi_base_month
+        description: "Price base of val_real_igpdi_* (Gold's igpdi_base_month; constant)."
+      - name: cpi_base_month
+        description: "Price base of val_real_cpi_usd (Gold's cpi_base_month; constant). NULL when the foreign deflators are off."
+      - name: hicp_base_month
+        description: "Price base of val_real_hicp_eur (Gold's hicp_base_month; constant). NULL when the foreign deflators are off."
+      - name: fx_usd_base_date
+        description: "PTAX day the cross column val_real_ipca_usd converts at (Gold's fx_usd_base_date; constant)."
+      - name: fx_eur_base_date
+        description: "PTAX day the cross columns val_real_{ipca,igpm,igpdi}_eur convert at (Gold's fx_eur_base_date; constant)."
 
   - name: serving_ppm_annual
     description: |
@@ -99,6 +127,20 @@ models:
           - accepted_values:
               arguments:
                 values: ["stock", "flow"]
+      - name: ipca_base_month
+        description: "Price base of val_real_ipca_* — the IPCA's latest month when Gold was built (Gold's ipca_base_month, lifted with max(); constant). The BFF reads it in the same SELECT that sums the value it dates."
+      - name: igpm_base_month
+        description: "Price base of val_real_igpm_* (Gold's igpm_base_month; constant)."
+      - name: igpdi_base_month
+        description: "Price base of val_real_igpdi_* (Gold's igpdi_base_month; constant)."
+      - name: cpi_base_month
+        description: "Price base of val_real_cpi_usd (Gold's cpi_base_month; constant). NULL when the foreign deflators are off."
+      - name: hicp_base_month
+        description: "Price base of val_real_hicp_eur (Gold's hicp_base_month; constant). NULL when the foreign deflators are off."
+      - name: fx_usd_base_date
+        description: "PTAX day the cross column val_real_ipca_usd converts at (Gold's fx_usd_base_date; constant)."
+      - name: fx_eur_base_date
+        description: "PTAX day the cross columns val_real_{ipca,igpm,igpdi}_eur convert at (Gold's fx_eur_base_date; constant)."
 
   - name: serving_comex_annual
     description: |
@@ -117,8 +159,9 @@ models:
       (US CPI-U) and val_real_hicp_eur (euro-area HICP) — which correct a foreign
       value by the inflation of the economy that issues it instead of by a Brazilian
       index. They are not variants of the columns above: the FX moment differs too
-      (câmbio do ano, not câmbio de hoje), so they answer a different question and
-      produce a different number. Served for their own currency only.
+      (the rate of the period of record, not the latest one), so they answer a
+      different question and produce a different number. Served for their own
+      currency only.
     tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
@@ -141,6 +184,20 @@ models:
         tests: [not_null]
       - name: ncm_code
         tests: [not_null]
+      - name: ipca_base_month
+        description: "Price base of val_real_ipca_* — the IPCA's latest month when Gold was built (Gold's ipca_base_month, lifted with max(); constant). The BFF reads it in the same SELECT that sums the value it dates."
+      - name: igpm_base_month
+        description: "Price base of val_real_igpm_* (Gold's igpm_base_month; constant)."
+      - name: igpdi_base_month
+        description: "Price base of val_real_igpdi_* (Gold's igpdi_base_month; constant)."
+      - name: cpi_base_month
+        description: "Price base of val_real_cpi_usd (Gold's cpi_base_month; constant). NULL when the foreign deflators are off."
+      - name: hicp_base_month
+        description: "Price base of val_real_hicp_eur (Gold's hicp_base_month; constant). NULL when the foreign deflators are off."
+      - name: fx_usd_base_date
+        description: "PTAX day the cross column val_real_ipca_usd converts at (Gold's fx_usd_base_date; constant)."
+      - name: fx_eur_base_date
+        description: "PTAX day the cross columns val_real_{ipca,igpm,igpdi}_eur convert at (Gold's fx_eur_base_date; constant)."
 
   - name: serving_comex_seasonality
     description: |
@@ -157,8 +214,9 @@ models:
       (US CPI-U) and val_real_hicp_eur (euro-area HICP) — which correct a foreign
       value by the inflation of the economy that issues it instead of by a Brazilian
       index. They are not variants of the columns above: the FX moment differs too
-      (câmbio do ano, not câmbio de hoje), so they answer a different question and
-      produce a different number. Served for their own currency only.
+      (the rate of the period of record, not the latest one), so they answer a
+      different question and produce a different number. Served for their own
+      currency only.
     tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
@@ -180,6 +238,20 @@ models:
                 quote: false
       - name: month_name_pt
         description: "From dim_date (Janeiro … Dezembro)."
+      - name: ipca_base_month
+        description: "Price base of val_real_ipca_* — the IPCA's latest month when Gold was built (Gold's ipca_base_month, lifted with max(); constant). The BFF reads it in the same SELECT that sums the value it dates."
+      - name: igpm_base_month
+        description: "Price base of val_real_igpm_* (Gold's igpm_base_month; constant)."
+      - name: igpdi_base_month
+        description: "Price base of val_real_igpdi_* (Gold's igpdi_base_month; constant)."
+      - name: cpi_base_month
+        description: "Price base of val_real_cpi_usd (Gold's cpi_base_month; constant). NULL when the foreign deflators are off."
+      - name: hicp_base_month
+        description: "Price base of val_real_hicp_eur (Gold's hicp_base_month; constant). NULL when the foreign deflators are off."
+      - name: fx_usd_base_date
+        description: "PTAX day the cross column val_real_ipca_usd converts at (Gold's fx_usd_base_date; constant)."
+      - name: fx_eur_base_date
+        description: "PTAX day the cross columns val_real_{ipca,igpm,igpdi}_eur convert at (Gold's fx_eur_base_date; constant)."
 
   - name: serving_comtrade_annual
     description: |
@@ -199,8 +271,9 @@ models:
       (US CPI-U) and val_real_hicp_eur (euro-area HICP) — which correct a foreign
       value by the inflation of the economy that issues it instead of by a Brazilian
       index. They are not variants of the columns above: the FX moment differs too
-      (câmbio do ano, not câmbio de hoje), so they answer a different question and
-      produce a different number. Served for their own currency only.
+      (the rate of the period of record, not the latest one), so they answer a
+      different question and produce a different number. Served for their own
+      currency only.
     tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
@@ -232,6 +305,20 @@ models:
                 values: ["consumo", "processamento"]
       - name: cmd_code
         tests: [not_null]
+      - name: ipca_base_month
+        description: "Price base of val_real_ipca_* — the IPCA's latest month when Gold was built (Gold's ipca_base_month, lifted with max(); constant). The BFF reads it in the same SELECT that sums the value it dates."
+      - name: igpm_base_month
+        description: "Price base of val_real_igpm_* (Gold's igpm_base_month; constant)."
+      - name: igpdi_base_month
+        description: "Price base of val_real_igpdi_* (Gold's igpdi_base_month; constant)."
+      - name: cpi_base_month
+        description: "Price base of val_real_cpi_usd (Gold's cpi_base_month; constant). NULL when the foreign deflators are off."
+      - name: hicp_base_month
+        description: "Price base of val_real_hicp_eur (Gold's hicp_base_month; constant). NULL when the foreign deflators are off."
+      - name: fx_usd_base_date
+        description: "PTAX day the cross column val_real_ipca_usd converts at (Gold's fx_usd_base_date; constant)."
+      - name: fx_eur_base_date
+        description: "PTAX day the cross columns val_real_{ipca,igpm,igpdi}_eur convert at (Gold's fx_eur_base_date; constant)."
 
   - name: serving_quality_by_source
     description: |

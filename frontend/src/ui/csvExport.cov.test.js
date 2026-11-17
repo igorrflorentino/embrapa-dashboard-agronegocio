@@ -16,6 +16,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import './geoDrill.js';
 import './filtersSchema.js';
 import './territoryCompare.js';
+// The REAL phrase of the `correcao_monetaria` column (v1.105.0): the index and its economy
+// (MetricConventions.correctionChip), the month (MonetaryNotes.precosDe) and the snapshot's
+// base (seriesUtils.priceBaseFor). The per-test stubs below override what these also define.
+import './MonetaryNotes.jsx';
+import './seriesUtils.js';
+import './MetricConventions.jsx';
 
 // ── Capture harness for the download() side-effect ───────────────────────────
 let lastCsv;
@@ -52,6 +58,12 @@ function installDownloadCapture() {
 
 // ── Registry stubs (DEFAULT_CONVENTIONS shape mirrors MetricConventions.jsx) ──
 const CONV = { currency: 'BRL', correction: 'IPCA', units: { mass: 't', volume: 'm³' }, autoScale: false };
+
+// The last column of every file that carries a value (v1.105.0): what the number IS. CONV is
+// R$ · IPCA and no snapshot names a month in these tests, so the phrase is the one that names
+// none. The comma makes the CSV quote the cell.
+const CORRECAO = 'IPCA · Brasil, a preços do mês mais recente do índice';
+const CORRECAO_CSV = `"${CORRECAO}"`;
 
 const PRODUCTS = [
   { code: 'P1', name: 'Açaí', family: 'mass' },
@@ -163,7 +175,8 @@ describe('prepareTableCSV — o descritor que a janela de confirmação mostra',
     stubRegistry(FILTRADO);
     const p = window.prepareTableCSV({ view: 'overview', summary: {}, database: 'ibge_pevs' });
     expect(p.linhas).toBe(2);                                   // uma por ano em `ts`
-    expect(p.colunas).toEqual(['ano', 'valor_BRL', 'qtd_massa_t', 'qtd_volume_m3', 'qtd_contagem_un']);
+    expect(p.colunas).toEqual(['ano', 'valor_BRL', 'qtd_massa_t', 'qtd_volume_m3', 'qtd_contagem_un',
+      'correcao_monetaria']);
     expect(p.banco).toBe('IBGE PEVS');
     expect(p.assunto).toMatch(/Série anual agregada/);
     expect(p.arquivo).toBe('ibge_pevs_serie_agregada_2020-2021.csv');
@@ -258,10 +271,10 @@ describe('exportActiveTableCSV — overview/value aggregate series', () => {
     expect(lastCsv).toBeTruthy();
     expect(lastCsv.startsWith('﻿')).toBe(true); // Excel UTF-8 BOM
     const lines = lastCsv.replace('﻿', '').split('\n');
-    expect(lines[0]).toBe('ano;valor_BRL;qtd_massa_t;qtd_volume_m3;qtd_contagem_un');
+    expect(lines[0]).toBe('ano;valor_BRL;qtd_massa_t;qtd_volume_m3;qtd_contagem_un;correcao_monetaria');
     // v*1e9 (applyConv identity) → 1.5e9 ; q_mass*1e3 → 2000 ; q_vol*1e6 → 3e6 ; q_count*1e6
-    expect(lines[1]).toBe('2020;1500000000;2000;3000000;4000000');
-    expect(lines[2]).toBe('2021;2500000000;1000;0;0');
+    expect(lines[1]).toBe(`2020;1500000000;2000;3000000;4000000;${CORRECAO_CSV}`);
+    expect(lines[2]).toBe(`2021;2500000000;1000;0;0;${CORRECAO_CSV}`);
   });
 
   it('o ano sem valor na convenção escolhida sai com a célula VAZIA, nunca com 0', () => {
@@ -277,8 +290,8 @@ describe('exportActiveTableCSV — overview/value aggregate series', () => {
     });
     window.exportActiveTableCSV({ view: 'overview', summary: {}, database: 'ibge_pevs' });
     const lines = lastCsv.replace('\ufeff', '').split('\n');
-    expect(lines[1]).toBe('1974;;329200;0;0');       // valor vazio, quantidade presente
-    expect(lines[2]).toBe('1980;474500000;377200;0;0');
+    expect(lines[1]).toBe(`1974;;329200;0;0;${CORRECAO_CSV}`);   // valor vazio, quantidade presente
+    expect(lines[2]).toBe(`1980;474500000;377200;0;0;${CORRECAO_CSV}`);
     expect(lines[1]).not.toContain(';0;329200');      // o zero fabricado de antes
   });
 
@@ -332,14 +345,14 @@ describe('exportActiveTableCSV — per-product series with per-family units', ()
     window.exportActiveTableCSV({ view: 'product_compare', summary: {}, database: 'ibge_pevs' });
     expect(lastCsv).toBeTruthy();
     const lines = lastCsv.replace('﻿', '').split('\n');
-    expect(lines[0]).toBe('ano;codigo;produto;valor_BRL;quantidade;unidade;familia');
+    expect(lines[0]).toBe('ano;codigo;produto;valor_BRL;quantidade;unidade;familia;correcao_monetaria');
     const body = lines.slice(1);
     // mass row: q*1e3 = 2000, unit t
-    expect(body).toContain('2020;P1;Açaí;1000000;2000;t;mass');
+    expect(body).toContain(`2020;P1;Açaí;1000000;2000;t;mass;${CORRECAO_CSV}`);
     // volume row: q*1e6 = 2000000, unit m³
-    expect(body).toContain('2020;P2;Madeira;1000000;2000000;m³;volume');
+    expect(body).toContain(`2020;P2;Madeira;1000000;2000000;m³;volume;${CORRECAO_CSV}`);
     // count row: q*1e6, unit un
-    expect(body).toContain('2020;P3;Bovino;1000000;2000000;un;count');
+    expect(body).toContain(`2020;P3;Bovino;1000000;2000000;un;count;${CORRECAO_CSV}`);
     // missing-family row falls back to mass (mul 1e3) and q||0 → 0
     expect(body.some((l) => l.startsWith('2020;P9;Sem família;1000000;0;t;'))).toBe(true);
   });
@@ -384,7 +397,7 @@ describe('exportActiveTableCSV — geo snapshot', () => {
     });
     window.exportActiveTableCSV({ view: 'geo', summary: {}, database: 'ibge_pevs' });
     const lines = lastCsv.replace('﻿', '').split('\n');
-    expect(lines[0]).toBe('ano;uf;nome;regiao;valor_BRL;qtd_massa_t;qtd_volume_m3;qtd_contagem_un;escopo_produto;recorte_geografico;tabela_sidra');
+    expect(lines[0]).toBe('ano;uf;nome;regiao;valor_BRL;qtd_massa_t;qtd_volume_m3;qtd_contagem_un;escopo_produto;recorte_geografico;tabela_sidra;correcao_monetaria');
     // partial-year string contains a space but no delimiter → not quoted
     expect(lines[1]).toContain('2022 (parcial)');
     // a value containing a comma AND a double-quote must be CSV-escaped
@@ -439,8 +452,8 @@ describe('exportActiveTableCSV — geo snapshot', () => {
     window.geoExportScope = 'region';
     window.exportActiveTableCSV({ view: 'geo', summary: {}, database: 'ibge_pevs' });
     const lines = lastCsv.replace('﻿', '').split('\n');
-    expect(lines[0]).toBe('ano;regiao;valor_BRL;qtd_massa_t;qtd_volume_m3;qtd_contagem_un;escopo_produto;recorte_geografico;tabela_sidra');
-    expect(lines[1]).toBe('2021;Norte;6000000;1000;2000000;3000000;cesta selecionada;sem recorte sub-UF;ambas as metades');
+    expect(lines[0]).toBe('ano;regiao;valor_BRL;qtd_massa_t;qtd_volume_m3;qtd_contagem_un;escopo_produto;recorte_geografico;tabela_sidra;correcao_monetaria');
+    expect(lines[1]).toBe(`2021;Norte;6000000;1000;2000000;3000000;cesta selecionada;sem recorte sub-UF;ambas as metades;${CORRECAO_CSV}`);
     expect(lines.length).toBe(3); // header + 2 regions, NOT the per-UF table
   });
 
@@ -459,9 +472,9 @@ describe('exportActiveTableCSV — geo snapshot', () => {
     ];
     window.exportActiveTableCSV({ view: 'geo', summary: {}, database: 'ibge_pevs' });
     const lines = lastCsv.replace('﻿', '').split('\n');
-    expect(lines[0]).toBe('ano;municipio;uf;valor_BRL;qtd_massa_t;qtd_volume_m3;qtd_contagem_un;escopo_produto;recorte_geografico;tabela_sidra');
-    expect(lines[1]).toBe('2021;Belém;PA;4000000;1000;0;0;cesta selecionada;sem recorte sub-UF;ambas as metades');
-    expect(lines[2]).toBe('2021;Santos;SP;1000000;0;200000;0;cesta selecionada;sem recorte sub-UF;ambas as metades');
+    expect(lines[0]).toBe('ano;municipio;uf;valor_BRL;qtd_massa_t;qtd_volume_m3;qtd_contagem_un;escopo_produto;recorte_geografico;tabela_sidra;correcao_monetaria');
+    expect(lines[1]).toBe(`2021;Belém;PA;4000000;1000;0;0;cesta selecionada;sem recorte sub-UF;ambas as metades;${CORRECAO_CSV}`);
+    expect(lines[2]).toBe(`2021;Santos;SP;1000000;0;200000;0;cesta selecionada;sem recorte sub-UF;ambas as metades;${CORRECAO_CSV}`);
   });
 
   it('falls back to the per-UF table when geoExportScope is absent (unchanged default)', () => {
@@ -475,7 +488,7 @@ describe('exportActiveTableCSV — geo snapshot', () => {
     // no window.geoExportScope set — export triggered before Geografia ever mounted.
     window.exportActiveTableCSV({ view: 'geo', summary: {}, database: 'ibge_pevs' });
     const lines = lastCsv.replace('﻿', '').split('\n');
-    expect(lines[0]).toBe('ano;uf;nome;regiao;valor_BRL;qtd_massa_t;qtd_volume_m3;qtd_contagem_un;escopo_produto;recorte_geografico;tabela_sidra');
+    expect(lines[0]).toBe('ano;uf;nome;regiao;valor_BRL;qtd_massa_t;qtd_volume_m3;qtd_contagem_un;escopo_produto;recorte_geografico;tabela_sidra;correcao_monetaria');
     expect(lines[1].startsWith('2021;PA;')).toBe(true);
   });
 });
@@ -495,7 +508,7 @@ describe('exportActiveTableCSV — concentration (sorted desc by value)', () => 
     });
     window.exportActiveTableCSV({ view: 'concentration', summary: {}, database: 'ibge_pevs' });
     const lines = lastCsv.replace('﻿', '').split('\n');
-    expect(lines[0]).toBe('ano;uf;nome;regiao;valor_BRL;qtd_contagem_un;escopo_produto;recorte_geografico;tabela_sidra');
+    expect(lines[0]).toBe('ano;uf;nome;regiao;valor_BRL;qtd_contagem_un;escopo_produto;recorte_geografico;tabela_sidra;correcao_monetaria');
     // PA (9) must come before AM (1) after the descending sort
     expect(lines[1]).toContain(';PA;');
     expect(lines[2]).toContain(';AM;');
@@ -541,6 +554,70 @@ describe('exportActiveTableCSV — conventions default', () => {
       conventions: { currency: 'USD' },
     });
     expect(lastCsv).toContain('valor_USD');
+  });
+});
+
+// ── correcao_monetaria: o que o número É viaja com o arquivo (v1.105.0) ──────────────
+// `valor_BRL` saía igual para o nominal e o corrigido: o cabeçalho nomeava a moeda e calava a
+// correção, e um CSV solto não tem a faixa de convenções ao lado. Um valor corrigido está a
+// preços de UM mês, e o arquivo tem de dizer qual.
+describe('exportActiveTableCSV — a correção monetária viaja com o arquivo', () => {
+  const TS = [{ y: 2020, v: 1, q_mass: 1, q_vol: 1, q_count: 0 }];
+  const OUTUBRO = { column: 'val_real_ipca_brl', month: '2026-10', fxDate: null };
+  // O valor da última coluna da primeira linha de dados, sem as aspas do CSV.
+  const correcaoDoArquivo = (conventions) => {
+    window.exportActiveTableCSV({ view: 'overview', summary: {}, database: 'ibge_pevs', conventions });
+    const [cabecalho, primeira] = lastCsv.replace('﻿', '').split('\n');
+    expect(cabecalho.split(';').at(-1)).toBe('correcao_monetaria');
+    return primeira.slice(primeira.lastIndexOf(';') + 1).replace(/^"|"$/g, '');
+  };
+  afterEach(() => { delete window.dataStore; });
+
+  it('nomeia o índice, a economia e o mês a cujos preços estão os valores', () => {
+    stubRegistry({ products: PRODUCTS, ts: TS });
+    window.dataStore = { get: () => ({ priceBase: OUTUBRO }) };
+    expect(correcaoDoArquivo(CONV)).toBe('IPCA · Brasil, a preços de outubro de 2026');
+  });
+
+  it('sem mês conhecido, diz a verdade sem nomeá-lo', () => {
+    stubRegistry({ products: PRODUCTS, ts: TS });
+    expect(correcaoDoArquivo(CONV)).toBe(CORRECAO);
+  });
+
+  it('o nominal diz que não há correção — e uma convenção só com a moeda é o nominal', () => {
+    stubRegistry({ products: PRODUCTS, ts: TS });
+    const semCorrecao = 'Sem correção pela inflação (valores de cada ano)';
+    expect(correcaoDoArquivo({ ...CONV, correction: 'Nominal' })).toBe(semCorrecao);
+    expect(correcaoDoArquivo({ currency: 'USD' })).toBe(semCorrecao);
+  });
+
+  it('dois meses no mesmo arquivo: não nomeia nenhum, em vez de escolher um', () => {
+    // O cubo de municípios (base analítica direta) voltou a preços de setembro e o snapshot
+    // (tabelas pré-agregadas) a preços de outubro: um build entre as duas leituras.
+    stubRegistry({ products: PRODUCTS, ts: TS, muniPriceBase: { column: null, month: '2026-09', fxDate: null } });
+    window.dataStore = { get: () => ({ priceBase: OUTUBRO }) };
+    expect(correcaoDoArquivo(CONV)).toBe(CORRECAO);
+  });
+
+  it('o mesmo mês dos dois lados continua nomeado', () => {
+    stubRegistry({ products: PRODUCTS, ts: TS, muniPriceBase: { column: null, month: '2026-10', fxDate: null } });
+    window.dataStore = { get: () => ({ priceBase: OUTUBRO }) };
+    expect(correcaoDoArquivo(CONV)).toBe('IPCA · Brasil, a preços de outubro de 2026');
+  });
+
+  it('a coluna cruzada (índice brasileiro sob US$) também nomeia o dia do câmbio', () => {
+    stubRegistry({ products: PRODUCTS, ts: TS });
+    window.dataStore = {
+      get: () => ({ priceBase: { column: 'val_real_ipca_usd', month: '2026-10', fxDate: '2026-11-14' } }),
+    };
+    expect(correcaoDoArquivo({ ...CONV, currency: 'USD' }))
+      .toBe('IPCA · Brasil, a preços de outubro de 2026, ao câmbio de 14/11/2026');
+  });
+
+  it('a tabela sem coluna de valor (qualidade) não ganha a coluna', () => {
+    stubRegistry({ products: PRODUCTS, qualityFlags: [{ id: 'OK', label: 'Sem ressalva', count: 1, share: 1 }] });
+    window.exportActiveTableCSV({ view: 'quality', summary: {}, database: 'ibge_pevs' });
+    expect(lastCsv).not.toContain('correcao_monetaria');
   });
 });
 
@@ -646,14 +723,14 @@ describe('exportActiveTableCSV — comparativo entre territórios', () => {
     window.exportActiveTableCSV(ctx([{ level: 'regiao', code: 'N' }, { level: 'municipio', code: '1501402' }]));
     const lines = lastCsv.replace('﻿', '').split('\n');
     // PEVS has two halves, so the file names which one it covers, like every PEVS export.
-    expect(lines[0]).toBe('ano;territorio;nivel;codigo;valor_BRL;massa_t;volume_m3;contagem_un;tabela_sidra');
+    expect(lines[0]).toBe('ano;territorio;nivel;codigo;valor_BRL;massa_t;volume_m3;contagem_un;tabela_sidra;correcao_monetaria');
     expect(lines.slice(1)).toEqual([
-      '2020;Norte;região;N;3000000;4000;500000;0;ambas as metades',
+      `2020;Norte;região;N;3000000;4000;500000;0;ambas as metades;${CORRECAO_CSV}`,
       // The deflator gap leaves the value cell EMPTY, not 0; the tonnes were measured.
-      '2021;Norte;região;N;;4000;0;0;ambas as metades',
+      `2021;Norte;região;N;;4000;0;0;ambas as metades;${CORRECAO_CSV}`,
       // No row for Belém in 2020: the cube is sparse, so that is a measured 0.
-      '2020;Belém (PA);município;1501402;0;0;0;0;ambas as metades',
-      '2021;Belém (PA);município;1501402;500000;1000;0;0;ambas as metades',
+      `2020;Belém (PA);município;1501402;0;0;0;0;ambas as metades;${CORRECAO_CSV}`,
+      `2021;Belém (PA);município;1501402;500000;1000;0;0;ambas as metades;${CORRECAO_CSV}`,
     ]);
     expect(lastDownloadName).toBe('ibge_pevs_comparativo_territorios_2020-2021.csv');
   });

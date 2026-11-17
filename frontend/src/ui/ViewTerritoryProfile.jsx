@@ -169,6 +169,10 @@ function ViewTerritoryProfile({ summary, database, conventions }) {
   const muniCube = (activeLevel === 'municipio' && activeCities.length && window.municipioYearly)
     ? window.municipioYearly(database, summary, activeCities, [yearStart, yearEnd])
     : null;
+  // The month that cube's corrected values are at — same request, no second fetch (v1.105.0).
+  const muniCubeBase = (activeLevel === 'municipio' && activeCities.length && window.municipioYearlyPriceBase)
+    ? window.municipioYearlyPriceBase(database, summary, activeCities, [yearStart, yearEnd])
+    : null;
 
   const series = useTPMemo(() => {
     const rows = activeLevel === 'municipio'
@@ -229,6 +233,22 @@ function ViewTerritoryProfile({ summary, database, conventions }) {
   );
   const rank = rankable ? countryOrder.indexOf(uf) + 1 : 0;
   const rankUniverse = countryOrder.length;
+
+  // The years each multi-year SUM on this screen actually adds (v1.105.0), read off the rows
+  // it sums — the window's years with a value in the convention (window.faixaComValor), not
+  // the window itself: IPCA has no value for PAM in 1974–1979, and a label claiming those
+  // years would claim the sum covers them. Share and rank sum the whole UF grid. The
+  // composition sums the same rows as the trajectory (same place, filter and base) — except
+  // at UF level under a sub-UF narrowing, where the trajectory is the narrowed cities' rollup
+  // and the composition the whole UF; there the requested window is all that can be said.
+  const somaNacional = window.periodoDaSoma
+    ? window.periodoDaSoma(window.faixaComValor(ufYearly, 'year', 'value', yearStart, yearEnd))
+    : null;
+  const somaLocal = window.periodoDaSoma
+    ? window.periodoDaSoma(activeLevel === 'uf' && filtered.subUfActive
+      ? [yearStart, yearEnd]
+      : window.faixaComValor(series, 'y', 'v', yearStart, yearEnd))
+    : null;
 
   const last = series[series.length - 1] || null;
   const prev = series[series.length - 2] || null;
@@ -325,6 +345,18 @@ function ViewTerritoryProfile({ summary, database, conventions }) {
 
       <window.LoadErrorNote error={breakdown.loadError} />
 
+      {/* This perspective's OWN reads — the trajectory's município cube and the composition —
+          against the snapshot's month (v1.105.0). The cubes applyFilters reads are already
+          compared by MainScreen's note: they go in as `jaComparadas`, so the screen never
+          says it twice. */}
+      {window.PriceBaseSkewNote && (
+        <window.PriceBaseSkewNote
+          bases={[muniCubeBase, breakdown.priceBase]}
+          jaComparadas={[filtered.muniPriceBase, filtered.geoPriceBase]}
+          database={database}
+          conventions={conv} />
+      )}
+
       <div className="kpi-row">
         <window.KpiCardSpark
           label={<>Valor · {placeLabel}</>}
@@ -340,14 +372,14 @@ function ViewTerritoryProfile({ summary, database, conventions }) {
           label="Participação no país"
           value={share != null ? window.fmtPct(share) : '—'}
           sub={nationalAvailable
-            ? `${ufName} sobre o total das UFs · ${yearStart}–${yearEnd}`
+            ? `${ufName} sobre o total das UFs · ${somaNacional || `${yearStart}–${yearEnd}`}`
             : 'indisponível sob recorte sub-UF (não há denominador nacional nesta base)'}
         />
         <window.KpiCardSpark
           label="Posição no ranking"
           value={rank ? `${rank}º` : '—'}
           sub={rankable
-            ? `de ${rankUniverse} UFs no banco · por valor na janela`
+            ? `de ${rankUniverse} UFs no banco · por valor · ${somaNacional || 'na janela'}`
             : (combined ? 'uma soma de territórios não tem posição' : 'indisponível sob recorte sub-UF')}
         />
         <window.KpiCardSpark
@@ -377,7 +409,10 @@ function ViewTerritoryProfile({ summary, database, conventions }) {
       </div>
 
       <div className="card">
-        <window.SectionHeader overline="Composição" title={`O que ${placeLabel} produz`} />
+        <window.SectionHeader
+          overline={somaLocal ? `Composição · ${somaLocal}` : 'Composição'}
+          title={`O que ${placeLabel} produz`}
+        />
         {prodRows.length
           ? <window.BarChart data={prodScaled.data} valueKey="value" label={prodScaled.label} />
           : <window.EmptyCard>Sem produtos registrados para este território na seleção atual.</window.EmptyCard>}

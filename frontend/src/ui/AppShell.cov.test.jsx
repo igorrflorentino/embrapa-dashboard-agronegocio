@@ -818,6 +818,66 @@ describe('AppShell — reference detail levels', () => {
     }
     expect(new Set(seen).size).toBe(3);   // and they really are three different texts
   });
+
+  // ── O mês-base na referência detalhada (v1.105.0) ──────────────────────────────
+  // Um valor corrigido está a preços de UM mês, que anda a cada construção da base. Uma
+  // referência colada num artigo tem de datar o dinheiro que cita.
+  describe('o mês-base na consulta detalhada', () => {
+    const OUTUBRO = { column: 'val_real_ipca_brl', month: '2026-10', fxDate: null };
+    const comSnapshot = (pb) => {
+      window.dataStore = { get: () => ({ priceBase: pb }), meta: () => null };
+    };
+    beforeEach(async () => {
+      await import('./MonetaryNotes.jsx'); // window.mesBase
+      await import('./seriesUtils.js'); // window.priceBaseFor
+    });
+
+    it('nomeia o mês a cujos preços estão os valores', () => {
+      comSnapshot(OUTUBRO);
+      const { container } = render(<AppShell {...baseProps()} />);
+      openCite(container);
+      pick(container, 'Consulta detalhada');
+      expect(refText(container)).toContain(
+        'Convenções métricas: BRL · IPCA (a preços de outubro de 2026) · t · m³.');
+    });
+
+    it('sem mês conhecido, omite o parêntese — nunca um mês adivinhado', () => {
+      comSnapshot(null);
+      const { container } = render(<AppShell {...baseProps()} />);
+      openCite(container);
+      pick(container, 'Consulta detalhada');
+      expect(refText(container)).toContain('Convenções métricas: BRL · IPCA · t · m³.');
+    });
+
+    it('não empresta o mês de outra correção', () => {
+      // O snapshot data o IPCA; a convenção ativa é o IGP-M (um snapshot defasado).
+      comSnapshot(OUTUBRO);
+      const props = baseProps();
+      const { container } = render(
+        <AppShell {...props} conventions={{ ...props.conventions, correction: 'IGP-M' }} />);
+      openCite(container);
+      pick(container, 'Consulta detalhada');
+      expect(refText(container)).toContain('Convenções métricas: BRL · IGP-M · t · m³.');
+    });
+
+    it('nominal não tem mês-base', () => {
+      comSnapshot(OUTUBRO);
+      const props = baseProps();
+      const { container } = render(
+        <AppShell {...props} conventions={{ ...props.conventions, correction: 'Nominal' }} />);
+      openCite(container);
+      pick(container, 'Consulta detalhada');
+      expect(refText(container)).not.toContain('a preços de');
+    });
+
+    it('numa perspectiva cruzada, cujas séries têm convenções próprias, não data nada', () => {
+      comSnapshot(OUTUBRO);
+      const { container } = render(<AppShell {...baseProps()} view="chain_balance" />);
+      openCite(container);
+      pick(container, 'Consulta detalhada');
+      expect(refText(container)).not.toContain('a preços de');
+    });
+  });
 });
 
 // ── The title is bold, the subtitle is not (ABNT NBR 6023:2025) ──────────────

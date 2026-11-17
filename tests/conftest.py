@@ -78,6 +78,12 @@ def _no_live_comex_gap_lookup(monkeypatch):
     except ImportError:  # the webapi extra (flask-caching) is not installed
         return
     monkeypatch.setattr(gateway, "fetch_comex_seasonality_columns", lambda: frozenset())
+    # v1.105.0: every reader asked for the price base first reads its table's schema the same
+    # way. Unstubbed, a laptop with ADC would read PRODUCTION's schema — and once prod carries
+    # the columns, the same test would build a different SQL there than in CI (no
+    # credentials → fail closed → no base). An empty schema means "no base"; a test that
+    # exercises the base stubs `fetch_table_columns` itself.
+    monkeypatch.setattr(gateway, "fetch_table_columns", lambda *a, **k: frozenset())
     # v1.80.0: the annual bancos ask the same question of their annual mart, on every IBGE/
     # COMTRADE snapshot under a corrected convention. An empty frame means "no gap". The
     # reader's own test holds the real function, captured when its module is imported

@@ -1105,6 +1105,7 @@ def partners():
             value_column=payload.get("value_column"),
             value_label=payload.get("value_label"),
             gap_rows=payload.get("gap_rows"),
+            price_base=payload.get("price_base"),
         )
     )
 
@@ -1128,6 +1129,7 @@ def monthly():
             payload.get("rows"),
             value_column=payload.get("value_column"),
             value_label=payload.get("value_label"),
+            price_base=payload.get("price_base"),
         )
     )
 

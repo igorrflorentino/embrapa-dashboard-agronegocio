@@ -31,12 +31,21 @@ const PRODUCERS = [
   'flowData', 'partnerData', 'monthlyData',
 ];
 
-/** The body of one `window.<name> = function ...` assignment, up to the next one. */
+/** The body of one `window.<name> = function ...` assignment, up to the next one — plus,
+ *  when it delegates its request to `<name>Request(...)`, that helper's body, which is then
+ *  where the axes and the cache key live. (v1.105.0: the cubes' rows and their price base
+ *  read the SAME response, so both producers share one request helper.) */
 function bodyOf(name) {
   const i = SRC.indexOf(`window.${name} = function`);
   expect(i, `produtor ${name} não encontrado — o teste ficou obsoleto, não o código`).toBeGreaterThan(-1);
   const next = SRC.indexOf('\nwindow.', i + 1);
-  return SRC.slice(i, next === -1 ? SRC.length : next);
+  const corpo = SRC.slice(i, next === -1 ? SRC.length : next);
+  const helper = `${name}Request`;
+  if (!corpo.includes(`${helper}(`)) return corpo;
+  const j = SRC.indexOf(`\nfunction ${helper}(`);
+  expect(j, `${name} delega a ${helper}, que não foi encontrado`).toBeGreaterThan(-1);
+  const fim = SRC.indexOf('\n}\n', j);
+  return corpo + SRC.slice(j, fim === -1 ? SRC.length : fim + 2);
 }
 
 describe('filter-axis wiring — producers', () => {

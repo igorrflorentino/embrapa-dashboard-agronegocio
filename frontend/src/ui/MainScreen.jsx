@@ -542,6 +542,20 @@ function MainScreen({ filters, view = 'overview', database = 'ibge_pevs', infoPa
           start={inicioNaTela} />
       )}
 
+      {/* Um recorte abaixo da UF soma o cubo de municípios, que lê a base analítica direto, e
+          uma cesta recortada soma o cubo por UF, que lê as tabelas pré-agregadas numa leitura
+          à parte; a frase da faixa de convenções nomeia o mês do snapshot. Os três vêm do
+          mesmo build, mas cada leitura fica 10 minutos no servidor: entre uma construção e
+          outra podem chegar a meses diferentes, e a tela diz isso em vez de nomear um mês só
+          (v1.105.0). Sem cubo em uso, nada a comparar. As perspectivas que fazem leituras
+          próprias (Perfil do território, Geografia) somam as delas num aviso seu. */}
+      {window.PriceBaseSkewNote && _f && (_f.muniPriceBase || _f.geoPriceBase) && (
+        <window.PriceBaseSkewNote
+          bases={[_f.muniPriceBase, _f.geoPriceBase]}
+          database={database}
+          conventions={conventions || window.DEFAULT_CONVENTIONS} />
+      )}
+
       {/* Registry lookup, not a component created during render — see the note on the
           cross-source branch above. Identity changes only when `view` changes, and that
           remount is intended. */}

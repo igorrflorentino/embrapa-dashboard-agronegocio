@@ -131,12 +131,21 @@
     // The whole country for the SAME metric, for the share column. Every row counts,
     // including a trade banco's non-state origins, so the share is of the national total.
     const brasil = grid.loading ? [] : yearly(ufRows, () => true, field, years);
+    // The month the município cube is at (v1.105.0) — same request, no second fetch. It reads
+    // the analytical base directly while `brasil` comes from the pre-aggregated tables, and
+    // the share divides one by the other: across a build they can be a month apart, and the
+    // view says so. `comparedPriceBases` are applyFilters' cubes, whose skew MainScreen's
+    // note already reports — passed on so the view never says it twice.
+    const muniPriceBase = muniCapable && muniCodes.length && window.municipioYearlyPriceBase
+      ? window.municipioYearlyPriceBase(database, summary, muniCodes) : null;
     return {
       items,
       brasil,
       years,
       loading: items.some((it) => it.loading),
       muniCapable,
+      priceBases: muniPriceBase ? [muniPriceBase] : [],
+      comparedPriceBases: [f.muniPriceBase, f.geoPriceBase],
     };
   }
 

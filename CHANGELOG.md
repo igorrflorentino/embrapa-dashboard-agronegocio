@@ -7,6 +7,214 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.105.0] - 2026-11-17
+
+**O valor corrigido pela inflação passa a dizer a preços de QUE mês está.** Todo `val_real_*` está
+a preços de um mês só, o mais recente do índice na última atualização da base analítica, e esse mês
+anda a cada atualização que traz um mês novo do índice. A tela dizia "em reais de hoje", sem data: o
+build de 17/11 levou a base do IPCA de setembro para outubro de 2026 e todo valor corrigido pelo IPCA
+subiu 0,14%, sem que tela, citação ou CSV registrassem. Agora o mês viaja com o dado, do Gold à tela, e
+aparece na frase da faixa de convenções, no rótulo do valor, na citação e no CSV: *"a preços de outubro
+de 2026"*. **Nenhum número muda**: a aritmética da deflação é a mesma.
+
+A origem foi uma pergunta do mantenedor (17/11): corrigir pela inflação basta para "trazer os valores
+ao presente", ou faltaria uma taxa de rentabilidade que compensasse o custo de oportunidade? Para o que
+o painel mede, não falta (medição em Notas). Deflacionar troca a unidade de medida, e somar juros
+responderia a outra pergunta. O que faltava era dizer QUAL unidade.
+
+### Adicionado
+- **Sete colunas DATE com o mês-base em cada Gold.** As cinco tabelas
+  (`gold_{pevs,pam,ppm}_production`, `gold_{comex,comtrade}_flows`) as carregam constantes em cada
+  linha.
+  - `{ipca,igpm,igpdi,cpi,hicp}_base_month`: o mês da leitura mais recente de cada índice.
+  - `fx_{usd,eur}_base_date`: o dia de PTAX das colunas cruzadas (`val_real_ipca_usd` e afins).
+  - Saem da MESMA linha de `inflation_latest` / `fx_latest` que faz a correção, nos novos macros
+    `inflation_latest_cte()` e `fx_latest_cte()` (`macros/annual_deflation_ctes.sql`).
+    O `gold_comex_flows` passa a chamá-los e apaga a cópia que mantinha.
+  - As seis tabelas pré-agregadas carregam o `max()` de cada uma.
+- **O servidor lê o mês no mesmo SELECT que soma o valor.**
+  - Quem pede: os oito leitores agrupados (visão geral, cubo por município, produtos por UF e por
+    município, sazonalidade, comércio por ano, por parceiro e por rota) e o cubo por UF da cesta
+    (`geo-yearly`). Pedem `price_base_month` / `price_base_fx_date` junto da soma.
+  - O que volta: `priceBase {column, month, fxDate}`. Dois meses diferentes, ou nenhum, viram
+    `null`: o servidor nunca escolhe um.
+  - Quando: só depois que a tabela tem as colunas. Quem responde é `fetch_table_columns`, que
+    falha fechado.
+- **A tela nomeia o mês**, nestes lugares:
+  - a frase da faixa de convenções: "Corrigido pela inflação do Brasil (IPCA), a preços de outubro
+    de 2026.";
+  - o rótulo do valor que vem do servidor: "· a preços de outubro de 2026";
+  - a citação detalhada: "BRL · IPCA (a preços de outubro de 2026) · t · m³";
+  - a legenda e as dicas do Cruzamento de fontes.
+
+  Nas colunas cruzadas aparece também o dia do câmbio ("ao câmbio de 14/11/2026"). Sem base
+  conhecida, a tela diz "a preços do mês mais recente do índice" e nunca adivinha um mês.
+- **CSV: coluna final `correcao_monetaria`** em toda exportação com valor. Exemplos: "IPCA · Brasil,
+  a preços de outubro de 2026" e "Sem correção pela inflação (valores de cada ano)". O arquivo
+  gravava `valor_BRL` igual para o valor nominal e para o corrigido, contra o próprio princípio de
+  que o CSV se explica sozinho.
+- **Somas de vários anos dizem quais anos somam**: os anos com valor na convenção, lidos das próprias
+  linhas, e não a janela pedida.
+  - Fluxos: "soma de 1997 a 2026 · 40 de N rotas no diagrama".
+  - Parceiros: Capital e Preço médio.
+  - Perfil do território: participação, posição e Composição.
+- **Aviso de meses diferentes** (`PriceBaseSkewNote`). Cada leitura fica até 10 minutos no cache de
+  uma instância, e duas leituras de uma mesma tela podem cair em lados opostos de uma atualização.
+  - O aviso nomeia os meses em ordem de data e pede para recarregar a página.
+  - Cobre a tela principal, Geografia, Perfil e Comparação de territórios.
+  - Uma nota não repete o aviso que outra da mesma tela já dá.
+- **Glossário.**
+  - Verbete novo: *Mês-base*.
+  - *Deflacionar* diz que a correção não é juros nem o valor presente das finanças. Indica também a
+    comparação certa com uma aplicação: a taxa média de crescimento anual da série corrigida contra
+    o juro real do período.
+  - Sete verbetes trocam "de hoje" pelo mês.
+
+### Corrigido
+- **"Fluxo total" somava só as 40 rotas desenhadas** e as apresentava como o total. O servidor
+  agora soma todas as rotas antes do corte do diagrama (`serialize_flow`: `total`, `routeCount`).
+- **"Maior origem" e "Maior destino" tinham o mesmo defeito**, achado na prévia desta versão: cada
+  cartão tomava o maior nó do diagrama, que soma só as rotas desenhadas.
+  - Medido em 17/11 no COMEX (exportações, US$ · CPI): Mato Grosso aparecia com US$ 292,7 bi, contra
+    US$ 373,9 bi somadas todas as 3.063 rotas (−21,7%). No padrão nominal o erro era −19,8%, e no
+    COMTRADE (Brasil), −3,5%.
+  - A China aparecia com US$ 529,9 bi em Fluxos e US$ 537,3 bi em Parceiros, que já somava tudo.
+  - Com um filtro mais estreito, o corte podia coroar o lugar errado.
+  - O servidor agora calcula os dois sobre todas as rotas (`topOrigin`, `topDest`). Um lugar sem
+    rota com valor fica ausente, nunca um zero medido.
+- **Em COMEX/COMTRADE com US$ · CPI, a frase dizia que houve câmbio, e não houve.** A faixa passava
+  o objeto do banco e `canonCurrencyFor` esperava o id. `conventionExplain` agora aceita os dois.
+- **Documentação desatualizada.** A nota do README dizia que a cadeia do IPCA dispensava a tabela de
+  reformas monetárias. Não dispensa: quem converte as reformas, ANTES do índice, é o
+  `historical_currency_factors`, e sem ele os valores anteriores a 1994 saem 10⁶–10⁹× grandes
+  demais. Também corrigidos: ARCHITECTURE, `docs/gold_data_model.md`, CLAUDE.md, a skill
+  `dbt-workflow`, `docs/frontend_data_contract.md` (§3.8 e §8) e `docs/adding_a_data_source.md`.
+
+### Vocabulário editorial
+- **Proibidos na tela**: *"valor presente"*; *"(reais|dólares|euros|preços|valores|dinheiro|moeda) de
+  hoje"*; *"câmbio de hoje"*.
+- **Contraprova.** Sobre o texto da v1.104.5, as três regras reprovam 13 trechos: 10 no glossário, 2
+  na frase da faixa e 1 no rótulo do servidor. "Um de hoje", "os de hoje" e "ao presente" passam.
+- **A única exceção** é a negativa do verbete *Deflacionar*.
+- **O ponto cego.** As frases montadas com a moeda interpolada (`em ${moeda} de hoje`) escapam da
+  varredura por construção. Elas ficam a cargo dos testes que varrem a saída real de
+  `conventionExplain` e `effective_value_column`, em todo banco × convenção.
+
+### Testes
+- **`tests/test_price_base.py` (novo).** Cobre:
+  - nenhum mês, dois meses ou datas ausentes não viram base;
+  - cada construtor pede a base no SELECT que soma;
+  - o gateway só pede depois que a tabela tem as colunas, e um erro ao ler o esquema não fica no
+    cache;
+  - a paridade dbt ↔ Python das sete colunas (SQL, `_gold.yml`, `_serving.yml`);
+  - nenhuma descrição persistida nomeia um mês, porque isso mudaria a impressão digital do build a
+    cada dado novo;
+  - a lista de modelos, derivada do SQL: um Gold ou tabela pré-agregada nova que emita `val_real_*`
+    reprova sem as sete colunas.
+- **dbt.** `test_pevs_deflation_and_fx_arithmetic` foi estendido. Entram um teste unitário novo ("a
+  base é o último mês de CADA série") e o singular `assert_price_base_single_valued`, que exige uma
+  base por tabela pré-agregada e reprova valor corrigido sem base.
+- **`tests/test_dbt_jinja_comment_strip.py` (novo).** Nenhuma linha de comentário `--` do projeto
+  dbt pode ser seguida por um `{%-` ou `{{-`. É a guarda do defeito que só o build de dev viu (em
+  Prova), com a contraprova sobre o texto que falhou.
+- **Servidor de Fluxos e Parceiros.** Os cartões somam todas as rotas, não as desenhadas; a
+  ausência fica ausente; o período da soma vem dos anos com valor (`test_webapi_serializers.py`).
+- **Frontend.** `MonetaryNotes.priceBase.test.jsx` (novo), mais testes de Perfil e Comparação de
+  territórios, Cruzamento de fontes, Fluxos, Parceiros, CSV, citação, glossário e produtores.
+
+### Custo (BigQuery)
+Medido em 17/11 por `--dry_run`, que não fatura nada, sobre as tabelas de dev construídas com os
+dados de produção. O `--dry_run` não desconta o agrupamento físico das tabelas, então cada número
+abaixo é um teto.
+- **Build: +0,77 GiB por build completo.**
+  - As seis tabelas pré-agregadas passam a ler as sete colunas do Gold: +666,7 MB (PEVS 77,5; PAM
+    187,6; PPM 202,5; COMEX 28,2, lido duas vezes; COMTRADE 142,8).
+  - O teste singular lê mais 160,3 MB.
+  - Isso é 2,8% do build de 17/11 (27,38 GiB faturados) e 4,1% do de 19/10 (18,97 GiB), segundo o
+    `INFORMATION_SCHEMA.JOBS`.
+  - No Gold, zero: as datas já eram lidas pela janela que acha a leitura mais recente.
+- **Leituras do painel.** Só pagam quando o valor pedido é corrigido; uma leitura em valor nominal
+  não pede a base.
+  - Tabela pré-agregada do COMTRADE: +20,4 MB por leitura de todos os anos. O plano previa zero
+    para todas as tabelas pré-agregadas, e a medição desmentiu. Nos 30 dias até 17/11 o painel fez
+    162 leituras dela, que somaram 10,21 GiB. Se todas tivessem pedido a base, o mês custaria mais
+    3,1 GiB.
+  - As outras cinco tabelas pré-agregadas: de +0,1 a +1,1 MB, quase sempre dentro do piso de 10 MB
+    que o BigQuery fatura por consulta.
+  - Cubo por município e produtos por município, que vão direto ao Gold, por leitura de todos os
+    anos: PAM 146,6 → 173,4 MB (+18%), PPM 149,4 → 178,4 MB (+19%), PEVS 61,5 → 72,6 MB (+18%).
+    Nos mesmos 30 dias o painel não fez nenhuma dessas leituras: a única consulta com `city_code`
+    foi a da malha de municípios.
+  - Uma coluna cruzada (`?cur=USD&corr=IPCA`, só por link) lê também o dia do câmbio e dobra o
+    acréscimo.
+
+### Prova (dev contra produção, 17/11, antes do merge)
+- **Build de dev sobre o Silver de produção** (`--defer --favor-state`, com um único
+  `--vars '{enable_curation: true, enable_foreign_inflation: true}'`): os cinco Gold, as seis
+  tabelas pré-agregadas e os testes deles. Só saíram os dois avisos que a produção já dá
+  (`assert_pam_area_planted_ge_harvested`, `assert_unconvertible_quantities_for_curation`).
+- **Nenhum número mudou.** Nas 11 tabelas:
+  - as colunas são as de produção mais exatamente as sete;
+  - o número de linhas é o mesmo (`gold_pam_production` 3.349.171; `gold_comtrade_flows`
+    2.550.537);
+  - as colunas que não são de ponto flutuante são idênticas linha a linha;
+  - as somas por ano das de ponto flutuante concordam até 1,3 × 10⁻¹³ relativo.
+- **Na PAM, linha a linha nas 3.349.171 linhas:** `val_yearfx_brl` é idêntico bit a bit. As colunas
+  corrigidas diferem no máximo 1,1 × 10⁻¹⁵ relativo, o último bit das médias paralelas do BigQuery,
+  o mesmo ruído que a v1.88.4 mediu entre dois builds da mesma versão.
+- **A base é uma só por tabela** e igual à leitura mais recente do Silver de produção: índices em
+  2026-10-01 e PTAX em 2026-11-16. O teste singular passou contra as tabelas de dev.
+- **O build de dev achou um defeito que nenhum teste local tinha visto.** O teste singular falhava
+  com "WHERE not supported after FROM query". O `{%- set` logo depois de uma linha de comentário
+  apagava a quebra de linha, e a cadeia de `-%}` grudava o `select` dentro do comentário, deixando
+  uma consulta que começa no FROM. O `dbt build --empty` o tinha pulado, por uma falha anterior por
+  construção, e o CI não roda testes singulares. O primeiro a falhar teria sido o build de produção.
+  O mesmo padrão existia, inofensivo por enquanto, em `gold_comtrade_flows.sql`: sem o traço, o
+  SQL compilado ganha uma linha em branco e mais nada.
+- **Prévia local** (o SPA construído e o servidor lendo produção, com as 11 tabelas de dev no lugar
+  das de produção):
+  - PAM em R$ · IPCA: a frase da faixa e a dica do chip dizem "a preços de outubro de 2026". O
+    rótulo do servidor e o `priceBase` (`2026-10`) também.
+  - COMEX em US$ · CPI: "O valor já vem em US$ da fonte, então não passa por câmbio nenhum."
+  - A coluna cruzada, pedida pela API: "ao câmbio de 16/11/2026".
+  - Fluxos: "soma de 1997 a 2026 · 40 de 3063 rotas no diagrama", com os cartões corrigidos acima.
+  - Parceiros e Perfil do território dizem o período da soma. No Perfil de São Paulo na PAM, que
+    começa em 1974 mas só tem valor pelo IPCA a partir de 1980, é "soma de 1980 a 2025".
+  - A citação detalhada traz "BRL · IPCA (a preços de outubro de 2026)". A última coluna do CSV é
+    `correcao_monetaria`, e o ano de 1974 sai vazio no IPCA, não zero.
+  - Com a PEVS lendo as tabelas de produção, que ainda não têm as colunas, a tela diz "a preços do
+    mês mais recente do índice" e carrega sem erro.
+- **Verdes:** 2.495 testes Python, 1.578 do frontend, Ruff, ESLint, `npm run build` e SQLFluff nos
+  11 modelos alterados.
+
+### Notas
+- **Por que não juros.** Medido em 17/11 com o SGS 4390 (Selic) e 433 (IPCA) e com o
+  `serving_pam_annual` de produção.
+  - O juro real médio de 1995–2025 foi 7,93% a.a. O máximo foi 26,7% (1998); o mínimo, −5,1% (2021).
+  - Capitalizar somaria a 1995 um fator de ×9,13 além do IPCA (×4,09 a 2000; ×1,59 a 2015).
+  - Com isso, 1995 viraria o MAIOR ano da PAM (R$ 1,32 tri) e 2025 ficaria 36% abaixo, enquanto a
+    soja cresceu ×6,44 em toneladas.
+  - Isso responde "quanto o dinheiro de 1995 valeria se tivesse sido aplicado", e não "qual o
+    tamanho da produção de 1995".
+  - O VBP do MAPA também só deflaciona (pelo IGP-DI) e declara o mês-base.
+- **Até o build de produção terminar, o texto é provisório.** Nesse intervalo, e por até 10 minutos
+  depois (o cache do esquema), a tela diz "a preços do mês mais recente do índice". O app publicado no
+  merge não pede colunas que as tabelas ainda não têm.
+- **O que ainda pode discordar.** Dentro de UMA resposta, uma atualização no meio não é detectável,
+  porque o snapshot junta várias leituras memorizadas. A diferença é a inflação de um mês. Está
+  registrado em `docs/frontend_data_contract.md` §3.8.
+- **Looker Studio** verá sete campos novos nas fontes ligadas ao Gold. Atualize os campos da fonte.
+- **Achados, não corrigidos aqui.**
+  - A série Multi-fonte "Valor real (IPCA) da extração vegetal" (`registries.py:159`,
+    `bancos.js:137`) soma as duas metades da PEVS (extração t289 + silvicultura t291), porque
+    `_pevs_cross_points` não filtra a tabela.
+  - O cartão Composição do Perfil do território diz "Sem produtos registrados para este território"
+    em dois casos que não são falta de produto. Um é enquanto a leitura carrega, o que leva alguns
+    segundos. O outro é na PAM e na PPM, que não têm leitor por UF: `seam.products_by_uf` só cobre
+    PEVS e COMEX, lacuna já declarada no código.
+
+---
+
 ## [1.104.5] - 2026-11-17
 
 **O build de produção volta a rodar: todo job de CI passa a usar a imagem fixa `ubuntu-24.04`.** O

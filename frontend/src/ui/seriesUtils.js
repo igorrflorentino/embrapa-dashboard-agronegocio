@@ -212,6 +212,50 @@ window.valueGapFor = (bancoId) => {
   return (snap && snap.valueGap) || null;
 };
 
+// A coluna CORRIGIDA que uma convenção pede: 'val_real_ipca_brl' para R$ · IPCA. Espelha
+// webapi/format.monetary_column, mas só para as colunas com mês-base — Nominal (ou uma
+// correção desconhecida) devolve null, porque um valor nominal está a preços do próprio ano.
+const _INDICE_NA_COLUNA = { 'IPCA': 'ipca', 'IGP-M': 'igpm', 'IGP-DI': 'igpdi', CPI: 'cpi', HICP: 'hicp' };
+const _MOEDA_NA_COLUNA = { BRL: 'brl', USD: 'usd', EUR: 'eur' };
+window.valueColumnFor = (conv) => {
+  const indice = conv && _INDICE_NA_COLUNA[conv.correction];
+  const moeda = conv && _MOEDA_NA_COLUNA[conv.currency];
+  return indice && moeda ? `val_real_${indice}_${moeda}` : null;
+};
+
+// O mês a cujos preços estão os valores corrigidos (v1.105.0): `{ column, month: 'AAAA-MM',
+// fxDate }`, lido do snapshot já carregado, ou null. Só devolve a base quando ela data a
+// coluna que a convenção pede — um snapshot de outra convenção, ou uma coluna que o servidor
+// trocou por falta da pedida, não empresta o mês dele. Sem base, quem escreve a frase cai no
+// texto que não nomeia o mês (window.precosDe), nunca num mês adivinhado.
+window.priceBaseFor = (bancoId, conv) => {
+  const snap = window.dataStore && window.dataStore.get ? window.dataStore.get(bancoId) : null;
+  const pb = snap && snap.priceBase;
+  const alvo = conv || (window.dataStore && window.dataStore.conv ? window.dataStore.conv() : null);
+  const coluna = window.valueColumnFor(alvo);
+  return pb && coluna && pb.column === coluna ? pb : null;
+};
+
+// O primeiro e o último ano que uma soma de vários anos de fato SOMA (v1.105.0): os da janela
+// [y0, y1] com valor PRESENTE em `valueKey`. Uma soma pula a ausência calada — os anos que a
+// convenção não alcança (IPCA antes de 1980, euro antes de 1999) ficam fora dela —, então o
+// período escrito ao lado da soma sai das mesmas linhas somadas, não da janela pedida. Um zero
+// presente conta: é medida. Sem ano com valor, null, e a tela não afirma período nenhum.
+window.faixaComValor = (rows, yearKey, valueKey, y0, y1) => {
+  let primeiro = null;
+  let ultimo = null;
+  for (const r of rows || []) {
+    const ano = r ? r[yearKey] : null;
+    const v = r ? r[valueKey] : null;
+    if (ano == null || v == null || !Number.isFinite(Number(ano)) || !Number.isFinite(Number(v))) continue;
+    const y = Number(ano);
+    if ((y0 != null && y < y0) || (y1 != null && y > y1)) continue;
+    if (primeiro == null || y < primeiro) primeiro = y;
+    if (ultimo == null || y > ultimo) ultimo = y;
+  }
+  return primeiro == null ? null : [primeiro, ultimo];
+};
+
 // A variação entre dois PONTOS, ciente das duas razões de recusa (ausência e moeda).
 // É o que as views chamam; window.deltaPct continua sendo o primitivo numérico puro.
 window.deltaPctIn = (p0, pT, breaks) => {

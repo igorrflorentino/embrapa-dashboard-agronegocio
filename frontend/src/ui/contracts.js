@@ -57,6 +57,13 @@
 // @property {Object[]} [regions]           Region registry passthrough.
 // @property {string}   [table]             Backend-reported Gold table name.
 // @property {boolean}  [_synthetic]        Marker: representative, not real Gold.
+// @property {(PriceBase|null)} [priceBase]  The month the snapshot's corrected values are at (v1.105.0). Null under a nominal convention, and until the pre-aggregated tables carry the base columns (the app can deploy before the dbt build that adds them; the screens then say "a preços do mês mais recente do índice"). Read through window.priceBaseFor, which returns it only when its `column` is the one the ACTIVE convention asks for.
+//
+// @typedef {Object} PriceBase           The month a corrected value is at (v1.105.0) — "o mês-base viaja com o dado".
+// @property {(string|null)} column   The value column it dates ('val_real_ipca_brl'). Null on the bare-frame readers (the UF and município cubes, products by UF/município), whose callers already know which convention they asked for.
+// @property {string}        month    'AAAA-MM': the latest month of the index when the analytical base was built — val_real = val × I(month) ÷ mean of I over the year. It FLOATS with every build: the next index release moves it one month on, and every corrected value with it.
+// @property {(string|null)} fxDate   'AAAA-MM-DD': the PTAX day a CROSS column (a Brazilian index under US$ or €) converts at; null for a column deflated in its own currency.
+// Every payload that sums a corrected column carries one, read off the same select that sums it. Two reads on one screen can come back at different months across a build (each is cached 10 min server-side): window.PriceBaseSkewNote says so instead of naming one. The UF cube (window.geoYearlyPriceBase) and the município cube (window.municipioYearlyPriceBase) expose theirs from the same response as the rows.
 //
 // ── Preview adapters (src/data/producers.js) ─────────────────────────────
 //
@@ -68,7 +75,13 @@
 // @property {string}  originLabel        Dimension label for the origin side.
 // @property {string}  destLabel          Dimension label for the destination side.
 // @property {{id:string,label:string,side:'origin'|'dest',value:number}[]} nodes
-// @property {{source:string,target:string,value:number}[]} links
+// @property {{source:string,target:string,value:number}[]} links   The largest routes only (the diagram's legibility cut).
+// @property {(number|null)} [total]      `unit` mi over ALL routes, summed before the cut (v1.105.0). Until then the "Fluxo total" card summed the drawn nodes — the top 40 routes presented as the total. Null while loading: the card shows '—', never "US$ 0".
+// @property {(number|null)} [routeCount] How many routes the total sums; the card says "40 de 512 rotas no diagrama" when the diagram shows fewer.
+// @property {({label:string,value:number}|null)} [topOrigin]  The origin with the largest total over ALL routes, `unit` mi (v1.105.0). The largest NODE sums only the drawn routes: Mato Grosso read US$ 292,7 bi there against US$ 373,9 bi in all (2026-11-17).
+// @property {({label:string,value:number}|null)} [topDest]    The same for the destination side.
+// @property {([number,number]|null)} [sumRange]  First and last year WITH value inside the window — the years the total actually adds (years the convention cannot value are out of the sum, and valueGap names them).
+// @property {(PriceBase|null)} [priceBase]
 //
 // @typedef {Object} PartnerData         window.partnerData(bancoId, summary, metric)
 // @property {boolean} preview
@@ -77,6 +90,8 @@
 // @property {(string|null)} valueLabel  the convention on screen, e.g. "Valor real (IPCA) — US$ · FOB"
 // @property {({years:number[],partial:number[],share:(number|null)}|null)} valueGap  years inside the window the convention cannot value (€ sem correção before 1999; the latest COMEX month before its deflator index is ingested), which of them are missing only IN PART (`partial` — the note says "parte de 2026", never "2026"), and the share of the window's trade — in the declared US$ — they leave out of the sum; null when nothing is missing. The view MUST name them (window.ValueGapNote).
 // @property {{name:string,exp:number,imp:number,value:number,weight:number,price:(number|null),pricedShare:(number|null)}[]} partners  value/exp/imp = `unit` mi · weight = mil t (net) · price = `unit`/kg, null when no weight. The price divides ONLY the value of rows that have a weight: COMTRADE publishes 79.528 rows (3,87% of the mart, measured 2026-09-07) with a value and no net weight, and dividing the WHOLE value by the weight of part of it inflated the number — Guam ranked 6th at US$ 1,251/kg and belongs 41st at US$ 0,567 (+121%). `pricedShare` is how much of that partner's trade backs the price (null when there is no base); below 0,9 the view names the partner, because the number then describes a part of what they trade. Row order = the server-side ranking metric (Capital/Volume/Preço médio).
+// @property {([number,number]|null)} [sumRange]  First and last year WITH value in the window — the years each partner total adds (v1.105.0); the caption says "soma de 1997 a 2026".
+// @property {(PriceBase|null)} [priceBase]
 //
 // @typedef {Object} MonthlyData         window.monthlyData(bancoId, summary)
 // @property {boolean} preview
@@ -91,6 +106,7 @@
 // @property {Object.<number,number[]>} weightMatrix   year → 12 monthly WEIGHT (mil t) values.
 // @property {number[]} weightMonthlyAvg 12 weight (mil t) values.
 // @property {{ym:string,y:number,m:number,v:number,w:number}[]} series   v = value (`unit` mi), w = weight (mil t).
+// @property {(PriceBase|null)} [priceBase]
 //
 // @typedef {Object} ProductivityData    window.productivityData(bancoId, cropCode, summary)
 // @property {boolean} preview
@@ -117,6 +133,7 @@
 // @property {boolean} preview
 // @property {[number,number]} coverage
 // @property {{y:number,v:number}[]} points
+// @property {(PriceBase|null)} [priceBase]  Only a corrected series has one (today PEVS `prod_value`, in IPCA); the legend and the picker's hint name its month.
 //
 // ── Cross analytics (src/data/producers.js) ──────────────────────────────
 //

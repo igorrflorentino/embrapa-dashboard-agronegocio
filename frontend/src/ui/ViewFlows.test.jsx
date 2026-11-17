@@ -58,6 +58,7 @@ describe('ViewFlows fmt — the contract ships millions, and the label must say 
       unit: 'US$',
       originLabel: 'UF de origem',
       destLabel: 'País de destino',
+      total: 3400,
       nodes: [
         { id: 'o0', label: 'PA', side: 'origin', value: 2400 },
         { id: 'o1', label: 'SP', side: 'origin', value: 1000 },
@@ -79,6 +80,7 @@ describe('ViewFlows fmt — the contract ships millions, and the label must say 
       unit: 'US$',
       originLabel: 'UF',
       destLabel: 'País',
+      total: 77.6481,
       nodes: [{ id: 'o0', label: 'Acre', side: 'origin', value: 77.6481 },
         { id: 'd0', label: 'Peru', side: 'dest', value: 77.6481 }],
       links: [{ source: 'o0', target: 'd0', value: 77.6481 }],
@@ -93,6 +95,7 @@ describe('ViewFlows fmt — the contract ships millions, and the label must say 
       unit: 'US$',
       originLabel: 'UF',
       destLabel: 'País',
+      total: 0.000042,
       nodes: [{ id: 'o0', label: 'AC', side: 'origin', value: 0.000042 },
         { id: 'd0', label: 'Peru', side: 'dest', value: 0.000042 }],
       links: [{ source: 'o0', target: 'd0', value: 0.000042 }],
@@ -111,6 +114,7 @@ describe('ViewFlows — a convenção que o número carrega', () => {
       valueLabel: 'Valor real (IPCA) — R$ · FOB',
       originLabel: 'UF',
       destLabel: 'País',
+      total: 5,
       nodes: [{ id: 'o0', label: 'AC', side: 'origin', value: 5 },
         { id: 'd0', label: 'Peru', side: 'dest', value: 5 }],
       links: [{ source: 'o0', target: 'd0', value: 5 }],
@@ -120,6 +124,86 @@ describe('ViewFlows — a convenção que o número carrega', () => {
     expect(container.querySelector('.flow-valuation').textContent)
       .toBe('Valor real (IPCA) — R$ · FOB');
     expect(total(container)).toBe('R$ 5 mi');
+  });
+});
+
+describe('ViewFlows — o total é de TODAS as rotas, e diz quais anos soma (v1.105.0)', () => {
+  // O cartão "Fluxo total" somava os nós desenhados: as 40 maiores rotas, que o servidor
+  // corta para o diagrama ficar legível, apresentadas como o total.
+  const sub = (container) =>
+    container.querySelector('.kpi[data-label="Fluxo total"] .kpi-sub').textContent;
+
+  it('mostra o total do servidor, não a soma do que o diagrama desenhou', () => {
+    stubProtoGlobals({
+      unit: 'US$', originLabel: 'UF', destLabel: 'País',
+      total: 5000, routeCount: 512, sumRange: [1997, 2026],
+      nodes: [
+        { id: 'o0', label: 'PA', side: 'origin', value: 2400 },
+        { id: 'o1', label: 'SP', side: 'origin', value: 1000 },
+        { id: 'd0', label: 'China', side: 'dest', value: 3400 },
+      ],
+      links: [
+        { source: 'o0', target: 'd0', value: 2400 },
+        { source: 'o1', target: 'd0', value: 1000 },
+      ],
+    });
+    const { container } = render(<ViewFlows summary={{}} conventions={{}} database="mdic_comex" />);
+    expect(total(container)).toBe('US$ 5 bi');           // não os US$ 3,4 bi desenhados
+    expect(sub(container)).toBe('soma de 1997 a 2026 · 2 de 512 rotas no diagrama');
+  });
+
+  it('quando o diagrama mostra todas as rotas, não fala em corte', () => {
+    stubProtoGlobals({
+      unit: 'US$', originLabel: 'UF', destLabel: 'País',
+      total: 5, routeCount: 1, sumRange: [2024, 2024],
+      nodes: [{ id: 'o0', label: 'AC', side: 'origin', value: 5 },
+        { id: 'd0', label: 'Peru', side: 'dest', value: 5 }],
+      links: [{ source: 'o0', target: 'd0', value: 5 }],
+    });
+    const { container } = render(<ViewFlows summary={{}} conventions={{}} database="mdic_comex" />);
+    expect(sub(container)).toBe('soma de 2024 · 1 rota mapeada');
+  });
+
+  it('carregando, o total é "—", nunca um "US$ 0" afirmado', () => {
+    stubProtoGlobals({ unit: 'US$', originLabel: 'UF', destLabel: 'País', nodes: [], links: [] });
+    const { container } = render(<ViewFlows summary={{}} conventions={{}} database="mdic_comex" />);
+    expect(total(container)).toBe('—');
+  });
+
+  it('maior origem e maior destino também são de todas as rotas, não do maior nó desenhado', () => {
+    // ÂNCORA EXTERNA, medida em 17/11/2026 (COMEX, exportações, US$ · CPI): o cartão mostrava
+    // Mato Grosso com US$ 292,7 bi, a soma das rotas desenhadas, contra US$ 373,9 bi de todas.
+    // Aqui o maior nó desenhado é o Pará; o servidor diz que, somadas todas as rotas, é MT.
+    stubProtoGlobals({
+      unit: 'US$', originLabel: 'UF', destLabel: 'País',
+      total: 5000, routeCount: 512, sumRange: [1997, 2026],
+      topOrigin: { label: 'Mato Grosso', value: 373900 },
+      topDest: { label: 'China', value: 537200 },
+      nodes: [
+        { id: 'o0', label: 'Pará', side: 'origin', value: 2400 },
+        { id: 'd0', label: 'Peru', side: 'dest', value: 2400 },
+      ],
+      links: [{ source: 'o0', target: 'd0', value: 2400 }],
+    });
+    const { container } = render(<ViewFlows summary={{}} conventions={{}} database="mdic_comex" />);
+    const card = (rotulo) => container.querySelector(`.kpi[data-label="${rotulo}"]`);
+    expect(card('Maior origem · UF').querySelector('.kpi-value').textContent).toBe('Mato Grosso');
+    // Acima de 100 o formatador não mostra casas decimais: 373,9 bi → "374 bi".
+    expect(card('Maior origem · UF').querySelector('.kpi-sub').textContent).toBe('US$ 374 bi');
+    expect(card('Maior destino · País').querySelector('.kpi-value').textContent).toBe('China');
+    expect(card('Maior destino · País').querySelector('.kpi-sub').textContent).toBe('US$ 537 bi');
+  });
+
+  it('sem o campo do servidor, os cartões dizem "—" em vez de eleger um nó desenhado', () => {
+    stubProtoGlobals({
+      unit: 'US$', originLabel: 'UF', destLabel: 'País',
+      nodes: [{ id: 'o0', label: 'Pará', side: 'origin', value: 2400 },
+        { id: 'd0', label: 'Peru', side: 'dest', value: 2400 }],
+      links: [{ source: 'o0', target: 'd0', value: 2400 }],
+    });
+    const { container } = render(<ViewFlows summary={{}} conventions={{}} database="mdic_comex" />);
+    expect(container.querySelector('.kpi[data-label="Maior origem · UF"] .kpi-value').textContent).toBe('—');
+    expect(container.querySelector('.kpi[data-label="Maior destino · País"] .kpi-sub').textContent).toBe('—');
   });
 });
 

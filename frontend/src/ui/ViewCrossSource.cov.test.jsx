@@ -420,3 +420,43 @@ describe('ViewCrossSource — extremo ausente', () => {
     expect(tds[5].style.color).toBe('var(--fg-4)');
   });
 });
+
+// O mês-base de uma série corrigida (v1.105.0). "R$ bi" sozinho não diz de que reais: a
+// legenda e a dica do botão completam com o mês que a série traz do servidor. Uma série sem
+// base (quantidade, ou o US$ declarado) não ganha frase nenhuma — nem o texto genérico.
+describe('ViewCrossSource — o mês a cujos preços está a série corrigida', () => {
+  beforeEach(async () => { await import('./MonetaryNotes.jsx'); });
+
+  const comBase = () => {
+    stubGlobals();
+    const orig = window.crossSeries;
+    window.crossSeries = (b, m, opts) => {
+      const s = orig(b, m, opts);
+      if (!s || s.key !== 'ibge_pevs:prod_value') return s;
+      return { ...s, priceBase: { column: 'val_real_ipca_brl', month: '2026-10', fxDate: null } };
+    };
+  };
+  const legenda = (c, rotulo) => [...c.querySelectorAll('.xs-legend-item')]
+    .find((el) => el.textContent.includes(rotulo)).querySelector('.xs-legend-src').textContent;
+
+  it('a legenda da série corrigida nomeia o mês; a outra não ganha frase', () => {
+    comBase();
+    const { container } = render(<ViewCrossSource value={defaultState()} onChange={vi.fn()} />);
+    expect(legenda(container, 'Valor da produção')).toBe('IBGE · R$ mil · a preços de outubro de 2026');
+    expect(legenda(container, 'Valor exportado')).toBe('MDIC · US$ mil');
+  });
+
+  it('a dica do botão completa a descrição da métrica com o mês', () => {
+    comBase();
+    const { container } = render(<ViewCrossSource value={defaultState()} onChange={vi.fn()} />);
+    const titulos = [...container.querySelectorAll('.xs-chip')].map((b) => b.getAttribute('title'));
+    expect(titulos).toContain('soma, a preços de outubro de 2026 · Valor');
+    expect(titulos).toContain('soma · Valor');   // o exportado: sem base, sem frase
+  });
+
+  it('sem base conhecida (tabelas ainda sem as colunas), nada é afirmado', () => {
+    stubGlobals();
+    const { container } = render(<ViewCrossSource value={defaultState()} onChange={vi.fn()} />);
+    expect(legenda(container, 'Valor da produção')).toBe('IBGE · R$ mil');
+  });
+});

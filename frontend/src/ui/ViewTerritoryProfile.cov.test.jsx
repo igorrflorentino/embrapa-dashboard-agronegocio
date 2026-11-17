@@ -15,6 +15,9 @@ import { cleanup, fireEvent, render } from '@testing-library/react';
 // O registro REAL de origem + `labelProductRows`. Dublá-lo deixaria o teste concordar com
 // uma regra que o produto não tem — e a regra aqui é justamente qual rótulo cada barra leva.
 import './filtersSchema.js';
+// The REAL period/price-base helpers (periodoDaSoma, mesBase, PriceBaseSkewNote): the screen
+// text under test is theirs, and a stub would agree with whatever the view passed it.
+import './MonetaryNotes.jsx';
 
 function stubGlobals(filtered, opts = {}) {
   window.applyFilters = () => filtered;
@@ -34,6 +37,7 @@ function stubGlobals(filtered, opts = {}) {
   window.productsByUf = opts.productsByUf || (() => ({ products: [], loadError: null }));
   window.productsByMunicipio = opts.productsByMunicipio
     || (() => ({ products: [], loadError: null }));
+  window.municipioYearlyPriceBase = opts.municipioYearlyPriceBase || (() => null);
 
   window.EmptyCard = ({ children }) => <div className="empty-card">{children}</div>;
   window.NotApplicableNote = ({ children }) => <div className="na-note">{children}</div>;
@@ -90,6 +94,8 @@ afterEach(() => {
   delete window.productsByMunicipio;
   delete window.productsByUf;
   delete window.geoMesh;
+  delete window.municipioYearlyPriceBase;
+  delete window.dataStore;
 });
 
 const kpi = (c, label) => [...c.querySelectorAll('.kpi')]
@@ -103,8 +109,9 @@ describe('ViewTerritoryProfile — share and rank over the SELECTED window', () 
     // coincidence here, so the fixture's 2020 (200/300 = 66,7%) is what separates them:
     // the assertion below is on the WINDOW figure.
     expect(kpi(container, 'Participação').querySelector('.kpi-value').textContent).toBe('60.0%');
-    // And it must name the window it used, so the number is checkable.
-    expect(kpi(container, 'Participação').querySelector('.kpi-sub').textContent).toContain('2019–2021');
+    // And it must name the years it summed, so the number is checkable.
+    expect(kpi(container, 'Participação').querySelector('.kpi-sub').textContent)
+      .toContain('soma de 2019 a 2021');
   });
 
   it('ranks by the window total and reports the universe size', () => {
@@ -380,5 +387,124 @@ describe('ViewTerritoryProfile — ausência na trajetória e na variação', ()
     const valor = kpi(container, 'Valor');
     // 2020 tem valor e 2021 não: a versão anterior publicava −100% aqui.
     expect(valor.querySelector('.kpi-delta').textContent).toBe('');   // sem variação a mostrar
+  });
+});
+
+// ── Os anos de cada soma e o mês de cada leitura (v1.105.0) ─────────────────────────────────
+// Participação, posição e composição são somas de vários anos, e a tela não dizia de quais. O
+// período sai das linhas somadas — os anos da janela COM valor na convenção: um ano que a
+// correção não alcança fica fora da soma, e um rótulo que o incluísse diria que ela o cobre.
+describe('ViewTerritoryProfile — os anos de cada soma e o mês de cada leitura (v1.105.0)', () => {
+  const MESH = [
+    { cityCode: '1500107', cityName: 'Abaetetuba', uf: 'PA' },
+    { cityCode: '3550308', cityName: 'São Paulo', uf: 'SP' },
+  ];
+  // 2018 está na janela, mas a correção não o alcança: nenhuma UF tem valor ali.
+  const COM_LACUNA = {
+    ...BASE,
+    yearStart: 2018,
+    ufYearlySeries: [
+      { year: 2018, uf: 'PA', value: null },
+      { year: 2018, uf: 'SP', value: null },
+      ...BASE.ufYearlySeries,
+    ],
+  };
+  const OUTUBRO = { column: 'val_real_ipca_brl', month: '2026-10', fxDate: null };
+  const sub = (c, label) => kpi(c, label).querySelector('.kpi-sub').textContent;
+  const composicao = (c) => [...c.querySelectorAll('.sh-overline')]
+    .map((o) => o.textContent).find((t) => t.startsWith('Composição'));
+  const municipio = (c) => fireEvent.click([...c.querySelectorAll('.seg-opt')]
+    .find((b) => b.textContent === 'Município'));
+  const snapshotEm = (pb) => {
+    window.dataStore = { get: () => ({ priceBase: pb }), conv: () => CONV };
+  };
+
+  it('participação e posição dizem os anos com valor, não a janela pedida', () => {
+    stubGlobals(COM_LACUNA);
+    const { container } = render(<View summary={{}} database="ibge_pevs" conventions={CONV} />);
+    expect(sub(container, 'Participação')).toBe('Pará sobre o total das UFs · soma de 2019 a 2021');
+    expect(sub(container, 'Posição')).toBe('de 2 UFs no banco · por valor · soma de 2019 a 2021');
+  });
+
+  it('a composição diz os anos da trajetória do lugar, não os do país', () => {
+    // A grade nacional tem valor desde 2019 (SP); o Pará, só desde 2020.
+    stubGlobals({
+      ...BASE,
+      ufYearlySeries: BASE.ufYearlySeries.filter((r) => !(r.uf === 'PA' && r.year === 2019)),
+    });
+    const { container } = render(
+      <View summary={{ states: ['PA'] }} database="ibge_pevs" conventions={CONV} />,
+    );
+    expect(sub(container, 'Posição')).toContain('soma de 2019 a 2021');
+    expect(composicao(container)).toBe('Composição · soma de 2020 a 2021');
+  });
+
+  it('no nível UF sob recorte sub-UF, a composição (a UF inteira) diz a janela pedida', () => {
+    // A trajetória é a soma dos municípios recortados; a composição, a UF inteira. Os anos
+    // com valor de uma não são os da outra, então vale só o que foi pedido.
+    stubGlobals({ ...COM_LACUNA, subUfActive: true });
+    const { container } = render(<View summary={{}} database="ibge_pevs" conventions={CONV} />);
+    expect(composicao(container)).toBe('Composição · soma de 2018 a 2021');
+  });
+
+  it('no nível município, a composição diz os anos do cubo do lugar', () => {
+    stubGlobals(BASE, {
+      mesh: MESH,
+      municipioYearly: () => [
+        { year: 2020, cityCode: '1500107', uf: 'PA', value: 7 },
+        { year: 2021, cityCode: '1500107', uf: 'PA', value: 9 },
+      ],
+    });
+    const { container } = render(<View summary={{}} database="ibge_pevs" conventions={CONV} />);
+    municipio(container);
+    expect(composicao(container)).toBe('Composição · soma de 2020 a 2021');
+  });
+
+  it('sem nenhum ano com valor, não afirma período', () => {
+    stubGlobals(BASE, { mesh: MESH, municipioYearly: () => [] });
+    const { container } = render(<View summary={{}} database="ibge_pevs" conventions={CONV} />);
+    municipio(container);
+    expect(composicao(container)).toBe('Composição');
+  });
+
+  it('avisa quando as leituras desta perspectiva chegam a meses diferentes', () => {
+    snapshotEm(OUTUBRO);
+    stubGlobals(BASE, {
+      mesh: MESH,
+      municipioYearlyPriceBase: () => ({ column: null, month: '2026-11', fxDate: null }),
+      productsByMunicipio: () => ({
+        products: [{ code: '4403', name: 'Madeira em tora', value: 6 }],
+        loadError: null,
+        priceBase: { column: null, month: '2026-10', fxDate: null },
+      }),
+    });
+    const { container } = render(<View summary={{}} database="ibge_pevs" conventions={CONV} />);
+    municipio(container);
+    expect(container.querySelector('.price-base-skew-note').textContent)
+      .toContain('a preços de meses diferentes: outubro de 2026 e novembro de 2026.');
+  });
+
+  it('com tudo no mesmo mês, nenhum aviso', () => {
+    snapshotEm(OUTUBRO);
+    stubGlobals(BASE, {
+      mesh: MESH,
+      municipioYearlyPriceBase: () => ({ column: null, month: '2026-10', fxDate: null }),
+    });
+    const { container } = render(<View summary={{}} database="ibge_pevs" conventions={CONV} />);
+    municipio(container);
+    expect(container.querySelector('.price-base-skew-note')).toBeNull();
+  });
+
+  it('não repete o aviso que a tela principal já mostra', () => {
+    // O cubo do recorte (applyFilters) já diverge do snapshot: a MainScreen avisa. Esta
+    // perspectiva, com uma leitura própria num terceiro mês, não avisa de novo.
+    snapshotEm(OUTUBRO);
+    stubGlobals({ ...BASE, muniPriceBase: { column: null, month: '2026-09', fxDate: null } }, {
+      mesh: MESH,
+      municipioYearlyPriceBase: () => ({ column: null, month: '2026-11', fxDate: null }),
+    });
+    const { container } = render(<View summary={{}} database="ibge_pevs" conventions={CONV} />);
+    municipio(container);
+    expect(container.querySelector('.price-base-skew-note')).toBeNull();
   });
 });

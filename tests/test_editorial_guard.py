@@ -162,6 +162,11 @@ def test_permitidos_tem_razao_e_nao_estao_obsoletos() -> None:
         ("Veja o dashboard com os filtros aplicados", "dashboard"),
         ("da fonte oficial ao recorte que o painel consome", "recorte (tabela)"),
         ("Precisamos taguear os produtos antes de startar a carga", "verbo inventado"),
+        # O rótulo de `convention_value_label` até a v1.104, congelado: um "hoje" sem data
+        # para um dia de PTAX que anda a cada atualização da base (v1.105.0).
+        ("Valor real (IPCA · inflação do Brasil, ao câmbio de hoje) — US$", "câmbio de hoje"),
+        ("Valor real (IPCA), em reais de hoje", "de hoje (moeda)"),
+        ("Valores trazidos a valor presente pela inflação", "valor presente"),
     ],
 )
 def test_reprova(texto: str, termo: str) -> None:
@@ -176,6 +181,9 @@ def test_reprova(texto: str, termo: str) -> None:
         "Aguarde alguns segundos antes de enviar outro feedback.",
         "O cachê do artista não é memória temporária",
         "Aplique o recorte geográfico e compare as séries",
+        "Anual, de 1989 ao presente.",
+        "Valor real (IPCA · inflação do Brasil, ao câmbio de 14/11/2026) — US$",
+        "Valor real (IPCA) — R$ · a preços de outubro de 2026",
     ],
 )
 def test_aprova(texto: str) -> None:
