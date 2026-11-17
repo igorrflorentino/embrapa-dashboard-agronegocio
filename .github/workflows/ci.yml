@@ -35,7 +35,7 @@ permissions:
 jobs:
   ci:
     name: Lint, test, dbt parse
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned, not -latest: see tests/test_workflow_runner_pin.py
 
     steps:
       - name: Checkout
@@ -46,12 +46,12 @@ jobs:
           # few seconds on a repo this size.
           fetch-depth: 0
 
-      # Pin to the exact interpreter required by pyproject.toml
-      # (requires-python = "==3.12.*").
-      - name: Set up Python 3.12.11
+      # Exact interpreter from .python-version, the file pyenv and uv read too (like .nvmrc
+      # for Node); pyproject.toml's requires-python only bounds it to 3.12.*.
+      - name: Set up Python (version from .python-version)
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
-          python-version: "3.12.11"
+          python-version-file: .python-version
 
       # The Astral action wraps actions/cache under the hood, keyed on
       # the resolved uv.lock — identical effect to a hand-rolled
@@ -145,7 +145,7 @@ jobs:
   # parallel with the Python job above — no GCP credentials, no warehouse.
   frontend:
     name: Frontend tests (Vitest)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned, not -latest: see tests/test_workflow_runner_pin.py
 
     defaults:
       run:
@@ -214,7 +214,7 @@ jobs:
     name: SQLFluff (dbt templater, BigQuery)
     # Run on pushes to main and on PRs from THIS repo (not forks, which can't auth).
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned, not -latest: see tests/test_workflow_runner_pin.py
     permissions:
       contents: read
       id-token: write  # WIF needs this so GitHub mints the OIDC token for the auth step.
@@ -229,10 +229,10 @@ jobs:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_DBT_BUILD_SERVICE_ACCOUNT }}
 
-      - name: Set up Python 3.12.11
+      - name: Set up Python (version from .python-version)
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
-          python-version: "3.12.11"
+          python-version-file: .python-version
 
       - name: Install uv (with cache keyed on uv.lock)
         uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
@@ -314,7 +314,7 @@ jobs:
     if: >-
       github.event_name == 'pull_request'
       && github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned, not -latest: see tests/test_workflow_runner_pin.py
     permissions:
       contents: read
       id-token: write  # WIF needs this so GitHub mints the OIDC token for the auth step.
@@ -329,10 +329,10 @@ jobs:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_DBT_BUILD_SERVICE_ACCOUNT }}
 
-      - name: Set up Python 3.12.11
+      - name: Set up Python (version from .python-version)
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
-          python-version: "3.12.11"
+          python-version-file: .python-version
 
       - name: Install uv (with cache keyed on uv.lock)
         uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0

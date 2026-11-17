@@ -25,15 +25,15 @@ permissions:
 jobs:
   check:
     if: github.event.repository.fork == false
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned, not -latest: see tests/test_workflow_runner_pin.py
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
-      - name: Set up Python
+      - name: Set up Python (version from .python-version)
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
-          python-version: "3.12.11"
+          python-version-file: .python-version
 
       - name: Install requests
         run: pip install --quiet requests
