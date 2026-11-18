@@ -7,6 +7,115 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.106.0] - 2026-11-17
+
+**No Cruzamento entre fontes, cada série da PEVS passa a mostrar só a metade da pesquisa que o
+rótulo nomeia.** A série de valor que abre a perspectiva, ao lado do valor exportado do COMEX, se
+explicava como "Valor real (IPCA) da extração vegetal", mas somava as duas metades da PEVS: a extração
+de floresta nativa (SIDRA 289) e a silvicultura de floresta plantada (SIDRA 291). Em 2024 ela mostrava
+R$ 47,67 bi, 7,3× os R$ 6,50 bi da extração. As séries de massa e de volume somavam as duas metades do
+mesmo jeito. O defeito foi achado durante a v1.105.0 e ficou de fora dela de propósito.
+
+Agora cada metade tem as suas séries, e a tabela SIDRA é fixada em toda leitura por trás delas. Uma
+série da PEVS que não declare a tabela é recusada, nunca completada com um padrão.
+
+### Corrigido
+- **As três séries que já existiam (`prod_value`, `prod_mass`, `prod_volume`) leem só a extração
+  vegetal (SIDRA 289).** `_pevs_cross_points` chamava os leitores sem tabela, e eles somavam as duas
+  metades. Medido em produção em 17/11 (`serving_pevs_annual`, Brasil, 2024):
+
+  | | Extração (289) | Silvicultura (291) | Servido até a v1.105.0 | Servido ÷ extração |
+  |---|---|---|---|---|
+  | Valor (R$ bi, IPCA) | 6,50 | 41,17 | 47,67 | 7,3× |
+  | Massa (mil t) | 787,1 | 6.696,4 | 7.483,4 | 9,5× |
+  | Volume (mi m³) | 32,5 | 241,3 | 273,8 | 8,4× |
+
+  - **A soma escondia movimentos opostos.** De 1986 a 2024 o valor da extração caiu 80% (R$ 33,27 bi
+    → 6,50 bi) e o da silvicultura cresceu 3,3× (R$ 12,45 bi → 41,17 bi). A soma parecia estável:
+    R$ 45,72 bi → 47,67 bi, +4%.
+  - **Por UF, a mistura vai de pouco a quase tudo.** Em 2024, no Pará o servido era 1,21× a extração;
+    em Minas Gerais, 827× (R$ 9,39 bi contra R$ 11,3 milhões).
+- **Os rótulos nomeiam a metade, e a explicação, a floresta e a tabela.** "Valor da produção" vira
+  "Valor da extração vegetal"; "Quantidade produzida (massa)" e "(volume)" viram "Massa da extração
+  vegetal" e "Volume da extração vegetal". A explicação diz, por exemplo, "Valor real (IPCA) da
+  extração vegetal de floresta nativa (SIDRA 289)".
+- **A cobertura vai até 2025.** As séries declaravam `years: [1986, 2024]` fixo, e as duas tabelas já
+  têm 2025 na base analítica (medido em 17/11). Sozinha, a PEVS agora cobre 1986–2025.
+
+### Adicionado
+- **Três séries da silvicultura** (SIDRA 291): "Valor da silvicultura" (`silv_value`, R$ bi, IPCA,
+  com o mês-base da v1.105.0), "Massa da silvicultura" (`silv_mass`, mil t) e "Volume da
+  silvicultura" (`silv_volume`, mi m³).
+- **`product_timeseries` / `fetch_product_timeseries` aceitam `tabela`**, como `production_overview`
+  já aceitava. Sem ela, a consulta é idêntica byte a byte à anterior; com ela, a tabela entra na chave
+  do cache.
+- **Recusa explícita** (`seam_cross._pevs_tabela`): uma métrica da PEVS no cruzamento sem `tabela`
+  levanta `ValueError` antes de qualquer leitura. Um padrão teria sido o próprio defeito.
+- **`docs/frontend_data_contract.md` §5** passa a listar as seis séries da PEVS, com a regra.
+
+### Testes
+- **`tests/test_cross_pevs_tabela_guard.py` (novo, 14 casos).**
+  - A varredura chama `cross_series` para cada série da PEVS, no Brasil e numa UF, registra toda
+    leitura do gateway e reprova a que não fixa a tabela da métrica.
+  - Guardas de instrumento: a varredura precisa enxergar as métricas, e reprova quando o pino é
+    removido.
+  - As seis métricas são iguais em `bancos.js` e `registries.py`; cada rótulo nomeia a sua metade e
+    cada explicação, a sua tabela; toda família tem as duas metades; as tabelas são as da
+    configuração.
+  - Cada família lê o seu leitor, na sua unidade; uma métrica sem tabela é recusada sem leitura;
+    `product_timeseries` só fixa a tabela quando pedida.
+- **Contraprova.** Sobre o `main` da v1.105.0, 13 dos 14 casos reprovam. A varredura nomeia as seis
+  leituras sem tabela (três séries, no Brasil e na UF), a primeira
+  `prod_value → fetch_production_overview(tabela=None)`. O caso que passa é a guarda que confere que a
+  varredura enxerga as métricas, e ela tem de passar dos dois lados.
+- **`tests/test_webapi_seam.py`.** Os testes de `cross_series` da PEVS conferem a tabela 289, e um
+  novo lê a metade plantada (`silv_value`, 291).
+
+### Custo (BigQuery)
+Medido em 17/11 por `--dry_run`, que não fatura nada, com o SQL que o gateway monta:
+- Cada leitura de uma série da PEVS processa de 0,31 a 0,54 MB, abaixo do piso de 10 MB que o
+  BigQuery fatura por consulta. A tabela fixada e o ano a mais (2025) acrescentam juntos ~0,06 MB
+  processados por leitura, e nada faturado.
+- Mostrar as duas metades custa uma leitura a mais, do mesmo tamanho.
+
+### Prova (produção, 17/11, antes do merge)
+- **O `cross_series` deste ramo contra as tabelas de produção** (só leitura, com
+  `maximum_bytes_billed`): as seis séries, no Brasil, no Pará e em Minas Gerais, 40 anos cada
+  (1986–2025), batem com a soma direta por tabela em `serving_pevs_annual`, com diferença máxima 0.
+  As duas séries de valor trazem `priceBase` IPCA de outubro de 2026.
+- **Prévia local** (o SPA construído e o servidor lendo produção):
+  - os seis chips da PEVS com os rótulos novos, e a legenda "IBGE PEVS · R$ bi · a preços de outubro
+    de 2026" nas duas séries de valor;
+  - extração, silvicultura e exportação juntas, janela 1997–2024: extração R$ 8,28 bi → 6,50 bi
+    (−21%), silvicultura R$ 8,01 bi → 41,2 bi (+414%), exportação US$ 7,49 bi → 67,5 bi;
+  - só os dois volumes, janela 1986–2025: extração 173,1 → 31,8 mi m³ (−82%), silvicultura 86,2 →
+    244,7 mi m³ (+184%).
+- **Verdes:** 2.510 testes Python (cobertura de 99,32%; 100% das linhas novas), 1.578 do frontend,
+  Ruff e ESLint.
+
+### Notas
+- **A abertura do Cruzamento entre fontes muda.** A seleção padrão segue "valor da PEVS × valor
+  exportado do COMEX", mas o lado da PEVS agora é só a extração. Na janela comum, 1997–2024, a curva
+  da PEVS quase triplicava (R$ 16,3 bi → 47,7 bi) e agora cai 21%. A silvicultura fica a um clique.
+  Se a abertura deve mostrar as duas metades é decisão de produto, não tomada aqui.
+- **Links já compartilhados** com `prod_value`, `prod_mass` ou `prod_volume` abrem a extração, com o
+  rótulo que diz isso. Os ids ficaram porque os links os carregam e a seleção padrão usa `prod_value`;
+  trocá-los quebraria esses links sem consertar número nenhum.
+- **Por que duas séries, e não o total com outro rótulo.** O total responde mal a qualquer pergunta: é
+  a soma de uma queda de 80% com um crescimento de 3,3× que parece estável, e em 2024 a metade
+  plantada vale 6,3× a nativa. As outras perspectivas já tratam a tabela como eixo de primeira classe,
+  porque um total que mistura as metades em silêncio é um número errado com rótulo certo. O
+  Cruzamento entre fontes era a exceção.
+- **Achados, não corrigidos aqui.**
+  - As séries do COMEX no cruzamento declaram `years: [1997, 2024]`, e o COMEX tem 2025 completo na
+    base analítica. Por isso a seleção padrão ainda termina em 2024.
+  - As do COMTRADE divergem entre os dois registros: `registries.py` diz [1989, 2024] (`world_exp`,
+    [2022, 2023]) e `bancos.js`, [2000, 2025].
+  - O fim fixo da PEVS vai envelhecer de novo quando a PEVS 2026 entrar, por volta de outubro de 2027.
+    Derivar o fim dos metadados da fonte, ou verificá-lo no `doctor`, evitaria o próximo corte.
+
+---
+
 ## [1.105.0] - 2026-11-17
 
 **O valor corrigido pela inflação passa a dizer a preços de QUE mês está.** Todo `val_real_*` está

@@ -133,10 +133,20 @@ window.BANCOS = [
     // PRE-SCALED — "mil t" (×1e3) and "mi m³" (×1e6) — with the scale multipliers living
     // in MetricConventions/serializers, not here. So a chart axis can read "mil t" while
     // this registry says "t": by design, not a mismatch (see glossário "mil t" / "mi m³").
+    //
+    // Each PEVS series is ONE half of the survey and `tabela` says which (the SIDRA table
+    // the BFF pins on every read). Until v1.106.0 the three `prod_*` summed both halves
+    // while `prod_value` said "da extração vegetal" — 7.3× the extraction value in 2024.
+    // The `prod_*` ids are kept because permalinks carry them; they mean extraction (t289)
+    // now, and `silv_*` the silviculture (t291). Kept equal to registries.py
+    // `_PEVS_METRICS` by tests/test_cross_pevs_tabela_guard.py.
     metrics: [
-      { id: 'prod_value',  label: 'Valor da produção', family: 'currency', unit: 'R$',  agg: 'Valor real (IPCA) da extração vegetal', years: [1986, 2024] },
-      { id: 'prod_mass',   label: 'Quantidade produzida (massa)',  family: 'mass',   unit: 't',  agg: 'Massa colhida das espécies de família massa', years: [1986, 2024] },
-      { id: 'prod_volume', label: 'Quantidade produzida (volume)', family: 'volume', unit: 'm³', agg: 'Volume das espécies de família volume',     years: [1986, 2024] },
+      { id: 'prod_value',  label: 'Valor da extração vegetal',  family: 'currency', unit: 'R$', agg: 'Valor real (IPCA) da extração vegetal de floresta nativa (SIDRA 289)', years: [1986, 2025], tabela: '289' },
+      { id: 'prod_mass',   label: 'Massa da extração vegetal',  family: 'mass',     unit: 't',  agg: 'Soma dos produtos da extração vegetal medidos em toneladas (floresta nativa, SIDRA 289)', years: [1986, 2025], tabela: '289' },
+      { id: 'prod_volume', label: 'Volume da extração vegetal', family: 'volume',   unit: 'm³', agg: 'Soma dos produtos da extração vegetal medidos em metros cúbicos (floresta nativa, SIDRA 289)', years: [1986, 2025], tabela: '289' },
+      { id: 'silv_value',  label: 'Valor da silvicultura',      family: 'currency', unit: 'R$', agg: 'Valor real (IPCA) da silvicultura de floresta plantada (SIDRA 291)', years: [1986, 2025], tabela: '291' },
+      { id: 'silv_mass',   label: 'Massa da silvicultura',      family: 'mass',     unit: 't',  agg: 'Soma dos produtos da silvicultura medidos em toneladas (floresta plantada, SIDRA 291)', years: [1986, 2025], tabela: '291' },
+      { id: 'silv_volume', label: 'Volume da silvicultura',     family: 'volume',   unit: 'm³', agg: 'Soma dos produtos da silvicultura medidos em metros cúbicos (floresta plantada, SIDRA 291)', years: [1986, 2025], tabela: '291' },
     ],
     // Provenance: only the edition LABEL prefix lives here ("PEVS <ano>"); its YEAR
     // is overlaid live from gold_source_metadata (dataStore.meta → real yearEnd), and
