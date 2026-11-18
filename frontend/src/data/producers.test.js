@@ -389,3 +389,132 @@ describe('produtores data-blocked devolvem AUSÊNCIA nas medidas', () => {
     expect(l.preview).toBe(true);
   });
 });
+
+// The cubes' rows and the month their corrected values are at come from ONE response: the
+// price-base producers reuse the cube's request helper, so they never cost a second fetch and
+// can never describe a different read than the rows on screen (v1.105.0).
+describe('the cubes and their price base read one response', () => {
+  const OUTUBRO = { column: null, month: '2026-10', fxDate: null };
+
+  it('geoYearly and geoYearlyPriceBase: one fetch, the rows and the month', async () => {
+    const f = vi.fn(() => jsonRes({ ufYearly: [{ year: 2024, uf: 'PA', value: 1 }], priceBase: OUTUBRO }));
+    const w = await loadAll(f);
+    w.bancoById = () => ({ provides: ['geo'] });
+    expect(w.geoYearly('ibge_pevs', {})).toBeNull();            // cold
+    expect(w.geoYearlyPriceBase('ibge_pevs', {})).toBeNull();   // same key: no second fetch
+    expect(f).toHaveBeenCalledTimes(1);
+    expect(urlOf(f)).toContain('/api/geo-yearly');
+    await tick();
+    expect(w.geoYearly('ibge_pevs', {})).toEqual([{ year: 2024, uf: 'PA', value: 1 }]);
+    expect(w.geoYearlyPriceBase('ibge_pevs', {})).toEqual(OUTUBRO);
+    expect(f).toHaveBeenCalledTimes(1);
+  });
+
+  it('a payload without the base (an app ahead of the build) reads as unknown', async () => {
+    const f = vi.fn(() => jsonRes({ ufYearly: [] }));
+    const w = await loadAll(f);
+    w.bancoById = () => ({ provides: ['geo'] });
+    w.geoYearly('ibge_pevs', {});
+    await tick();
+    expect(w.geoYearlyPriceBase('ibge_pevs', {})).toBeNull();
+  });
+
+  it('municipioYearly and municipioYearlyPriceBase share the POST', async () => {
+    const f = vi.fn(() => jsonRes({
+      municipioYearly: [{ year: 2021, cityCode: '1500107', uf: 'PA', value: 9 }], priceBase: OUTUBRO,
+    }));
+    const w = await loadAll(f);
+    w.bancoById = () => ({ provides: ['geo'] });
+    expect(w.municipioYearly('ibge_pevs', {}, ['1500107'], [2019, 2021])).toBeNull();
+    expect(w.municipioYearlyPriceBase('ibge_pevs', {}, ['1500107'], [2019, 2021])).toBeNull();
+    expect(f).toHaveBeenCalledTimes(1);
+    expect(f.mock.calls[0][1].method).toBe('POST');
+    await tick();
+    expect(w.municipioYearlyPriceBase('ibge_pevs', {}, ['1500107'], [2019, 2021])).toEqual(OUTUBRO);
+    expect(w.municipioYearly('ibge_pevs', {}, ['1500107'], [2019, 2021])).toHaveLength(1);
+    expect(f).toHaveBeenCalledTimes(1);
+  });
+
+  it('a banco without the geo grain asks nothing and has no base', async () => {
+    const f = vi.fn(() => jsonRes({}));
+    const w = await loadAll(f);
+    w.bancoById = () => ({ provides: [] });
+    expect(w.geoYearlyPriceBase('un_comtrade', {})).toBeNull();
+    expect(w.municipioYearlyPriceBase('un_comtrade', {}, ['1500107'])).toBeNull();
+    expect(f).not.toHaveBeenCalled();
+  });
+});
+
+// ── Composição por produto: quatro estados, um só é medição ──────────────────
+// Até a v1.107.0, carregando, falhado e "sem leitor" voltavam todos como `{ products: [] }`
+// — o mesmo formato de "medi e não há nada" — e Perfil do território dizia "Sem produtos
+// registrados" nos três.
+describe('productsByUf / productsByMunicipio distinguem carregando, erro, indisponível e vazio', () => {
+  const CONV = { currency: 'BRL', correction: 'Nominal' };
+  const PA = { states: ['PA'] };
+
+  it('com o pedido a caminho, está carregando — não vazio', async () => {
+    const w = await loadAll(vi.fn(() => jsonRes({ products: [], available: true })));
+    expect(w.productsByUf('ibge_pam', PA, CONV))
+      .toEqual({ products: [], loading: true, unavailable: false, loadError: null });
+  });
+
+  it('respondido e vazio é a única resposta medida sem produtos', async () => {
+    const w = await loadAll(vi.fn(() => jsonRes({ products: [], available: true })));
+    w.productsByUf('ibge_pam', PA, CONV);
+    await tick();
+    expect(w.productsByUf('ibge_pam', PA, CONV)).toEqual({
+      products: [], available: true, loading: false, unavailable: false, loadError: null,
+    });
+  });
+
+  it('o servidor dizendo que não há leitor vira "indisponível", não vazio', async () => {
+    const w = await loadAll(vi.fn(() => jsonRes({ products: [], available: false })));
+    w.productsByUf('un_comtrade', PA, CONV);
+    await tick();
+    expect(w.productsByUf('un_comtrade', PA, CONV)).toMatchObject({
+      products: [], loading: false, unavailable: true, loadError: null,
+    });
+  });
+
+  it('os produtos chegam com os campos que o servidor mandou', async () => {
+    // `...data` é espalhado: um campo novo do payload chega à tela sem tocar o produtor.
+    const linha = { code: '2670', name: 'Bovino', tabela: '3939', measure_kind: 'stock', value: null };
+    const w = await loadAll(vi.fn(() => jsonRes({ products: [linha], available: true, extra: 1 })));
+    w.productsByUf('ibge_ppm', PA, CONV);
+    await tick();
+    const r = w.productsByUf('ibge_ppm', PA, CONV);
+    expect(r.products).toEqual([linha]);
+    expect(r.extra).toBe(1);
+    expect(r.loading).toBe(false);
+  });
+
+  it('enquanto tenta de novo está carregando; esgotadas as tentativas, é erro', async () => {
+    const f = vi.fn(() => Promise.resolve({ ok: false, status: 500 }));
+    const w = await loadAll(f);
+    const pedir = () => w.productsByUf('ibge_pam', PA, CONV);
+    // A falha transitória não é anunciada: errorOf só responde depois de MAX_ATTEMPTS.
+    for (let i = 0; i < 3; i++) {
+      expect(pedir()).toMatchObject({ loading: true, loadError: null });
+      await tick();
+    }
+    expect(pedir()).toEqual({ products: [], loading: false, unavailable: false, loadError: 'HTTP 500' });
+    expect(f).toHaveBeenCalledTimes(3);
+  });
+
+  it('por município: mesmo formato, e um conjunto vazio de cidades não vai ao servidor', async () => {
+    const f = vi.fn(() => jsonRes({ products: [{ code: '1', name: 'Leite', value: 2 }], available: true }));
+    const w = await loadAll(f);
+    expect(w.productsByMunicipio('ibge_ppm', {}, CONV, []))
+      .toEqual({ products: [], loading: false, unavailable: false, loadError: null });
+    expect(f).not.toHaveBeenCalled();
+
+    expect(w.productsByMunicipio('ibge_ppm', {}, CONV, ['1500107']))
+      .toMatchObject({ products: [], loading: true, loadError: null });
+    await tick();
+    expect(w.productsByMunicipio('ibge_ppm', {}, CONV, ['1500107'])).toMatchObject({
+      products: [{ code: '1', name: 'Leite', value: 2 }], loading: false, unavailable: false,
+    });
+    expect(f.mock.calls[0][1].method).toBe('POST');
+  });
+});

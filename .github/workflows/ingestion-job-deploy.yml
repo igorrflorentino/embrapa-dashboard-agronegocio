@@ -131,7 +131,7 @@ jobs:
     if: >-
       github.event.repository.fork == false
       && vars.GCP_INGEST_DEPLOY_SERVICE_ACCOUNT != ''
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned, not -latest: see tests/test_workflow_runner_pin.py
     timeout-minutes: 30
 
     steps:

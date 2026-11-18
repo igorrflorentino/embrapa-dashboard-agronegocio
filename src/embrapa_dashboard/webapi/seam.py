@@ -16,6 +16,7 @@ overviewTS, ufData, quality) for the three live bancos. Trade-only adapters
 
 from __future__ import annotations
 
+import datetime
 import logging
 
 import pandas as pd
@@ -25,6 +26,7 @@ from embrapa_dashboard.serving import gateway
 from embrapa_dashboard.serving import sql as sqlbuild
 
 from . import format as fmt
+from . import price_base
 from .registries import BANCOS, Banco, banco_by_id
 from .seam_base import (  # noqa: F401  (commodity toolkit re-exported via seam)
     _LIVE_SOURCES,
@@ -65,7 +67,9 @@ def _trade_valuation_note(banco: Banco) -> str:
     return "FOB"
 
 
-def effective_value_column(banco: Banco, conv: dict) -> tuple[str, str]:
+def effective_value_column(
+    banco: Banco, conv: dict, base: price_base.PriceBase | None = None
+) -> tuple[str, str]:
     """Resolve (column, human_label) for the active convention, with fallback.
 
     Every live mart now carries the full {yearfx, real_ipca, real_igpm, real_igpdi}
@@ -77,7 +81,7 @@ def effective_value_column(banco: Banco, conv: dict) -> tuple[str, str]:
     For trade bancos the values are the year-FX conversion of US$ customs figures,
     so the label keeps the FOB/CIF basis note — but the figure IS in the requested
     currency (no client-side mock FX). The default request (empty conv) resolves to
-    BRL·IPCA via :func:`embrapa_dashboard.webapi.format.monetary_column`; trade
+    R$ · Nominal (``fmt.DEFAULT_CORRECTION``; it was R$ · IPCA until v1.88.0); trade
     callers that want the US$-native default pass ``{"currency": "USD",
     "correction": "Nominal"}``.
 
@@ -85,13 +89,28 @@ def effective_value_column(banco: Banco, conv: dict) -> tuple[str, str]:
     HICP) exist for the money they measure and for no other, so (BRL, CPI) is not a
     combo with a missing column but a question with no meaning. The fallback below
     treats the two cases differently for that reason.
+
+    ``base`` is the price base read back from the rows the column was summed over
+    (``price_base.take``). A deflated column's label ends with the month its values are
+    at — "· a preços de outubro de 2026", or the fallback when unknown — and a cross
+    column names its PTAX day inside the parenthesis. The column itself never depends on
+    it, which is why callers resolve the column first, fetch, and only then the label.
     """
+    column, label = _resolve_value_column(banco, conv, base.fx_date if base else None)
+    return column, f"{label}{price_base.label_suffix(column, base)}"
+
+
+def _resolve_value_column(
+    banco: Banco, conv: dict, fx_date: datetime.date | None
+) -> tuple[str, str]:
+    """:func:`effective_value_column` without the price base: the column, and its label up
+    to (and including) the FOB/CIF note."""
     currency = conv.get("currency", "BRL")
     correction = conv.get("correction", fmt.DEFAULT_CORRECTION)
     requested = fmt.monetary_column(currency, correction)
     note = f" · {_trade_valuation_note(banco)}" if banco.id in _TRADE else ""
     if requested in sqlbuild.ALLOWED_VALUE_COLUMNS:
-        return requested, f"{fmt.convention_value_label(conv)}{note}"
+        return requested, f"{fmt.convention_value_label(conv, fx_date)}{note}"
 
     # ── Fallbacks for a combo no mart carries ────────────────────────────────
     # A foreign index asked for a currency it does not measure (CPI in R$ or €) has no
@@ -113,7 +132,8 @@ def effective_value_column(banco: Banco, conv: dict) -> tuple[str, str]:
     if brl in sqlbuild.ALLOWED_VALUE_COLUMNS:
         label = fmt.convention_value_label({**conv, "currency": "BRL"})
         return brl, f"{label} (moeda indisponível nos dados → R$){note}"
-    return "val_real_ipca_brl", f"Valor real (IPCA) — R${note}"
+    label = fmt.convention_value_label({"currency": "BRL", "correction": "IPCA"})
+    return "val_real_ipca_brl", f"{label}{note}"
 
 
 def _years_from_summary(summary: dict | None) -> tuple[int | None, int | None]:
@@ -339,7 +359,11 @@ def snapshot(banco_id: str, conv: dict, summary: dict | None = None) -> dict:
     """Return the per-banco serving snapshot for the active conventions + filters.
 
     Keys: products, product_ts, overview_ts, uf_data (None when no geo), quality,
-    value_column, value_label. Each value is a pandas DataFrame (or None).
+    value_column, value_label, price_base. Each value is a pandas DataFrame (or None).
+
+    The price base is read from the OVERVIEW read — the series every screen's headline sums
+    — in the same select that sums it, and dates the snapshot's label. The other readers
+    here sum the same column of the same mart in the same request.
     """
     banco = banco_by_id(banco_id)
     if banco_id not in _LIVE_SOURCES:
@@ -352,9 +376,10 @@ def snapshot(banco_id: str, conv: dict, summary: dict | None = None) -> dict:
             "quality": None,
             "value_column": None,
             "value_label": "",
+            "price_base": None,
         }
 
-    value_col, value_label = effective_value_column(banco, conv)
+    value_col, _ = effective_value_column(banco, conv)
     y0, y1 = _years_from_summary(summary)
     codes = _basket(summary)
     # Flow (export/import) is server-side — the trade marts are pre-aggregated over
@@ -408,6 +433,7 @@ def snapshot(banco_id: str, conv: dict, summary: dict | None = None) -> dict:
             year_end=y1,
             value_column=value_col,
             flow=flow,
+            with_price_base=True,
             **{code_kw: codes},
             **regime_kw,
             **country_kw,
@@ -445,6 +471,7 @@ def snapshot(banco_id: str, conv: dict, summary: dict | None = None) -> dict:
             value_column=value_col,
             source=banco_id,
             tabela=tabela,
+            with_price_base=True,
         )
         uf_data = gateway.fetch_production_by_uf(
             year_start=y0,
@@ -464,6 +491,8 @@ def snapshot(banco_id: str, conv: dict, summary: dict | None = None) -> dict:
         )
 
     gap_rows = _value_gap_rows(banco_id, value_col)
+    overview_ts, base = price_base.take(overview_ts)
+    _, value_label = effective_value_column(banco, conv, base)
     return {
         "products": products,
         "product_ts": product_ts,
@@ -475,6 +504,7 @@ def snapshot(banco_id: str, conv: dict, summary: dict | None = None) -> dict:
         "quality_by_product": gateway.fetch_quality_by_product(banco_id),
         "value_column": value_col,
         "value_label": value_label,
+        "price_base": price_base.payload(value_col, base),
         "value_era_breaks": value_era_breaks(value_col),
         "value_gap_rows": gap_rows,
         "value_gap_alternatives": _value_gap_alternatives(banco_id, value_col, gap_rows),
@@ -810,8 +840,13 @@ def geo_yearly(banco_id: str, conv: dict, summary: dict | None = None) -> pd.Dat
     # sum every flow while the snapshot honours the selected direction (a wrong,
     # internally-inconsistent VALOR TOTAL / map for a COMEX basket). None = every flow.
     flow = _flow_from_summary(summary)
+    # The cube is its own read, cached on its own: across a build it can come back at a
+    # different price base than the snapshot it is drawn beside. It carries its month
+    # (`price_base_*`, split off by the serializer) so the screen can say so (v1.105.0).
     if banco_id == "mdic_comex":
-        df = gateway.fetch_comex_by_uf_yearly(ncm_codes=codes, value_column=value_col, flow=flow)
+        df = gateway.fetch_comex_by_uf_yearly(
+            ncm_codes=codes, value_column=value_col, flow=flow, with_price_base=True
+        )
         if df is not None:
             df = df.rename(columns={"total_value_usd": "total_value"})
         return df
@@ -820,6 +855,7 @@ def geo_yearly(banco_id: str, conv: dict, summary: dict | None = None) -> pd.Dat
         value_column=value_col,
         source=banco_id,
         tabela=_tabela_from_summary(summary),
+        with_price_base=True,
     )
 
 
@@ -890,6 +926,7 @@ def geo_municipio_yearly(
             value_column=value_col,
             source=banco_id,
             tabela=_tabela_from_summary(summary),
+            with_price_base=True,
         )
     except NotFound:
         # gold_<source>_production not built → documented None (serialize_municipio_yearly
@@ -928,6 +965,9 @@ def products_by_municipio(
             # A metade viaja junto com a linha: madeira, lenha e carvão existem nas DUAS
             # com o mesmo nome, e quem exibe precisa distingui-las. Só o PEVS tem a coluna.
             include_tabela=True,
+            # Read from GOLD, which can carry a different base than the marts when a build
+            # stopped between the two — so this payload dates itself (serializer-side).
+            with_price_base=True,
         )
     except NotFound:
         # gold_<source>_production not built → documented None (→ {"products": []}),
@@ -1054,7 +1094,7 @@ def flow_data(banco_id: str, summary: dict | None = None, conv: dict | None = No
         return None
     y0, y1 = _years_from_summary(summary)
     codes = _apply_levels(banco_id, summary, _basket(summary))
-    value_col, value_label = effective_value_column(banco, conv or _TRADE_NATIVE_CONV)
+    value_col, _ = effective_value_column(banco, conv or _TRADE_NATIVE_CONV)
     gap_rows = None
     if banco_id == "mdic_comex":
         # Exports only: SG_UF_NCM is the UF *of the product*, so on import rows
@@ -1067,6 +1107,7 @@ def flow_data(banco_id: str, summary: dict | None = None, conv: dict | None = No
             flow="export",
             uf_codes=_states(summary),
             value_column=value_col,
+            with_price_base=True,
         )
         gap_rows = _comex_gap_rows(
             y0=y0,
@@ -1090,8 +1131,11 @@ def flow_data(banco_id: str, summary: dict | None = None, conv: dict | None = No
             customs=_customs_from_summary(summary),
             market=_market_from_summary(summary),
             value_column=value_col,
+            with_price_base=True,
             **_country_reader_kwargs(summary),
         )
+    links, base = price_base.take(links)
+    _, value_label = effective_value_column(banco, conv or _TRADE_NATIVE_CONV, base)
     dims = banco.dimensions
     return {
         "links": links,
@@ -1099,6 +1143,7 @@ def flow_data(banco_id: str, summary: dict | None = None, conv: dict | None = No
         "dest_label": dims.get("dest", {}).get("label", "Destino"),
         "value_column": value_col,
         "value_label": value_label,
+        "price_base": price_base.payload(value_col, base),
         "gap_rows": gap_rows,
     }
 
@@ -1134,7 +1179,7 @@ def partner_data(
         return None
     y0, y1 = _years_from_summary(summary)
     codes = _apply_levels(banco_id, summary, _basket(summary))
-    value_col, value_label = effective_value_column(banco, conv or _TRADE_NATIVE_CONV)
+    value_col, _ = effective_value_column(banco, conv or _TRADE_NATIVE_CONV)
     gap_rows = None
     # The active flow / regime (customs) / tipo-de-mercado filters must reach the ranking:
     # the server-side ORDER BY sums the metric over the returned rows, so an unfiltered
@@ -1150,6 +1195,7 @@ def partner_data(
             flow=_flow_from_summary(summary),
             rank_by=rank_by,
             value_column=value_col,
+            with_price_base=True,
         )
         gap_rows = _comex_gap_rows(
             y0=y0,
@@ -1169,27 +1215,68 @@ def partner_data(
             market=_market_from_summary(summary),
             rank_by=rank_by,
             value_column=value_col,
+            with_price_base=True,
             **_country_reader_kwargs(summary),
         )
+    rows, base = price_base.take(rows)
+    _, value_label = effective_value_column(banco, conv or _TRADE_NATIVE_CONV, base)
     return {
         "rows": rows,
         "value_column": value_col,
         "value_label": value_label,
+        "price_base": price_base.payload(value_col, base),
         "gap_rows": gap_rows,
     }
+
+
+# The pre-aggregated table that answers "o que esta UF produz" for each IBGE banco: the
+# SAME table its snapshot reads, so the composition and the map beside it agree. The three
+# share the product columns (product_code / product_description / tabela / family), so one
+# call serves all of them. PAM and PPM were left out until v1.107.0, and the território
+# profile then answered "sem produtos" for every UF of both — while the município level,
+# which reads Gold, named them.
+_PRODUCTION_PRODUCTS_BY_UF = {
+    "ibge_pevs": "serving_pevs_annual",
+    "ibge_pam": "serving_pam_annual",
+    "ibge_ppm": "serving_ppm_annual",
+}
+
+
+def products_by_uf_available(banco_id: str) -> bool:
+    """Whether :func:`products_by_uf` has a reader for this banco at all.
+
+    The route sends it beside the rows (``available``) because an EMPTY list means two
+    things a screen must not confuse: "this UF produced nothing in the selection" (a
+    measurement) and "there is no reader for this banco" (no measurement at all). Today
+    every live geo banco has one; the flag is what keeps a future banco without a reader
+    from reading as a territory that produces nothing."""
+    return banco_id in _LIVE_SOURCES and (
+        banco_id == "mdic_comex" or banco_id in _PRODUCTION_PRODUCTS_BY_UF
+    )
+
+
+def products_by_municipio_available(banco_id: str) -> bool:
+    """Whether :func:`products_by_municipio` has a reader for this banco — a município
+    grain, which only the IBGE surveys have (COMEX origin is a UF, COMTRADE a country).
+    Same contract as :func:`products_by_uf_available`."""
+    if banco_id not in _LIVE_SOURCES:
+        return False
+    banco = banco_by_id(banco_id)
+    return "geo" in banco.provides and banco.geo_level == "municipio"
 
 
 def products_by_uf(
     banco_id: str, summary: dict | None = None, conv: dict | None = None
 ) -> pd.DataFrame | None:
     """Per-product ranking WITHIN the selected UF(s) — the "Base de dados" per-UF
-    product breakdown (the inverse of the by-UF rankings, which sum products away).
+    product breakdown and the território profile's composition (the inverse of the
+    by-UF rankings, which sum products away).
 
     Only meaningful with a geo banco AND an explicit UF selection (``states``). With
     no UF selected it returns None so the view shows its "selecione uma UF" hint
     instead of a nationwide product ranking (which Visão geral already covers).
-    Supported for IBGE PEVS (production) and MDIC COMEX (export); other geo bancos
-    return None (honest not-yet-wired)."""
+    Supported for the three IBGE surveys (production) and MDIC COMEX (export); any other
+    banco returns None, which :func:`products_by_uf_available` reports as such."""
     banco = banco_by_id(banco_id)
     if banco_id not in _LIVE_SOURCES or "geo" not in banco.provides:
         return None
@@ -1210,23 +1297,30 @@ def products_by_uf(
             uf_codes=states,
             value_column=value_col,
             flow="export",
+            # The base columns stay IN the frame: serialize_products_by_uf reads them off
+            # (price_base.take) — this reader returns a bare frame, not a labelled payload.
+            with_price_base=True,
         )
-    if banco_id == "ibge_pevs":
-        return gateway.fetch_products_by_uf(
-            table_key="serving_pevs_annual",
-            code_column="product_code",
-            name_column="product_description",
-            year_start=y0,
-            year_end=y1,
-            codes=codes,
-            uf_codes=states,
-            value_column=value_col,
-            tabela=_tabela_from_summary(summary),
-            # A metade viaja junto com a linha: madeira, lenha e carvão existem nas DUAS
-            # com o mesmo nome, e quem exibe precisa distingui-las. Só o PEVS tem a coluna.
-            include_tabela=True,
-        )
-    return None
+    table_key = _PRODUCTION_PRODUCTS_BY_UF.get(banco_id)
+    if table_key is None:
+        return None
+    return gateway.fetch_products_by_uf(
+        table_key=table_key,
+        code_column="product_code",
+        name_column="product_description",
+        year_start=y0,
+        year_end=y1,
+        codes=codes,
+        uf_codes=states,
+        value_column=value_col,
+        tabela=_tabela_from_summary(summary),
+        # A tabela viaja junto com a linha: madeira, lenha e carvão existem nas DUAS metades
+        # do PEVS com o mesmo nome, e quem exibe precisa distingui-las. A PPM também tem
+        # duas tabelas (rebanho e produção animal); na PAM ela é constante, e constante é
+        # mais simples que ausente.
+        include_tabela=True,
+        with_price_base=True,
+    )
 
 
 def monthly_data(
@@ -1252,13 +1346,11 @@ def monthly_data(
     y0, y1 = _years_from_summary(summary)
     codes = _apply_levels(banco_id, summary, _basket(summary))
     if banco_id == "mdic_comex":
-        value_col, value_label = effective_value_column(banco, conv or _TRADE_NATIVE_CONV)
-        if value_col not in gateway.fetch_comex_seasonality_columns():
+        conv = conv or _TRADE_NATIVE_CONV
+        value_col, _ = effective_value_column(banco, conv)
+        mart_lacks_it = value_col not in gateway.fetch_comex_seasonality_columns()
+        if mart_lacks_it:
             value_col = "val_yearfx_usd"
-            value_label = (
-                f"{fmt.convention_value_label(_TRADE_NATIVE_CONV)} · FOB "
-                "(a série mensal ainda não tem a correção escolhida)"
-            )
         # The active flow filter (export/import) is server-side on the seasonality mart
         # (which keeps ``flow`` in its grain) and must narrow the seasonal profile — COMEX
         # exports are ~40x imports, so an unfiltered heatmap under an "Importação" selection
@@ -1270,8 +1362,22 @@ def monthly_data(
             uf_codes=_states(summary),
             flow=_flow_from_summary(summary),
             value_column=value_col,
+            with_price_base=True,
         )
-        return {"rows": rows, "value_column": value_col, "value_label": value_label}
+        rows, base = price_base.take(rows)
+        if mart_lacks_it:
+            value_label = (
+                f"{fmt.convention_value_label(_TRADE_NATIVE_CONV)} · FOB "
+                "(a série mensal ainda não tem a correção escolhida)"
+            )
+        else:
+            _, value_label = effective_value_column(banco, conv, base)
+        return {
+            "rows": rows,
+            "value_column": value_col,
+            "value_label": value_label,
+            "price_base": price_base.payload(value_col, base),
+        }
     return None
 
 

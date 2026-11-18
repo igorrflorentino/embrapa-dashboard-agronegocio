@@ -53,6 +53,74 @@ ALLOWED_VALUE_COLUMNS = frozenset(
 )
 
 
+# ── The price base (v1.105.0) ─────────────────────────────────────────────────
+# A deflated column is at the prices of ONE month: the latest month of its index when Gold
+# was built (annual_deflation_ctes: val_real = val × I(latest) ÷ mean of the year's I). A
+# CROSS column — a Brazilian index printed in a foreign currency — also converts at ONE PTAX
+# day. Gold stamps both on every row (<index>_base_month, fx_<cur>_base_date) and the marts
+# carry them; a reader that sums a deflated column reads them back with max() in the SAME
+# select, so the date that labels a number comes from the very rows that made it — never from
+# a second query a rebuild could have moved in between.
+#
+# A column absent from the month map has no base: a nominal value (val_yearfx_*) is at the
+# prices of its own year, and a quantity has no price. The own-currency deflators (CPI-U for
+# US$, HICP for €) have a month and no PTAX day — they convert at the rate of the period of
+# record, or not at all where the source value is already US$.
+PRICE_BASE_MONTH_COLUMN: Mapping[str, str] = MappingProxyType(
+    {
+        "val_real_ipca_brl": "ipca_base_month",
+        "val_real_ipca_usd": "ipca_base_month",
+        "val_real_ipca_eur": "ipca_base_month",
+        "val_real_igpm_brl": "igpm_base_month",
+        "val_real_igpm_eur": "igpm_base_month",
+        "val_real_igpdi_brl": "igpdi_base_month",
+        "val_real_igpdi_eur": "igpdi_base_month",
+        "val_real_cpi_usd": "cpi_base_month",
+        "val_real_hicp_eur": "hicp_base_month",
+    }
+)
+PRICE_BASE_FX_COLUMN: Mapping[str, str] = MappingProxyType(
+    {
+        "val_real_ipca_usd": "fx_usd_base_date",
+        "val_real_ipca_eur": "fx_eur_base_date",
+        "val_real_igpm_eur": "fx_eur_base_date",
+        "val_real_igpdi_eur": "fx_eur_base_date",
+    }
+)
+# Every base column a table must carry before a reader may ask for one: Gold and the marts
+# gained all seven in the same release, so a table with some but not all is a half-built one.
+PRICE_BASE_COLUMNS = frozenset({*PRICE_BASE_MONTH_COLUMN.values(), *PRICE_BASE_FX_COLUMN.values()})
+
+
+def _price_base_select(value_column: str, enabled: bool) -> str:
+    """The price base of ``value_column`` as extra SELECT items, appended after the last one.
+
+    ``price_base_month`` is the month whose prices the summed column is at, and
+    ``price_base_fx_date`` the PTAX day a cross column converts at (NULL for an own-currency
+    one). Both are constant across the table, so ``max()`` over any group returns that one
+    value; the dbt test ``assert_price_base_single_valued`` guards that there IS only one.
+
+    Returns "" — a query byte-identical to the one before v1.105.0 — when the caller did not
+    ask (the gateway asks only once the table carries the columns: the app and the marts
+    deploy in parallel) or when the column has no base (nominal, quantity).
+    ``value_column`` is caller-validated against ALLOWED_VALUE_COLUMNS.
+
+    Cost: one DATE column over the rows the query scans, two for a cross column. Measured by
+    dry run on 2026-11-17 for a read of every year: +20.4 MB on serving_comtrade_annual,
+    +0.1 to +1.1 MB on the other marts (mostly inside BigQuery's 10 MB per-query floor), and
+    about +18% on the Gold-direct município readers (PAM 146.6 → 173.4 MB).
+    """
+    month = PRICE_BASE_MONTH_COLUMN.get(value_column)
+    if not enabled or month is None:
+        return ""
+    fx = PRICE_BASE_FX_COLUMN.get(value_column)
+    fx_expr = f"max({fx})" if fx else "cast(null as date)"
+    return (
+        f",\n            max({month}) as price_base_month,"
+        f"\n            {fx_expr} as price_base_fx_date"
+    )
+
+
 def table_ref(settings, dataset_attr: str, table: str) -> str:
     """Build a fully-qualified `project.dataset.table` reference from settings."""
     project = settings.gcp_project_id
@@ -407,12 +475,14 @@ def production_overview(
     uf_codes: Sequence[str] = (),
     has_measure_kind: bool = False,
     tabela: str | None = None,
+    price_base: bool = False,
 ) -> tuple[str, list]:
     """Annual production total from ``serving_pevs_annual`` (backs overviewTS).
 
     ``uf_codes`` optionally narrows to the producing UFs (``state_acronym``) — the
     PEVS mart carries it; empty/absent = national (no filter). Used by the
-    cross-source views' per-UF scoping."""
+    cross-source views' per-UF scoping. ``price_base`` adds the month (and PTAX day)
+    the summed column is at — see :func:`_price_base_select`."""
     value_column = _validate_column(value_column, ALLOWED_VALUE_COLUMNS, "value_column")
     conditions: list[str] = []
     params: list = []
@@ -420,11 +490,12 @@ def production_overview(
     _tabela(conditions, params, tabela)
     _in_array(conditions, params, "product_code", "product_codes", product_codes)
     _in_array(conditions, params, "state_acronym", "uf_codes", uf_codes)
+    base = _price_base_select(value_column, price_base)
     sql = f"""
         select
             reference_year,
             {_value_sum(value_column, has_measure_kind)} as total_value,
-            sum(source_rows)    as source_rows
+            sum(source_rows)    as source_rows{base}
         from `{table}`
         {_where(conditions)}
         group by reference_year
@@ -505,6 +576,7 @@ def production_by_uf_yearly(
     value_column: str = "val_real_ipca_brl",
     has_measure_kind: bool = False,
     tabela: str | None = None,
+    price_base: bool = False,
 ) -> tuple[str, list]:
     """Production by (UF, year) from ``serving_pevs_annual`` (backs the ano × UF heatmap).
 
@@ -514,6 +586,11 @@ def production_by_uf_yearly(
     split by ``family`` (``q_mass`` = ``qty_base`` t of 'massa', ``q_vol`` = m³ of
     'volume') so they are only ever summed WITHIN a unit family — the same rule
     :func:`production_by_uf` follows.
+
+    ``price_base`` adds the month the summed column is at (:func:`_price_base_select`).
+    The basket cube (``/api/geo-yearly``) asks for it: it is a separate read, cached on
+    its own, so across a build it can come back at a different month than the snapshot
+    it is shown beside.
     """
     value_column = _validate_column(value_column, ALLOWED_VALUE_COLUMNS, "value_column")
     conditions: list[str] = []
@@ -521,6 +598,7 @@ def production_by_uf_yearly(
     _year_bounds(conditions, params, year_start, year_end)
     _tabela(conditions, params, tabela)
     _in_array(conditions, params, "product_code", "product_codes", product_codes)
+    base = _price_base_select(value_column, price_base)
     sql = f"""
         select
             state_acronym,
@@ -531,7 +609,7 @@ def production_by_uf_yearly(
             {_value_sum(value_column, has_measure_kind)}      as total_value,
             sum(case when family = 'massa'  then qty_base end) as q_mass,
             sum(case when family = 'volume' then qty_base end) as q_vol,
-            sum(case when family = 'contagem' then qty_base end) as q_count
+            sum(case when family = 'contagem' then qty_base end) as q_count{base}
         from `{table}`
         {_where(conditions)}
         group by state_acronym, reference_year
@@ -586,6 +664,7 @@ def production_by_municipio_yearly(
     value_column: str = "val_real_ipca_brl",
     visibility_predicate: str = "",
     tabela: str | None = None,
+    price_base: bool = False,
 ) -> tuple[str, list]:
     """Production by (município, year) straight from ``gold_<source>_production``,
     which is ALREADY município-grained — backs the sub-UF + live-município geography
@@ -610,6 +689,7 @@ def production_by_municipio_yearly(
     _in_array(conditions, params, "city_code", "city_codes", city_codes)
     if visibility_predicate:
         conditions.append(visibility_predicate)
+    base = _price_base_select(value_column, price_base)
     sql = f"""
         select
             city_code,
@@ -618,7 +698,7 @@ def production_by_municipio_yearly(
             sum({value_column})      as total_value,
             sum(case when family = 'massa'    then qty_base end) as q_mass,
             sum(case when family = 'volume'   then qty_base end) as q_vol,
-            sum(case when family = 'contagem' then qty_base end) as q_count
+            sum(case when family = 'contagem' then qty_base end) as q_count{base}
         from `{table}`
         {_where(conditions)}
         group by city_code, state_acronym, reference_year
@@ -640,6 +720,8 @@ def products_by_municipio(
     visibility_predicate: str = "",
     tabela: str | None = None,
     include_tabela: bool = False,
+    price_base: bool = False,
+    has_measure_kind: bool = False,
 ) -> tuple[str, list]:
     """Per-PRODUCT ranking WITHIN a município selection — what the território profile
     needs to answer "o que este município produz".
@@ -660,6 +742,9 @@ def products_by_municipio(
     funde as duas — foi o que aconteceu no gráfico "O que <lugar> produz", que desenhava
     uma barra só e dois rótulos sobrepostos. Fora do PEVS a coluna não existe (COMEX não
     tem metades), daí o sinalizador em vez de sempre selecionar.
+
+    ``has_measure_kind`` (PPM only, see :func:`products_by_uf`) carries the stock|flow
+    discriminator on each row and makes the value flow-only.
     """
     code_column = _validate_column(code_column, ALLOWED_PRODUCT_COLUMNS, "product column")
     name_column = _validate_column(name_column, ALLOWED_PRODUCT_COLUMNS, "product column")
@@ -676,15 +761,18 @@ def products_by_municipio(
     if visibility_predicate:
         conditions.append(visibility_predicate)
     tabela_select = "any_value(tabela) as tabela," if include_tabela else ""
+    kind_select = "any_value(measure_kind) as measure_kind," if has_measure_kind else ""
+    base = _price_base_select(value_column, price_base)
     sql = f"""
         select
             {code_column}                                        as product_code,
             any_value({name_column})                             as product_name,
             {tabela_select}
-            sum({value_column})                                  as total_value,
+            {kind_select}
+            {_value_sum(value_column, has_measure_kind)}         as total_value,
             sum(case when family = 'massa'    then qty_base end) as q_mass,
             sum(case when family = 'volume'   then qty_base end) as q_vol,
-            sum(case when family = 'contagem' then qty_base end) as q_count
+            sum(case when family = 'contagem' then qty_base end) as q_count{base}
         from `{table}`
         {_where(conditions)}
         group by {code_column}
@@ -775,16 +863,27 @@ def products_by_uf(
     flow: str | None = None,
     tabela: str | None = None,
     include_tabela: bool = False,
+    price_base: bool = False,
+    has_measure_kind: bool = False,
 ) -> tuple[str, list]:
     """Per-PRODUCT ranking WITHIN a UF selection (backs the "Base de dados" per-UF
     product breakdown). This is the INVERSE of production_by_uf / comex_by_uf (which
     GROUP BY state and sum products away): here we GROUP BY the product and constrain
     ``state_acronym`` to the selected UFs (``uf_codes``).
 
-    Works for PEVS production (``flow`` None, code_column=product_code) and COMEX
-    export (``flow='export'``, code_column=ncm_code). Each row carries value plus the
+    Works for the three IBGE production marts (``flow`` None, code_column=product_code
+    — PEVS, PAM and PPM share the column shape) and COMEX export (``flow='export'``,
+    code_column=ncm_code). Each row carries value plus the
     family-split ``q_mass`` (t) / ``q_vol`` (m³) so the view can rank by Capital,
     Volume(massa) or Volume(volume) — quantities only ever sum WITHIN a family.
+
+    ``has_measure_kind`` is for the one mart that carries the stock|flow discriminator
+    (``serving_ppm_annual``). Each row then says which it is, because a herd (stock, a
+    headcount) has no value BY NATURE, and a screen that ranks by value must tell that
+    apart from a flow whose value the chosen convention does not reach — both arrive as
+    a null value. The value sum is flow-only (:func:`_value_sum`), as in the other PPM
+    readers. ``any_value`` is exact: the discriminator derives from the SIDRA table, which
+    is constant per code.
 
     ``include_tabela`` faz a TABELA viajar junto com cada linha. Ela é constante
     por ``product_code`` (um código pertence a uma tabela SIDRA só), então o ``any_value``
@@ -810,15 +909,18 @@ def products_by_uf(
     # and this one silently did not.
     _tabela(conditions, params, tabela)
     tabela_select = "any_value(tabela) as tabela," if include_tabela else ""
+    kind_select = "any_value(measure_kind) as measure_kind," if has_measure_kind else ""
+    base = _price_base_select(value_column, price_base)
     sql = f"""
         select
             {code_column}                                      as product_code,
             any_value({name_column})                           as product_name,
             {tabela_select}
-            sum({value_column})                                as total_value,
+            {kind_select}
+            {_value_sum(value_column, has_measure_kind)}       as total_value,
             sum(case when family = 'massa'  then qty_base end) as q_mass,
             sum(case when family = 'volume' then qty_base end) as q_vol,
-            sum(case when family = 'contagem' then qty_base end) as q_count
+            sum(case when family = 'contagem' then qty_base end) as q_count{base}
         from `{table}`
         {_where(conditions)}
         group by {code_column}
@@ -836,6 +938,7 @@ def comex_seasonality(
     flow: str | None = None,
     uf_codes: Sequence[str] = (),
     value_column: str = "val_yearfx_usd",
+    price_base: bool = False,
 ) -> tuple[str, list]:
     """Monthly COMEX value + net weight from ``serving_comex_seasonality`` (backs
     monthlyData). Both metrics are carried so the seasonal profile can overlay
@@ -856,6 +959,7 @@ def comex_seasonality(
     _in_array(conditions, params, "ncm_code", "ncm_codes", ncm_codes)
     _flow(conditions, params, flow)
     _in_array(conditions, params, "state_acronym", "uf_codes", uf_codes)
+    base = _price_base_select(value_column, price_base)
     sql = f"""
         select
             reference_year,
@@ -866,7 +970,7 @@ def comex_seasonality(
             -- The coverage pair (see trade_by_partner): a month the convention cannot value
             -- sums to NULL, and the declared US$ says how much trade that leaves out.
             sum(val_yearfx_usd)                                   as total_usd,
-            sum(if({value_column} is null, val_yearfx_usd, null)) as unvalued_usd
+            sum(if({value_column} is null, val_yearfx_usd, null)) as unvalued_usd{base}
         from `{table}`
         {_where(conditions)}
         group by reference_year, reference_month
@@ -1093,6 +1197,7 @@ def trade_overview(
     reporters: Sequence[str] = (),
     partners: Sequence[str] = (),
     sum_flows: tuple[str, ...] | None = None,
+    price_base: bool = False,
 ) -> tuple[str, list]:
     """Annual trade value + weight from a trade annual mart (backs overviewTS).
 
@@ -1120,12 +1225,13 @@ def trade_overview(
     _reporter(conditions, params, reporter_column, reporter_value)
     _in_array(conditions, params, "reporter_iso_a3", "reporters", reporters)
     _in_array(conditions, params, "partner_iso_a3", "partners", partners)
+    base = _price_base_select(value_column, price_base)
     sql = f"""
         select
             reference_year,
             sum({value_column}) as total_value_usd,
             sum(net_weight_kg)  as total_weight_kg,
-            sum(source_rows)    as source_rows
+            sum(source_rows)    as source_rows{base}
         from `{table}`
         {_where(conditions)}
         group by reference_year
@@ -1199,6 +1305,7 @@ def comex_by_uf_yearly(
     ncm_codes: Sequence[str] = (),
     flow: str | None = None,
     value_column: str = "val_yearfx_usd",
+    price_base: bool = False,
 ) -> tuple[str, list]:
     """COMEX value by (UF, year) from ``serving_comex_annual`` (backs the ano × UF heatmap).
 
@@ -1207,6 +1314,7 @@ def comex_by_uf_yearly(
     renders real per-UF history. ``total_value_usd`` (renamed by the seam to
     ``total_value``) is the choropleth/heatmap measure. ``value_column`` picks the
     currency×correction measure (BRL/USD/EUR — the real columns the mart now carries).
+    ``price_base``: as in :func:`production_by_uf_yearly`.
     """
     value_column = _validate_column(value_column, ALLOWED_VALUE_COLUMNS, "value_column")
     conditions: list[str] = []
@@ -1214,6 +1322,7 @@ def comex_by_uf_yearly(
     _year_bounds(conditions, params, year_start, year_end)
     _in_array(conditions, params, "ncm_code", "ncm_codes", ncm_codes)
     _flow(conditions, params, flow)
+    base = _price_base_select(value_column, price_base)
     sql = f"""
         select
             state_acronym,
@@ -1223,7 +1332,7 @@ def comex_by_uf_yearly(
             any_value(region_abbrev) as region_abbrev,
             sum({value_column})      as total_value_usd,
             sum(case when family = 'massa'  then qty_base end) as q_mass,
-            sum(case when family = 'volume' then qty_base end) as q_vol
+            sum(case when family = 'volume' then qty_base end) as q_vol{base}
         from `{table}`
         {_where(conditions)}
         group by state_acronym, reference_year
@@ -1308,6 +1417,7 @@ def trade_by_partner(
     self_iso: str | None = None,
     reporter_iso_column: str | None = None,
     value_column: str = "val_yearfx_usd",
+    price_base: bool = False,
 ) -> tuple[str, list]:
     """Partner ranking with export/import split (backs partnerData).
 
@@ -1365,6 +1475,7 @@ def trade_by_partner(
     _reporter(conditions, params, reporter_column, reporter_value)
     _in_array(conditions, params, "reporter_iso_a3", "reporters", reporters)
     _in_array(conditions, params, "partner_iso_a3", "partners", partners)
+    base = _price_base_select(value_column, price_base)
     sql = f"""
         select
             {partner_code_column}                                  as partner_code,
@@ -1402,7 +1513,7 @@ def trade_by_partner(
             -- A year can be missing only IN PART — the latest COMEX month before its
             -- deflator index is ingested — and the note must not call it a whole year.
             array_agg(distinct if({value_column} is not null, reference_year, null)
-                      ignore nulls)                                as years_with_value
+                      ignore nulls)                                as years_with_value{base}
         from `{table}`
         {_where(conditions)}
         group by {partner_code_column}
@@ -1432,6 +1543,7 @@ def trade_flows(
     reporters: Sequence[str] = (),
     partners: Sequence[str] = (),
     value_column: str = "val_yearfx_usd",
+    price_base: bool = False,
 ) -> tuple[str, list]:
     """Origin->destination links for the Sankey (backs flowData).
 
@@ -1480,6 +1592,7 @@ def trade_flows(
     _in_array(conditions, params, "reporter_iso_a3", "reporters", reporters)
     _in_array(conditions, params, "partner_iso_a3", "partners", partners)
     value_column = _validate_column(value_column, ALLOWED_VALUE_COLUMNS, "value_column")
+    base = _price_base_select(value_column, price_base)
     sql = f"""
         select
             {origin_code_column}             as origin_code,
@@ -1496,7 +1609,7 @@ def trade_flows(
             -- A year can be missing only IN PART — the latest COMEX month before its
             -- deflator index is ingested — and the note must not call it a whole year.
             array_agg(distinct if({value_column} is not null, reference_year, null)
-                      ignore nulls)                                as years_with_value
+                      ignore nulls)                                as years_with_value{base}
         from `{table}`
         {_where(conditions)}
         group by {origin_code_column}, {dest_code_column}
@@ -1735,6 +1848,7 @@ def product_timeseries(
     reporters: Sequence[str] = (),
     partners: Sequence[str] = (),
     has_measure_kind: bool = False,
+    tabela: str | None = None,
 ) -> tuple[str, list]:
     """Annual per-product series — value + quantities (backs productTS).
 
@@ -1749,7 +1863,8 @@ def product_timeseries(
 
     ``uf_codes`` optionally narrows to the producing/origin UFs (``state_acronym``)
     — the PEVS/COMEX marts carry it; empty/absent = national. Used by the
-    cross-source views' per-UF scoping (PEVS prod_mass/volume + farm-gate price).
+    cross-source views' per-UF scoping (the PEVS mass/volume series of each half +
+    farm-gate price).
 
     ``flow`` optionally narrows to one trade direction (export/import) — only the
     trade marts carry a ``flow`` column, so callers pass it ONLY for trade sources
@@ -1770,12 +1885,19 @@ def product_timeseries(
     Brazil's view rather than a sum over every reporter (which would conflate the
     whole world's trade in the all-reporters years). Production/COMEX marts have no
     reporter dimension, so their callers leave these ``None``.
+
+    ``tabela`` optionally pins ONE SIDRA table (see :func:`_tabela`). The cross-source
+    PEVS quantity series pass it: each is one half of the survey, and without the pin
+    the family sum mixed native extraction (t289) with planted silviculture (t291) —
+    9.5× the extraction mass and 8.4× its volume in 2024 (v1.106.0). ``None`` keeps the
+    query byte-identical to before the parameter existed.
     """
     code_column = _validate_column(code_column, ALLOWED_PRODUCT_COLUMNS, "product column")
     value_column = _validate_column(value_column, ALLOWED_VALUE_COLUMNS, "value_column")
     conditions: list[str] = []
     params: list = []
     _year_bounds(conditions, params, year_start, year_end)
+    _tabela(conditions, params, tabela)
     _in_array(conditions, params, code_column, "codes", codes)
     _in_array(conditions, params, "state_acronym", "uf_codes", uf_codes)
     _flow(conditions, params, flow, sum_flows=sum_flows)

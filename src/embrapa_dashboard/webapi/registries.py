@@ -150,30 +150,83 @@ class Banco:
 
 # Cross-source comparable-metric catalogs (per banco). ``years`` is native
 # coverage; the cross view intersects coverages across selected series.
+#
+# Every PEVS metric is ONE half of the survey, and ``tabela`` says which: the SIDRA table
+# the BFF pins on every read behind it (``seam_cross._pevs_cross_points`` refuses a PEVS
+# metric without one, and ``tests/test_cross_pevs_tabela_guard.py`` sweeps the registry).
+# Until v1.106.0 the three ``prod_*`` series summed BOTH halves while ``prod_value`` said
+# "da extração vegetal": in 2024 the series read R$ 47.7 bi against the extraction's
+# R$ 6.5 bi (7.3×), and the planted half is the one that grows — the sum stayed flat over
+# 1986–2024 while the extraction fell 80%. The ``prod_*`` ids predate the split and are
+# kept because permalinks carry them (``xs=ibge_pevs:prod_value`` is the default landing
+# state); they mean extraction (t289) now, and ``silv_*`` the silviculture (t291).
+# The ids must match ``config.ibge_table_id`` / ``silvicultura_table_id`` (test-pinned).
+# ``years`` ends at 2025: both tables carry 2025 in Gold (measured 2026-11-17).
 _PEVS_METRICS = (
     {
         "id": "prod_value",
-        "label": "Valor da produção",
+        "label": "Valor da extração vegetal",
         "family": "currency",
         "unit": "R$",
-        "agg": "Valor real (IPCA) da extração vegetal",
-        "years": [1986, 2024],
+        "agg": "Valor real (IPCA) da extração vegetal de floresta nativa (SIDRA 289)",
+        "years": [1986, 2025],
+        "tabela": "289",
     },
     {
         "id": "prod_mass",
-        "label": "Quantidade produzida (massa)",
+        "label": "Massa da extração vegetal",
         "family": "mass",
         "unit": "t",
-        "agg": "Massa colhida das espécies de família massa",
-        "years": [1986, 2024],
+        "agg": (
+            "Soma dos produtos da extração vegetal medidos em toneladas "
+            "(floresta nativa, SIDRA 289)"
+        ),
+        "years": [1986, 2025],
+        "tabela": "289",
     },
     {
         "id": "prod_volume",
-        "label": "Quantidade produzida (volume)",
+        "label": "Volume da extração vegetal",
         "family": "volume",
         "unit": "m³",
-        "agg": "Volume das espécies de família volume",
-        "years": [1986, 2024],
+        "agg": (
+            "Soma dos produtos da extração vegetal medidos em metros cúbicos "
+            "(floresta nativa, SIDRA 289)"
+        ),
+        "years": [1986, 2025],
+        "tabela": "289",
+    },
+    {
+        "id": "silv_value",
+        "label": "Valor da silvicultura",
+        "family": "currency",
+        "unit": "R$",
+        "agg": "Valor real (IPCA) da silvicultura de floresta plantada (SIDRA 291)",
+        "years": [1986, 2025],
+        "tabela": "291",
+    },
+    {
+        "id": "silv_mass",
+        "label": "Massa da silvicultura",
+        "family": "mass",
+        "unit": "t",
+        "agg": (
+            "Soma dos produtos da silvicultura medidos em toneladas (floresta plantada, SIDRA 291)"
+        ),
+        "years": [1986, 2025],
+        "tabela": "291",
+    },
+    {
+        "id": "silv_volume",
+        "label": "Volume da silvicultura",
+        "family": "volume",
+        "unit": "m³",
+        "agg": (
+            "Soma dos produtos da silvicultura medidos em metros cúbicos "
+            "(floresta plantada, SIDRA 291)"
+        ),
+        "years": [1986, 2025],
+        "tabela": "291",
     },
 )
 _COMEX_METRICS = (

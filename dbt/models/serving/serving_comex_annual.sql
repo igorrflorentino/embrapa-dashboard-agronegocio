@@ -82,7 +82,7 @@ with comex as (
         sum(val_real_igpdi_eur)     as val_real_igpdi_eur,
         -- The own-currency deflators (v1.82.0): US CPI corrects the dollar, euro-area
         -- HICP the euro. Distinct columns, not variants of the ones above — the FX
-        -- moment differs too (câmbio do ano, not câmbio de hoje), so the numbers are
+        -- moment differs too (the month's rate, not the latest one), so the numbers are
         -- not two roundings of one answer. Served for their OWN currency only: a
         -- val_real_cpi_brl would be 'the dollar's purchasing power, printed in reais',
         -- which nothing on screen asks for.
@@ -92,7 +92,17 @@ with comex as (
         sum(val_freight_usd)        as val_freight_usd,
         sum(val_insurance_usd)      as val_insurance_usd,
         count(*)                    as source_rows,
-        max(last_refresh)           as last_refresh
+        max(last_refresh)           as last_refresh,
+        -- The price base of the val_real columns above (v1.105.0). Constant across Gold,
+        -- so max() only lifts it through the GROUP BY; the BFF reads it back with max()
+        -- in the SAME select that sums a value, which is what dates that value.
+        max(ipca_base_month)        as ipca_base_month,
+        max(igpm_base_month)        as igpm_base_month,
+        max(igpdi_base_month)       as igpdi_base_month,
+        max(cpi_base_month)         as cpi_base_month,
+        max(hicp_base_month)        as hicp_base_month,
+        max(fx_usd_base_date)       as fx_usd_base_date,
+        max(fx_eur_base_date)       as fx_eur_base_date
     from {{ ref('gold_comex_flows') }}
     where {{ hidden_code_predicate('comex', 'ncm_code') }}
     group by reference_year, flow, ncm_code, tabela, state_acronym, country_code, family
@@ -137,6 +147,13 @@ select
     c.val_freight_usd,
     c.val_insurance_usd,
     c.source_rows,
+    c.ipca_base_month,
+    c.igpm_base_month,
+    c.igpdi_base_month,
+    c.cpi_base_month,
+    c.hicp_base_month,
+    c.fx_usd_base_date,
+    c.fx_eur_base_date,
     c.last_refresh
 from comex c
 left join {{ ref('dim_geo_br') }} g

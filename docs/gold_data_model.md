@@ -41,6 +41,7 @@ erDiagram
         float    qty_base               "qty_native to the family base_unit (t / m3 / …)"
         float    val_real_ipca_brl      "deflated R$; plus the full val_ matrix"
         string   data_quality_flag      "OK / MISSING_VALUE / MISSING_QUANTITY / INCOMPLETE / OUTLIER_VALUE / OUTLIER_QUANTITY / PROBLEMATIC_VALUE / PROBLEMATIC_QUANTITY / ISOLATED_SPIKE / UNSCORED (the last 6 gated by enable_quality_outliers; OK means EXAMINED and cleared, UNSCORED means the detector had no basis to run; INFERRED_* accepted but reserved, never emitted; no MISSING_WEIGHT: trade only)"
+        date     ipca_base_month        "price base (v1.105.0): month of val_real_ipca_*; plus igpm/igpdi/cpi/hicp_base_month + fx_usd/fx_eur_base_date"
         timestamp last_refresh
     }
     gold_pam_production {
@@ -58,6 +59,7 @@ erDiagram
         float    yield_kg_ha            "PAM-only: yield (kg/ha)"
         float    val_real_ipca_brl      "deflated R$; plus the full val_ matrix"
         string   data_quality_flag      "OK / AREA_INCONSISTENT (planted < harvested, PAM only) / MISSING_VALUE / MISSING_QUANTITY / INCOMPLETE / OUTLIER_VALUE / OUTLIER_QUANTITY / PROBLEMATIC_VALUE / PROBLEMATIC_QUANTITY / ISOLATED_SPIKE / UNSCORED (same gating and meaning as PEVS; INFERRED_* reserved; no MISSING_WEIGHT)"
+        date     ipca_base_month        "price base: same seven columns as PEVS"
         timestamp last_refresh
     }
     gold_ppm_production {
@@ -71,6 +73,7 @@ erDiagram
         float    qty_base               "qty_native to the family base_unit"
         float    val_real_ipca_brl      "deflated R$ (0 for a herd by construction); plus the full val_ matrix"
         string   data_quality_flag      "same set as PEVS; a stock row is UNSCORED (no price to score) or MISSING_QUANTITY"
+        date     ipca_base_month        "price base: same seven columns as PEVS"
         timestamp last_refresh
     }
     gold_comex_flows {
@@ -86,6 +89,7 @@ erDiagram
         string   family                 "plus qty_base per the statistical unit"
         float    val_real_ipca_brl      "US$ FOB origin; plus val_freight_usd / val_insurance_usd (import)"
         string   data_quality_flag
+        date     ipca_base_month        "price base: same seven columns as PEVS"
         timestamp last_refresh
     }
     gold_comtrade_flows {
@@ -102,6 +106,7 @@ erDiagram
         float    net_weight_kg          "always-massa; qty_base often NULL (ch.44)"
         float    val_real_ipca_brl      "US$ primaryValue origin; plus val_cif_usd / val_fob_usd"
         string   data_quality_flag
+        date     ipca_base_month        "price base: same seven columns as PEVS"
         timestamp last_refresh
     }
     gold_produto_agrupamento {
@@ -222,8 +227,9 @@ worth in THAT economy's money.
 
 - `val_yearfx_{brl,usd,eur}` — **nominal**, at the FX of the record's period.
 - `val_real_ipca_{brl,usd,eur}` / `val_real_igpm_*` / `val_real_igpdi_*` —
-  **deflated to today** via the respective BCB chain index, then converted to a
-  foreign currency at **today's** FX. For the ANNUAL bancos (PEVS, PAM, PPM, COMTRADE) the
+  **deflated to the prices of the index's latest month** (its *base month*, below) via the
+  respective BCB chain index, then converted to a foreign currency at the **latest PTAX in the
+  base** (`fx_{usd,eur}_base_date`). For the ANNUAL bancos (PEVS, PAM, PPM, COMTRADE) the
   index of the record's year is the **mean of its twelve monthly indices** (v1.103.0; December's
   before), and only a year the index covers in full is deflated — so IGP-M has no value before
   1990. COMEX is monthly: each row uses its own month's index. Under US$ or € this measures **Brazilian**
@@ -241,6 +247,16 @@ worth in THAT economy's money.
 - The foreign pair rides the `enable_foreign_inflation` build-order gate: the
   columns exist either way and read NULL until the first ingest. See
   [`PLANS/correcao_inflacionaria_multimoeda.md`](../PLANS/correcao_inflacionaria_multimoeda.md).
+- **The price base** (v1.105.0): `ipca_base_month` · `igpm_base_month` ·
+  `igpdi_base_month` · `cpi_base_month` · `hicp_base_month` (DATE, first day of the month)
+  say which month each index's `val_real_*` columns are expressed in — its latest reading
+  when Gold was built — and `fx_usd_base_date` · `fx_eur_base_date` say which PTAX day the
+  R$-routed USD/EUR columns convert at. Constant across a table (like `last_refresh`), on
+  every fact and every mart (as `max()`); it moves with every build that ingests a new index
+  month, so two reads of the same row under different base months differ by that month's
+  inflation. **In Looker**, show the base next to any `val_real_*` field (*"a preços de
+  outubro de 2026"*) — the painel does, in every value label, the citation and the CSV.
+  Deflating changes the unit and adds no interest: this is not a present value.
 - Trade extras: `val_freight_usd` / `val_insurance_usd` (COMEX imports),
   `val_cif_usd` / `val_fob_usd` (COMTRADE).
 

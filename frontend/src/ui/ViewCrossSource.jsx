@@ -6,7 +6,9 @@
 // travels in the shared URL / citation (see src/main.jsx + AppShell).
 
 // Default landing selection — the flagship cross-source question:
-// IBGE annual production value × MDIC annual export value.
+// IBGE annual production value × MDIC annual export value. The PEVS side is the
+// native-extraction half only (SIDRA 289); until v1.106.0 it silently summed the
+// planted half too, 7.3× the extraction value in 2024. Silviculture is `silv_value`.
 window.DEFAULT_CROSS_STATE = {
   series: [
     { b: 'ibge_pevs', m: 'prod_value' },
@@ -187,6 +189,11 @@ function ViewCrossSource({ value, onChange }) {
                   const atCap = !on && refs.length >= CS_MAX;
                   const blocked = !bancoHasData;        // no data yet → not pickable
                   const dis = atCap || blocked;
+                  // The month a corrected series is at, from the response the unit below
+                  // already reads (v1.105.0). Only a corrected series carries one.
+                  const serie = blocked ? null : window.crossSeries(b.id, m.id, {});
+                  const pb = serie && serie.priceBase;
+                  const descricao = pb && window.precosDe ? `${m.agg}, ${window.precosDe(pb)}` : m.agg;
                   return (
                     <button key={k}
                       className={'xs-chip' + (on ? ' on' : '') + (dis ? ' disabled' : '')}
@@ -195,9 +202,9 @@ function ViewCrossSource({ value, onChange }) {
                       style={on ? { background: CS_COLORS[idx % CS_COLORS.length], borderColor: CS_COLORS[idx % CS_COLORS.length], color: '#fff' } : null}
                       title={blocked
                         ? `${b.short} ainda não tem dados — disponível quando o banco for liberado.`
-                        : `${m.agg} · ${window.METRIC_FAMILIES[m.family]?.label || m.family}`}>
+                        : `${descricao} · ${window.METRIC_FAMILIES[m.family]?.label || m.family}`}>
                       <span className="xs-chip-label">{m.label}</span>
-                      <span className="xs-chip-unit tnum">{blocked ? m.unit : (window.crossSeries(b.id, m.id, {})?.unit || m.unit)}</span>
+                      <span className="xs-chip-unit tnum">{blocked ? m.unit : (serie?.unit || m.unit)}</span>
                     </button>
                   );
                 })}
@@ -271,7 +278,12 @@ function ViewCrossSource({ value, onChange }) {
             <span key={it.key} className="xs-legend-item">
               <span className="xs-legend-dot" style={{ background: it.color }}></span>
               <strong>{it.label}</strong>
-              <span className="xs-legend-src">{it.bancoShort} · {it.unit}</span>
+              <span className="xs-legend-src">
+                {it.bancoShort} · {it.unit}
+                {/* The month a corrected series is at (v1.105.0): "R$ bi" alone does not say
+                    whose reais. Only PEVS's production value is corrected here. */}
+                {it.priceBase && window.precosDe ? ` · ${window.precosDe(it.priceBase)}` : ''}
+              </span>
             </span>
           ))}
         </div>

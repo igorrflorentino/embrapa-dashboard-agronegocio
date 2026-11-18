@@ -2,7 +2,7 @@
 // acompanha a moeda.
 //
 // Até a v1.87 a faixa oferecia duas operações sob o mesmo símbolo: "US$ · IPCA"
-// (val_real_ipca_usd — real deflacionado pelo IPCA e convertido ao câmbio de HOJE: poder
+// (val_real_ipca_usd — real deflacionado pelo IPCA e convertido ao câmbio MAIS RECENTE: poder
 // de compra brasileiro, apresentado em dólares) e "US$ · CPI" (val_real_cpi_usd — câmbio
 // do ANO, corrigido pela inflação americana). As duas eram legítimas, mas a primeira
 // confundia mais do que servia — quem pede dólares corrigidos pela inflação espera a
@@ -24,11 +24,19 @@ let MetricConventions;
 beforeEach(async () => {
   await import('./data.js');
   await import('./bancos.js');
+  await import('./MonetaryNotes.jsx'); // window.precosDe / cambioDe (o mês-base, v1.105.0)
+  await import('./seriesUtils.js'); // window.priceBaseFor
   await import('./MetricConventions.jsx');
   MetricConventions = window.MetricConventions;
 });
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  delete window.dataStore;
+});
+
+// O `priceBase` que o servidor manda junto com um valor corrigido (v1.105.0).
+const OUTUBRO = { column: 'val_real_ipca_brl', month: '2026-10', fxDate: null };
 
 const BASE = { currency: 'BRL', correction: 'Nominal', units: { mass: 't', volume: 'm³' }, autoScale: false };
 
@@ -152,8 +160,62 @@ describe('conventionExplain diz o que o número É', () => {
   });
 
   it('não inventa uma conversão quando a moeda é o real', () => {
+    const frase = window.conventionExplain({ currency: 'BRL', correction: 'IPCA' }, 'ibge_pevs', OUTUBRO);
+    expect(frase).toBe('Corrigido pela inflação do Brasil (IPCA), a preços de outubro de 2026.');
+  });
+
+  it('sem o mês-base, diz a verdade sem nomeá-lo — nunca "de hoje"', () => {
+    // Nenhum snapshot carregado: o valor continua a preços do mês mais recente do índice,
+    // a frase só não sabe qual é. "Em reais de hoje" era o texto até a v1.104: um mês que
+    // ninguém nomeava, e que mudava a cada construção da base.
     const frase = window.conventionExplain({ currency: 'BRL', correction: 'IPCA' }, 'ibge_pevs');
-    expect(frase).toBe('Corrigido pela inflação do Brasil (IPCA), em reais de hoje.');
+    expect(frase).toBe('Corrigido pela inflação do Brasil (IPCA), a preços do mês mais recente do índice.');
+  });
+
+  it('lê o mês do snapshot carregado, e só se ele datar a coluna da convenção', () => {
+    window.dataStore = { get: () => ({ priceBase: OUTUBRO }) };
+    expect(window.conventionExplain({ currency: 'BRL', correction: 'IPCA' }, 'ibge_pevs'))
+      .toContain('a preços de outubro de 2026');
+    // O mesmo snapshot sob outra correção não empresta o mês: ele data o IPCA, não o IGP-M.
+    expect(window.conventionExplain({ currency: 'BRL', correction: 'IGP-M' }, 'ibge_pevs'))
+      .toContain('a preços do mês mais recente do índice');
+  });
+
+  it('aceita o banco como id ou como o objeto do registro', () => {
+    // A faixa recebe o OBJETO (main.jsx). Até a v1.105.0 ele ia direto para
+    // canonCurrencyFor, que espera o id e caía no primeiro banco (em R$): o COMEX em
+    // US$ · CPI dizia "convertido pelo câmbio do ano de registro" sem câmbio nenhum.
+    const conv = { currency: 'USD', correction: 'CPI' };
+    const porObjeto = window.conventionExplain(conv, window.bancoById('mdic_comex'), null);
+    expect(porObjeto).toContain('não passa por câmbio');
+    expect(porObjeto).toBe(window.conventionExplain(conv, 'mdic_comex', null));
+  });
+
+  it('a coluna cruzada nomeia o mês e o dia do câmbio', () => {
+    const frase = window.conventionExplain({ currency: 'USD', correction: 'IPCA' }, 'ibge_pevs',
+      { column: 'val_real_ipca_usd', month: '2026-10', fxDate: '2026-11-14' });
+    expect(frase).toContain('a preços de outubro de 2026');
+    expect(frase).toContain('ao câmbio de 14/11/2026');
+    expect(frase).toContain('e não a inflação dos EUA');
+  });
+
+  it('nenhuma frase, com ou sem mês, chama o valor de "de hoje" ou de "valor presente"', () => {
+    // Deflacionar troca a unidade de medida; não soma juros. "Valor presente" é o termo das
+    // finanças para um valor capitalizado — outra pergunta, que o painel não faz.
+    const bases = [undefined, null, OUTUBRO, { ...OUTUBRO, fxDate: '2026-11-14' }];
+    let vistas = 0;
+    for (const banco of ['ibge_pevs', 'ibge_pam', 'mdic_comex', 'un_comtrade']) {
+      for (const currency of ['BRL', 'USD', 'EUR']) {
+        for (const correction of ['Nominal', 'IPCA', 'IGP-M', 'IGP-DI', 'CPI', 'HICP']) {
+          for (const base of bases) {
+            const frase = window.conventionExplain({ currency, correction }, banco, base);
+            expect(frase).not.toMatch(/\bhoje\b|valor(es)? presentes?/i);
+            vistas += 1;
+          }
+        }
+      }
+    }
+    expect(vistas).toBeGreaterThan(0);
   });
 
   it('diz para que serve o nominal — e para que NÃO serve — na moeda certa', () => {

@@ -65,7 +65,7 @@ jobs:
     # Skip on forks — they can't reach the WIF provider (security boundary).
     if: github.event.repository.fork == false
 
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned, not -latest: see tests/test_workflow_runner_pin.py
     timeout-minutes: 15
 
     steps:
@@ -77,10 +77,10 @@ jobs:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_DBT_BUILD_SERVICE_ACCOUNT }}
 
-      - name: Set up Python 3.12.11
+      - name: Set up Python (version from .python-version)
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
-          python-version: "3.12.11"
+          python-version-file: .python-version
 
       - name: Install uv (with cache keyed on uv.lock)
         uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0

@@ -604,6 +604,19 @@ import './seriesUtils.js';
       // guessing from an empty array alone.
       muniYearlySeries: (subUfLoaded && Array.isArray(muniCube)) ? muniCube : [],
       subUfActive, subUfLoaded,
+      // The month that cube's corrected values are at (v1.105.0) — null with no cube, while
+      // it loads, or under a nominal convention. The cube reads the analytical base directly
+      // and the snapshot reads the pre-aggregated tables, so across a build the two can be at
+      // different months; MainScreen compares them (window.PriceBaseSkewNote).
+      muniPriceBase: (subUfActive && narrowedCities.length && window.municipioYearlyPriceBase)
+        ? window.municipioYearlyPriceBase(bancoId, summary, narrowedCities)
+        : null,
+      // The same for the basket cube (UF × year), when it is the grid the screen draws. It
+      // reads the same pre-aggregated tables as the snapshot, but in a request cached on its
+      // own, so across a build it too can come back at another month.
+      geoPriceBase: (!subUfActive && useCube && window.geoYearlyPriceBase)
+        ? window.geoYearlyPriceBase(bancoId, summary)
+        : null,
       // The active sub-UF recorte, named. Every UF row above carries a FRACTION of its
       // state when this is set — the state's own value never appears — so a surface that
       // prints a UF name beside a number has to say so where the number is. The chip and

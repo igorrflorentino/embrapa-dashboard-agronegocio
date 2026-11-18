@@ -60,9 +60,9 @@ _LITERAL_POR_DESENHO = {
         "inflação se cancela, e o outro lado (aduana) só existe em US$ declarado."
     ),
     ("seam_cross.py", "_pevs_cross_points", "fetch_production_overview"): (
-        "Cruzamento entre fontes: a métrica `prod_value` declara a sua convenção na tela — "
-        "'Valor real (IPCA) da extração vegetal' (bancos.js) — e o Multi-fonte não tem "
-        "faixa de convenções para contradizê-la."
+        "Cruzamento entre fontes: as métricas de valor do PEVS declaram a sua convenção na "
+        "tela — 'Valor real (IPCA) da extração vegetal…' / '…da silvicultura…' (bancos.js) "
+        "— e o Multi-fonte não tem faixa de convenções para contradizê-la."
     ),
     ("seam_cross.py", "_pevs_cross_points", "fetch_product_timeseries"): (
         "Ramo de QUANTIDADE (massa/volume): só `total_qty_native` é lido; o leitor exige "
@@ -148,16 +148,27 @@ def _itens_do_select(sql: str) -> list[str]:
     return [i for i in itens if i]
 
 
+def _sem_placeholder(item: str) -> str:
+    """O item sem os placeholders de f-string. Um placeholder não é texto do alias: em
+    ``as unvalued_usd{base}`` o alias é ``unvalued_usd``, e ``{base}`` são as colunas DATE da
+    base de preço (``sql._price_base_select``, v1.105.0), que não somam moeda nenhuma."""
+    return re.sub(r"\{[^}]*\}", "", item)
+
+
 def somas_fixas(fonte: str) -> list[tuple[str, str]]:
     """(função, item) de todo item de select que soma uma coluna monetária ESCRITA —
     fora o par de cobertura, reconhecido pelo alias."""
     achadas = []
     for funcao, sql in sql_por_funcao(fonte).items():
         for item in _itens_do_select(sql):
-            sem_placeholder = re.sub(r"\{[^}]*\}", "", item)
+            sem_placeholder = _sem_placeholder(item)
             if not _MONETARIA.search(sem_placeholder):
                 continue
-            alias = item.rsplit(" as ", 1)[-1].strip().lower() if " as " in item else ""
+            alias = (
+                sem_placeholder.rsplit(" as ", 1)[-1].strip().lower()
+                if " as " in sem_placeholder
+                else ""
+            )
             if alias in _COBERTURA:
                 continue
             achadas.append((funcao, item))
@@ -202,16 +213,33 @@ def test_a_varredura_de_sql_APROVA_a_convencao_e_o_par_de_cobertura():
     assert somas_fixas(certo) == []
 
 
+def test_a_base_de_preco_no_fim_do_item_nao_esconde_nem_inventa_culpada():
+    """``{base}`` colado ao último item (v1.105.0): o par de cobertura continua sendo
+    reconhecido pelo alias, e uma soma nominal escrita continua reprovando."""
+    cobertura = (
+        'def leitor():\n    sql = f"""select sum({value_column}) as total_value,\n'
+        "        sum(if({value_column} is null, val_yearfx_usd, null)) as unvalued_usd{base}"
+        ' from t"""\n'
+    )
+    assert somas_fixas(cobertura) == []
+    escrita = (
+        'def leitor():\n    sql = f"""select sum(val_yearfx_usd) as value_usd{base} from t"""\n'
+    )
+    assert somas_fixas(escrita) == [("leitor", "sum(val_yearfx_usd) as value_usd{base}")]
+
+
 def test_a_varredura_de_sql_acha_as_somas_da_convencao():
     """Guarda do instrumento: o analisador tem de enxergar o SQL real."""
     funcoes = sql_por_funcao(_SQL_PY.read_text(encoding="utf-8"))
     for nome in ("trade_by_partner", "trade_flows", "comex_seasonality"):
         assert nome in funcoes, f"o analisador não achou o SQL de {nome}"
         itens = _itens_do_select(funcoes[nome])
-        assert any("{value_column}" in i and i.endswith("total_value") for i in itens), (
-            f"{nome}: não achei a soma da convenção entre {itens}"
+        assert any(
+            "{value_column}" in i and _sem_placeholder(i).endswith("total_value") for i in itens
+        ), f"{nome}: não achei a soma da convenção entre {itens}"
+        assert any(_sem_placeholder(i).endswith("unvalued_usd") for i in itens), (
+            f"{nome} perdeu a cobertura"
         )
-        assert any(i.endswith("unvalued_usd") for i in itens), f"{nome} perdeu a cobertura"
 
 
 # ── 2. seam → gateway ──────────────────────────────────────────────────────────

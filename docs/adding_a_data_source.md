@@ -249,6 +249,16 @@ source (like COMEX) deflates by its own month's index instead — see `gold_come
 
 Apply the project's four monetary conventions (`val_yearfx_*`, `val_real_ipca_*`, `val_real_igpm_*`, `val_real_igpdi_*`) if the source has monetary values.
 
+**Carry the price base with them (v1.105.0).** A `val_real_*` value is at the prices of its index's
+latest month, and that month moves with every build. Select the seven base columns — `ipca_base_month`,
+`igpm_base_month`, `igpdi_base_month`, `cpi_base_month`, `hicp_base_month` (from `inflation_latest`) and
+`fx_usd_base_date`, `fx_eur_base_date` (from `fx_latest`) — into `enriched` and into the final select,
+right before `last_refresh`; document them in `_gold.yml` (no month in the description: it would change
+the build fingerprint every build); and carry `max(<col>) as <col>` for each in the source's serving
+mart. Then add the Gold and the mart to `GOLD` / `MARTS` in `tests/test_price_base.py` and to
+`dbt/tests/assert_price_base_single_valued.sql`. You will not forget: that test file derives the list of
+models that output a `val_real_*` column from the SQL and fails until both lists match it.
+
 **Important:** after the `dbt build` in prod, the table shows up automatically in `make backup-gold` (introspection via `list_tables` + the `gold_` prefix). No manual list maintenance.
 
 ### 9. Reference seeds (if applicable)

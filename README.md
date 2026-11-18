@@ -144,12 +144,14 @@ The `discover` commands are **auxiliary and not part of the production pipeline*
 
 | Column | Meaning | When it is NULL |
 |---|---|---|
-| `val_yearfx_*` | `val_raw` (already in present-day R$ numéraire, without inflation adjustment) converted by the **average FX of the same year**. Foreign-currency columns are `NULL` pre-1994 so as not to mix old Cruzeiros with present-day values. | Year FX unavailable (e.g. EUR < 1999); or `reference_year < 1994` for USD/EUR. |
-| `val_real_ipca_*` | Value projected to today via the **IPCA chain** (absorbs inflation + currency reforms) and converted to current FX. **Use this column for cross-year comparisons.** | Base-year IPCA unavailable. |
-| `val_real_igpm_*` | Same, using IGP-M. | Base-year IGP-M unavailable. |
-| `val_real_igpdi_*` | Same, using IGP-DI. | Base-year IGP-DI unavailable. |
+| `val_yearfx_*` | `val_raw` — the source value, re-expressed in the Real (R$) unit by the `historical_currency_factors` seed (a change of currency UNIT across the reforms, not an inflation adjustment) — converted by the **average FX of the same year**. Foreign-currency columns are `NULL` pre-1994 so as not to mix old Cruzeiros with Reais. | Year FX unavailable (e.g. EUR < 1999); or `reference_year < 1994` for USD/EUR. |
+| `val_real_ipca_*` | Value deflated by the **IPCA** to the prices of the index's **latest month** (the *base month*, below) and, for USD/EUR, converted at the latest PTAX in the base. **Use a `val_real_*` column for cross-year comparisons.** | The index does not cover the record's year (IPCA starts in 1980; an annual banco needs all twelve months). |
+| `val_real_igpm_*` | Same, using IGP-M. | Same; IGP-M has no value before 1990. |
+| `val_real_igpdi_*` | Same, using IGP-DI. | Same; IGP-DI reaches every IBGE year (1974 on). |
+| `val_real_cpi_usd` · `val_real_hicp_eur` | Converted at the **record's** FX, then deflated by US CPI-U / euro-area HICP to their own latest month. An index only corrects its own economy's money: `val_real_cpi_brl` does not exist. | `enable_foreign_inflation` off; € before 1999. |
+| `{ipca,igpm,igpdi,cpi,hicp}_base_month` · `fx_{usd,eur}_base_date` | (v1.105.0) The **price base**: the month each index's `val_real_*` columns are expressed in (its latest reading when Gold was built) and the PTAX day the R$-routed USD/EUR columns convert at. Constant across a table; it moves with every build that ingests a new index month, so values read under two base months differ by that month's inflation. The painel names it beside every corrected value (*"a preços de outubro de 2026"*), in the citation and in the CSV. | The series has no rows (e.g. the foreign pair with `enable_foreign_inflation` off). |
 
-> The BCB IPCA series (SGS 433) is a monthly variation. The Silver layer chains that percentage into an index number with base 100, making the product `valor_em_cruzeiros * (IPCA_atual / IPCA_ano)` mathematically valid for arriving at present-day Reais — without needing a historical currency conversion table.
+> **How a year is deflated:** `val_raw × I(base month) ÷ mean(I over the record's twelve months)` — the yearly MEAN since v1.103.0, because an annual value is a flow accrued through the year (COMEX is monthly and uses its own month's index). The BCB series are monthly variations that Silver chains into an index number. The index removes **inflation** only: the cuts of zeros of the 1986–1994 currency reforms are a change of UNIT, absorbed beforehand by the `historical_currency_factors` seed — without it, pre-1994 values are 10⁶–10⁹× too large. Deflating changes the unit of measure and **adds no interest**: a `val_real_*` value is not finance's present value (what the money would be worth had it been invested). To compare a series with an investment, compare its CAGR on the corrected values with the real interest rate of the same period.
 
 ## `data_quality_flag`
 

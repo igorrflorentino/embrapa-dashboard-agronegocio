@@ -401,6 +401,21 @@ describe('ViewPartners — a moeda é a que o servidor somou', () => {
     clicar(container, 'Volume');
     expect(container.querySelector('.ptn-valuation')).toBeFalsy();
   });
+
+  it('diz quais anos cada total soma (v1.105.0)', async () => {
+    // Cada parceiro é UM número sobre muitos anos, e a tela dizia a moeda e a correção mas
+    // não o período. `sumRange` vem do servidor: os anos com valor na convenção.
+    await import('./MonetaryNotes.jsx'); // window.periodoDaSoma
+    const comPeriodo = {
+      ...EM_REAIS,
+      valueLabel: 'Valor real (IPCA) — R$ · FOB · a preços de outubro de 2026',
+      sumRange: [1997, 2026],
+    };
+    stubGlobals({ value: comPeriodo, weight: comPeriodo, price: comPeriodo });
+    const { container } = render(<ViewPartners summary={{}} conventions={{}} database="mdic_comex" />);
+    expect(container.querySelector('.ptn-valuation').textContent)
+      .toBe('Valor real (IPCA) — R$ · FOB · a preços de outubro de 2026 · soma de 1997 a 2026');
+  });
 });
 
 describe('ViewPartners — a convenção que não alcança parte da janela', () => {

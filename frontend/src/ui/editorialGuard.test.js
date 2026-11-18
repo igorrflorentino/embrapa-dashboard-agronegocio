@@ -35,7 +35,11 @@ const REPO = resolve(SRC, '..', '..');
 // ── O que é aceito, e POR QUÊ ────────────────────────────────────────────────
 // Cada entrada: o arquivo, um trecho literal do texto e a razão. "Sempre foi assim" NÃO é
 // razão; "é um nome próprio / um código que o pesquisador digita" é.
-const PERMITIDOS = [];
+const PERMITIDOS = [
+  { arquivo: 'frontend/src/ui/glossary.js', trecho: 'não é o valor presente das finanças',
+    razao: 'O verbete Deflacionar nomeia o conceito das finanças uma única vez, para NEGÁ-LO: quem '
+      + 'procura "valor presente" no glossário precisa achar que a correção não aplica juros (v1.105.0).' },
+];
 
 // ── Casamento de palavra inteira, com acento ─────────────────────────────────
 // `\b` do JavaScript é ASCII: "top" casaria em "Topázio". A fronteira aqui é qualquer
@@ -269,6 +273,13 @@ describe('controle editorial — as próprias regras (contraprova)', () => {
     ['Marque uma call para discutir o deadline', 'call'],
     ['Recortes pré-agregados na granularidade exata de cada gráfico', 'recorte (tabela)'],
     ['até os recortes prontos para o painel', 'recorte (tabela)'],
+    // As frases da faixa de convenções até a v1.104, congeladas: um "hoje" sem data, para um
+    // mês que anda a cada atualização da base (v1.105.0).
+    ['Corrigido pela inflação do Brasil (IPCA), em reais de hoje.', 'de hoje (moeda)'],
+    ['Corrigido pela inflação dos EUA (CPI), em dólares de hoje. ', 'de hoje (moeda)'],
+    ['Corrigido pela inflação do Brasil (IPCA) e convertido pelo câmbio de hoje. ', 'câmbio de hoje'],
+    ['As colunas val_real_* trazem os valores a preços de hoje, para comparar anos diferentes.', 'de hoje (moeda)'],
+    ['Os valores foram trazidos a valor presente pelo IPCA', 'valor presente'],
   ])('reprova: “%s”', (texto, termo) => {
     const vs = violacoesDeVocabulario(linha(texto));
     expect(vs.map((v) => v.regra.split(' → ')[0])).toContain(termo);
@@ -284,6 +295,12 @@ describe('controle editorial — as próprias regras (contraprova)', () => {
     'Status do banco',
     'O cachê do artista não é memória temporária',
     'o painel exatamente como exibido, com o recorte exato consultado',
+    // "Hoje" e "presente" sem afirmar unidade de medida: comparam épocas, ou dizem que há dado.
+    'Um dólar de 1997 não vale um de hoje.',
+    'Os preços de 1986 não se comparam com os de hoje.',
+    'Mensal, de 1997 ao presente.',
+    'Níveis presentes',
+    'Corrigido pela inflação do Brasil (IPCA), a preços de outubro de 2026.',
   ])('aprova: “%s”', (texto) => {
     expect(relatorio(violacoesDeVocabulario(linha(texto)))).toEqual([]);
   });
