@@ -714,7 +714,7 @@ describe('exportActiveTableCSV — comparativo entre territórios', () => {
     window.dataStore = { get: () => ({ ufYearly: UF_ROWS, products: PRODUCTS }) };
     window.geoLevelFor = () => 'municipio';
     window.geoMesh = () => MESH;
-    // The cube's read STATE (v1.107.3): rows, its base, and whether it is loading or failed.
+    // The cube's read STATE (v1.108.1): rows, its base, and whether it is loading or failed.
     window.municipioYearly = () => ({
       rows: [{ year: 2021, cityCode: '1501402', uf: 'PA', value: 0.5, q_mass: 1 }],
       priceBase: null, loading: false, loadError: null,
@@ -761,7 +761,7 @@ describe('exportActiveTableCSV — comparativo entre territórios', () => {
   });
 
   it('refuses with the failure, not "carregando", when a território failed to load', () => {
-    // Until v1.107.3 a failed read stayed "loading" for good, so this said "espere" forever.
+    // Until v1.108.1 a failed read stayed "loading" for good, so this said "espere" forever.
     // Leaving the place out would be worse: the file would look complete.
     window.municipioYearly = () => ({ rows: null, priceBase: null, loading: false, loadError: 'HTTP 503' });
     const p = window.prepareTableCSV(ctx([{ level: 'uf', code: 'PA' }, { level: 'municipio', code: '1501402' }]));
@@ -776,7 +776,7 @@ describe('exportActiveTableCSV — comparativo entre territórios', () => {
   });
 });
 
-// ── Um recorte sub-UF que não se resolveu não vira arquivo (v1.107.3) ────────────────────
+// ── Um recorte sub-UF que não se resolveu não vira arquivo (v1.108.1) ────────────────────
 // While the narrowing loads, or after it failed, applyFilters has no numbers for it: the
 // series falls back to the national one. The file would carry that series beside its own
 // recorte_geografico column naming the mesorregião — a wrong number with a right label.

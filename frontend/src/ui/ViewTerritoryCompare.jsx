@@ -63,7 +63,7 @@ function ViewTerritoryCompare({ summary, conventions, database, territoryCompare
   const data = tc.build({ database, summary, selection, metric });
   const items = data.items.map((it, i) => ({ ...it, color: TC_COLORS[i % TC_COLORS.length] }));
   // Only a measured item is drawn. A failed one (loadError) is named in the legend and the
-  // chart card says why — it used to read "carregando…" for good (until v1.107.3).
+  // chart card says why — it used to read "carregando…" for good (until v1.108.1).
   const ready = items.filter((it) => !it.loading && !it.loadError && !it.unavailable);
 
   // ── Series, index base and metrics (same primitives as the product comparison) ──────

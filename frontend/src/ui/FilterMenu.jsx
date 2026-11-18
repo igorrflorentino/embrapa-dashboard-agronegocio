@@ -589,7 +589,7 @@ function FilterMenu({ open = false, banco = 'ibge_pevs', value, onClose, onApply
   // COMEX) has no city_code, so the mesh is not loaded and only nação ▸ região ▸ UF
   // render. The mesh is static + cached; main.jsx's resource subscription re-renders
   // this menu once it lands, so the first open may briefly show empty sub-UF columns.
-  // Read as a STATE (v1.107.3): a mesh on its way and one that FAILED both leave the list
+  // Read as a STATE (v1.108.1): a mesh on its way and one that FAILED both leave the list
   // null, and the columns used to say "Carregando malha do IBGE…" for good after a failure.
   const meshState = (showMunis && window.geoMeshState) ? window.geoMeshState() : null;
   const mesh = meshState ? meshState.municipios : null;
@@ -894,7 +894,7 @@ function FilterMenu({ open = false, banco = 'ibge_pevs', value, onClose, onApply
   // for good — the local Set was never seeded (see the GEO seed) and Apply hands back the
   // incoming selection verbatim, so both summaries count THAT one and are told the universe
   // is unknown: a deep-linked "2 municípios" no longer reads "1 nação · 1 UF"
-  // (filterSummary.muniNarrowing, v1.107.3).
+  // (filterSummary.muniNarrowing, v1.108.1).
   const muniUniverseUnknown = showMunis && !muniUniverseLive;
   const munisCounted = muniUniverseUnknown ? ((value && value.munis) || []).length : munis.size;
 
@@ -1445,7 +1445,7 @@ function FilterMenu({ open = false, banco = 'ibge_pevs', value, onClose, onApply
                   <strong>{nations.size}</strong> {nations.size === 1 ? 'nação' : 'nações'} ·{' '}
                   <strong>{regions.size}</strong> {regions.size === 1 ? 'região' : 'regiões'} ·{' '}
                   <strong>{states.size}</strong> {states.size === 1 ? 'UF' : 'UFs'}
-                  {/* Not "em breve" (what it said until v1.107.3): the município level exists,
+                  {/* Not "em breve" (what it said until v1.108.1): the município level exists,
                       and what this line has to say is whether its mesh is coming or failed. */}
                   {showMunis && (muniUniverseLive
                     ? <>{' '}·{' '}<strong>{munis.size}</strong> {munis.size === 1 ? 'município' : 'municípios'}</>

@@ -94,7 +94,7 @@ function ViewTerritoryProfile({ summary, database, conventions }) {
   // (meso/micro/intermediária/imediata/município) resolves to a city set, whose UFs are
   // the admitted ones. Empty/absent ⇒ no narrowing ⇒ the whole universe.
   const scopedCities = filtered.scopedCityCodes || null;
-  // The mesh as a STATE (v1.107.3): the city picker, the trajectory and the composition must
+  // The mesh as a STATE (v1.108.1): the city picker, the trajectory and the composition must
   // tell a mesh still on its way from one that failed — both leave `municipios` null.
   const meshState = window.geoMeshState
     ? window.geoMeshState()
@@ -196,7 +196,7 @@ function ViewTerritoryProfile({ summary, database, conventions }) {
     ? `${ufOptions.length} UFs selecionadas`
     : ((ufOptions.find((u) => u.uf === uf) || {}).name || uf || '—');
   // No município resolved (the mesh on its way, failed or empty) is "—", like an unresolved UF
-  // above — not "— ·", the separator dangling from a name that never came (v1.107.3).
+  // above — not "— ·", the separator dangling from a name that never came (v1.108.1).
   const placeLabel = activeLevel === 'municipio'
     ? (cityCombined ? `${cityOptions.length} municípios selecionados`
       : !cityName ? '—' : cityUf ? `${cityName} · ${cityUf}` : cityName)
@@ -214,7 +214,7 @@ function ViewTerritoryProfile({ summary, database, conventions }) {
   const muniCubeBase = muniRead ? muniRead.priceBase : null;
 
   // Where the trajectory — and the two indicators read off it — stands. Only the last branch
-  // is a measurement: until v1.107.3 "Sem série" and "sem dados" were printed while the cube
+  // is a measurement: until v1.108.1 "Sem série" and "sem dados" were printed while the cube
   // was on its way (1–3 s on every change of município), and for good when it failed.
   //   município — the IBGE mesh names the cities, then the município cube sums them;
   //   UF        — applyFilters' grid, which under a sub-UF facet is the rollup of that same
@@ -266,7 +266,7 @@ function ViewTerritoryProfile({ summary, database, conventions }) {
   // still on its way (the city picker says "carregando municípios…" for the same reason):
   // nothing was asked, so the card says it is loading — never "sem produtos". A mesh that
   // FAILED is not on its way: the card says it failed (it said "carregando" forever until
-  // v1.107.3).
+  // v1.108.1).
   const muniMeshError = activeLevel === 'municipio' ? meshState.loadError : null;
   const breakdown = ufBreakdown || muniBreakdown || {
     products: [],

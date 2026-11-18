@@ -194,7 +194,7 @@ function withChips(summary, database, conventions) {
         muniSliceable,
         // The mesh only SIZES the universe; the selection is the URL's own `mn` list. While the
         // mesh loads — and for good when it failed — that list is still a narrowing, and the
-        // chip must not read "1 nação · 1 UF" over it (filterSummary.muniNarrowing, v1.107.3).
+        // chip must not read "1 nação · 1 UF" over it (filterSummary.muniNarrowing, v1.108.1).
         muniUniverseUnknown: muniLevel && meshLen === 0,
         // The four aggregate sub-UF facets narrow the data without touching any count
         // above, so the chip has to be told about them explicitly or it reports the

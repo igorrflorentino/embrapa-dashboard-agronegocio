@@ -215,7 +215,7 @@ function ViewGeography({ families, conventions, summary, database, territoryComp
   // on wantMuniFallback alone left the sub-UF path (an explicit meso/município facet)
   // without names, so those rows read as bare 7-digit codes. It is a cached, shared
   // resource — asking for it whenever the município scope is open costs nothing.
-  // Read as a STATE (v1.107.3): the fallback cannot name its cities without the mesh, and a
+  // Read as a STATE (v1.108.1): the fallback cannot name its cities without the mesh, and a
   // mesh still on its way and one that failed must not read alike.
   const meshState = (scope === 'municipio' && window.geoMeshState)
     ? window.geoMeshState()
@@ -241,7 +241,7 @@ function ViewGeography({ families, conventions, summary, database, territoryComp
   //   dataFilters' shared cube (a município/meso facet — which is exactly what clicking
   //   a município sets, so the old guard's `!subUfActive` silenced the message for the
   //   one gesture the drill-down made most common).
-  // Each needs the mesh first. Three answers, kept apart (v1.107.3) — only the last is a
+  // Each needs the mesh first. Three answers, kept apart (v1.108.1) — only the last is a
   // measurement. Until then a failure read as loading forever, and a mesh still on its way
   // (or an empty answer) showed the "recorte a geografia" prompt to someone who already had.
   const muniFetchError = scope === 'municipio'
@@ -312,7 +312,7 @@ function ViewGeography({ families, conventions, summary, database, territoryComp
   // component). Mirroring both here, the same bridge pattern as patchFilter, lets
   // csvExport.js's 'geo' case export whatever granularity is ACTUALLY on screen
   // instead of always the per-UF table regardless of the Granularidade control.
-  // The município read's state rides along (v1.107.3): an empty list while it loads or
+  // The município read's state rides along (v1.108.1): an empty list while it loads or
   // after it failed is not "nothing in the recorte", and the file must not say it is.
   const muniExportRead = useGeoMemo(
     () => ({ loading: localMuniLoading, loadError: muniFetchError }),
@@ -647,7 +647,7 @@ function ViewGeography({ families, conventions, summary, database, territoryComp
   const showRegionSumCard = scope !== 'region';
   // A sub-UF narrowing still on its way, or one that failed, owns an EMPTY grid: the two cards
   // below drew it as "0 macrorregiões" over empty bars — "no data" for a read that never
-  // answered (v1.107.3). They say which of the two it is instead.
+  // answered (v1.108.1). They say which of the two it is instead.
   const gridUnresolved = !!(filtered.subUfLoadError || filtered.subUfLoading);
   const gridUnresolvedNote = (
     <p className="caption" style={{ padding: '12px' }}>

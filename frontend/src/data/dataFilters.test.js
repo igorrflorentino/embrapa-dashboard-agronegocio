@@ -27,7 +27,7 @@ afterEach(() => {
   delete window.municipioYearly;
 });
 
-// The município-level loaders return their read's STATE (v1.107.3): the data is null while
+// The município-level loaders return their read's STATE (v1.108.1): the data is null while
 // it is not known — in flight, or failed after the retries — and [] only when measured empty.
 const meshReady = (municipios) => () => ({ municipios, loading: false, loadError: null });
 const MESH_PENDING = () => ({ municipios: null, loading: true, loadError: null });
@@ -160,7 +160,7 @@ describe('applyFilters — sub-UF (mesorregião) narrowing rolls the município 
   });
 });
 
-// Until v1.107.3 a failed read was indistinguishable from a pending one: the mesh and the
+// Until v1.108.1 a failed read was indistinguishable from a pending one: the mesh and the
 // cube both came back null, so geoComboPending stayed true forever and the screens said
 // "carregando" for good. A failure is now its own answer — and, like a pending narrowing,
 // it never hands a screen the un-narrowed grid.
@@ -188,7 +188,7 @@ describe('applyFilters — a failed sub-UF read is neither pending nor empty dat
     const f = applyFilters({ mesos: ['M1'] }, 'ibge_pevs');
     expect(f).toMatchObject({ subUfLoadError: 'HTTP 503', subUfLoading: false, geoComboPending: false });
     // The snapshot's PA total (100) is the WHOLE state, not mesorregião M1: it must not stand
-    // in for the selection. Before v1.107.3 this was what the map drew.
+    // in for the selection. Before v1.108.1 this was what the map drew.
     expect(f.ufData).toEqual([]);
     expect(f.ufYearlySeries).toEqual([]);
     expect(window.municipioYearly).not.toHaveBeenCalled(); // no mesh, no city set to ask for

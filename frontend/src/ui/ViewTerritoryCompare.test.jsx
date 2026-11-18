@@ -31,7 +31,7 @@ const MESH = [
 let charts;
 const BELEM_ROWS = [{ year: 2021, cityCode: '1501402', uf: 'PA', value: 30, q_mass: 3 }];
 
-// The município loaders return their read's STATE (v1.107.3). `mesh`/`muniRows` null = still
+// The município loaders return their read's STATE (v1.108.1). `mesh`/`muniRows` null = still
 // on its way; `meshError`/`muniError` = every retry failed.
 function stub({ geoLevel = 'municipio', families = ['mass'], mesh = MESH, meshError = null,
   muniRows = BELEM_ROWS, muniError = null } = {}) {
@@ -247,8 +247,8 @@ describe('ViewTerritoryCompare — the numbers', () => {
   });
 });
 
-// ── Carregando, falhou ou vazio: três respostas diferentes (v1.107.3) ────────────────────
-// Until v1.107.3 a failed município read came back null like a pending one: its legend
+// ── Carregando, falhou ou vazio: três respostas diferentes (v1.108.1) ────────────────────
+// Until v1.108.1 a failed município read came back null like a pending one: its legend
 // said "carregando…" for good, and a failed mesh left the search silently empty.
 describe('ViewTerritoryCompare — a município read loading, failed or empty', () => {
   const PA_BELEM = { items: [{ level: 'uf', code: 'PA' }, { level: 'municipio', code: '1501402' }] };

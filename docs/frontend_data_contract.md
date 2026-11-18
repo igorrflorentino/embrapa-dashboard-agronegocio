@@ -209,7 +209,7 @@ município passes the cascade iff it clears every active facet (intersection).
   (COMEX/COMTRADE) or a not-built table. `priceBase` (§3.8) is the cube's OWN: it reads
   Gold, not the snapshot's mart, so a build landing between the two requests can date them
   differently — the screen names both rather than borrowing one.
-- **Client side of the two município reads (v1.107.3).** `window.geoMeshState()` →
+- **Client side of the two município reads (v1.108.1).** `window.geoMeshState()` →
   `{ municipios, loading, loadError }` and `window.municipioYearly(...)` →
   `{ rows, priceBase, loading, loadError }` (`contracts.js` § Município-level loaders).
   `municipios`/`rows` are `null` while the answer is NOT known — pending, or failed after the

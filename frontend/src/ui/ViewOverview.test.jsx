@@ -294,10 +294,10 @@ describe('ViewOverview — KPI strip + quality digest (H3 + P0 lock-in)', () => 
   });
 });
 
-// ── Um recorte sub-UF a caminho ou que falhou segura os números (v1.107.3) ───────────────
+// ── Um recorte sub-UF a caminho ou que falhou segura os números (v1.108.1) ───────────────
 // While the narrowing loads, or after it failed, applyFilters' series is the NATIONAL one:
 // shown under the sub-UF chip, it would be data the filter excludes. Pending holds with
-// "…"; a failure holds with "—" and says why. Until v1.107.3 a failure read as pending,
+// "…"; a failure holds with "—" and says why. Until v1.108.1 a failure read as pending,
 // and the strip said "cruzando produto × UF…" for good.
 describe('ViewOverview — a sub-UF narrowing on its way or failed holds the numbers', () => {
   const quantityCards = (c) => [...c.querySelectorAll('.kpi')]

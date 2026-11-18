@@ -49,7 +49,7 @@ function stub({ rows = UF_ROWS, geoLevel = 'municipio', muni = () => MUNI_ROWS, 
   window.applyFilters = () => ({ yearStart: 2019, yearEnd: 2021 });
   window.geoLevelFor = () => geoLevel;
   window.geoMesh = () => MESH;
-  // The cube's read STATE (v1.107.3): `muni()` gives the rows (null = still on its way);
+  // The cube's read STATE (v1.108.1): `muni()` gives the rows (null = still on its way);
   // `muniError` is a read that failed for good; the base comes in the same response.
   window.municipioYearly = (banco, summary, codes) => {
     calls.muni.push(codes);
@@ -162,7 +162,7 @@ describe('build — the numbers per territory', () => {
     expect(out.loadError).toBeNull();
   });
 
-  // Until v1.107.3 a failed cube came back null like a pending one: the place read
+  // Until v1.108.1 a failed cube came back null like a pending one: the place read
   // "carregando…" for good, and the CSV kept saying "espere".
   it('marks a município as FAILED, not loading, when its cube failed for good', () => {
     stub({ muniError: 'HTTP 503' });
@@ -310,7 +310,7 @@ describe('build — the month the município cube is at', () => {
       { level: 'uf', code: 'PA' }, { level: 'municipio', code: '1501402' },
     ] });
     expect(out.priceBases).toEqual([NOVEMBRO]);
-    // ONE read gives rows and base (v1.107.3: the separate accessor is gone).
+    // ONE read gives rows and base (v1.108.1: the separate accessor is gone).
     expect(calls.muni).toEqual([['1501402']]);
   });
 

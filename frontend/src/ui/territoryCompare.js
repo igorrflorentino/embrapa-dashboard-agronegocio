@@ -158,7 +158,7 @@
       const base = { ...t, key: keyOf(t), label: labelOf(t), levelLabel: LEVEL_LABEL[t.level] };
       if (t.level === 'municipio') {
         if (!muniCapable) return { ...base, unavailable: true, points: [] };
-        // A failed read is not a pending one: until v1.107.3 it read "carregando…" for good.
+        // A failed read is not a pending one: until v1.108.1 it read "carregando…" for good.
         if (muniRead && muniRead.loadError) return { ...base, loadError: muniRead.loadError, points: [] };
         if (muniCube == null) return { ...base, loading: true, points: [] };
         return { ...base, points: yearly(muniRows, (r) => String(r.cityCode) === String(t.code), field, years) };

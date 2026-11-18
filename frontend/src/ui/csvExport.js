@@ -124,7 +124,7 @@ import './countUnits.js';
       || 'sem recorte sub-UF';
     // A sub-UF narrowing still on its way, or failed for good, leaves applyFilters without
     // the selection's numbers: the series falls back to the national one, the grid to
-    // nothing. The cases that read them refuse with the reason (v1.107.3) — a file is
+    // nothing. The cases that read them refuse with the reason (v1.108.1) — a file is
     // worse than a screen here, since it would carry the national series under its own
     // recorte_geografico column, with no chip or note beside it.
     const recorteNaoResolvido = f.subUfLoadError ? 'falha-recorte'

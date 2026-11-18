@@ -90,7 +90,7 @@ const SCHEMA = {
 };
 
 function stubRegistry(opts = {}) {
-  // `mesh: null` = still on its way; `meshError` = every retry failed (v1.107.3).
+  // `mesh: null` = still on its way; `meshError` = every retry failed (v1.108.1).
   const { geoLevel = 'municipio', mesh = MESH, meshError = null } = opts;
   window.QUALITY_FLAGS = QUALITY_FLAGS;
   window.PRODUCTS = PRODUCTS;
@@ -687,8 +687,8 @@ describe('FilterMenu — Aplicar sem mudanças devolve a mesma geografia', () =>
   });
 });
 
-// ── A malha do IBGE em três estados (v1.107.3) ───────────────────────────────────────────
-// Until v1.107.3 the mesh came back null both in flight and after it failed, so the sub-UF
+// ── A malha do IBGE em três estados (v1.108.1) ───────────────────────────────────────────
+// Until v1.108.1 the mesh came back null both in flight and after it failed, so the sub-UF
 // columns said "Carregando malha do IBGE…" for good after a failure, and the section header
 // said "municípios em breve" in all three cases.
 describe('FilterMenu — the IBGE mesh loading, failed or empty', () => {
@@ -737,7 +737,7 @@ describe('FilterMenu — the IBGE mesh loading, failed or empty', () => {
 
   // The data keeps a deep-linked município list through "Aplicar" (above); the chip and the
   // menu's own line must keep saying it. Without the mesh the local Set is never seeded, and
-  // until v1.107.3 both read it as no narrowing: "1 nação · 1 UF" over two municípios.
+  // until v1.108.1 both read it as no narrowing: "1 nação · 1 UF" over two municípios.
   it.each([
     ['failed', { meshError: 'HTTP 503' }],
     ['on its way', { mesh: null }],

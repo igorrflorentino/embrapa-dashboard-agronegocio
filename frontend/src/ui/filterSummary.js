@@ -21,7 +21,7 @@
 // selection is not: it travels as a list of codes, and a full one is stored as null, so a
 // non-empty list is a narrowing. Reading it as none described the recorte as WIDER than it
 // is: a deep link to two municípios of the Pará chipped as "1 nação · 1 UF" under a failed
-// mesh, and the ABNT citation quotes the chip (v1.107.3).
+// mesh, and the ABNT citation quotes the chip (v1.108.1).
 function muniNarrowing({ munisSize, munisTotal, muniSliceable, muniUniverseUnknown }) {
   if (!(munisSize > 0)) return false;
   if (muniSliceable) return munisSize < munisTotal;

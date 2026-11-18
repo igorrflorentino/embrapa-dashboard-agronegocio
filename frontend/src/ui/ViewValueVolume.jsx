@@ -131,7 +131,7 @@ function ViewValueVolume({ families, conventions, summary, database }) {
   // number that disregards the basket (mirrors ViewOverview's comboPending guard). The
   // per-product composition charts below read productTS and stay basket-correct.
   const comboPending = !!filtered.geoComboPending;
-  // A sub-UF narrowing whose mesh or município cube FAILED (v1.107.3): nothing is coming, and
+  // A sub-UF narrowing whose mesh or município cube FAILED (v1.108.1): nothing is coming, and
   // the ts-derived series would be the un-narrowed ones — data the filter excludes. Held like
   // the pending state; the note says it failed instead of "cruzando…" forever.
   const recorteFalhou = filtered.subUfLoadError || null;

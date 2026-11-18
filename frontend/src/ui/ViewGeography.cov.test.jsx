@@ -190,7 +190,7 @@ function fullFixture(overrides = {}) {
     muniYearlySeries: [],
     subUfActive: false,
     subUfLoaded: false,
-    // Where a requested sub-UF narrowing stands (v1.107.3): on its way, or failed for good.
+    // Where a requested sub-UF narrowing stands (v1.108.1): on its way, or failed for good.
     subUfLoading: false,
     subUfLoadError: null,
     ...overrides,
@@ -1027,8 +1027,8 @@ describe('ViewGeography — a count map never adds different things', () => {
   });
 });
 
-// ── Carregando, falhou ou vazio: três respostas diferentes (v1.107.3) ────────────────────
-// Until v1.107.3 the município cube and the IBGE mesh came back null both in flight and
+// ── Carregando, falhou ou vazio: três respostas diferentes (v1.108.1) ────────────────────
+// Until v1.108.1 the município cube and the IBGE mesh came back null both in flight and
 // after a failure: a failed read left the cards on "Carregando municípios…" for good, and a
 // mesh still on its way showed the prompt to narrow the geography to someone who had.
 describe('ViewGeography — the município read loading, failed or empty', () => {

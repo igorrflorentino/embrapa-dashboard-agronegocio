@@ -42,7 +42,7 @@ function stubGlobals(filtered, opts = {}) {
   window.fmtPct = (x) => `${((x || 0) * 100).toFixed(1)}%`;
   window.geoLevelFor = () => opts.geoLevel || 'municipio';
   window.selectedSingleUf = (s) => (s && s.states && s.states.length === 1 ? s.states[0] : null);
-  // The município loaders return their read's STATE (v1.107.3). `mesh: null` is the IBGE
+  // The município loaders return their read's STATE (v1.108.1). `mesh: null` is the IBGE
   // mesh still on its way, `meshError` one that failed; omitted, it is an empty mesh.
   // `municipioYearly` gives the cube's rows (null = still on its way), `muniError` a cube
   // that failed, and `muniBase` its price base — from the same response, as in production.
@@ -658,8 +658,8 @@ describe('ViewTerritoryProfile — os anos de cada soma e o mês de cada leitura
   });
 });
 
-// ── Carregando, falhou ou vazio: três respostas diferentes (v1.107.3) ────────────────────
-// Until v1.107.3 the município cube and the IBGE mesh came back null both in flight and
+// ── Carregando, falhou ou vazio: três respostas diferentes (v1.108.1) ────────────────────
+// Until v1.108.1 the município cube and the IBGE mesh came back null both in flight and
 // after a failure: the trajectory said "Sem série" and the indicators "sem dados" for the
 // 1–3 s the cube takes on every change of município, and for good when it failed.
 describe('ViewTerritoryProfile — the município read loading, failed or empty', () => {

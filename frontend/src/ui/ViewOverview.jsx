@@ -69,10 +69,10 @@ function ViewOverview({ families, summary, database, conventions }) {
   // basket × UF can't be combined until the product×UF cube loads (dataFilters.js):
   // the value would silently drop the basket, so hold it at a loading state instead.
   const comboPending = !!filtered.geoComboPending;
-  // A sub-UF narrowing whose mesh or município cube FAILED (v1.107.3). Not pending — nothing
+  // A sub-UF narrowing whose mesh or município cube FAILED (v1.108.1). Not pending — nothing
   // is coming — and no number here can honour the selection: the un-narrowed ones would be
   // data the filter excludes. Held like the pending state, with a dash instead of an
-  // ellipsis, and the series card says why. (Until v1.107.3 a failure read as pending, and
+  // ellipsis, and the series card says why. (Until v1.108.1 a failure read as pending, and
   // the strip said "cruzando produto × UF…" for good.)
   const recorteFalhou = filtered.subUfLoadError || null;
   const segura = comboPending || !!recorteFalhou;
@@ -396,7 +396,7 @@ function ViewOverview({ families, summary, database, conventions }) {
             overline="Qualidade dos dados · agregado"
             title={hasGeo
               // kpiVal: an unresolved recorte has no grid to count, and its 0 would read
-              // "covers no UF" (v1.107.3).
+              // "covers no UF" (v1.108.1).
               ? ('Cobertura geográfica: ' + kpiVal(ufCovered) + ' / ' + ufTotalReal + ' UFs')
               : 'Distribuição das marcas de qualidade'}
             action={<span className="caption">{filtered.qualityFlags.length} de {window.QUALITY_FLAGS.length} flags</span>}

@@ -322,7 +322,7 @@ describe('ViewValueVolume — value-less herd + combo-pending branches', () => {
     expect(container.querySelector('.load-err')).toBeNull();
   });
 
-  // v1.107.3: a failed sub-UF narrowing is held the same way — the series would be the
+  // v1.108.1: a failed sub-UF narrowing is held the same way — the series would be the
   // national one under a sub-UF chip — but it says it FAILED instead of "Cruzando…" forever.
   it('holds the same series behind a failure note when the sub-UF narrowing failed', () => {
     stubGlobals(valueFixture({ geoComboPending: false, subUfLoadError: 'HTTP 503' }));

@@ -211,7 +211,7 @@ function geoYearlyRequest(bancoId, summary) {
 //               MAX_ATTEMPTS, on purpose);
 //   loadError — every retry failed;
 //   neither   — `municipios` IS the answer, and an empty list is the only "no município".
-// `municipios` is null until the response lands: unknown, never empty. Until v1.107.3
+// `municipios` is null until the response lands: unknown, never empty. Until v1.108.1
 // window.geoMesh returned null both in flight and after a failure, so a failed mesh left
 // the sub-UF selector and Perfil do território on "carregando municípios…" forever.
 window.geoMeshState = function geoMeshState() {
@@ -269,7 +269,7 @@ window.comtradeCountries = function comtradeCountries() {
 //               municípios record none of the basket in the window (an empty array is
 //               also what the BFF returns for a banco with no município grain).
 // `rows` and `priceBase` are null until the response lands: unknown, never empty. Until
-// v1.107.3 this returned the bare rows — null in flight AND after a failure — so the
+// v1.108.1 this returned the bare rows — null in flight AND after a failure — so the
 // screens could not tell "still coming" from "never coming": Perfil do território said
 // "Sem série" while the cube loaded, and a failure read as loading forever.
 //

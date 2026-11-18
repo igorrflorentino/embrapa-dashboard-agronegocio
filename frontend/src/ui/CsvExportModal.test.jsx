@@ -58,7 +58,7 @@ describe('CsvExportModal — the reason for "Nada para baixar"', () => {
 
   // An unknown reason falls through to the banco message, which would explain a failed read
   // as "not released yet" — wrong, and confidently so. Every reason the export gives must
-  // have its own words (v1.107.3 added three).
+  // have its own words (v1.108.1 added three).
   it('every reason csvExport.js can give has its own message, never the banco fallback', () => {
     const motivos = [...new Set(
       [...CSV_SRC.matchAll(/'((?:sem|carregando|falha)(?:-[a-z]+)*)'/g)].map((m) => m[1]))];

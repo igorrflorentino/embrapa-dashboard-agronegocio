@@ -80,7 +80,7 @@ function installGlobals(snap, { mesh, muniCube, geoCube } = {}) {
   window.normalizeRegion = (api, tile) => api || tile;
   window.dataStore = { get: (id) => (id === 'ibge_pevs' ? snap : null) };
   window.snapshotFor = undefined;
-  // The loaders return their read's STATE (v1.107.3). An undefined/null mesh is one still on
+  // The loaders return their read's STATE (v1.108.1). An undefined/null mesh is one still on
   // its way; a null cube likewise — [] is a measured empty answer.
   window.geoMeshState = () => (mesh == null
     ? { municipios: null, loading: true, loadError: null }

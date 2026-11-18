@@ -197,7 +197,7 @@ import './countUnits.js';
     // all-UF grid for that transient (GEO-2). Mitigated by main.jsx warming the mesh at
     // startup, so this is usually already false by the time a filter is applied.
     // A mesh that FAILED is not pending: nothing is coming, and the narrowing cannot be
-    // resolved at all. It is reported apart (subUfLoadError, below) — until v1.107.3 it
+    // resolved at all. It is reported apart (subUfLoadError, below) — until v1.108.1 it
     // read as pending forever, and the screens said "carregando" for good.
     const subUfMeshError = (_hasGeoKeys && meshState && meshState.loadError) || null;
     const subUfMeshPending = _hasGeoKeys && !mesh && !subUfMeshError;

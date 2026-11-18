@@ -283,7 +283,7 @@ describe('MainScreen — o contador de linhas ignora a seleção de qualidade', 
 
 // A sub-UF narrowing still on its way, or one that failed, owns an EMPTY grid, and counting it
 // gave "UFs cobertas 0 / 27": a claim that the selection covers no state, made by a read that
-// never answered (v1.107.3).
+// never answered (v1.108.1).
 describe('MainScreen — "UFs cobertas" de um recorte sub-UF que não resolveu', () => {
   const comRecorte = (extra) => {
     window.applyFilters = () => ({

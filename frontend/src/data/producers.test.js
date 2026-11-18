@@ -435,7 +435,7 @@ describe('the cubes and their price base read one response', () => {
     expect(r.rows).toHaveLength(1);
     expect(r).toMatchObject({ loading: false, loadError: null });
     expect(f).toHaveBeenCalledTimes(1);
-    // The separate accessor is gone (v1.107.3): rows, base and state are one response.
+    // The separate accessor is gone (v1.108.1): rows, base and state are one response.
     expect(w.municipioYearlyPriceBase).toBeUndefined();
   });
 
@@ -451,7 +451,7 @@ describe('the cubes and their price base read one response', () => {
 });
 
 // ── The município-level loaders: loading, failed and empty are three answers ──────────
-// Until v1.107.3 window.geoMesh and window.municipioYearly returned null both in flight and
+// Until v1.108.1 window.geoMesh and window.municipioYearly returned null both in flight and
 // after every retry failed, so a failed fetch read as "carregando municípios…" forever (the
 // sub-UF selector) or as "Sem série" (Perfil do território). The shape is the one
 // productsByUf established in v1.107.0; only a response with no error is a measurement.

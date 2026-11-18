@@ -398,7 +398,7 @@ function MainScreen({ filters, view = 'overview', database = 'ibge_pevs', infoPa
     ? _f.ufData.filter(u => _isRealUf(u) && _covered(u)).length
     : (window.UF_DATA || []).filter(u => u.value > 0).length;
   // A sub-UF narrowing still on its way, or one that failed, has no grid to count: the 0 its
-  // empty grid gives would read "covers no UF", a claim about the data (v1.107.3). Same
+  // empty grid gives would read "covers no UF", a claim about the data (v1.108.1). Same
   // marks as the Visão geral KPIs: "…" while it loads, "—" when it failed.
   const ufsCoveredLabel = (_f && _f.subUfLoadError) ? '—'
     : (_f && _f.subUfLoading) ? '…' : ufsCovered;

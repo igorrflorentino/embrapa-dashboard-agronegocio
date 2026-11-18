@@ -54,7 +54,7 @@ function callArgs(source, fn) {
 describe('geoChipText / geoHeaderText — nenhuma chamada pode esquecer o recorte', () => {
   const files = sourceFiles(SRC).filter((f) => !f.endsWith('filterSummary.js'));
 
-  // `subUf`: the four aggregate sub-UF facets. `muniUniverseUnknown` (v1.107.3) is the same
+  // `subUf`: the four aggregate sub-UF facets. `muniUniverseUnknown` (v1.108.1) is the same
   // over-claim through another argument: without the IBGE mesh the município universe is
   // unknown, and a call that does not say so reads a deep-linked município list as no
   // narrowing at all — "1 nação · 1 UF" over two municípios of the Pará.

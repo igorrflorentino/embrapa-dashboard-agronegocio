@@ -151,7 +151,7 @@ describe('recorte sub-UF — nenhuma das duas resumidoras pode reivindicar o tod
 // The IBGE mesh SIZES the município universe. While it loads — and for good when it
 // failed — that universe is unknown, but the selection is not: a deep link to two
 // municípios of the Pará carries them as codes, and a full selection is stored as null.
-// Until v1.107.3 both summaries read the list as no narrowing at all, so under a failed
+// Until v1.108.1 both summaries read the list as no narrowing at all, so under a failed
 // mesh the chip said "1 nação · 1 UF" and the ABNT citation quoted it.
 // ---------------------------------------------------------------------------
 describe('malha do IBGE ausente — a lista de municípios continua sendo um recorte', () => {
