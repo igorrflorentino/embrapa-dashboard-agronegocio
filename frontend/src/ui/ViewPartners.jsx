@@ -130,9 +130,15 @@ function ViewPartners({ summary, conventions, database }) {
             faixa de convenções dizia "IPCA" sobre uma soma nominal, e ninguém na tela
             tinha como saber: num ranking histórico a correção pesa mais nos fluxos
             antigos e pode reordenar os países. Volume não tem moeda. */}
+        {/* E o período: cada total é UM número sobre muitos anos, e a tela dizia a moeda e a
+            correção mas não QUAIS anos (v1.105.0). `sumRange` são os anos com valor na
+            convenção — por isso só no Capital e no Preço médio: o Volume soma também os anos
+            que a convenção não valora, e o mesmo período diria menos do que ele soma. */}
         {metric !== 'weight' && data.valueLabel && (
           <p className="caption ptn-valuation" style={{ marginBottom: 8 }}>
             {data.valueLabel}
+            {window.periodoDaSoma && window.periodoDaSoma(data.sumRange)
+              && ` · ${window.periodoDaSoma(data.sumRange)}`}
           </p>
         )}
         {/* O peso não depende da moeda: a lacuna só vale para Capital e Preço médio. */}

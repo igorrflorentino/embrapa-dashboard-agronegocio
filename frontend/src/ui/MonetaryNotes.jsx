@@ -23,6 +23,13 @@
 // Multi-fonte and curated views have no conventions strip (they compare sources, not
 // currencies), so nothing on screen claimed a correction — but "US$" alone over three
 // decades invites reading a 1997 dollar as a 2025 one.
+//
+// The price base (v1.105.0): a corrected value is not "in today's money" — it is at the
+// prices of ONE month, the latest of its index when the analytical base was built, and that
+// month moves with every build. window.precosDe / cambioDe write the phrase from the
+// server's `priceBase`; PriceBaseSkewNote says so when two values on one screen came back at
+// two different months (a build between two reads). Deflating changes the unit; it adds no
+// interest, and nothing here may suggest otherwise.
 
 const _MESES = [
   'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
@@ -50,6 +57,43 @@ function _anoParcial(y, months) {
   if (!Array.isArray(ms) || !ms.length) return String(y);
   return `${y} (${_lista(ms.map((m) => _MESES[m - 1]).filter(Boolean))})`;
 }
+
+// ── O mês-base de um valor corrigido (v1.105.0) ─────────────────────────────────────────────
+// `pb` é o `priceBase` do servidor: { column, month: 'AAAA-MM', fxDate: 'AAAA-MM-DD' | null },
+// ou null. Espelha webapi/price_base.py: as mesmas palavras dos dois lados, porque o rótulo
+// do servidor e a frase desta tela aparecem juntos.
+const _PRECOS_SEM_MES = 'a preços do mês mais recente do índice';
+
+// "outubro de 2026", ou null sem mês conhecido.
+window.mesBase = (pb) => {
+  const m = pb && typeof pb.month === 'string' ? /^(\d{4})-(\d{2})/.exec(pb.month) : null;
+  const nome = m ? _MESES[Number(m[2]) - 1] : null;
+  return nome ? `${nome} de ${m[1]}` : null;
+};
+
+// "a preços de outubro de 2026". Sem mês conhecido a frase continua verdadeira — todo valor
+// corrigido está a preços do mês mais recente do seu índice —, só não o nomeia.
+window.precosDe = (pb) => {
+  const mes = window.mesBase(pb);
+  return mes ? `a preços de ${mes}` : _PRECOS_SEM_MES;
+};
+
+// "ao câmbio de 14/11/2026" — o dia de PTAX de uma coluna cruzada (índice brasileiro sob
+// US$ ou €). Sem o dia, "ao câmbio mais recente".
+window.cambioDe = (pb) => {
+  const d = pb && typeof pb.fxDate === 'string' ? /^(\d{4})-(\d{2})-(\d{2})/.exec(pb.fxDate) : null;
+  return d ? `ao câmbio de ${d[3]}/${d[2]}/${d[1]}` : 'ao câmbio mais recente';
+};
+
+// "soma de 1997 a 2026" — os anos que um total de vários anos REALMENTE soma (`sumRange`, os
+// anos com valor na convenção; os que ela não alcança a nota de lacuna já nomeia). null sem
+// período conhecido: a tela cala em vez de inventar um.
+window.periodoDaSoma = (range) => {
+  if (!Array.isArray(range) || range.length !== 2) return null;
+  const [a, b] = range.map((y) => (y == null ? NaN : Number(y)));
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+  return a === b ? `soma de ${a}` : `soma de ${a} a ${b}`;
+};
 
 const _DESTINO = { soma: 'da soma', somas: 'das somas', 'médias': 'das médias' };
 
@@ -196,6 +240,40 @@ function HighInflationNote({ conventions, start }) {
   );
 }
 
+// ── Dois meses-base numa tela só ────────────────────────────────────────────────────────────
+// Toda leitura de uma tela vem do mesmo build, mas o servidor guarda cada uma por 10 minutos:
+// uma feita antes de um build e outra feita depois chegam a preços de meses diferentes — o
+// snapshot, os cubos (por UF e por município) e as leituras próprias de uma perspectiva. A nota
+// não escolhe um dos meses — diz que diferem, e que a próxima leitura os iguala. `bases` são
+// `priceBase`s (null ignorado); `database`/`conventions`, quando vierem, juntam a base do
+// snapshot à comparação.
+//
+// `jaComparadas`: bases que OUTRO aviso desta mesma tela já confronta com o snapshot — o da
+// MainScreen, com os cubos de applyFilters. Se elas já divergem, aquele aviso está na tela e
+// este não o repete; se não, entram na conta junto com as desta perspectiva.
+function _mesesNaTela(bases, database, conventions) {
+  const doSnapshot = database && window.priceBaseFor ? window.priceBaseFor(database, conventions) : null;
+  const meses = new Set();
+  for (const pb of [doSnapshot, ...(bases || [])]) {
+    if (window.mesBase(pb)) meses.add(pb.month.slice(0, 7));
+  }
+  // 'AAAA-MM' ordena como data: o aviso lista os meses em ordem, não na ordem das leituras.
+  return [...meses].sort().map((m) => window.mesBase({ month: m }));
+}
+
+function PriceBaseSkewNote({ bases, jaComparadas, database, conventions }) {
+  if (jaComparadas && _mesesNaTela(jaComparadas, database, conventions).length >= 2) return null;
+  const meses = _mesesNaTela([...(jaComparadas || []), ...(bases || [])], database, conventions);
+  if (meses.length < 2) return null;
+  return (
+    <p className="caption price-base-skew-note" style={{ marginTop: 8 }}>
+      <strong>Valores desta tela a preços de meses diferentes: {_lista(meses)}.</strong>{' '}
+      A base analítica foi atualizada entre duas leituras. Recarregue a página em alguns minutos
+      para ler tudo no mesmo mês.
+    </p>
+  );
+}
+
 function NominalSeriesNote() {
   return (
     <p className="caption nominal-series-note" style={{ padding: '10px 2px 2px' }}>
@@ -211,3 +289,4 @@ window.listaAnosBR = _anos;
 window.ValueGapNote = ValueGapNote;
 window.NominalSeriesNote = NominalSeriesNote;
 window.HighInflationNote = HighInflationNote;
+window.PriceBaseSkewNote = PriceBaseSkewNote;

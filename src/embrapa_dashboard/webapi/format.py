@@ -14,6 +14,8 @@ abbreviations — both consumed by the seam/serializers — remain.
 
 from __future__ import annotations
 
+import datetime as _dt
+
 # ── Metric conventions ───────────────────────────────────────────────────────
 
 CURRENCY_SYMBOL = {"BRL": "R$", "USD": "US$", "EUR": "€"}
@@ -37,13 +39,16 @@ _CURRENCY_SUFFIX = {"BRL": "brl", "USD": "usd", "EUR": "eur"}
 # both rather than blend them into a single "correção" axis:
 #
 #   • index economy == display currency → the value is converted at the exchange rate
-#     of the YEAR OF RECORD and then deflated. "Dollars of the time, brought to dollars
-#     of today." For a customs banco, whose source value already IS US$, no exchange
-#     rate is involved at all.
+#     of the YEAR OF RECORD and then deflated. "Dollars of the time, brought to the
+#     dollar prices of the index's latest month." For a customs banco, whose source value
+#     already IS US$, no exchange rate is involved at all.
 #   • index economy != display currency → the value is deflated in the INDEX's money
-#     and converted at TODAY's rate. The number measures Brazilian purchasing power and
-#     is merely printed with a foreign symbol; it is a legitimate reading and it is not
-#     "the dollar corrected for inflation".
+#     and converted at the LATEST rate (one PTAX day, fx_<cur>_base_date). The number
+#     measures Brazilian purchasing power and is merely printed with a foreign symbol; it
+#     is a legitimate reading and it is not "the dollar corrected for inflation".
+#
+# Neither is "today": each is at the prices of one month, the latest of its index when Gold
+# was built, and the screen names that month (webapi.price_base, v1.105.0).
 #
 # Until v1.82.0 only the second existed and was labelled as if it were the first —
 # "US$ · IPCA" reads as dollars corrected by Brazilian inflation, which is not a thing.
@@ -121,7 +126,7 @@ def column_currency(column: str) -> str | None:
     return next((cur for cur, suf in _CURRENCY_SUFFIX.items() if suf == suffix), None)
 
 
-def convention_value_label(conv: dict) -> str:
+def convention_value_label(conv: dict, fx_date: _dt.date | None = None) -> str:
     """Human label for the active monetary convention.
 
     The label has to carry WHICH ECONOMY corrected the number whenever that is not
@@ -129,11 +134,16 @@ def convention_value_label(conv: dict) -> str:
 
       (BRL, IPCA)  → 'Valor real (IPCA) — R$'
       (USD, CPI)   → 'Valor real (CPI · inflação dos EUA) — US$'
-      (USD, IPCA)  → 'Valor real (IPCA · inflação do Brasil, ao câmbio de hoje) — US$'
+      (USD, IPCA)  → 'Valor real (IPCA · inflação do Brasil, ao câmbio de 16/11/2026) — US$'
 
     The third is the one that used to read simply 'Valor real (IPCA) — US$', which
     states something that does not exist: dollars corrected by Brazilian inflation.
     R$ × a Brazilian index keeps the short form — there is nothing to disambiguate.
+
+    ``fx_date`` is the PTAX day the cross column converted at (``fx_<cur>_base_date``);
+    unknown, the label says "ao câmbio mais recente" — never "de hoje", which named no day
+    at all until v1.105.0. The month the value is AT is appended by the caller
+    (``price_base.label_suffix``), after any note, so it reads last.
     """
     currency = conv.get("currency", "BRL")
     sym = CURRENCY_SYMBOL.get(currency, "R$")
@@ -147,7 +157,13 @@ def convention_value_label(conv: dict) -> str:
         if economy == "BR":
             return f"Valor real ({corr}) — {sym}"
         return f"Valor real ({corr} · inflação {_DA_ECONOMIA[economy]}) — {sym}"
-    return f"Valor real ({corr} · inflação {_DA_ECONOMIA[economy]}, ao câmbio de hoje) — {sym}"
+    cambio = f"ao câmbio de {fx_date_br(fx_date)}" if fx_date else "ao câmbio mais recente"
+    return f"Valor real ({corr} · inflação {_DA_ECONOMIA[economy]}, {cambio}) — {sym}"
+
+
+def fx_date_br(day: _dt.date) -> str:
+    """A PTAX day the way the screen prints it: '16/11/2026'."""
+    return f"{day.day:02d}/{day.month:02d}/{day.year}"
 
 
 # pt-BR contraction per economy ("do Brasil" · "dos EUA" · "da zona do euro"), so the
@@ -157,3 +173,22 @@ _DA_ECONOMIA = {"BR": "do Brasil", "US": "dos EUA", "EA": "da zona do euro"}
 
 # pt-BR month abbreviations (index 0 → January), for seasonality axes/labels.
 MONTH_ABBR_PT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
+
+# pt-BR month names (index 0 → January), lower-case as they read inside a sentence — the
+# price base prints "a preços de outubro de 2026". Mirrors `_MESES` in
+# frontend/src/ui/MonetaryNotes.jsx, which writes the same words on the browser side
+# (tests/test_webapi_format.py holds the two to each other).
+MONTH_NAME_PT = [
+    "janeiro",
+    "fevereiro",
+    "março",
+    "abril",
+    "maio",
+    "junho",
+    "julho",
+    "agosto",
+    "setembro",
+    "outubro",
+    "novembro",
+    "dezembro",
+]

@@ -89,13 +89,16 @@ def test_flow_data_none_without_flow_capability():
     assert seam.flow_data("sefaz_nfe") is None
 
 
-# ── line 632: products_by_uf None for a geo banco that is neither COMEX nor PEVS ─
+# ── products_by_uf None for a live geo banco that has no reader ──────────────────
 
 
-def test_products_by_uf_none_for_other_geo_banco(monkeypatch):
-    """PAM/PPM expose a ``geo`` capability and pass the UF gate, but products_by_uf is
-    only wired for COMEX + PEVS — any other geo banco hits the terminal ``return None``
-    at line 632 (honest not-yet-wired)."""
+def test_products_by_uf_none_for_a_geo_banco_without_a_reader(monkeypatch):
+    """A live geo banco that passes the UF gate but has no reader hits the terminal
+    ``return None`` — and ``products_by_uf_available`` says so, which is what keeps the
+    screen from reading that None as "this UF produces nothing".
+
+    Every live geo banco has a reader since v1.107.0 (PAM and PPM were the ones without),
+    so the case is synthesized by taking PAM out of the registry."""
     seam = _seam()
     called = {"n": 0}
 
@@ -104,11 +107,12 @@ def test_products_by_uf_none_for_other_geo_banco(monkeypatch):
         return pd.DataFrame()
 
     monkeypatch.setattr(seam.gateway, "fetch_products_by_uf", fake_products_by_uf)
-    # ibge_pam is live + geo, with an explicit UF selection → reaches the dispatch but
-    # matches neither the COMEX nor the PEVS branch.
+    sem_pam = {k: v for k, v in seam._PRODUCTION_PRODUCTS_BY_UF.items() if k != "ibge_pam"}
+    monkeypatch.setattr(seam, "_PRODUCTION_PRODUCTS_BY_UF", sem_pam)
     out = seam.products_by_uf("ibge_pam", {"states": ["PA"]})
     assert out is None
     assert called["n"] == 0  # no gateway query was issued
+    assert seam.products_by_uf_available("ibge_pam") is False
 
 
 # ── line 651: monthly_data terminal None for a non-COMEX banco that has 'monthly' ─

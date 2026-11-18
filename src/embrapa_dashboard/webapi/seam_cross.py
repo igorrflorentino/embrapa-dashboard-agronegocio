@@ -18,14 +18,19 @@ from embrapa_dashboard.serving import gateway
 from embrapa_dashboard.serving import sql as sqlbuild
 from embrapa_dashboard.serving.cache import cache
 
-from . import measures, seam_base
+from . import measures, price_base, seam_base
 from .registries import Banco, banco_by_id
 from .seam_base import _LIVE_SOURCES
 
 CROSS_DISPLAY_UNIT = {
+    # PEVS: one half of the survey each — extraction (prod_*, t289) and silviculture
+    # (silv_*, t291). The half is the metric's `tabela` in registries._PEVS_METRICS.
     "ibge_pevs:prod_value": "R$ bi",
     "ibge_pevs:prod_mass": "mil t",
     "ibge_pevs:prod_volume": "mi m³",
+    "ibge_pevs:silv_value": "R$ bi",
+    "ibge_pevs:silv_mass": "mil t",
+    "ibge_pevs:silv_volume": "mi m³",
     "mdic_comex:exp_value": "US$ bi",
     "mdic_comex:imp_value": "US$ bi",
     "mdic_comex:exp_weight": "mil t",
@@ -82,6 +87,7 @@ def cross_series(
     if not cov:
         return None
     yy0, yy1 = (y0 or cov[0]), (y1 or cov[1])
+    points, base = _cross_points(banco_id, metric_id, yy0, yy1, unit, uf_codes)
     return {
         "banco": banco_id,
         "banco_short": banco.short,
@@ -91,17 +97,23 @@ def cross_series(
         "unit": unit,
         "family": metric["family"],
         "coverage": cov,
-        "points": _cross_points(banco_id, metric_id, yy0, yy1, unit, uf_codes),
+        "points": points,
+        # The month the corrected series is at (only the PEVS value series, `prod_value` and
+        # `silv_value`, are corrected — every other cross metric is a quantity or the
+        # declared US$). The metric's own text says "Valor real (IPCA)", and the screen
+        # completes it with this month (v1.105.0).
+        "priceBase": base,
     }
 
 
 def _cross_points(
     banco_id: str, metric_id: str, y0: int, y1: int, unit: str, uf_codes: tuple = ()
-) -> list[dict]:
+) -> tuple[list[dict], dict | None]:
+    """The series points, and the ``priceBase`` payload of a corrected one (else None)."""
     if banco_id == "ibge_pevs":
         return _pevs_cross_points(metric_id, y0, y1, uf_codes)
     if metric_id == "exp_price":
-        return _exp_price_cross_points(y0, y1, uf_codes)
+        return _exp_price_cross_points(y0, y1, uf_codes), None
     df = gateway.fetch_cross_series(
         f"{banco_id}:{metric_id}", year_start=y0, year_end=y1, uf_codes=uf_codes
     )
@@ -110,26 +122,66 @@ def _cross_points(
     return [
         {"y": int(r.reference_year), "v": measures.scale_present(r.value, scale)}
         for r in df.itertuples()
-    ]
+    ], None
 
 
-def _pevs_cross_points(metric_id: str, y0: int, y1: int, uf_codes: tuple = ()) -> list[dict]:
-    """PEVS cross points: value (÷1e9) or per-family native quantity (÷1e3 / ÷1e6)."""
-    if metric_id == "prod_value":
-        df = gateway.fetch_production_overview(
-            year_start=y0, year_end=y1, value_column="val_real_ipca_brl", uf_codes=uf_codes
+# Registry family → (the mart's pt-BR ``family``, the divisor to the display unit).
+_PEVS_QTY_FAMILY = {"mass": ("massa", 1e3), "volume": ("volume", 1e6)}
+
+
+def _pevs_tabela(metric: dict) -> str:
+    """The SIDRA table a PEVS cross metric reads — required, never defaulted.
+
+    PEVS is two disjoint halves, extraction from native forest (t289) and silviculture
+    from planted forest (t291), and every reader sums BOTH when given no table. A series
+    with no pin is therefore the survey's total under whatever its label says: until
+    v1.106.0 ``prod_value`` said "da extração vegetal" and served R$ 47.7 bi for 2024,
+    when the extraction was R$ 6.5 bi. Refusing here (rather than falling back to the
+    total) turns a forgotten pin into a failure at the first request instead of a number
+    that looks right.
+    """
+    tabela = metric.get("tabela")
+    if not tabela:
+        raise ValueError(
+            f"PEVS cross metric {metric.get('id')!r} declares no `tabela`: it would sum "
+            "extraction (289) and silviculture (291) under a one-half label."
         )
+    return tabela
+
+
+def _pevs_cross_points(
+    metric_id: str, y0: int, y1: int, uf_codes: tuple = ()
+) -> tuple[list[dict], dict | None]:
+    """PEVS cross points for ONE half of the survey: value (÷1e9) or per-family native
+    quantity (÷1e3 / ÷1e6), every read pinned to the metric's SIDRA table — and, for the
+    value, its price base."""
+    metric = _metric_meta(banco_by_id("ibge_pevs"), metric_id) or {"id": metric_id}
+    tabela = _pevs_tabela(metric)
+    if metric["family"] == "currency":
+        df = gateway.fetch_production_overview(
+            year_start=y0,
+            year_end=y1,
+            value_column="val_real_ipca_brl",
+            uf_codes=uf_codes,
+            tabela=tabela,
+            with_price_base=True,
+        )
+        df, base = price_base.take(df)
         return [
             {"y": int(r.reference_year), "v": measures.scale_present(r.total_value, 1e9)}
             for r in df.itertuples()
-        ]
-    fam = "massa" if metric_id == "prod_mass" else "volume"
-    scale = 1e3 if metric_id == "prod_mass" else 1e6
+        ], price_base.payload("val_real_ipca_brl", base)
+    fam, scale = _PEVS_QTY_FAMILY[metric["family"]]
     pts = gateway.fetch_product_timeseries(
-        "ibge_pevs", year_start=y0, year_end=y1, value_column="val_real_ipca_brl", uf_codes=uf_codes
+        "ibge_pevs",
+        year_start=y0,
+        year_end=y1,
+        value_column="val_real_ipca_brl",
+        uf_codes=uf_codes,
+        tabela=tabela,
     )
     sub = pts[pts["family"] == fam].groupby("reference_year")["total_qty_native"].sum()
-    return [{"y": int(y), "v": float(v) / scale} for y, v in sub.items()]
+    return [{"y": int(y), "v": float(v) / scale} for y, v in sub.items()], None
 
 
 def _exp_price_cross_points(y0: int, y1: int, uf_codes: tuple = ()) -> list[dict]:

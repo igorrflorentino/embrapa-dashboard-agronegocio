@@ -948,13 +948,37 @@ def test_serialize_geo_yearly_wraps_uf_yearly_with_same_scaling():
                 "q_vol": 3.0,
                 "q_count": 0.0,
             }
-        ]
+        ],
+        "priceBase": None,
     }
 
 
 def test_serialize_geo_yearly_empty_is_safe():
-    assert s.serialize_geo_yearly(None) == {"ufYearly": []}
-    assert s.serialize_geo_yearly(pd.DataFrame()) == {"ufYearly": []}
+    assert s.serialize_geo_yearly(None) == {"ufYearly": [], "priceBase": None}
+    assert s.serialize_geo_yearly(pd.DataFrame()) == {"ufYearly": [], "priceBase": None}
+
+
+def test_serialize_geo_yearly_names_the_base_and_drops_its_columns():
+    """The basket cube is its own request, cached apart from the snapshot it is drawn
+    beside, so across a build the two can be a month apart: it carries its own base, read
+    off the same select, and the DATE columns never reach the rows (v1.105.0)."""
+    df = pd.DataFrame(
+        [
+            {
+                "state_acronym": "PA",
+                "state_name": "Pará",
+                "region_abbrev": "N",
+                "reference_year": 2024,
+                "total_value": 1_000_000,
+                "price_base_month": pd.Timestamp("2026-10-01"),
+                "price_base_fx_date": pd.NaT,
+            }
+        ]
+    )
+    out = s.serialize_geo_yearly(df)
+    assert out["priceBase"] == {"column": None, "month": "2026-10", "fxDate": None}
+    assert not {"price_base_month", "price_base_fx_date"} & set(out["ufYearly"][0])
+    assert out["ufYearly"][0]["value"] == 1.0
 
 
 def test_uf_data_flags_real_vs_pseudo_uf_codes():
@@ -1272,6 +1296,69 @@ def test_serialize_flow_unit_follows_the_column_actually_summed():
     assert s.serialize_flow({"value_column": "val_yearfx_eur"})["unit"] == "€"
 
 
+def _rotas(*linhas) -> pd.DataFrame:
+    """A links frame as ``trade_flows`` returns it, largest route first:
+    ``(origin_code, origin_name, dest_code, dest_name, total_value[, years_with_value])``."""
+    colunas = ["origin_code", "origin_name", "dest_code", "dest_name", "total_value"]
+    rows = []
+    for linha in linhas:
+        row = dict(zip(colunas, linha[:5], strict=True))
+        if len(linha) > 5:
+            row["years_with_value"] = linha[5]
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def test_serialize_flow_cards_count_every_route_not_only_the_drawn_ones():
+    """v1.105.0. The diagram draws the ``max_links`` largest routes; the cards must not.
+    "Fluxo total" summed the drawn nodes, and "Maior origem" / "Maior destino" took the
+    largest drawn node: on 2026-11-17 Mato Grosso read US$ 292,7 bi from the 40 drawn COMEX
+    routes against US$ 373,9 bi over all 3.063. Here MT trades in many small routes, all
+    below the cut, and outweighs PA's single big one — the old card crowned Pará."""
+    links = _rotas(
+        ("PA", "Pará", "CHN", "China", 50e6),
+        *[("MT", "Mato Grosso", f"P{i}", f"País {i}", 10e6) for i in range(8)],
+    )
+    out = s.serialize_flow({"links": links}, max_links=1)
+    assert len(out["links"]) == 1  # the diagram: Pará → China only
+    assert out["total"] == pytest.approx(130.0)  # 50 + 8 × 10, in US$ mi
+    assert out["routeCount"] == 9
+    assert out["topOrigin"] == {"label": "Mato Grosso", "value": pytest.approx(80.0)}
+    assert out["topDest"] == {"label": "China", "value": pytest.approx(50.0)}
+
+
+def test_serialize_flow_cards_keep_absence_absent():
+    """A route with no value in the convention is neither counted nor a measured zero, and
+    a frame with no valued route has no total and no largest place: the cards say '—'."""
+    links = _rotas(("AC", "Acre", "PER", "Peru", None), ("RO", "Rondônia", "BOL", "Bolívia", 2e6))
+    out = s.serialize_flow({"links": links})
+    assert out["routeCount"] == 1 and out["total"] == pytest.approx(2.0)
+    assert out["topOrigin"] == {"label": "Rondônia", "value": pytest.approx(2.0)}
+    assert out["topDest"] == {"label": "Bolívia", "value": pytest.approx(2.0)}
+
+    nada = s.serialize_flow({"links": _rotas(("AC", "Acre", "PER", "Peru", None))})
+    assert nada["total"] is None and nada["routeCount"] == 0
+    assert nada["topOrigin"] is None and nada["topDest"] is None
+    vazio = s.serialize_flow(None)
+    assert vazio["total"] is None and vazio["topOrigin"] is None and vazio["sumRange"] is None
+
+
+def test_serialize_flow_and_partner_say_which_years_the_sum_adds():
+    """v1.105.0. A multi-year sum says its period, read off the rows' VALUED years — not the
+    window asked for, which can be open or reach years the convention cannot value."""
+    links = _rotas(
+        ("SP", "São Paulo", "USA", "EUA", 5e6, [1999, 2000, 2026]),
+        ("MG", "Minas Gerais", "CHN", "China", 1e6, [1997]),
+    )
+    assert s.serialize_flow({"links": links})["sumRange"] == [1997, 2026]
+    sem_anos = _rotas(("SP", "São Paulo", "USA", "EUA", 5e6))
+    assert s.serialize_flow({"links": sem_anos})["sumRange"] is None
+
+    parceiros = pd.DataFrame([{**_parceiro("China", 6e6, 2e6), "years_with_value": [2001, 2024]}])
+    assert s.serialize_partner(parceiros)["sumRange"] == [2001, 2024]
+    assert s.serialize_partner(None)["sumRange"] is None
+
+
 def test_serialize_product_uf_valor_deflacionado_ausente_nao_e_zero():
     """O valor DEFLACIONADO preserva a ausência; as CONTAGENS ao lado seguem zerando.
 
@@ -1551,7 +1638,11 @@ def test_serialize_products_by_uf_carries_the_sidra_table_when_the_reader_select
 def test_serialize_products_by_uf_scales_value_and_quantities():
     """serialize_products_by_uf → value ÷1e6 (mi), q_mass ÷1e3 (mil t), q_vol ÷1e6
     (mi m³) — the SAME magnitudes the snapshot's productTS/ufData use; empty → []."""
-    assert s.serialize_products_by_uf(None) == {"products": []}
+    assert s.serialize_products_by_uf(None) == {
+        "products": [],
+        "priceBase": None,
+        "available": True,
+    }
     df = pd.DataFrame(
         [
             {
@@ -1581,6 +1672,8 @@ def test_serialize_products_by_uf_scales_value_and_quantities():
         # Sem coluna `tabela` no df (banco de tabela única) → None, e a chave CONTINUA
         # presente: uma chave que aparece e some por banco faz o consumidor adivinhar.
         "tabela": None,
+        # Idem para o discriminador estoque|fluxo, que só a PPM tem.
+        "measure_kind": None,
     }
     assert out["products"][1]["q_mass"] == 0.0  # None → 0
     # A livestock row carries q_count (mi un) so a value-less herd ranks by headcount.
@@ -1597,6 +1690,53 @@ def test_serialize_products_by_uf_scales_value_and_quantities():
         )
     )["products"][0]
     assert herd["q_count"] == 238.0 and herd["value"] == 0.0  # 238M head → 238 mi un
+
+
+def test_serialize_products_by_uf_tells_a_herd_from_a_flow_without_value():
+    """Um rebanho e um fluxo que a convenção não alcança chegam os DOIS com valor nulo, e
+    são ausências diferentes: estoque não tem valor por natureza; o fluxo tem, só não nesta
+    convenção. O `measure_kind` da linha é o que deixa a tela dar o motivo certo — e o
+    nulo continua nulo nos dois (nunca 0, que se leria como produção sem valor)."""
+    df = pd.DataFrame(
+        [
+            {
+                "product_code": "2682",
+                "product_name": "Leite",
+                "measure_kind": "flow",
+                "total_value": None,
+                "q_vol": 5_000_000,
+            },
+            {
+                "product_code": "2670",
+                "product_name": "Bovino",
+                "measure_kind": "stock",
+                "total_value": None,
+                "q_count": 30_000_000,
+            },
+            {
+                "product_code": "4403",
+                "product_name": "Madeira",
+                "measure_kind": float("nan"),
+                "total_value": 1_000_000,
+            },
+        ]
+    )
+    rows = s.serialize_products_by_uf(df)["products"]
+    assert [r["measure_kind"] for r in rows] == ["flow", "stock", None]  # NaN → None (JSON)
+    assert [r["value"] for r in rows] == [None, None, 1.0]
+
+
+def test_serialize_products_by_uf_says_whether_the_banco_has_a_reader():
+    """`available` separa uma lista vazia MEDIDA ("nada registrado") de uma que ninguém
+    pôde medir (banco sem leitor). Sempre presente, com ou sem linhas."""
+    assert s.serialize_products_by_uf(None, available=False) == {
+        "products": [],
+        "priceBase": None,
+        "available": False,
+    }
+    assert s.serialize_products_by_uf(pd.DataFrame(), available=True)["available"] is True
+    df = pd.DataFrame([{"product_code": "1", "product_name": "X", "total_value": 1.0}])
+    assert s.serialize_products_by_uf(df)["available"] is True
 
 
 def test_serialize_product_uf_carries_per_family_quantities():

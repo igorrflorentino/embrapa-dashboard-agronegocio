@@ -41,11 +41,56 @@
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
-  // Build the rows for the active view from the FILTERED datasets.
+  // What the number IS, in one readable column (v1.105.0). `valor_BRL` came out identical for
+  // a nominal and a corrected export: the header named the currency and said nothing of the
+  // correction, and a downloaded table has no conventions strip beside it. One value for the
+  // whole file, because a file is exported under one convention:
+  //   "IPCA · Brasil, a preços de outubro de 2026" · "Sem correção pela inflação (…)".
+  // The month is named only when every value in the file is at the same one: a sub-UF
+  // selection sums the município cube (read from the analytical base directly) and a narrowed
+  // basket the UF cube (a read of its own), and across a build either can come back at a
+  // different month than the snapshot (PriceBaseSkewNote). Two months → the phrase that names
+  // none, never one picked for the other.
+  function textoDaCorrecao(conv, database, f) {
+    const corr = (conv && conv.correction) || 'Nominal';
+    if (corr === 'Nominal') return 'Sem correção pela inflação (valores de cada ano)';
+    const alvo = { ...conv, currency: (conv && conv.currency) || 'BRL', correction: corr };
+    const indice = window.correctionChip ? window.correctionChip(alvo) : corr;
+    const bases = [
+      window.priceBaseFor ? window.priceBaseFor(database, alvo) : null,
+      f && f.muniPriceBase,
+      f && f.geoPriceBase,
+    ].filter(Boolean);
+    const pb = new Set(bases.map((b) => b.month)).size === 1 ? bases[0] : null;
+    const precos = window.precosDe ? window.precosDe(pb) : 'a preços do mês mais recente do índice';
+    // A Brazilian index under US$/€ (reachable by URL only since v1.88.0) also converts at one
+    // PTAX day, and that day belongs in the file too.
+    const cruzada = !!(window.CORRECTION_ECONOMY && window.CORRECTION_ECONOMY[corr])
+      && window.deflatesOwnCurrency && !window.deflatesOwnCurrency(alvo.currency, corr);
+    const cambio = cruzada && window.cambioDe ? `, ${window.cambioDe(pb)}` : '';
+    return `${indice}, ${precos}${cambio}`;
+  }
+
+  // The trailing `correcao_monetaria` column, on every file that carries a value column.
+  function comCorrecaoMonetaria(built, texto) {
+    if (!built || !built.headers.some((h) => h.startsWith('valor_'))) return built;
+    return {
+      ...built,
+      headers: [...built.headers, 'correcao_monetaria'],
+      rows: built.rows.map((r) => [...r, texto]),
+    };
+  }
+
   function buildRows(ctx) {
+    const conv = ctx.conventions || window.DEFAULT_CONVENTIONS;
+    const f = window.applyFilters(ctx.summary || {}, ctx.database);
+    return comCorrecaoMonetaria(buildViewRows(ctx, f), textoDaCorrecao(conv, ctx.database, f));
+  }
+
+  // Build the rows for the active view from the FILTERED datasets.
+  function buildViewRows(ctx, f) {
     const { view, summary, conventions, database } = ctx;
     const conv = conventions || window.DEFAULT_CONVENTIONS;
-    const f = window.applyFilters(summary || {}, database);
     // The sub-UF recorte (meso / micro / intermediária / imediata) narrows the rows
     // WITHOUT removing a UF, so a state's row silently carries a fraction of that state
     // and nothing in the file says so. This header promises "exactly what the view

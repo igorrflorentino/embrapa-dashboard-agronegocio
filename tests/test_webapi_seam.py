@@ -764,13 +764,18 @@ def test_partner_data_comex_threads_uf_filter(monkeypatch):
         flow=None,
         rank_by="value",
         value_column="val_yearfx_usd",
+        with_price_base=False,
     ):
-        recorded.update(uf_codes=uf_codes, rank_by=rank_by, flow=flow)
+        recorded.update(
+            uf_codes=uf_codes, rank_by=rank_by, flow=flow, with_price_base=with_price_base
+        )
         return pd.DataFrame(columns=["partner_code", "partner_name", "total_value"])
 
     monkeypatch.setattr(seam.gateway, "fetch_comex_partners", fake_partners)
     seam.partner_data("mdic_comex", {"states": ["PA"]})
     assert recorded["uf_codes"] == ("PA",)
+    # The ranking asks for the price base of the column it sums (v1.105.0).
+    assert recorded["with_price_base"] is True
     recorded.clear()
     seam.partner_data("mdic_comex", {"basket": ["0801"]})
     assert recorded["uf_codes"] == ()
@@ -940,8 +945,9 @@ def test_cross_points_exp_price_emits_none_when_weight_missing(monkeypatch):
         return val if metric == "mdic_comex:exp_value" else wt
 
     monkeypatch.setattr(seam.gateway, "fetch_cross_series", fake_cross)
-    pts = seam._cross_points("mdic_comex", "exp_price", 2020, 2021, "US$/kg")
+    pts, base = seam._cross_points("mdic_comex", "exp_price", 2020, 2021, "US$/kg")
     assert pts == [{"y": 2020, "v": 5.0}, {"y": 2021, "v": None}]
+    assert base is None  # a nominal price has no month to be at the prices of
 
 
 # ── an absent VALUE is a gap, not a zero (v1.92.3) ─────────────────────────────
@@ -959,9 +965,8 @@ def test_exp_price_is_a_gap_when_the_value_is_absent(monkeypatch):
 
     monkeypatch.setattr(seam.gateway, "fetch_cross_series", fake_cross)
     # Was {"v": 0.0}: a price of US$ 0/kg for a year with no measured value.
-    assert seam._cross_points("mdic_comex", "exp_price", 2020, 2020, "US$/kg") == [
-        {"y": 2020, "v": None}
-    ]
+    pts, _ = seam._cross_points("mdic_comex", "exp_price", 2020, 2020, "US$/kg")
+    assert pts == [{"y": 2020, "v": None}]
 
 
 def test_cross_series_point_is_a_gap_when_the_value_is_absent(monkeypatch):
@@ -970,7 +975,7 @@ def test_cross_series_point_is_a_gap_when_the_value_is_absent(monkeypatch):
         [{"reference_year": 2020, "value": 2e9}, {"reference_year": 2021, "value": None}]
     )
     monkeypatch.setattr(seam.gateway, "fetch_cross_series", lambda *a, **k: df)
-    pts = seam._cross_points("mdic_comex", "exp_value", 2020, 2021, "US$ bi")
+    pts, _ = seam._cross_points("mdic_comex", "exp_value", 2020, 2021, "US$ bi")
     assert pts == [{"y": 2020, "v": 2.0}, {"y": 2021, "v": None}]
 
 
@@ -1645,7 +1650,41 @@ def test_effective_value_column_pevs_picks_requested_when_mart_has_it():
     pevs = banco_by_id("ibge_pevs")
     col, label = seam.effective_value_column(pevs, {"currency": "BRL", "correction": "IGP-M"})
     assert col == "val_real_igpm_brl"
-    assert label == "Valor real (IGP-M) — R$"
+    # No base handed in → the honest fallback, still true and still last (v1.105.0).
+    assert label == "Valor real (IGP-M) — R$ · a preços do mês mais recente do índice"
+
+
+def test_effective_value_column_names_the_month_its_values_are_at():
+    """The base read off the summed frame becomes the label's last clause — and only on a
+    deflated column: a nominal value is at the prices of its own year."""
+    import datetime as dt
+
+    from embrapa_dashboard.webapi import price_base
+    from embrapa_dashboard.webapi.registries import banco_by_id
+
+    seam = _seam()
+    pevs = banco_by_id("ibge_pevs")
+    base = price_base.PriceBase(dt.date(2026, 10, 1))
+    _, label = seam.effective_value_column(pevs, {"currency": "BRL", "correction": "IPCA"}, base)
+    assert label == "Valor real (IPCA) — R$ · a preços de outubro de 2026"
+
+    _, nominal = seam.effective_value_column(
+        pevs, {"currency": "BRL", "correction": "Nominal"}, base
+    )
+    assert "a preços" not in nominal
+
+    # A cross column names the PTAX day too — inside the parenthesis, where the exchange
+    # rate is described — and the FOB/CIF note of a trade banco stays before the month.
+    cross = price_base.PriceBase(dt.date(2026, 10, 1), dt.date(2026, 11, 14))
+    _, via_brasil = seam.effective_value_column(
+        pevs, {"currency": "USD", "correction": "IPCA"}, cross
+    )
+    assert "ao câmbio de 14/11/2026" in via_brasil
+    assert via_brasil.endswith(" · a preços de outubro de 2026")
+    _, comex = seam.effective_value_column(
+        banco_by_id("mdic_comex"), {"currency": "USD", "correction": "CPI"}, base
+    )
+    assert comex.index("FOB") < comex.index("a preços de outubro de 2026")
 
 
 def test_effective_value_column_pevs_falls_back_to_brl_when_combo_absent():
@@ -1672,7 +1711,9 @@ def test_effective_value_column_serves_the_own_currency_deflator():
     pevs = banco_by_id("ibge_pevs")
     col, label = seam.effective_value_column(pevs, {"currency": "USD", "correction": "CPI"})
     assert col == "val_real_cpi_usd"
-    assert label == "Valor real (CPI · inflação dos EUA) — US$"
+    assert label == (
+        "Valor real (CPI · inflação dos EUA) — US$ · a preços do mês mais recente do índice"
+    )
 
     via_brasil, _ = seam.effective_value_column(pevs, {"currency": "USD", "correction": "IPCA"})
     assert via_brasil == "val_real_ipca_usd" != col
@@ -1773,7 +1814,7 @@ def test_effective_value_column_final_fallback_to_real_ipca_brl(monkeypatch):
     monkeypatch.setattr(seam.sqlbuild, "ALLOWED_VALUE_COLUMNS", frozenset({"val_real_ipca_brl"}))
     col, label = seam.effective_value_column(pevs, {"currency": "USD", "correction": "IGP-M"})
     assert col == "val_real_ipca_brl"
-    assert label == "Valor real (IPCA) — R$"
+    assert label == "Valor real (IPCA) — R$ · a preços do mês mais recente do índice"
 
 
 # ── snapshot: PEVS-shaped (production marts) + the dead/None banco path ────────
@@ -1854,9 +1895,24 @@ def test_snapshot_pevs_threads_basket_window_and_value_column(monkeypatch):
         value_column=None,
         source=None,
         tabela=None,
+        with_price_base=False,
     ):
-        recorded["ov"] = dict(value_column=value_column, source=source, tabela=tabela)
-        return pd.DataFrame([{"reference_year": 2020, "total_value": 9.0}])
+        recorded["ov"] = dict(
+            value_column=value_column,
+            source=source,
+            tabela=tabela,
+            with_price_base=with_price_base,
+        )
+        return pd.DataFrame(
+            [
+                {
+                    "reference_year": 2020,
+                    "total_value": 9.0,
+                    "price_base_month": pd.Timestamp("2026-10-01"),
+                    "price_base_fx_date": pd.NaT,
+                }
+            ]
+        )
 
     monkeypatch.setattr(seam.gateway, "fetch_products", fake_products)
     monkeypatch.setattr(seam.gateway, "fetch_quality_by_source", lambda source=None: pd.DataFrame())
@@ -1883,6 +1939,12 @@ def test_snapshot_pevs_threads_basket_window_and_value_column(monkeypatch):
     # overview carries the q_mass summed from product_ts' per-family q_mass column.
     assert float(out["overview_ts"].loc[0, "q_mass"]) == 2e3
     assert out["value_column"] == "val_real_ipca_brl"
+    # The base is read off the overview in the SAME select that summed it, then dropped
+    # from the frame: the payload names it, the frame leaves as it was before v1.105.0.
+    assert recorded["ov"]["with_price_base"] is True
+    assert out["price_base"] == {"column": "val_real_ipca_brl", "month": "2026-10", "fxDate": None}
+    assert out["value_label"].endswith(" · a preços de outubro de 2026")
+    assert not {"price_base_month", "price_base_fx_date"} & set(out["overview_ts"].columns)
 
 
 def test_snapshot_comtrade_uses_comtrade_overview_and_no_geo(monkeypatch):
@@ -1899,6 +1961,7 @@ def test_snapshot_comtrade_uses_comtrade_overview_and_no_geo(monkeypatch):
         customs=None,
         market=None,
         value_column=None,
+        with_price_base=False,
     ):
         recorded["cmd_codes"] = cmd_codes
         recorded["value_column"] = value_column
@@ -2005,7 +2068,14 @@ def test_snapshot_comex_brl_request_serves_real_brl_column_not_usd(monkeypatch):
     seam = _seam()
     recorded = {}
 
-    def fake_overview(year_start=None, year_end=None, ncm_codes=(), flow=None, value_column=None):
+    def fake_overview(
+        year_start=None,
+        year_end=None,
+        ncm_codes=(),
+        flow=None,
+        value_column=None,
+        with_price_base=False,
+    ):
         recorded["overview"] = value_column
         return pd.DataFrame([{"reference_year": 2022, "total_value_usd": 7.0}])
 
@@ -2356,15 +2426,18 @@ def test_productivity_none_when_no_crops(monkeypatch):
 def test_partner_data_dispatches_by_banco(monkeypatch):
     seam = _seam()
     recorded = {}
+    # `update` returns None, so the fake hands back the FRAME. (It used `setdefault`, which
+    # returns the kwargs dict: the seam passed it along unread until v1.105.0, when it
+    # started reading the price base off what the reader returned.)
     monkeypatch.setattr(
         seam.gateway,
         "fetch_comex_partners",
-        lambda **k: recorded.setdefault("comex", k) or pd.DataFrame([{"country_code": "156"}]),
+        lambda **k: recorded.update(comex=k) or pd.DataFrame([{"country_code": "156"}]),
     )
     monkeypatch.setattr(
         seam.gateway,
         "fetch_comtrade_partners",
-        lambda **k: recorded.setdefault("comtrade", k) or pd.DataFrame([{"partner_code": "156"}]),
+        lambda **k: recorded.update(comtrade=k) or pd.DataFrame([{"partner_code": "156"}]),
     )
     seam.partner_data("mdic_comex", {"basket": ["0801"], "startDate": "2019", "endDate": "2021"})
     assert recorded["comex"]["ncm_codes"] == ("0801",)
@@ -2422,6 +2495,78 @@ def test_products_by_uf_none_without_geo_capability():
     seam = _seam()
     # un_comtrade has no `geo` (origin is a reporter country, not a UF)
     assert seam.products_by_uf("un_comtrade", {"states": ["AC"]}) is None
+
+
+@pytest.mark.parametrize(
+    "banco, mart", [("ibge_pam", "serving_pam_annual"), ("ibge_ppm", "serving_ppm_annual")]
+)
+def test_products_by_uf_answers_pam_and_ppm_from_their_own_marts(monkeypatch, banco, mart):
+    """Until v1.107.0 PAM and PPM fell through to ``return None``: the território profile
+    said "sem produtos" for every UF of both, while the município level (Gold) named them.
+
+    Each reads the pre-aggregated table its snapshot reads — so the composition and the
+    map beside it agree — with the PEVS column shape the three share, the SIDRA table
+    travelling with each row (PPM has two: herd and animal production) and the table axis
+    threaded, never a trade ``flow``."""
+    seam = _seam()
+    recorded = {}
+    monkeypatch.setattr(
+        seam.gateway,
+        "fetch_products_by_uf",
+        lambda **k: recorded.update(k) or pd.DataFrame([{"product_code": "1"}]),
+    )
+    out = seam.products_by_uf(
+        banco,
+        {"states": ["MT", "GO"], "basket": ["2670"], "startDate": "2010", "endDate": "2020"},
+        {"currency": "BRL", "correction": "IPCA"},
+    )
+    assert out is not None
+    assert recorded["table_key"] == mart
+    assert recorded["code_column"] == "product_code"
+    assert recorded["name_column"] == "product_description"
+    assert recorded["uf_codes"] == ("MT", "GO") and recorded["codes"] == ("2670",)
+    assert (recorded["year_start"], recorded["year_end"]) == (2010, 2020)
+    assert recorded["value_column"] == "val_real_ipca_brl"
+    assert recorded["include_tabela"] is True
+    assert recorded.get("flow") is None
+    assert "tabela" in recorded  # the axis is threaded (None = every table)
+    assert seam.products_by_uf_available(banco) is True
+
+
+def test_every_live_geo_banco_has_a_composition_reader_by_uf():
+    """The território profile asks every geo banco "o que esta UF produz". A banco left
+    without a reader is how PAM and PPM answered "sem produtos" for every UF until
+    v1.107.0 — so the registry must cover every live geo banco, and adding one without a
+    reader fails HERE instead of on the researcher's screen. (The screen still degrades
+    honestly — ``available: false`` — but that is the fallback, not the plan.)"""
+    seam = _seam()
+    from embrapa_dashboard.webapi.registries import BANCOS
+
+    geo_vivos = {b.id for b in BANCOS if b.id in seam._LIVE_SOURCES and "geo" in b.provides}
+    assert geo_vivos, "o varredor não achou banco geográfico — o teste ficou obsoleto"
+    sem_leitor = sorted(b for b in geo_vivos if not seam.products_by_uf_available(b))
+    assert not sem_leitor, f"banco geográfico sem leitor de composição por UF: {sem_leitor}"
+    # And the converse: no reader is claimed for a banco that cannot answer by UF.
+    assert seam.products_by_uf_available("un_comtrade") is False
+    assert seam.products_by_uf_available("sefaz_nf") is False  # geo, but not live
+    assert seam.products_by_uf_available("nao_existe") is False
+
+
+@pytest.mark.parametrize(
+    "banco, esperado",
+    [
+        ("ibge_pevs", True),
+        ("ibge_pam", True),
+        ("ibge_ppm", True),
+        ("mdic_comex", False),  # origin is a UF, not a município
+        ("un_comtrade", False),  # no national geography
+        ("sefaz_nf", False),  # município grain declared, but not live
+        ("nao_existe", False),  # banco_by_id would silently map it to PEVS
+    ],
+)
+def test_products_by_municipio_available_follows_the_municipio_grain(banco, esperado):
+    seam = _seam()
+    assert seam.products_by_municipio_available(banco) is esperado
 
 
 # The monthly mart's monetary columns once dbt has rebuilt it with the v1.77.0 matrix.
@@ -2490,6 +2635,8 @@ def test_cross_metric_refs_lists_only_known_display_unit_metrics():
     keys = {f"{r['banco']}:{r['metric']}" for r in refs}
     assert keys <= set(seam.CROSS_DISPLAY_UNIT)
     assert "ibge_pevs:prod_value" in keys
+    # The planted half is offered on its own (v1.106.0): the prod_* series are extraction.
+    assert {"ibge_pevs:silv_value", "ibge_pevs:silv_mass", "ibge_pevs:silv_volume"} <= keys
     assert "mdic_comex:exp_price" in keys  # derived metric is offered
     assert "un_comtrade:world_exp" in keys
 
@@ -2502,31 +2649,56 @@ def test_cross_series_none_for_unknown_metric():
 
 def test_cross_series_pevs_prod_value_scales_to_bi(monkeypatch):
     seam = _seam()
+    seen = {}
     monkeypatch.setattr(
         seam.gateway,
         "fetch_production_overview",
-        lambda **k: pd.DataFrame([{"reference_year": 2020, "total_value": 5e9}]),
+        lambda **k: seen.update(k) or pd.DataFrame([{"reference_year": 2020, "total_value": 5e9}]),
     )
     out = seam.cross_series("ibge_pevs", "prod_value", 2020, 2020)
     assert out["unit"] == "R$ bi"
     assert out["points"] == [{"y": 2020, "v": 5.0}]
+    # "da extração vegetal" is what the series says, so the read is pinned to t289 —
+    # without it the overview summed silviculture too (7.3× in 2024).
+    assert seen["tabela"] == "289"
+
+
+def test_cross_series_pevs_silv_value_reads_the_planted_half(monkeypatch):
+    seam = _seam()
+    seen = {}
+    monkeypatch.setattr(
+        seam.gateway,
+        "fetch_production_overview",
+        lambda **k: (
+            seen.update(k) or pd.DataFrame([{"reference_year": 2024, "total_value": 41.2e9}])
+        ),
+    )
+    out = seam.cross_series("ibge_pevs", "silv_value", 2024, 2024)
+    assert out["label"] == "Valor da silvicultura"
+    assert out["points"] == [{"y": 2024, "v": 41.2}]
+    assert seen["tabela"] == "291"
 
 
 def test_cross_series_pevs_prod_mass_filters_family_and_scales(monkeypatch):
     seam = _seam()
+    seen = {}
     monkeypatch.setattr(
         seam.gateway,
         "fetch_product_timeseries",
-        lambda *a, **k: pd.DataFrame(
-            [
-                {"reference_year": 2020, "total_qty_native": 4e3, "family": "massa"},
-                {"reference_year": 2020, "total_qty_native": 9e6, "family": "volume"},
-            ]
+        lambda *a, **k: (
+            seen.update(k)
+            or pd.DataFrame(
+                [
+                    {"reference_year": 2020, "total_qty_native": 4e3, "family": "massa"},
+                    {"reference_year": 2020, "total_qty_native": 9e6, "family": "volume"},
+                ]
+            )
         ),
     )
     out = seam.cross_series("ibge_pevs", "prod_mass", 2020, 2020)
     assert out["unit"] == "mil t"
     assert out["points"] == [{"y": 2020, "v": 4.0}]  # 4e3 t / 1e3 — volume excluded
+    assert seen["tabela"] == "289"  # the mass of the extraction, not of both halves
 
 
 def test_cross_series_comex_exp_value_scales_to_bi(monkeypatch):
@@ -3178,7 +3350,7 @@ def test_cross_series_threads_uf_to_uf_capable_readers(monkeypatch):
         seam.gateway,
         "fetch_production_overview",
         lambda **k: (
-            rec.update(pevs=k.get("uf_codes"))
+            rec.update(pevs=k.get("uf_codes"), tabela=k.get("tabela"))
             or pd.DataFrame([{"reference_year": 2020, "total_value": 1e9}])
         ),
     )
@@ -3192,6 +3364,7 @@ def test_cross_series_threads_uf_to_uf_capable_readers(monkeypatch):
     )
     seam.cross_series("ibge_pevs", "prod_value", 2019, 2021, ("AC",))
     assert rec["pevs"] == ("AC",)
+    assert rec["tabela"] == "289"  # the UF scope narrows the half, it does not replace it
     seam.cross_series("mdic_comex", "exp_value", 2019, 2021, ("AC",))
     assert rec["comex"] == ("AC",)
 

@@ -4,9 +4,23 @@
 function ViewFlows({ summary, conventions, database }) {
   const banco = window.bancoById(database);
   const data  = window.flowData(database, summary);
-  const totalOut = data.nodes.filter(n => n.side === 'origin').reduce((s, n) => s + n.value, 0);
-  const topOrigin = data.nodes.filter(n => n.side === 'origin').sort((a, b) => b.value - a.value)[0];
-  const topDest   = data.nodes.filter(n => n.side === 'dest').sort((a, b) => b.value - a.value)[0];
+  // O total vem do servidor, somado sobre TODAS as rotas antes do corte que deixa o diagrama
+  // legível (v1.105.0). Até então este cartão somava os nós desenhados — as 40 maiores rotas,
+  // apresentadas como o total. Sem total conhecido (carregando), '—', nunca "US$ 0". E um total
+  // de vários anos diz QUAIS anos soma (`sumRange`, os anos com valor na convenção).
+  const desenhadas = data.links.length;
+  const rotas = Number.isFinite(data.routeCount) ? data.routeCount : desenhadas;
+  const subTotal = [
+    window.periodoDaSoma ? window.periodoDaSoma(data.sumRange) : null,
+    rotas > desenhadas
+      ? `${desenhadas} de ${rotas} rotas no diagrama`
+      : `${desenhadas} ${desenhadas === 1 ? 'rota mapeada' : 'rotas mapeadas'}`,
+  ].filter(Boolean).join(' · ');
+  // Maior origem e maior destino também vêm do servidor, sobre todas as rotas. Os nós do
+  // diagrama somam só as rotas desenhadas: medido em 17/11/2026, Mato Grosso aparecia com
+  // US$ 292,7 bi (40 rotas) contra US$ 373,9 bi de todas (−21,7%). Sem o campo, '—'.
+  const topOrigin = data.topOrigin || null;
+  const topDest   = data.topDest || null;
 
   // Magnitude + pt-BR suffix come from the shared autoScaleNum helper (the same
   // one the migrated charts/views use) keyed off the REAL value. The contract
@@ -37,7 +51,7 @@ function ViewFlows({ summary, conventions, database }) {
       <window.LoadErrorNote error={data.loadError} />
 
       <div className="kpi-row">
-        <window.KpiCardSpark label="Fluxo total" value={fmt(totalOut)} sub={`${data.links.length} rotas mapeadas`} />
+        <window.KpiCardSpark label="Fluxo total" value={fmt(data.total)} sub={subTotal} />
         <window.KpiCardSpark label={`Maior origem · ${data.originLabel}`} value={topOrigin?.label || '—'} sub={fmt(topOrigin?.value)} />
         <window.KpiCardSpark label={`Maior destino · ${data.destLabel}`} value={topDest?.label || '—'} sub={fmt(topDest?.value)} />
         <window.KpiCardSpark label="Abrangência geográfica" value={banco?.scope || '—'} sub={banco?.domain || ''} />

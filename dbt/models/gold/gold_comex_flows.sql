@@ -24,12 +24,16 @@
 --  • val_yearfx_*   = VL_FOB converted at the FX rate of THAT month. usd is the
 --                     source value itself; brl/eur triangulate through BRL.
 --                     Nominal — no inflation correction.
---  • val_real_cpi_usd = VL_FOB (already US$) projected to today by US CPI — no FX
---                     in it at all; val_real_hicp_eur is the euro counterpart.
---  • val_real_{ipca,igpm,igpdi}_* = VL_FOB → BRL at the month FX → projected to
---                     today via the respective BCB chain index → optionally
---                     reconverted to USD/EUR at TODAY's FX. Use these for
---                     cross-year comparison.
+--  • val_real_cpi_usd = VL_FOB (already US$) brought to the CPI's latest month by
+--                     US CPI — no FX in it at all; val_real_hicp_eur is the euro
+--                     counterpart.
+--  • val_real_{ipca,igpm,igpdi}_* = VL_FOB → BRL at the month FX → brought to the
+--                     index's latest month via the respective BCB chain index →
+--                     optionally reconverted to USD/EUR at the LATEST PTAX rate.
+--                     Use these for cross-year comparison.
+--  • *_base_month / fx_*_base_date = that latest month / PTAX day, per series —
+--                     the price base the val_real columns are expressed at. It
+--                     floats with every build; the columns date it (v1.105.0).
 --
 --  NULL semantics: missing month FX (e.g. EUR pre-1999) → NULL that currency's
 --  columns; missing month inflation index → NULL the real_* columns;
@@ -135,42 +139,12 @@ inflation_month as (
 
 ),
 
-inflation_latest as (
+-- The latest reading of each index and of each PTAX rate — the same two CTEs the four
+-- annual Gold models use (annual_deflation_ctes), so "the price base" is ONE definition
+-- across the five bancos. They were a hand copy here until v1.105.0.
+{{ inflation_latest_cte() }},
 
-    select
-        max(case when series_code = '{{ var("inflation_series_ipca")  }}' then index_value end) as ipca_current,
-        max(case when series_code = '{{ var("inflation_series_igpm")  }}' then index_value end) as igpm_current,
-        max(case when series_code = '{{ var("inflation_series_igpdi") }}' then index_value end) as igpdi_current,
-        max(case when series_code = '{{ var("inflation_series_cpi")   }}' then index_value end) as cpi_current,
-        max(case when series_code = '{{ var("inflation_series_hicp")  }}' then index_value end) as hicp_current
-    from (
-        select series_code, index_value
-        from {{ ref('silver_inflation') }}
-        where index_value is not null
-        qualify row_number() over (
-            partition by series_code
-            order by reference_date desc
-        ) = 1
-    )
-
-),
-
-fx_latest as (
-
-    select
-        max(case when currency = 'USD' then brl_per_foreign_unit end) as brl_per_usd_current,
-        max(case when currency = 'EUR' then brl_per_foreign_unit end) as brl_per_eur_current
-    from (
-        select currency, brl_per_foreign_unit
-        from {{ ref('silver_currency') }}
-        where brl_per_foreign_unit is not null
-        qualify row_number() over (
-            partition by currency
-            order by reference_date desc
-        ) = 1
-    )
-
-),
+{{ fx_latest_cte() }},
 
 enriched as (
 
@@ -180,10 +154,19 @@ enriched as (
         fm.brl_per_eur_avg,
         fxl.brl_per_usd_current,
         fxl.brl_per_eur_current,
+        -- The price base: constant across rows, read from the SAME CTE rows as the
+        -- *_current values the real columns below divide by.
+        il.ipca_base_month,
+        il.igpm_base_month,
+        il.igpdi_base_month,
+        il.cpi_base_month,
+        il.hicp_base_month,
+        fxl.fx_usd_base_date,
+        fxl.fx_eur_base_date,
 
         -- Nominal BRL at the month-of-record FX (US$ FOB → R$ of that month).
         b.val_fob_usd * fm.brl_per_usd_avg                                            as val_nominal_brl,
-        -- Real BRL today: nominal BRL projected forward via each inflation chain.
+        -- Real BRL at the index's latest month: nominal BRL brought forward via each chain.
         (b.val_fob_usd * fm.brl_per_usd_avg) * safe_divide(il.ipca_current,  im.ipca_index)  as val_real_ipca_brl,
         (b.val_fob_usd * fm.brl_per_usd_avg) * safe_divide(il.igpm_current,  im.igpm_index)  as val_real_igpm_brl,
         (b.val_fob_usd * fm.brl_per_usd_avg) * safe_divide(il.igpdi_current, im.igpdi_index) as val_real_igpdi_brl,
@@ -192,7 +175,7 @@ enriched as (
         -- VL_FOB is declared in US$, so this is the deflation that touches no exchange
         -- rate: the customs value brought forward by US prices. The val_real_*_usd
         -- columns above are the same value converted to R$ at the month's rate,
-        -- deflated by Brazilian prices, and converted back at TODAY's rate — a
+        -- deflated by Brazilian prices, and converted back at the LATEST rate — a
         -- Brazilian purchasing-power reading that happens to be printed in dollars.
         -- Both are offered; what must never happen is one being presented as the other.
         b.val_fob_usd * safe_divide(il.cpi_current, im.cpi_index)                      as val_real_cpi_usd,
@@ -269,7 +252,7 @@ select
     val_nominal_brl                                         as val_yearfx_brl,
     safe_divide(val_nominal_brl, brl_per_eur_avg)           as val_yearfx_eur,
 
-    -- ── Real via IPCA (comparable across years, expressed in today's units) ──
+    -- ── Real via IPCA (comparable across years, at ipca_base_month's prices) ─
     val_real_ipca_brl                                       as val_real_ipca_brl,
     safe_divide(val_real_ipca_brl, brl_per_usd_current)     as val_real_ipca_usd,
     safe_divide(val_real_ipca_brl, brl_per_eur_current)     as val_real_ipca_eur,
@@ -284,7 +267,7 @@ select
     safe_divide(val_real_igpdi_brl, brl_per_usd_current)    as val_real_igpdi_usd,
     safe_divide(val_real_igpdi_brl, brl_per_eur_current)    as val_real_igpdi_eur,
 
-    -- ── Real via CPI (EUA) — o US$ FOB declarado, em dólares de hoje ─────────
+    -- ── Real via CPI (US) — the declared US$ FOB, at cpi_base_month's prices ─
     val_real_cpi_usd                                        as val_real_cpi_usd,
 
     -- ── Real via HICP (zona do euro) ─────────────────────────────────────────
@@ -313,6 +296,18 @@ select
         else 'OK'
     end                                                     as data_quality_flag,
     source_rows,
+
+    -- ── Price base (constant per build, like last_refresh) ───────────────────
+    -- The month each index's val_real columns are expressed at, and the PTAX day the
+    -- cross columns (val_real_{ipca,igpm,igpdi}_{usd,eur}) convert at. In the row so a
+    -- reader dates a corrected number from the same table it read the number from.
+    ipca_base_month,
+    igpm_base_month,
+    igpdi_base_month,
+    cpi_base_month,
+    hicp_base_month,
+    fx_usd_base_date,
+    fx_eur_base_date,
     last_refresh
 
 from {% if var('enable_quality_outliers', false) -%}

@@ -535,6 +535,37 @@ def test_products_readers_carry_the_pevs_half_only_when_asked(
         assert f"group by {code_col}" in q.lower()
 
 
+@pytest.mark.parametrize(
+    "builder, table, escopo",
+    [
+        (sql.products_by_uf, "p.serving.serving_ppm_annual", {"uf_codes": ("MT",)}),
+        (sql.products_by_municipio, "p.gold.gold_ppm_production", {"city_codes": ("5107602",)}),
+    ],
+    ids=["por_uf", "por_municipio"],
+)
+def test_products_readers_say_which_rows_are_herd_only_when_asked(builder, table, escopo):
+    """``has_measure_kind`` (PPM) puts the stock|flow discriminator on each row and makes
+    the value flow-only — the contract every other PPM reader already states in SQL.
+
+    The screen needs the discriminator because a herd and a flow the convention does not
+    reach BOTH arrive with a null value: one is "estoque, sem valor por natureza", the
+    other "sem valor nesta convenção", and only the row can say which."""
+    comum = dict(code_column="product_code", name_column="product_description", **escopo)
+
+    ligada, _ = builder(table, has_measure_kind=True, **comum)
+    select = ligada.lower().split("from")[0]
+    assert "any_value(measure_kind) as measure_kind" in select
+    assert "sum(case when measure_kind = 'flow' then val_" in select
+
+    desligada, _ = builder(table, **comum)
+    assert "measure_kind" not in desligada.lower(), (
+        "sem o sinalizador o select não pode citar measure_kind — só a PPM tem a coluna"
+    )
+    # Mexe só no select e na soma do valor: o grão continua o produto.
+    for q in (ligada, desligada):
+        assert "group by product_code" in q.lower()
+
+
 def test_products_by_uf_groups_by_product_and_filters_state():
     """The inverse of *_by_uf: GROUP BY product, constrain state_acronym to the
     selected UFs, carry value + family-split q_mass/q_vol (COMEX export form)."""
@@ -2380,6 +2411,70 @@ def test_gateway_readers_build_expected_table_query(monkeypatch, call, expect_ta
 
     assert result == "df"
     assert expect_table in recorded["query"]
+
+
+@pytest.mark.parametrize(
+    ("call", "has_kind"),
+    [
+        # Por UF: o leitor recebe a TABELA, não o banco — o sinalizador sai dela.
+        *[
+            (
+                lambda g, t=table: g.fetch_products_by_uf(
+                    table_key=t,
+                    code_column="product_code",
+                    name_column="product_description",
+                    uf_codes=("MT",),
+                ),
+                table == "serving_ppm_annual",
+            )
+            for table in ("serving_pevs_annual", "serving_pam_annual", "serving_ppm_annual")
+        ],
+        # Por município: o leitor recebe o banco e lê o Gold.
+        *[
+            (
+                lambda g, s=source: g.fetch_products_by_municipio(
+                    city_codes=("5107602",), source=s
+                ),
+                source == "ibge_ppm",
+            )
+            for source in ("ibge_pevs", "ibge_pam", "ibge_ppm")
+        ],
+    ],
+    ids=[
+        "uf_pevs",
+        "uf_pam",
+        "uf_ppm",
+        "municipio_pevs",
+        "municipio_pam",
+        "municipio_ppm",
+    ],
+)
+def test_product_readers_ask_for_the_herd_flag_only_where_the_column_exists(
+    monkeypatch, call, has_kind
+):
+    """Only the PPM tables carry ``measure_kind``. Asking for it anywhere else is a
+    BigQuery 400 on the whole composition; NOT asking for it in PPM makes a herd (no value
+    by nature) indistinguishable from a flow the convention does not reach. The gateway
+    derives it — the seam does not have to remember it — from the table (by UF) or the
+    banco (by município), and from the same ``_MEASURE_KIND_SOURCES`` either way."""
+    pytest.importorskip("flask_caching")
+    from embrapa_dashboard.serving import gateway
+
+    recorded = {}
+
+    def recorder(query, params, **kwargs):
+        recorded["query"] = query
+        return "df"
+
+    monkeypatch.setattr(gateway, "run_query", recorder)
+    monkeypatch.setattr(gateway, "get_settings", lambda: _isolated_settings())
+    app, cache = _bind_simplecache()
+
+    with app.app_context():
+        cache.clear()
+        call(gateway)
+
+    assert ("measure_kind" in recorded["query"]) is has_kind
 
 
 def test_visibility_clause_and_builder_injection():

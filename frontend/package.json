@@ -1,7 +1,7 @@
 {
   "name": "embrapa-dashboard-frontend",
   "private": true,
-  "version": "1.104.5",
+  "version": "1.107.0",
   "//engines": "CI and the Dockerfile build stage both read the Node major from /.nvmrc; keep the three in step. A newer local Node is what broke localStorage in the test env (see vitest.setup.js).",
   "engines": {
     "node": "^24"
@@ -18,24 +18,24 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "maplibre-gl": "^6.10.0",
-    "plotly.js": "^4.1.1",
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "maplibre-gl": "^6.18.0",
+    "plotly.js": "^4.3.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
   },
   "devDependencies": {
     "@babel/parser": "^7.29.9",
     "@eslint/js": "^9.39.4",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/react": "^16.3.3",
-    "@vitejs/plugin-react": "^6.1.1",
+    "@vitejs/plugin-react": "^6.3.0",
     "@vitest/coverage-v8": "^5.0.1",
     "eslint": "^9.39.4",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.1.1",
-    "globals": "^17.12.0",
+    "globals": "^17.14.0",
     "jsdom": "^30.1.0",
-    "vite": "^8.3.0",
+    "vite": "^8.3.8",
     "vitest": "^5.0.1"
   }
 }

@@ -38,6 +38,36 @@ function tpGrains(database) {
   return { municipio: level === 'municipio' };
 }
 
+// The composition splits into what the bar chart can draw and what it cannot — and the
+// second group stays NAMED, never dropped in silence:
+//   rebanho  — PPM's herd (`measure_kind = 'stock'`): a headcount, with no production value
+//              by construction (the marts sum value over flows only). Asked by its own
+//              flag, never by table id: a herd is what the row SAYS it is.
+//   semValor — a flow with no value in this convention over the whole window (PAM and PPM
+//              in IPCA before 1980). Absent, not zero: a zero-length bar would claim a
+//              measurement that was never made.
+// Names are disambiguated over everything the card SHOWS (bars + both lists), because
+// labelProductRows adds the PEVS half only when a name repeats in the displayed set. The
+// lists are alphabetical: they have no value to rank by, and ranking the herd by head
+// count would compare species, which cabeças cannot do.
+function tpComposition(products, database, limit = 12) {
+  const todos = products || [];
+  const rebanho = todos.filter((p) => p.measure_kind === 'stock');
+  const fluxos = todos.filter((p) => p.measure_kind !== 'stock');
+  const semValor = fluxos.filter((p) => p.value == null);
+  const comValor = fluxos.filter((p) => p.value != null)
+    .sort((a, b) => b.value - a.value).slice(0, limit);
+  const rotulados = window.labelProductRows([...comValor, ...rebanho, ...semValor], database);
+  const nomes = (rows) => rows.map((p) => p.name || p.code)
+    .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  const corte = comValor.length + rebanho.length;
+  return {
+    barras: rotulados.slice(0, comValor.length),
+    rebanho: nomes(rotulados.slice(comValor.length, corte)),
+    semValor: nomes(rotulados.slice(corte)),
+  };
+}
+
 function ViewTerritoryProfile({ summary, database, conventions }) {
   const conv = conventions || window.DEFAULT_CONVENTIONS;
   const fx = window.CURRENCY_FX[conv.currency];
@@ -169,6 +199,10 @@ function ViewTerritoryProfile({ summary, database, conventions }) {
   const muniCube = (activeLevel === 'municipio' && activeCities.length && window.municipioYearly)
     ? window.municipioYearly(database, summary, activeCities, [yearStart, yearEnd])
     : null;
+  // The month that cube's corrected values are at — same request, no second fetch (v1.105.0).
+  const muniCubeBase = (activeLevel === 'municipio' && activeCities.length && window.municipioYearlyPriceBase)
+    ? window.municipioYearlyPriceBase(database, summary, activeCities, [yearStart, yearEnd])
+    : null;
 
   const series = useTPMemo(() => {
     const rows = activeLevel === 'municipio'
@@ -199,7 +233,15 @@ function ViewTerritoryProfile({ summary, database, conventions }) {
   const muniBreakdown = (activeLevel === 'municipio' && activeCities.length && window.productsByMunicipio)
     ? window.productsByMunicipio(database, summary, conv, activeCities)
     : null;
-  const breakdown = ufBreakdown || muniBreakdown || { products: [], loadError: null };
+  // No reader called means no place resolved yet. At município level that is the IBGE mesh
+  // still on its way (the city picker says "carregando municípios…" for the same reason):
+  // nothing was asked, so the card says it is loading — never "sem produtos".
+  const breakdown = ufBreakdown || muniBreakdown || {
+    products: [],
+    loading: activeLevel === 'municipio' && !Array.isArray(mesh),
+    unavailable: false,
+    loadError: null,
+  };
 
   // ── National weight + rank ────────────────────────────────────────────────
   // The denominator is every UF in the GRID on purpose — it deliberately ignores the
@@ -230,6 +272,22 @@ function ViewTerritoryProfile({ summary, database, conventions }) {
   const rank = rankable ? countryOrder.indexOf(uf) + 1 : 0;
   const rankUniverse = countryOrder.length;
 
+  // The years each multi-year SUM on this screen actually adds (v1.105.0), read off the rows
+  // it sums — the window's years with a value in the convention (window.faixaComValor), not
+  // the window itself: IPCA has no value for PAM in 1974–1979, and a label claiming those
+  // years would claim the sum covers them. Share and rank sum the whole UF grid. The
+  // composition sums the same rows as the trajectory (same place, filter and base) — except
+  // at UF level under a sub-UF narrowing, where the trajectory is the narrowed cities' rollup
+  // and the composition the whole UF; there the requested window is all that can be said.
+  const somaNacional = window.periodoDaSoma
+    ? window.periodoDaSoma(window.faixaComValor(ufYearly, 'year', 'value', yearStart, yearEnd))
+    : null;
+  const somaLocal = window.periodoDaSoma
+    ? window.periodoDaSoma(activeLevel === 'uf' && filtered.subUfActive
+      ? [yearStart, yearEnd]
+      : window.faixaComValor(series, 'y', 'v', yearStart, yearEnd))
+    : null;
+
   const last = series[series.length - 1] || null;
   const prev = series[series.length - 2] || null;
   // deltaPctIn, not `(last.v - prev.v) / prev.v`: with the last year absent that gave
@@ -254,15 +312,14 @@ function ViewTerritoryProfile({ summary, database, conventions }) {
   );
   // BarChart labels each row from `d.uf || d.name` — the product name is the category, e
   // categorias homônimas o Plotly funde numa posição só. Madeira, lenha e carvão existem
-  // nas DUAS metades do PEVS com o mesmo nome: sem `labelProductRows` aparecia UMA barra
-  // com os DOIS rótulos impressos por cima um do outro.
-  const prodRows = window.labelProductRows(
-    (breakdown.products || []).slice()
-      .sort((a, b) => (b.value || 0) - (a.value || 0)).slice(0, 12),
-    database,
-    // scalePresent, não `(p.value || 0) * …`: o `|| 0` refazia na tela o zero que o
-    // serializer passou a recusar, e `null * fator === 0` faria o mesmo sozinho.
-  ).map((p) => ({ name: p.name || p.code, value: window.scalePresent(p.value, 1e6 * cvf) }));
+  // nas DUAS metades do PEVS com o mesmo nome: sem `labelProductRows` (dentro de
+  // tpComposition) aparecia UMA barra com os DOIS rótulos impressos por cima um do outro.
+  const comp = tpComposition(breakdown.products, database);
+  // scalePresent, não `(p.value || 0) * …`: o `|| 0` refazia na tela o zero que o
+  // serializer passou a recusar, e `null * fator === 0` faria o mesmo sozinho.
+  const prodRows = comp.barras
+    .map((p) => ({ name: p.name || p.code, value: window.scalePresent(p.value, 1e6 * cvf) }));
+  const nivelTerritorio = activeLevel === 'municipio' ? 'município' : 'UF';
   const prodScaled = window.scaleSeries(
     prodRows, Math.max(...prodRows.map((p) => p.value), 0), conv, 'value', fx.symbol,
   );
@@ -315,15 +372,32 @@ function ViewTerritoryProfile({ summary, database, conventions }) {
         )}
       </div>
 
-      {/* What this banco can and cannot answer for a território — stated, not implied. */}
+      {/* What this banco can and cannot answer for a território — stated, not implied.
+          NotApplicableNote takes its messages as a `note` OBJECT; passed as children (as
+          it was until v1.107.0) it rendered nothing, and the COMEX screen never said why
+          it had no município level. */}
       {!grains.municipio && (
-        <window.NotApplicableNote>
-          Este banco tem grão geográfico apenas por <strong>UF</strong>, então não há
-          raio-x municipal aqui. O recorte por UF abaixo é completo.
-        </window.NotApplicableNote>
+        <window.NotApplicableNote note={{
+          grao: (
+            <>
+              Este banco tem grão geográfico apenas por <strong>UF</strong>, então não há
+              raio-x municipal aqui. O recorte por UF abaixo é completo.
+            </>
+          ),
+        }} />
       )}
 
-      <window.LoadErrorNote error={breakdown.loadError} />
+      {/* This perspective's OWN reads — the trajectory's município cube and the composition —
+          against the snapshot's month (v1.105.0). The cubes applyFilters reads are already
+          compared by MainScreen's note: they go in as `jaComparadas`, so the screen never
+          says it twice. */}
+      {window.PriceBaseSkewNote && (
+        <window.PriceBaseSkewNote
+          bases={[muniCubeBase, breakdown.priceBase]}
+          jaComparadas={[filtered.muniPriceBase, filtered.geoPriceBase]}
+          database={database}
+          conventions={conv} />
+      )}
 
       <div className="kpi-row">
         <window.KpiCardSpark
@@ -340,14 +414,14 @@ function ViewTerritoryProfile({ summary, database, conventions }) {
           label="Participação no país"
           value={share != null ? window.fmtPct(share) : '—'}
           sub={nationalAvailable
-            ? `${ufName} sobre o total das UFs · ${yearStart}–${yearEnd}`
+            ? `${ufName} sobre o total das UFs · ${somaNacional || `${yearStart}–${yearEnd}`}`
             : 'indisponível sob recorte sub-UF (não há denominador nacional nesta base)'}
         />
         <window.KpiCardSpark
           label="Posição no ranking"
           value={rank ? `${rank}º` : '—'}
           sub={rankable
-            ? `de ${rankUniverse} UFs no banco · por valor na janela`
+            ? `de ${rankUniverse} UFs no banco · por valor · ${somaNacional || 'na janela'}`
             : (combined ? 'uma soma de territórios não tem posição' : 'indisponível sob recorte sub-UF')}
         />
         <window.KpiCardSpark
@@ -377,10 +451,60 @@ function ViewTerritoryProfile({ summary, database, conventions }) {
       </div>
 
       <div className="card">
-        <window.SectionHeader overline="Composição" title={`O que ${placeLabel} produz`} />
-        {prodRows.length
-          ? <window.BarChart data={prodScaled.data} valueKey="value" label={prodScaled.label} />
-          : <window.EmptyCard>Sem produtos registrados para este território na seleção atual.</window.EmptyCard>}
+        <window.SectionHeader
+          overline={somaLocal ? `Composição · ${somaLocal}` : 'Composição'}
+          title={`O que ${placeLabel} produz`}
+        />
+        {/* Only the LAST branch is a measurement. Loading, a failed request and a banco
+            with no reader at this level all used to fall through to "Sem produtos
+            registrados" — an absence nobody had measured. The failure note lives here,
+            in the card it concerns, rather than above the KPIs it does not touch. */}
+        {breakdown.loadError
+          ? <window.LoadErrorNote error={breakdown.loadError} />
+          : breakdown.loading
+            ? (
+              <p className="caption" style={{ padding: '40px 4px', textAlign: 'center' }}>
+                Carregando a composição…
+              </p>
+            )
+            : breakdown.unavailable
+              ? (
+                <window.NotApplicableNote note={{
+                  leitor: `A composição por produto ainda não está disponível para este banco no nível ${nivelTerritorio}.`,
+                }} />
+              )
+              : !prodRows.length && !comp.rebanho.length && !comp.semValor.length
+                ? <window.EmptyCard>Sem produtos registrados para este território na seleção atual.</window.EmptyCard>
+                : (
+                  <>
+                    {prodRows.length
+                      ? <window.BarChart data={prodScaled.data} valueKey="value" label={prodScaled.label} />
+                      : (
+                        <p className="caption" style={{ padding: '20px 4px', textAlign: 'center' }}>
+                          Nenhum produto deste território tem valor a mostrar na seleção atual — veja
+                          abaixo por quê.
+                        </p>
+                      )}
+                    <window.CollapsingNameList
+                      titulo="Efetivo dos rebanhos"
+                      itens={comp.rebanho}
+                      substantivo="espécies"
+                      regra={(
+                        <>
+                          É um <strong>estoque</strong> (nº de cabeças), não uma produção: não tem
+                          valor monetário e por isso não entra na composição por valor. Veja a
+                          perspectiva <strong>Rebanho</strong>.
+                        </>
+                      )}
+                    />
+                    <window.CollapsingNameList
+                      titulo="Sem valor nesta convenção"
+                      itens={comp.semValor}
+                      substantivo="produtos"
+                      regra="Nenhum ano da janela selecionada tem valor nesta convenção para eles, por isso não entram na composição por valor."
+                    />
+                  </>
+                )}
       </div>
     </>
   );

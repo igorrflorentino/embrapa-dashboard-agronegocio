@@ -257,3 +257,38 @@ describe('fromMapFocus — what "Comparar com outros" hands over from the Geogra
     expect(tc().fromMapFocus({ cities: [], ufs: null }).every((t) => t.level === 'regiao')).toBe(true);
   });
 });
+
+// The share column divides the município cube (read from the analytical base) by `brasil`
+// (the pre-aggregated tables): across a build the two can be a month apart, so the cube's
+// price base travels with the result, and the view says so (v1.105.0).
+describe('build — the month the município cube is at', () => {
+  const NOVEMBRO = { column: null, month: '2026-11', fxDate: null };
+  afterEach(() => { delete window.municipioYearlyPriceBase; });
+
+  it('carries the cube base, read from the same request as the rows', () => {
+    stub();
+    const pedidos = [];
+    window.municipioYearlyPriceBase = (banco, summary, codes) => { pedidos.push(codes); return NOVEMBRO; };
+    const out = tc().build({ database: 'ibge_pevs', summary: {}, selection: [
+      { level: 'uf', code: 'PA' }, { level: 'municipio', code: '1501402' },
+    ] });
+    expect(out.priceBases).toEqual([NOVEMBRO]);
+    // The same city set the rows were asked for — the same cache key, not a second fetch.
+    expect(pedidos).toEqual(calls.muni);
+  });
+
+  it('with no município chosen there is no own read, and so no base of its own', () => {
+    stub();
+    window.municipioYearlyPriceBase = () => NOVEMBRO;
+    const out = tc().build({ database: 'ibge_pevs', summary: {}, selection: [{ level: 'uf', code: 'PA' }] });
+    expect(out.priceBases).toEqual([]);
+  });
+
+  it('passes on the bases MainScreen already compares, so the view never repeats them', () => {
+    stub();
+    const SETEMBRO = { column: null, month: '2026-09', fxDate: null };
+    window.applyFilters = () => ({ yearStart: 2019, yearEnd: 2021, muniPriceBase: SETEMBRO, geoPriceBase: null });
+    const out = tc().build({ database: 'ibge_pevs', summary: {}, selection: [{ level: 'uf', code: 'PA' }] });
+    expect(out.comparedPriceBases).toEqual([SETEMBRO, null]);
+  });
+});

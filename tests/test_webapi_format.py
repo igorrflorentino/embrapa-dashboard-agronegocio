@@ -121,14 +121,16 @@ _LABEL_CASES = [
     ({}, "Valor nominal — R$"),
     # A BRAZILIAN index under a foreign symbol must say so. 'Valor real (IGP-M) — US$'
     # reads as dollars corrected by Brazilian inflation, which is not what the number
-    # is: it is R$ deflated by IGP-M and then converted at today's rate.
+    # is: it is R$ deflated by IGP-M and then converted at ONE rate, the latest PTAX day
+    # in Gold. It said "ao câmbio de hoje" until v1.105.0 — that day is not today, and
+    # with no date handed in the label says only what it knows.
     (
         {"currency": "USD", "correction": "IGP-M"},
-        "Valor real (IGP-M · inflação do Brasil, ao câmbio de hoje) — US$",
+        "Valor real (IGP-M · inflação do Brasil, ao câmbio mais recente) — US$",
     ),
     (
         {"currency": "EUR", "correction": "IGP-DI"},
-        "Valor real (IGP-DI · inflação do Brasil, ao câmbio de hoje) — €",
+        "Valor real (IGP-DI · inflação do Brasil, ao câmbio mais recente) — €",
     ),
     # The own-currency deflators name their economy too — the symbol alone would not
     # tell a reader whether CPI or IPCA produced the dollars in front of them.
@@ -146,8 +148,24 @@ def test_the_two_correction_logics_get_different_labels_under_the_same_symbol():
     via_brasil = fmt.convention_value_label({"currency": "USD", "correction": "IPCA"})
     via_eua = fmt.convention_value_label({"currency": "USD", "correction": "CPI"})
     assert via_brasil != via_eua
-    assert "Brasil" in via_brasil and "câmbio de hoje" in via_brasil
+    assert "Brasil" in via_brasil and "câmbio" in via_brasil
     assert "EUA" in via_eua and "câmbio" not in via_eua
+
+
+def test_a_cross_label_names_the_ptax_day_it_converted_at():
+    """v1.105.0: the cross column converts at ONE PTAX day — the latest in Gold when it was
+    built (``fx_<cur>_base_date``). Given that day, the label prints it; an own-currency
+    column converts at each year's rate and ignores it."""
+    import datetime as dt
+
+    day = dt.date(2026, 11, 14)
+    assert fmt.convention_value_label({"currency": "USD", "correction": "IPCA"}, day) == (
+        "Valor real (IPCA · inflação do Brasil, ao câmbio de 14/11/2026) — US$"
+    )
+    assert fmt.convention_value_label({"currency": "USD", "correction": "CPI"}, day) == (
+        "Valor real (CPI · inflação dos EUA) — US$"
+    )
+    assert fmt.fx_date_br(dt.date(2026, 1, 5)) == "05/01/2026"
 
 
 @pytest.mark.parametrize(
@@ -208,6 +226,20 @@ def test_the_correction_maps_match_the_screen():
     assert js_map("ECONOMY_CURRENCY") == fmt.ECONOMY_CURRENCY
     js_default = re.search(r"correction:\s*'(\w+)'", js.split("window.DEFAULT_CONVENTIONS")[1])
     assert js_default.group(1) == fmt.DEFAULT_CORRECTION
+
+
+def test_the_month_names_match_the_screen():
+    """The server names the price base in a label ('a preços de outubro de 2026') and the
+    screen names it in the strip's sentence, the citation and the CSV (v1.105.0). Two lists
+    of month names that drift apart would date one value two ways on one screen."""
+    import re
+    from pathlib import Path
+
+    js = (
+        Path(__file__).resolve().parents[1] / "frontend" / "src" / "ui" / "MonetaryNotes.jsx"
+    ).read_text(encoding="utf-8")
+    body = re.search(r"const _MESES = \[(.*?)\];", js, re.S).group(1)
+    assert re.findall(r"'([^']+)'", body) == fmt.MONTH_NAME_PT
 
 
 @pytest.mark.parametrize(("conv", "expected"), _LABEL_CASES)

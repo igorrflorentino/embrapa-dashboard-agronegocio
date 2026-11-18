@@ -19,16 +19,23 @@
 --
 --  • val_yearfx_*  = val_raw (BRL) converted to USD/EUR at the FX rate
 --                     of THAT year. Use this for historical auditing — note
---                     pre-1994 BRL is purchasing-power-equivalent today, but
---                     the FX rate of the year is in the currency of the year
---                     (Cz$/USD, Cr$/USD, etc.), giving a USD value at the
---                     time the transaction happened.
+--                     pre-1994 BRL is restated in the CURRENT currency (R$) by
+--                     the currency-reform seed, with no inflation correction,
+--                     while the FX rate of the year is quoted in the currency of
+--                     the year (Cz$/USD, Cr$/USD, etc.): the scales do not mix,
+--                     so the foreign columns are NULL before 1994.
 --
---  • val_real_ipca_* = val_raw projected to today via the IPCA chain (real
---                     inflation only — currency reforms already absorbed in
---                     Silver), then optionally converted to foreign currency
---                     at TODAY's FX rates. This is the column for cross-year
---                     economic comparison.
+--  • val_real_ipca_* = val_raw brought to the IPCA's latest month via the IPCA
+--                     chain (real inflation only — currency reforms already
+--                     absorbed in Silver), then optionally converted to foreign
+--                     currency at the LATEST PTAX rate. This is the column for
+--                     cross-year economic comparison. It is a change of UNIT
+--                     (purchasing power at one month), not a financial
+--                     equivalence: no interest rate is applied, by design.
+--
+--  • *_base_month / fx_*_base_date = that latest month / PTAX day, per series —
+--                     the price base the val_real columns are expressed at. It
+--                     floats with every build; the columns date it (v1.105.0).
 --
 --  • val_real_igpm_* = identical logic to IPCA, using IGP-M.
 --
@@ -133,18 +140,27 @@ enriched as (
         il.igpdi_current,
         fxl.brl_per_usd_current,
         fxl.brl_per_eur_current,
+        -- The price base: constant across rows, read from the SAME CTE rows as the
+        -- *_current values the real columns below divide by.
+        il.ipca_base_month,
+        il.igpm_base_month,
+        il.igpdi_base_month,
+        il.cpi_base_month,
+        il.hicp_base_month,
+        fxl.fx_usd_base_date,
+        fxl.fx_eur_base_date,
 
-        -- Real-IPCA BRL: val_raw is already in present-day BRL (Silver applied
-        -- the historical_currency_factors seed); we now apply the IPCA chain
-        -- ratio to bring the year-of-record purchasing power up to today.
+        -- Real-IPCA BRL: val_raw is already in the current currency (Silver applied
+        -- the historical_currency_factors seed); we now apply the IPCA chain ratio to
+        -- bring the year-of-record purchasing power up to the IPCA's latest month.
         b.val_raw * safe_divide(il.ipca_current,  iy.ipca_year_avg)  as val_real_ipca_brl,
         -- Real-IGPM BRL: same logic with the alternative series.
         b.val_raw * safe_divide(il.igpm_current,  iy.igpm_year_avg)  as val_real_igpm_brl,
         -- Real-IGPDI BRL: same logic, broader index (wholesale + consumer + construction).
         b.val_raw * safe_divide(il.igpdi_current, iy.igpdi_year_avg) as val_real_igpdi_brl,
         -- ── Correção no PRÓPRIO nível de preços da moeda ────────────────────────
-        -- The columns above answer "what is this worth in R$ of today" and then, in the
-        -- final select, divide by TODAY's exchange rate — so the dollar figure they
+        -- The columns above answer "what is this worth in R$ at the index's latest month"
+        -- and then, in the final select, divide by the LATEST exchange rate — so the dollar figure they
         -- produce is a Brazilian purchasing-power measurement wearing a US$ symbol.
         -- These two answer a different question: convert at the exchange rate of the
         -- YEAR OF RECORD (what the transaction was actually worth in dollars/euros at
@@ -217,7 +233,7 @@ select
     -- ── Year-FX: val_raw converted via FX of THAT year ──────────────────────
     -- val_raw is already in current BRL numerary (Silver applied the currency
     -- reform seed), but it carries NO inflation correction — so it equals
-    -- "what the value was, restated in today's R$ symbols". Foreign-FX
+    -- "what the value was, restated in the current currency's symbols". Foreign-FX
     -- columns are NULL pre-1994: the FX rate of the year is in the currency-
     -- of-the-year (Cz$/USD etc.), which would mix scales and confuse readers.
     -- 1994 itself is valid: fx_year averages only the R$ half (>= 1994-07-01).
@@ -228,7 +244,7 @@ select
     case when reference_year >= 1994
         then safe_divide(val_raw, brl_per_eur_avg) end       as val_yearfx_eur,
 
-    -- ── Real via IPCA: comparable across years, expressed in current units ──
+    -- ── Real via IPCA: comparable across years, at ipca_base_month's prices ──
     val_real_ipca_brl                                        as val_real_ipca_brl,
     safe_divide(val_real_ipca_brl, brl_per_usd_current)      as val_real_ipca_usd,
     safe_divide(val_real_ipca_brl, brl_per_eur_current)      as val_real_ipca_eur,
@@ -243,12 +259,12 @@ select
     safe_divide(val_real_igpdi_brl, brl_per_usd_current)     as val_real_igpdi_usd,
     safe_divide(val_real_igpdi_brl, brl_per_eur_current)     as val_real_igpdi_eur,
 
-    -- ── Real via CPI (EUA) — dólares de hoje, poder de compra americano ──────
-    -- Not "val_real_ipca_usd in another index": the FX moment differs too (câmbio do
-    -- ano, not câmbio de hoje). See the enriched CTE for why both exist.
+    -- ── Real via CPI (US) — US purchasing power, at cpi_base_month's prices ──
+    -- Not "val_real_ipca_usd in another index": the FX moment differs too (the year's
+    -- rate, not the latest one). See the enriched CTE for why both exist.
     val_real_cpi_usd                                         as val_real_cpi_usd,
 
-    -- ── Real via HICP (zona do euro) — euros de hoje ─────────────────────────
+    -- ── Real via HICP (euro area) — at hicp_base_month's prices ─────────────
     val_real_hicp_eur                                        as val_real_hicp_eur,
 
     -- ── Quality + provenance ─────────────────────────────────────────────────
@@ -260,6 +276,18 @@ select
          quality_val_level('val_real_igpdi_brl', 'qty_native'),
          quality_scored('val_real_igpdi_brl', 'qty_native'),
              spike='_q_isolated_spike') }} as data_quality_flag,
+
+    -- ── Price base (constant per build, like last_refresh) ───────────────────
+    -- The month each index's val_real columns are expressed at, and the PTAX day the
+    -- cross columns (val_real_{ipca,igpm,igpdi}_{usd,eur}) convert at. In the row so a
+    -- reader dates a corrected number from the same table it read the number from.
+    ipca_base_month,
+    igpm_base_month,
+    igpdi_base_month,
+    cpi_base_month,
+    hicp_base_month,
+    fx_usd_base_date,
+    fx_eur_base_date,
     last_refresh
 
 from {% if var('enable_quality_outliers', false) -%}

@@ -63,7 +63,7 @@ with pam as (
         sum(val_real_igpdi_eur)         as val_real_igpdi_eur,
         -- The own-currency deflators (v1.82.0): US CPI corrects the dollar, euro-area
         -- HICP the euro. Distinct columns, not variants of the ones above — the FX
-        -- moment differs too (câmbio do ano, not câmbio de hoje), so the numbers are
+        -- moment differs too (the year's rate, not the latest one), so the numbers are
         -- not two roundings of one answer. Served for their OWN currency only: a
         -- val_real_cpi_brl would be 'the dollar's purchasing power, printed in reais',
         -- which nothing on screen asks for.
@@ -74,7 +74,17 @@ with pam as (
         -- reason), so counting names could silently undercount.
         count(distinct city_code)       as n_cities,
         count(*)                        as source_rows,
-        max(last_refresh)               as last_refresh
+        max(last_refresh)               as last_refresh,
+        -- The price base of the val_real columns above (v1.105.0). Constant across Gold,
+        -- so max() only lifts it through the GROUP BY; the BFF reads it back with max()
+        -- in the SAME select that sums a value, which is what dates that value.
+        max(ipca_base_month)            as ipca_base_month,
+        max(igpm_base_month)            as igpm_base_month,
+        max(igpdi_base_month)           as igpdi_base_month,
+        max(cpi_base_month)             as cpi_base_month,
+        max(hicp_base_month)            as hicp_base_month,
+        max(fx_usd_base_date)           as fx_usd_base_date,
+        max(fx_eur_base_date)           as fx_eur_base_date
     from {{ ref('gold_pam_production') }}
     where {{ hidden_code_predicate('pam', 'product_code') }}
     group by reference_year, state_acronym, product_code, tabela, family
@@ -147,6 +157,13 @@ select
     p.val_real_hicp_eur,
     p.n_cities,
     p.source_rows,
+    p.ipca_base_month,
+    p.igpm_base_month,
+    p.igpdi_base_month,
+    p.cpi_base_month,
+    p.hicp_base_month,
+    p.fx_usd_base_date,
+    p.fx_eur_base_date,
     p.last_refresh
 from pam p
 left join {{ ref('dim_geo_br') }} g
