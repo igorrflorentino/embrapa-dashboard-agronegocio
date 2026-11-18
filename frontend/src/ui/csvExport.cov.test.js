@@ -98,6 +98,7 @@ afterEach(() => {
   // NEXT test, silently steering its 'geo' export through the wrong branch.
   delete window.geoExportScope;
   delete window.geoExportMunis;
+  delete window.geoExportMuniRead;
 });
 
 // ── canExportView ────────────────────────────────────────────────────────────
@@ -713,7 +714,11 @@ describe('exportActiveTableCSV — comparativo entre territórios', () => {
     window.dataStore = { get: () => ({ ufYearly: UF_ROWS, products: PRODUCTS }) };
     window.geoLevelFor = () => 'municipio';
     window.geoMesh = () => MESH;
-    window.municipioYearly = () => [{ year: 2021, cityCode: '1501402', uf: 'PA', value: 0.5, q_mass: 1 }];
+    // The cube's read STATE (v1.108.1): rows, its base, and whether it is loading or failed.
+    window.municipioYearly = () => ({
+      rows: [{ year: 2021, cityCode: '1501402', uf: 'PA', value: 0.5, q_mass: 1 }],
+      priceBase: null, loading: false, loadError: null,
+    });
   });
   afterEach(() => {
     for (const k of ['dataStore', 'geoLevelFor', 'geoMesh', 'municipioYearly']) delete window[k];
@@ -749,10 +754,71 @@ describe('exportActiveTableCSV — comparativo entre territórios', () => {
   });
 
   it('refuses while a território is still loading, instead of leaving it out', () => {
-    window.municipioYearly = () => null;
+    window.municipioYearly = () => ({ rows: null, priceBase: null, loading: true, loadError: null });
     const p = window.prepareTableCSV(ctx([{ level: 'uf', code: 'PA' }, { level: 'municipio', code: '1501402' }]));
     expect(p).toMatchObject({ erro: true, motivo: 'carregando' });
     expect(lastDownloadName).toBeUndefined();
+  });
+
+  it('refuses with the failure, not "carregando", when a território failed to load', () => {
+    // Until v1.108.1 a failed read stayed "loading" for good, so this said "espere" forever.
+    // Leaving the place out would be worse: the file would look complete.
+    window.municipioYearly = () => ({ rows: null, priceBase: null, loading: false, loadError: 'HTTP 503' });
+    const p = window.prepareTableCSV(ctx([{ level: 'uf', code: 'PA' }, { level: 'municipio', code: '1501402' }]));
+    expect(p).toMatchObject({ erro: true, motivo: 'falha-territorios' });
+    expect(lastDownloadName).toBeUndefined();
+  });
+
+  it('a failed sub-UF narrowing elsewhere does not block it: the comparison ignores the geography filter', () => {
+    stubRegistry({ products: PRODUCTS, yearStart: 2020, yearEnd: 2021, subUfLoadError: 'HTTP 503' });
+    const p = window.prepareTableCSV(ctx([{ level: 'uf', code: 'PA' }]));
+    expect(p.erro).toBe(false);
+  });
+});
+
+// ── Um recorte sub-UF que não se resolveu não vira arquivo (v1.108.1) ────────────────────
+// While the narrowing loads, or after it failed, applyFilters has no numbers for it: the
+// series falls back to the national one. The file would carry that series beside its own
+// recorte_geografico column naming the mesorregião — a wrong number with a right label.
+describe('exportActiveTableCSV — a sub-UF narrowing still loading or failed refuses the file', () => {
+  const UF_ROW = [{ uf: 'PA', name: 'Pará', region: 'N', value: 5, q_mass: 1, q_vol: 2, q_count: 3 }];
+  const filtered = (extra) => ({
+    products: PRODUCTS,
+    ts: [{ y: 2021, v: 1, q_mass: 1, q_vol: 0, q_count: 0 }],
+    ufData: UF_ROW, ufLatestYear: 2021, ufYearPartial: false, notFilteredByBasket: false,
+    subUfLoading: false, subUfLoadError: null, ...extra,
+  });
+  const VIEWS = ['overview', 'value', 'geo', 'concentration'];
+
+  it.each(VIEWS)('%s: a failed narrowing refuses with the failure', (view) => {
+    stubRegistry(filtered({ subUfLoadError: 'HTTP 503' }));
+    const p = window.prepareTableCSV({ view, summary: { mesos: ['1502'] }, database: 'ibge_pevs' });
+    expect(p).toMatchObject({ erro: true, motivo: 'falha-recorte' });
+  });
+
+  it.each(VIEWS)('%s: a narrowing on its way refuses with "carregando"', (view) => {
+    stubRegistry(filtered({ subUfLoading: true }));
+    const p = window.prepareTableCSV({ view, summary: { mesos: ['1502'] }, database: 'ibge_pevs' });
+    expect(p).toMatchObject({ erro: true, motivo: 'carregando-recorte' });
+  });
+
+  it.each(VIEWS)('%s: counter-proof — resolved, the same rows export', (view) => {
+    stubRegistry(filtered());
+    const p = window.prepareTableCSV({ view, summary: { mesos: ['1502'] }, database: 'ibge_pevs' });
+    expect(p.erro).toBe(false);
+  });
+
+  it('Geografia at município level: its own read refuses while loading or failed, and only a measured empty list is "sem linhas"', () => {
+    stubRegistry(filtered());
+    window.geoExportScope = 'municipio';
+    window.geoExportMunis = [];
+    const ask = () => window.prepareTableCSV({ view: 'geo', summary: { states: ['PA'] }, database: 'ibge_pevs' });
+    window.geoExportMuniRead = { loading: false, loadError: 'HTTP 503' };
+    expect(ask()).toMatchObject({ erro: true, motivo: 'falha-recorte' });
+    window.geoExportMuniRead = { loading: true, loadError: null };
+    expect(ask()).toMatchObject({ erro: true, motivo: 'carregando-recorte' });
+    window.geoExportMuniRead = { loading: false, loadError: null };
+    expect(ask()).toMatchObject({ erro: true, motivo: 'sem-linhas' });
   });
 });
 

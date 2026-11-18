@@ -190,12 +190,17 @@ import './countUnits.js';
     // so a trade banco — whose hidden cascade stays at full selection (→ null) — never
     // triggers a wasted ~5570-row mesh fetch (DATA-2).
     const _hasGeoKeys = GEO_FACET_KEYS.some((k) => Array.isArray(summary[k]) && summary[k].length);
-    const mesh = (_hasGeoKeys && window.geoMesh) ? window.geoMesh() : null;
+    const meshState = (_hasGeoKeys && window.geoMeshState) ? window.geoMeshState() : null;
+    const mesh = meshState ? meshState.municipios : null;
     // A real sub-UF narrowing was requested but the mesh hasn't landed yet: treat the
     // geography as PENDING (below) so the views show loading rather than the un-narrowed
     // all-UF grid for that transient (GEO-2). Mitigated by main.jsx warming the mesh at
     // startup, so this is usually already false by the time a filter is applied.
-    const subUfMeshPending = _hasGeoKeys && !mesh;
+    // A mesh that FAILED is not pending: nothing is coming, and the narrowing cannot be
+    // resolved at all. It is reported apart (subUfLoadError, below) — until v1.108.1 it
+    // read as pending forever, and the screens said "carregando" for good.
+    const subUfMeshError = (_hasGeoKeys && meshState && meshState.loadError) || null;
+    const subUfMeshPending = _hasGeoKeys && !mesh && !subUfMeshError;
     const geoFacets = geoFacetSets(summary, mesh);
     // Resolve the active sub-UF/município selection to its município code set (via the
     // mesh) and pass it to the cube, so the Gold scan covers only those cities.
@@ -204,17 +209,34 @@ import './countUnits.js';
       : null;
     // A sub-UF/município narrowing is active once the mesh is loaded AND a facet narrows.
     const subUfActive = narrowedCities != null;
-    // The município cube is TRI-STATE: null = fetch in flight; [] = loaded-but-empty
-    // (zero cities pass the facets, or those cities produce none of the basket); [...] =
-    // rows. We MUST distinguish loaded-empty from not-loaded so an empty selection shows
-    // an honest "no data" instead of an eternal spinner — and NEVER falls back to the
-    // all-UF grid (which would display data the selection explicitly excludes).
-    const muniCube = subUfActive
+    // The município cube's read (window.municipioYearly): `rows` is null in flight AND after
+    // a failure — `loading`/`loadError` say which — [] when it loaded empty (zero cities
+    // pass the facets, or those cities produce none of the basket), [...] = rows. We MUST
+    // distinguish loaded-empty from not-loaded so an empty selection shows an honest "no
+    // data" instead of an eternal spinner, a failure from both so it never reads as either
+    // — and NEVER fall back to the all-UF grid (which would display data the selection
+    // explicitly excludes).
+    const muniState = subUfActive
       ? (narrowedCities.length && window.municipioYearly
           ? window.municipioYearly(bancoId, summary, narrowedCities)
-          : []) // zero cities pass → determinately empty, not a pending fetch
+          // zero cities pass → determinately empty, not a pending fetch
+          : { rows: [], priceBase: null, loading: false, loadError: null })
       : null;
+    const muniCube = muniState ? muniState.rows : null;
     const subUfLoaded = subUfActive && muniCube != null; // [] counts as loaded
+    // The narrowing failed for good — its mesh, or its cube. Neither the narrowed numbers nor
+    // the un-narrowed ones may stand in for the selection; the views say it failed. Gated on
+    // geo data exactly like the pending flags below: a banco with no territory has nothing
+    // a sub-UF facet left over from another banco could narrow.
+    const subUfLoadError = hasGeoData
+      ? (subUfMeshError || (muniState && muniState.loadError) || null)
+      : null;
+    // A requested narrowing whose mesh failed can never be resolved, yet it still OWNS the
+    // geo grid, like an active narrowing with no rows: without this the grid fell back to the
+    // un-narrowed one, and a screen drew whole states under a sub-UF chip, right below the
+    // note saying the narrowing failed. A failed cube needs nothing extra: an active
+    // narrowing already owns the grid.
+    const subUfUnresolved = !!(hasGeoData && subUfMeshError);
     const subUfCube = (subUfLoaded && mesh) ? rollupMuniCubeToUf(muniCube, mesh, geoFacets) : null;
     // The basket-scoped (UF × year) cube (null until the fetch lands, or for a non-geo
     // banco). Only fetched when a basket is active — a state-only narrowing reads the
@@ -222,15 +244,18 @@ import './countUnits.js';
     const basketGeoCube = (basketActive && window.geoYearly)
       ? window.geoYearly(bancoId, summary) : null;
     // Precedence: a sub-UF narrowing OWNS the geo grid (its rollup once loaded — even
-    // when empty); else the basket cube; else the snapshot's all-products grid.
-    const geoCube = subUfActive ? subUfCube : basketGeoCube;
-    const useCube = subUfActive ? subUfLoaded : !!(geoCube && geoCube.length);
-    // Pending ONLY while the cube fetch is in flight (null) — NOT when it loaded empty.
-    const subUfPending = hasGeoData && subUfActive && !subUfLoaded;
+    // when empty; nothing when it cannot be resolved); else the basket cube; else the
+    // snapshot's all-products grid.
+    const subUfOwnsGrid = subUfActive || subUfUnresolved;
+    const geoCube = subUfOwnsGrid ? subUfCube : basketGeoCube;
+    const useCube = subUfOwnsGrid ? subUfLoaded : !!(geoCube && geoCube.length);
+    // Pending ONLY while the cube fetch is in flight — NOT when it loaded empty, and not
+    // when it failed (subUfLoadError).
+    const subUfPending = hasGeoData && subUfActive && !subUfLoaded && !subUfLoadError;
     // The (UF × year) source for the geo-derived series/map. A sub-UF narrowing reads its
     // own rollup (rows, or [] when empty/pending) — never the all-UF fallback; else the
     // basket cube when ready, else the snapshot's all-products grid.
-    const geoSource = subUfActive ? (subUfCube || []) : (useCube ? geoCube : ufYearlyAll);
+    const geoSource = subUfOwnsGrid ? (subUfCube || []) : (useCube ? geoCube : ufYearlyAll);
     // When narrowing states, restrict to the selected UFs; with no narrowing sum the
     // WHOLE grid (incl. COMEX non-state pseudo-origins) so the national total matches
     // PRODUCT_TS_T exactly (those pseudo-origins are not selectable UFs).
@@ -261,7 +286,7 @@ import './countUnits.js';
     // it sums to zero (an empty selection must read as zero, not the national curve).
     const geoDerivedTs = hasGeoData && (
       (subUfActive && subUfLoaded) ||
-      (!subUfActive && geoSource.length > 0 && (stateNarrowing || useCube))
+      (!subUfOwnsGrid && geoSource.length > 0 && (stateNarrowing || useCube))
     );
 
     // ── Aggregated time series ────────────────────────────────────────
@@ -315,7 +340,7 @@ import './countUnits.js';
     // not loaded — the geo views render an honest pt-BR note for that transient. The
     // old code faked a basket × UF split by scaling every UF uniformly by selected/all
     // (fabricated geography); the cube is the REAL product × UF × year grain instead.
-    const notFilteredByBasket = hasGeoData && basketActive && !useCube;
+    const notFilteredByBasket = hasGeoData && basketActive && !useCube && !subUfUnresolved;
     // The ONE combination the client cannot aggregate faithfully: BOTH a product
     // basket AND a UF subset, before the product×UF×year cube has loaded. The
     // national per-product series has no UF grain; the all-products UF grid has no
@@ -324,10 +349,13 @@ import './countUnits.js';
     // We refuse to show that wrong number: flag it so the view holds the value at a
     // loading state until the cube resolves (then it computes the exact selection),
     // instead of reporting a figure that disregards the user's product filter.
-    const geoComboPending =
+    // PENDING only: a sub-UF narrowing that failed resolves nothing, ever, and is
+    // reported apart (subUfLoadError). The guard is needed because the first term reads
+    // `useCube`, which a failed sub-UF cube leaves false exactly like a pending one.
+    const geoComboPending = !subUfLoadError && (
       (hasGeoData && basketActive && stateNarrowing && !useCube) ||
       subUfPending ||
-      (hasGeoData && subUfMeshPending);
+      (hasGeoData && subUfMeshPending));
 
     // Tile-grid (col/row) join for cube-derived UF rows: the snapshot's ufData is
     // already decorated (decorate.js), but cube rows come straight from the serializer,
@@ -355,7 +383,7 @@ import './countUnits.js';
     const ufLatestYear = ufYearsInWindow.length ? Math.max(...ufYearsInWindow) : yearEnd;
     // A sub-UF narrowing reads the cube even while pending/empty (geoCube=null → []),
     // so the map shows loading/empty rather than the all-UF snapshot it excludes.
-    const _ufRowsWhere = (keep) => (subUfActive || useCube)
+    const _ufRowsWhere = (keep) => (subUfOwnsGrid || useCube)
       ? _decorateUf(
           (geoCube || [])
             .filter(r => r.year === ufLatestYear)
@@ -630,13 +658,19 @@ import './countUnits.js';
       // guessing from an empty array alone.
       muniYearlySeries: (subUfLoaded && Array.isArray(muniCube)) ? muniCube : [],
       subUfActive, subUfLoaded,
+      // Where a REQUESTED sub-UF narrowing stands, for the screens that must not show a number
+      // until it is resolved. Loading: the mesh that names its cities, or the cube that sums
+      // them, is on its way. Failed: one of them failed for good — the selection cannot be
+      // computed, and neither the narrowed numbers nor the un-narrowed ones may stand in for
+      // it. Both false with no sub-UF facet requested.
+      subUfLoading: hasGeoData && (subUfMeshPending || subUfPending),
+      subUfLoadError,
       // The month that cube's corrected values are at (v1.105.0) — null with no cube, while
-      // it loads, or under a nominal convention. The cube reads the analytical base directly
-      // and the snapshot reads the pre-aggregated tables, so across a build the two can be at
-      // different months; MainScreen compares them (window.PriceBaseSkewNote).
-      muniPriceBase: (subUfActive && narrowedCities.length && window.municipioYearlyPriceBase)
-        ? window.municipioYearlyPriceBase(bancoId, summary, narrowedCities)
-        : null,
+      // it loads, or under a nominal convention. Read off the cube's own response (one read).
+      // The cube reads the analytical base directly and the snapshot reads the pre-aggregated
+      // tables, so across a build the two can be at different months; MainScreen compares
+      // them (window.PriceBaseSkewNote).
+      muniPriceBase: muniState ? muniState.priceBase : null,
       // The same for the basket cube (UF × year), when it is the grid the screen draws. It
       // reads the same pre-aggregated tables as the snapshot, but in a request cached on its
       // own, so across a build it too can come back at another month.

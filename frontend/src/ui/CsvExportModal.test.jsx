@@ -6,6 +6,13 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { cleanup, render } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+// The export's own source: every refusal reason it can give is a string literal there.
+const CSV_SRC = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'csvExport.js'), 'utf8');
+const FALLBACK = 'O banco IBGE PEVS ainda não está liberado, então não há dados para baixar.';
 
 beforeEach(async () => {
   window.Icon = () => null;
@@ -34,7 +41,32 @@ describe('CsvExportModal — the reason for "Nada para baixar"', () => {
     expect(msg('carregando')).toMatch(/ainda está carregando/);
   });
 
+  it('a território whose read failed says so, and does not ask to wait for it', () => {
+    const m = msg('falha-territorios');
+    expect(m).toMatch(/Não foi possível carregar os dados de parte dos territórios/);
+    expect(m).not.toMatch(/carregando/);
+  });
+
+  it('a sub-UF narrowing that failed, or is still on its way, each get their own advice', () => {
+    expect(msg('falha-recorte')).toMatch(/Não foi possível carregar os dados do recorte geográfico/);
+    expect(msg('carregando-recorte')).toMatch(/ainda estão carregando/);
+  });
+
   it('anything else is the banco not yet released', () => {
-    expect(msg('banco-indisponivel')).toBe('O banco IBGE PEVS ainda não está liberado, então não há dados para baixar.');
+    expect(msg('banco-indisponivel')).toBe(FALLBACK);
+  });
+
+  // An unknown reason falls through to the banco message, which would explain a failed read
+  // as "not released yet" — wrong, and confidently so. Every reason the export gives must
+  // have its own words (v1.108.1 added three).
+  it('every reason csvExport.js can give has its own message, never the banco fallback', () => {
+    const motivos = [...new Set(
+      [...CSV_SRC.matchAll(/'((?:sem|carregando|falha)(?:-[a-z]+)*)'/g)].map((m) => m[1]))];
+    expect(motivos).toEqual(expect.arrayContaining(
+      ['sem-linhas', 'sem-territorios', 'carregando', 'falha-territorios', 'falha-recorte', 'carregando-recorte']));
+    for (const motivo of motivos) {
+      cleanup();
+      expect(msg(motivo), motivo).not.toBe(FALLBACK);
+    }
   });
 });

@@ -181,9 +181,9 @@ function withChips(summary, database, conventions) {
   // (BR only, all regions); the município universe comes from the IBGE mesh (0 until
   // it lands — the chip corrects on the resource re-render).
   const meshLen = (window.geoMesh && (window.geoMesh() || []).length) || 0;
-  const muniSliceable =
-    hasGeo && meshLen > 0 &&
-    (!window.geoLevelFor || window.geoLevelFor(database) === 'municipio');
+  const muniLevel =
+    hasGeo && (!window.geoLevelFor || window.geoLevelFor(database) === 'municipio');
+  const muniSliceable = muniLevel && meshLen > 0;
   const geoChip = window.filterSummary
     ? window.filterSummary.geoChipText({
         hasGeo,
@@ -192,6 +192,10 @@ function withChips(summary, database, conventions) {
         statesSize: s.states ? s.states.length : 27, statesTotal: 27,
         munisSize: s.munis ? s.munis.length : meshLen, munisTotal: meshLen,
         muniSliceable,
+        // The mesh only SIZES the universe; the selection is the URL's own `mn` list. While the
+        // mesh loads — and for good when it failed — that list is still a narrowing, and the
+        // chip must not read "1 nação · 1 UF" over it (filterSummary.muniNarrowing, v1.108.1).
+        muniUniverseUnknown: muniLevel && meshLen === 0,
         // The four aggregate sub-UF facets narrow the data without touching any count
         // above, so the chip has to be told about them explicitly or it reports the
         // unfiltered country — and the ABNT citation repeats that.

@@ -7,6 +7,102 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.108.1] - 2026-11-18
+
+**As leituras por município passam a responder "carregando", "falhou" ou "vazio", e nenhuma tela
+afirma ausência sobre um pedido que não respondeu.** Era a pendência registrada nas Notas da
+v1.107.0: `window.municipioYearly` e `window.geoMesh` devolviam `null` tanto com o pedido a caminho
+quanto depois de uma falha. A trajetória e os indicadores do município diziam "Sem série" e "sem
+dados" enquanto o cubo carregava (de 1 a 3 s a cada troca de município), e uma malha do IBGE que
+falhasse deixava o seletor em "carregando municípios…" para sempre. O padrão é o da v1.107.0
+(`productBreakdownOf`): a caminho, falhou e medido são estados distintos.
+
+### Corrigido
+- **Perfil do território, nível município.**
+  - A caminho: "Carregando a série…" no gráfico e "…" nos indicadores.
+  - Falhou: "—" com "não foi possível carregar a série", e o aviso de falha no lugar do gráfico.
+  - Só um cubo que respondeu vazio diz "Sem série".
+  - O seletor diz "carregando municípios…", "não foi possível carregar os municípios" ou "nenhum
+    município na seleção".
+  - Sem município resolvido, o lugar aparece como "—" (era "— ·").
+- **Perfil do território, nível UF sob recorte sub-UF.** Com a malha falhada, a tela calculava sobre
+  a UF inteira, sob o chip do recorte. Agora valor e pico dizem "não foi possível carregar a série";
+  participação e posição, "indisponível: o recorte sub-UF não carregou".
+- **Geografia.** O card de distribuição por município, o mapa de calor, "Soma por região" e
+  "10 maiores" respondem nos três estados. Antes:
+  - "Carregando municípios…" para sempre depois de uma falha;
+  - "0 macrorregiões" sobre barras vazias, com o recorte a caminho ou falhado;
+  - acima do nível município, "Sem histórico anual disponível" enquanto o recorte carregava.
+- **Filtros.** As colunas sub-UF e o rodapé dizem "Malha do IBGE indisponível: falha ao carregar."
+  em vez de "Carregando malha do IBGE…" para sempre. A linha da seção diz "carregando municípios…",
+  "municípios indisponíveis" ou "nenhum município"; dizia "em breve" nos três casos.
+- **Chip de geografia e citação ABNT.** Com a malha a caminho ou falhada, uma lista de municípios
+  vinda da URL virava "1 nação · 1 UF": o recorte descrito como mais largo do que é, e a citação
+  repete o chip. A malha só dimensiona o universo de municípios; a seleção viaja na URL, e uma lista
+  explícita é recorte. Agora o chip diz "1 UF · 2 municípios", também depois de "Aplicar".
+- **"UFs cobertas" (cabeçalho) e "Cobertura geográfica" (Visão geral).** "…" com o recorte a
+  caminho e "—" com ele falhado, em vez do 0 da grade vazia.
+- **Visão geral e Valor × Volume.** Com o recorte sub-UF falhado, os números ficam em "—" e dizem o
+  motivo, em vez de "cruzando produto × UF…" para sempre.
+- **Comparativo entre territórios.** A busca de municípios diz que a lista não carregou. Um município
+  cuja série falhou sai do gráfico, com "não foi possível carregar" na legenda.
+- **Exportar CSV.** Com o recorte sub-UF falhado ou ainda carregando, o arquivo é recusado com o
+  motivo (`falha-recorte`, `carregando-recorte`), em vez de sair com a série nacional sob o rótulo
+  do recorte. No Comparativo, uma falha em parte dos territórios recusa o arquivo
+  (`falha-territorios`) em vez de exportá-lo incompleto.
+- **`applyFilters` com a malha falhada.** Entregava a grade da UF inteira a todas as perspectivas:
+  números do estado sob o chip do recorte, logo abaixo do aviso de que o recorte falhou. Agora um
+  recorte que não pôde ser resolvido também é dono da grade (vazia), e as telas dizem que falhou.
+
+### Alterado
+- `window.geoMeshState()` (novo) devolve `{ municipios, loading, loadError }`; `window.geoMesh()`
+  fica como consulta de nomes.
+- `window.municipioYearly(...)` devolve `{ rows, priceBase, loading, loadError }`. `rows` nulo quer
+  dizer desconhecido (a caminho ou falhou); `[]`, medido e vazio. Sem pergunta (banco sem município,
+  nenhuma cidade no recorte), responde vazio.
+- `window.municipioYearlyPriceBase` saiu: o mês-base vem na mesma resposta (`priceBase`).
+- `applyFilters` ganha `subUfLoading`, `subUfLoadError` e `muniPriceBase`. `geoComboPending` só
+  fica pendente enquanto há algo a caminho.
+- O contrato está em `docs/frontend_data_contract.md`.
+
+### Testes
+- vitest: 1735 passando em 101 arquivos (eram 1658), com cada estado de cada consumidor.
+- Contraprova: com as fontes desta versão trocadas pelas do `main`, 91 testes falham em
+  15 arquivos (passam 1644).
+- A varredura das chamadas de `geoChipText`/`geoHeaderText` passa a exigir `muniUniverseUnknown`,
+  como já exigia `subUf`.
+- Verificado numa prévia local contra a produção (só leitura), com `/api/geo-mesh` e
+  `/api/municipio-yearly` respondendo 503: os dois juntos e só o cubo. Telas vistas: Perfil do
+  território (UF e município), Geografia, Filtros (inclusive "Aplicar", que preserva a lista de
+  municípios) e Comparativo. A mesma prévia sem falha mostra o caminho normal inalterado.
+- Refeita sobre a v1.108.0 (contagens separadas): a Visão geral do IBGE PPM com 2 municípios do
+  Pará a caminho, falhada e carregada, inclusive a quantidade de ovos; e a Geografia com as duas
+  leituras falhando.
+
+### Notas
+- **Pendências achadas no caminho, fora do escopo desta versão:**
+  - `geoYearly` (o cubo UF × ano da cesta de produtos) também não tem canal de erro: falhado, deixa
+    `geoComboPending` pendente para sempre.
+  - Fora de Visão geral, Valor × Volume, Geografia, Perfil do território e Comparativo, as
+    perspectivas seguem lendo a série nacional enquanto um recorte sub-UF carrega ou depois que
+    falhou.
+  - O mosaico de UFs da Visão geral fica com as peças vazias enquanto o recorte carrega.
+  - Visão geral com um recorte sub-UF: o card "Composição" mostra a participação nacional por
+    produto, e "Linhas" (Seleção ativa) mostra o mesmo número com o recorte a caminho, falhado ou
+    carregado. Nenhum dos dois mudou nesta versão.
+  - Os CSVs montados sobre `productTS` levam o rótulo do recorte sobre números nacionais (anterior a
+    esta versão).
+  - Geografia, mapa de calor com 2 municípios em 40 anos: "Não foi possível renderizar este
+    gráfico." O Plotly acusa erro de escala de eixo. No leiaute de gráfico curto (até 5 linhas),
+    156 px de altura menos as margens (8 + 108) deixam 40 px para o gráfico; com 12 linhas, desenha.
+    `charts/Heatmap.jsx` não mudou nesta versão.
+  - Perfil do território: "O que 2 municípios selecionados produz" (o verbo não concorda com o
+    plural).
+  - `BrazilChoropleth.test.jsx` falhou uma vez sob carga numa rodada completa; passou isolado e nas
+    rodadas seguintes.
+
+---
+
 ## [1.108.0] - 2026-11-18
 
 **Uma contagem só soma o que conta a mesma coisa: o rebanho e os ovos deixam de ser um número só, e

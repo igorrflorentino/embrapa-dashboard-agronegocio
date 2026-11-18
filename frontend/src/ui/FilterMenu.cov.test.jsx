@@ -90,7 +90,8 @@ const SCHEMA = {
 };
 
 function stubRegistry(opts = {}) {
-  const { geoLevel = 'municipio', mesh = MESH } = opts;
+  // `mesh: null` = still on its way; `meshError` = every retry failed (v1.108.1).
+  const { geoLevel = 'municipio', mesh = MESH, meshError = null } = opts;
   window.QUALITY_FLAGS = QUALITY_FLAGS;
   window.PRODUCTS = PRODUCTS;
   window.bancoById = (id) => BANCOS[id] || BANCOS.ibge_pevs;
@@ -105,7 +106,12 @@ function stubRegistry(opts = {}) {
   // render no regime/market section; the specific describes override these.
   window.customsOptionsFor = () => null;
   window.marketOptionsFor = () => null;
-  window.geoMesh = () => mesh;
+  window.geoMeshState = () => (meshError
+    ? { municipios: null, loading: false, loadError: meshError }
+    : mesh == null
+      ? { municipios: null, loading: true, loadError: null }
+      : { municipios: mesh, loading: false, loadError: null });
+  window.geoMesh = () => window.geoMeshState().municipios;
   window.snapshotFor = () => ({
     products: PRODUCTS,
     overviewTS: [{ y: 1997 }, { y: 2024 }],
@@ -678,5 +684,74 @@ describe('FilterMenu — Aplicar sem mudanças devolve a mesma geografia', () =>
     const out = apply({ regions: ['N'], states: ['PA'] });
     expect(out.reporters).toBeUndefined();
     expect(out.partners).toBeNull();
+  });
+});
+
+// ── A malha do IBGE em três estados (v1.108.1) ───────────────────────────────────────────
+// Until v1.108.1 the mesh came back null both in flight and after it failed, so the sub-UF
+// columns said "Carregando malha do IBGE…" for good after a failure, and the section header
+// said "municípios em breve" in all three cases.
+describe('FilterMenu — the IBGE mesh loading, failed or empty', () => {
+  const openSubUf = (value = { states: ['PA'] }) => {
+    const r = render(<FilterMenu open banco="ibge_pevs" value={value} onClose={() => {}} onApply={() => {}} />);
+    fireEvent.click(r.container.querySelector('.fm-subuf-toggle'));
+    return r.container;
+  };
+
+  it('while it loads, every column and the footer say so', () => {
+    stubRegistry({ mesh: null });
+    const c = openSubUf();
+    expect(c.textContent).toContain('carregando municípios…');
+    expect(c.textContent).toContain('Carregando malha do IBGE…');
+    expect(c.textContent).toContain('Carregando a malha municipal do IBGE…');
+    expect(c.textContent).not.toMatch(/falha|não trouxe/);
+  });
+
+  it('when it failed, the failure is named instead of an eternal "carregando"', () => {
+    stubRegistry({ meshError: 'HTTP 503' });
+    const c = openSubUf();
+    expect(c.textContent).toContain('municípios indisponíveis');
+    expect(c.textContent).toContain('Malha do IBGE indisponível: falha ao carregar.');
+    expect(c.textContent).toContain('Não foi possível carregar a malha municipal do IBGE (falha de rede ou do servidor).');
+    expect(c.textContent).not.toMatch(/[Cc]arregando/);
+  });
+
+  it('only a mesh that answered with nothing says there is nothing', () => {
+    stubRegistry({ mesh: [] });
+    const c = openSubUf();
+    expect(c.textContent).toContain('nenhum município');
+    expect(c.textContent).toContain('A malha municipal do IBGE não trouxe municípios.');
+    expect(c.textContent).not.toMatch(/[Cc]arregando|falha/);
+  });
+
+  it('an applied sub-UF narrowing survives "Aplicar" while the mesh is failed (nothing is dropped)', () => {
+    stubRegistry({ meshError: 'HTTP 503' });
+    const onApply = vi.fn();
+    const { container } = render(
+      <FilterMenu open banco="ibge_pevs" value={{ states: ['PA', 'SP'], mesos: ['1506'] }}
+                  onClose={() => {}} onApply={onApply} />,
+    );
+    fireEvent.click(container.querySelector('.btn-primary'));
+    expect(onApply.mock.calls[0][0].mesos).toEqual(['1506']);
+  });
+
+  // The data keeps a deep-linked município list through "Aplicar" (above); the chip and the
+  // menu's own line must keep saying it. Without the mesh the local Set is never seeded, and
+  // until v1.108.1 both read it as no narrowing: "1 nação · 1 UF" over two municípios.
+  it.each([
+    ['failed', { meshError: 'HTTP 503' }],
+    ['on its way', { mesh: null }],
+  ])('a deep-linked município list is still named while the mesh is %s', (_, mesh) => {
+    stubRegistry(mesh);
+    const onApply = vi.fn();
+    const { container } = render(
+      <FilterMenu open banco="ibge_pevs" value={{ states: ['PA'], munis: ['1505809', '1501808'] }}
+                  onClose={() => {}} onApply={onApply} />,
+    );
+    expect(container.querySelector('.fm-summary').textContent).toContain('1 UF, 2 municípios');
+    fireEvent.click(container.querySelector('.btn-primary'));
+    const payload = onApply.mock.calls[0][0];
+    expect(payload.munis).toEqual(['1505809', '1501808']);
+    expect(payload.geo).toBe('1 UF · 2 municípios');
   });
 });

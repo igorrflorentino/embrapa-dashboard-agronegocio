@@ -29,14 +29,25 @@ const MESH = [
 ];
 
 let charts;
-function stub({ geoLevel = 'municipio', families = ['mass'] } = {}) {
+const BELEM_ROWS = [{ year: 2021, cityCode: '1501402', uf: 'PA', value: 30, q_mass: 3 }];
+
+// The município loaders return their read's STATE (v1.108.1). `mesh`/`muniRows` null = still
+// on its way; `meshError`/`muniError` = every retry failed.
+function stub({ geoLevel = 'municipio', families = ['mass'], mesh = MESH, meshError = null,
+  muniRows = BELEM_ROWS, muniError = null } = {}) {
   charts = [];
   const products = families.map((f, i) => ({ code: `p${i}`, family: f }));
   window.dataStore = { get: () => ({ ufYearly: UF_ROWS, products }) };
   window.applyFilters = () => ({ yearStart: 2019, yearEnd: 2021 });
   window.geoLevelFor = () => geoLevel;
-  window.geoMesh = () => MESH;
-  window.municipioYearly = () => [{ year: 2021, cityCode: '1501402', uf: 'PA', value: 30, q_mass: 3 }];
+  window.geoMeshState = () => (meshError
+    ? { municipios: null, loading: false, loadError: meshError }
+    : { municipios: mesh, loading: mesh == null, loadError: null });
+  window.geoMesh = () => window.geoMeshState().municipios;
+  window.municipioYearly = () => (muniError
+    ? { rows: null, priceBase: null, loading: false, loadError: muniError }
+    : { rows: muniRows, priceBase: null, loading: muniRows == null, loadError: null });
+  window.LoadErrorNote = ({ error }) => (error ? <div className="load-err" role="alert">{String(error)}</div> : null);
   window.geoYearly = () => null;
   window.DEFAULT_CONVENTIONS = { currency: 'BRL', correction: 'Nominal' };
   window.CURRENCY_FX = { BRL: { symbol: 'R$' } };
@@ -81,8 +92,8 @@ beforeEach(async () => {
 
 afterEach(() => {
   cleanup();
-  for (const k of ['dataStore', 'applyFilters', 'geoLevelFor', 'geoMesh', 'municipioYearly', 'geoYearly',
-    'SectionHeader', 'MultiLineChart']) delete window[k];
+  for (const k of ['dataStore', 'applyFilters', 'geoLevelFor', 'geoMesh', 'geoMeshState', 'municipioYearly',
+    'geoYearly', 'SectionHeader', 'MultiLineChart', 'LoadErrorNote']) delete window[k];
 });
 
 describe('ViewTerritoryCompare — choosing the places', () => {
@@ -233,5 +244,54 @@ describe('ViewTerritoryCompare — the numbers', () => {
   it('asks for two places before a correlation', () => {
     const { container } = render(<Harness initial={{ items: [{ level: 'uf', code: 'PA' }] }} />);
     expect(container.textContent).toContain('Escolha ao menos 2 territórios para calcular a correlação.');
+  });
+});
+
+// ── Carregando, falhou ou vazio: três respostas diferentes (v1.108.1) ────────────────────
+// Until v1.108.1 a failed município read came back null like a pending one: its legend
+// said "carregando…" for good, and a failed mesh left the search silently empty.
+describe('ViewTerritoryCompare — a município read loading, failed or empty', () => {
+  const PA_BELEM = { items: [{ level: 'uf', code: 'PA' }, { level: 'municipio', code: '1501402' }] };
+  const legend = (c) => c.querySelector('.pc-legend').textContent;
+
+  it('a failed município is named as failed, left out of the chart, and the card says why', () => {
+    stub({ muniError: 'HTTP 503' });
+    const { container } = render(<Harness initial={PA_BELEM} />);
+    expect(legend(container)).toContain('Belém (PA) · não foi possível carregar');
+    expect(legend(container)).not.toContain('carregando');
+    expect(container.querySelector('.load-err')).not.toBeNull();
+    expect(lastChart().series.map((s) => s.name)).toEqual(['Pará']); // the place that loaded stays
+  });
+
+  it('a município on its way says "carregando…", with no failure note', () => {
+    stub({ muniRows: null });
+    const { container } = render(<Harness initial={PA_BELEM} />);
+    expect(legend(container)).toContain('Belém (PA) · carregando…');
+    expect(container.querySelector('.load-err')).toBeNull();
+  });
+
+  it('a município measured empty is drawn (at zero), neither loading nor failed', () => {
+    stub({ muniRows: [] });
+    const { container } = render(<Harness initial={PA_BELEM} />);
+    expect(legend(container)).not.toMatch(/carregando|não foi possível/);
+    expect(lastChart().series.map((s) => s.name)).toEqual(['Pará', 'Belém (PA)']);
+  });
+
+  it('a failed IBGE mesh disables the search and says why', () => {
+    stub({ meshError: 'HTTP 503' });
+    const { container } = render(<Harness initial={{ items: [] }} />);
+    const input = container.querySelector('#tc-muni');
+    expect(input.disabled).toBe(true);
+    expect(input.placeholder).toBe('Lista de municípios indisponível');
+    expect(container.textContent).toContain('Não foi possível carregar a lista de municípios do IBGE');
+    expect(container.textContent).not.toContain('Carregando a lista de municípios');
+  });
+
+  it('a mesh on its way answers a search with "carregando", never with "nenhum município"', () => {
+    stub({ mesh: null });
+    const { container } = render(<Harness initial={{ items: [] }} />);
+    fireEvent.change(container.querySelector('#tc-muni'), { target: { value: 'belem' } });
+    expect(container.textContent).toContain('Carregando a lista de municípios…');
+    expect(container.textContent).not.toContain('Nenhum município com esse nome.');
   });
 });

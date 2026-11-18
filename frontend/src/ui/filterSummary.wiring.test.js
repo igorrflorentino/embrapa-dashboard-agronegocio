@@ -54,18 +54,26 @@ function callArgs(source, fn) {
 describe('geoChipText / geoHeaderText — nenhuma chamada pode esquecer o recorte', () => {
   const files = sourceFiles(SRC).filter((f) => !f.endsWith('filterSummary.js'));
 
-  for (const fn of ['geoChipText', 'geoHeaderText']) {
-    it(`toda chamada de ${fn} passa subUf`, () => {
-      const found = [];
-      for (const file of files) {
-        for (const args of callArgs(readFileSync(file, 'utf-8'), fn)) {
-          found.push({ file, hasSubUf: /\bsubUf\s*:/.test(args) });
+  // `subUf`: the four aggregate sub-UF facets. `muniUniverseUnknown` (v1.108.1) is the same
+  // over-claim through another argument: without the IBGE mesh the município universe is
+  // unknown, and a call that does not say so reads a deep-linked município list as no
+  // narrowing at all — "1 nação · 1 UF" over two municípios of the Pará.
+  for (const arg of ['subUf', 'muniUniverseUnknown']) {
+    // `key:` or the shorthand `key,` / `key }`.
+    const passes = new RegExp(`\\b${arg}\\s*[:,}]`);
+    for (const fn of ['geoChipText', 'geoHeaderText']) {
+      it(`toda chamada de ${fn} passa ${arg}`, () => {
+        const found = [];
+        for (const file of files) {
+          for (const args of callArgs(readFileSync(file, 'utf-8'), fn)) {
+            found.push({ file, passes: passes.test(args) });
+          }
         }
-      }
-      // Guard the guard: if the call sites move or get renamed, this test must fail
-      // loudly rather than pass over an empty list.
-      expect(found.length).toBeGreaterThan(0);
-      expect(found.filter((c) => !c.hasSubUf).map((c) => c.file)).toEqual([]);
-    });
+        // Guard the guard: if the call sites move or get renamed, this test must fail
+        // loudly rather than pass over an empty list.
+        expect(found.length).toBeGreaterThan(0);
+        expect(found.filter((c) => !c.passes).map((c) => c.file)).toEqual([]);
+      });
+    }
   }
 });

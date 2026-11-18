@@ -80,15 +80,24 @@ function installGlobals(snap, { mesh, muniCube, geoCube } = {}) {
   window.normalizeRegion = (api, tile) => api || tile;
   window.dataStore = { get: (id) => (id === 'ibge_pevs' ? snap : null) };
   window.snapshotFor = undefined;
-  window.geoMesh = mesh === undefined ? (() => null) : () => mesh;
-  window.municipioYearly = () => (muniCube === undefined ? [] : muniCube);
+  // The loaders return their read's STATE (v1.108.1). An undefined/null mesh is one still on
+  // its way; a null cube likewise — [] is a measured empty answer.
+  window.geoMeshState = () => (mesh == null
+    ? { municipios: null, loading: true, loadError: null }
+    : { municipios: mesh, loading: false, loadError: null });
+  window.geoMesh = () => (mesh == null ? null : mesh);
+  window.municipioYearly = () => {
+    const rows = muniCube === undefined ? [] : muniCube;
+    return { rows, priceBase: null, loading: rows == null, loadError: null };
+  };
   window.geoYearly = () => (geoCube === undefined ? null : geoCube);
 }
 
 let realGlobals;
 beforeEach(async () => {
   realGlobals = {
-    dataStore: window.dataStore, geoMesh: window.geoMesh, geoYearly: window.geoYearly,
+    dataStore: window.dataStore, geoMesh: window.geoMesh, geoMeshState: window.geoMeshState,
+    geoYearly: window.geoYearly,
     municipioYearly: window.municipioYearly, REGIONS: window.REGIONS, UF_DATA: window.UF_DATA,
     VIZ_SCALE: window.VIZ_SCALE, normalizeRegion: window.normalizeRegion, snapshotFor: window.snapshotFor,
   };

@@ -69,7 +69,17 @@ function ViewOverview({ families, summary, database, conventions }) {
   // basket × UF can't be combined until the product×UF cube loads (dataFilters.js):
   // the value would silently drop the basket, so hold it at a loading state instead.
   const comboPending = !!filtered.geoComboPending;
-  const kpiVal = (fmt) => (comboPending ? '…' : fmt);
+  // A sub-UF narrowing whose mesh or município cube FAILED (v1.108.1). Not pending — nothing
+  // is coming — and no number here can honour the selection: the un-narrowed ones would be
+  // data the filter excludes. Held like the pending state, with a dash instead of an
+  // ellipsis, and the series card says why. (Until v1.108.1 a failure read as pending, and
+  // the strip said "cruzando produto × UF…" for good.)
+  const recorteFalhou = filtered.subUfLoadError || null;
+  const segura = comboPending || !!recorteFalhou;
+  const kpiVal = (fmt) => (recorteFalhou ? '—' : comboPending ? '…' : fmt);
+  const kpiSub = (fmt) => (recorteFalhou
+    ? 'recorte sub-UF não carregado'
+    : comboPending ? 'cruzando produto × UF…' : fmt);
 
   // Quality digest. Lê a lista COMPLETA, não a recortada pelas chips de flag: este card
   // se declara "acervo do banco" no próprio subtítulo, e um número do acervo não muda
@@ -172,10 +182,10 @@ function ViewOverview({ families, summary, database, conventions }) {
         <window.KpiCardSpark
           label={`Valor total · ${monLabel}`}
           value={kpiVal(window.formatValue(last.v, conv))}
-          delta={comboPending ? null : window.fmtSigned(deltaV)}
+          delta={segura ? null : window.fmtSigned(deltaV)}
           deltaPositive={window.deltaUp(deltaV)}
-          sub={comboPending ? 'cruzando produto × UF…' : `${yTag(last.y)} vs. ${prev.y || ''}`}
-          spark={comboPending ? null : window.convertSeries(spark12, conv)}
+          sub={kpiSub(`${yTag(last.y)} vs. ${prev.y || ''}`)}
+          spark={segura ? null : window.convertSeries(spark12, conv)}
           sparkKey="v"
           sparkColor="var(--viz-1)"
         />
@@ -183,10 +193,10 @@ function ViewOverview({ families, summary, database, conventions }) {
           <window.KpiCardSpark
             label={<>Quantidade · <window.UnitFamilyTag family="mass" conv={conv}/></>}
             value={kpiVal(window.formatMassQty(last.q_mass, conv))}
-            delta={comboPending ? null : window.fmtSigned(dMass)}
+            delta={segura ? null : window.fmtSigned(dMass)}
             deltaPositive={window.deltaUp(dMass)}
-            sub={comboPending ? 'cruzando produto × UF…' : `${yTag(last.y)} vs. ${prev.y || ''}`}
-            spark={comboPending ? null : spark12}
+            sub={kpiSub(`${yTag(last.y)} vs. ${prev.y || ''}`)}
+            spark={segura ? null : spark12}
             sparkKey="q_mass"
             sparkColor="var(--viz-2)"
           />
@@ -195,10 +205,10 @@ function ViewOverview({ families, summary, database, conventions }) {
           <window.KpiCardSpark
             label={<>Quantidade · <window.UnitFamilyTag family="volume" conv={conv}/></>}
             value={kpiVal(window.formatVolumeQty(last.q_vol, conv))}
-            delta={comboPending ? null : window.fmtSigned(dVol)}
+            delta={segura ? null : window.fmtSigned(dVol)}
             deltaPositive={window.deltaUp(dVol)}
-            sub={comboPending ? 'cruzando produto × UF…' : `${yTag(last.y)} vs. ${prev.y || ''}`}
-            spark={comboPending ? null : spark12}
+            sub={kpiSub(`${yTag(last.y)} vs. ${prev.y || ''}`)}
+            spark={segura ? null : spark12}
             sparkKey="q_vol"
             sparkColor="var(--viz-4)"
           />
@@ -209,10 +219,10 @@ function ViewOverview({ families, summary, database, conventions }) {
                                                          unit={window.countGroupUnit(flowCount, conv)}/></>}
             value={kpiVal(window.formatCountQty(last.q_count_flow, conv,
                                                 window.countGroupUnit(flowCount, conv)))}
-            delta={comboPending ? null : window.fmtSigned(dCount)}
+            delta={segura ? null : window.fmtSigned(dCount)}
             deltaPositive={window.deltaUp(dCount)}
-            sub={comboPending ? 'cruzando produto × UF…' : `${yTag(last.y)} vs. ${prev.y || ''}`}
-            spark={comboPending ? null : spark12}
+            sub={kpiSub(`${yTag(last.y)} vs. ${prev.y || ''}`)}
+            spark={segura ? null : spark12}
             sparkKey="q_count_flow"
             sparkColor="var(--viz-9)"
           />
@@ -268,19 +278,22 @@ function ViewOverview({ families, summary, database, conventions }) {
               <>
                 <window.SectionHeader
                   overline={`Série histórica · ${filtered.yearStart}–${yTag(filtered.yearEnd)} · ${monLabel}`}
-                  title={comboPending ? 'Variação acumulada: …' : window.deltaTitle('Variação acumulada', first, last, {
+                  title={recorteFalhou ? 'Variação acumulada: —'
+                    : comboPending ? 'Variação acumulada: …' : window.deltaTitle('Variação acumulada', first, last, {
                     breaks: eraBreaks,
                     motivo: window.valueGapMotivo && window.valueGapMotivo(window.valueGapFor(database), conv),
                   })}
                 />
-                {comboPending ? (
+                {recorteFalhou ? (
+                  <window.LoadErrorNote error={recorteFalhou} />
+                ) : comboPending ? (
                   <p className="caption" style={{ padding: '24px 4px', textAlign: 'center' }}>
                     Cruzando o filtro de <strong>produtos</strong> com o de <strong>UFs</strong>…
                   </p>
                 ) : (
                   <window.LineChart data={data} label={label} valueKey="v" color="var(--viz-1)" height={240} />
                 )}
-                {!comboPending && partialLatest && (
+                {!segura && partialLatest && (
                   <p className="caption" style={{ padding: '8px 4px 0' }}>
                     <strong>{partialYr} (parcial):</strong> o ano mais recente cobre apenas
                     {' '}{latestMeta?.monthsInLatestYear ? `${latestMeta.monthsInLatestYear} ${latestMeta.monthsInLatestYear === 1 ? 'mês' : 'meses'}` : 'parte do ano'}.
@@ -382,7 +395,9 @@ function ViewOverview({ families, summary, database, conventions }) {
           <window.SectionHeader
             overline="Qualidade dos dados · agregado"
             title={hasGeo
-              ? ('Cobertura geográfica: ' + ufCovered + ' / ' + ufTotalReal + ' UFs')
+              // kpiVal: an unresolved recorte has no grid to count, and its 0 would read
+              // "covers no UF" (v1.108.1).
+              ? ('Cobertura geográfica: ' + kpiVal(ufCovered) + ' / ' + ufTotalReal + ' UFs')
               : 'Distribuição das marcas de qualidade'}
             action={<span className="caption">{filtered.qualityFlags.length} de {window.QUALITY_FLAGS.length} flags</span>}
           />

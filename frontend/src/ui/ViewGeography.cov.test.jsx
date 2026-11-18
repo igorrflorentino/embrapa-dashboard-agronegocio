@@ -92,6 +92,7 @@ function stubGlobals(filtered, opts = {}) {
     return productsByUf;
   };
   window.geoMesh = undefined;
+  window.geoMeshState = undefined;
   window.municipioYearly = undefined;
   window.openFilterMenu = vi.fn();
   window.patchFilter = vi.fn();
@@ -115,6 +116,8 @@ function stubGlobals(filtered, opts = {}) {
   window.BrazilTileMap = (props) => { tileMapProps = props; return <div className="tilemap" />; };
   window.Heatmap = (props) => { heatmapProps = props; return <div className="heatmap" />; };
   window.BarChart = (props) => { barChartCalls.push(props); return <div className="barchart" />; };
+  // Every view places it unconditionally; it renders nothing without an error.
+  window.LoadErrorNote = ({ error }) => (error ? <div className="load-err" role="alert">{String(error)}</div> : null);
 }
 
 let ViewGeography;
@@ -133,7 +136,10 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   delete window.geoMesh;
+  delete window.geoMeshState;
   delete window.municipioYearly;
+  delete window.LoadErrorNote;
+  delete window.geoExportMuniRead;
   delete window.openFilterMenu;
   delete window.patchFilter;
   delete window.UF_DATA;
@@ -184,6 +190,9 @@ function fullFixture(overrides = {}) {
     muniYearlySeries: [],
     subUfActive: false,
     subUfLoaded: false,
+    // Where a requested sub-UF narrowing stands (v1.108.1): on its way, or failed for good.
+    subUfLoading: false,
+    subUfLoadError: null,
     ...overrides,
   };
 }
@@ -691,9 +700,11 @@ describe('ViewGeography — the loading notice names what is being waited on', (
     // (`!subUfActive`) excluded — so the one gesture the drill-down made most common
     // was the one that loaded in silence.
     stubGlobals(fullFixture({
-      subUfActive: true, subUfLoaded: false, muniYearlySeries: [], topMunis: [],
+      subUfActive: true, subUfLoaded: false, subUfLoading: true, muniYearlySeries: [], topMunis: [],
     }), { geoLevel: 'municipio' });
-    window.geoMesh = () => [{ cityCode: '1500107', cityName: 'Abaetetuba', uf: 'PA' }];
+    window.geoMeshState = () => ({
+      municipios: [{ cityCode: '1500107', cityName: 'Abaetetuba', uf: 'PA' }], loading: false, loadError: null,
+    });
     const { container } = render(
       <ViewGeography families={['mass']} summary={{ states: ['PA'], munis: ['1500107'] }}
                      database="ibge_pevs" conventions={{ autoScale: true }} />,
@@ -1013,5 +1024,145 @@ describe('ViewGeography — a count map never adds different things', () => {
     expect(card.data.map((r) => r.name)).toEqual(['Ovos de galinha']);
     expect(container.textContent).toContain('Efetivo dos rebanhos: Bovino, Suíno - total');
     expect(container.textContent).toContain('Veja a métrica Efetivo (cabeças) ou a perspectiva Rebanho');
+  });
+});
+
+// ── Carregando, falhou ou vazio: três respostas diferentes (v1.108.1) ────────────────────
+// Until v1.108.1 the município cube and the IBGE mesh came back null both in flight and
+// after a failure: a failed read left the cards on "Carregando municípios…" for good, and a
+// mesh still on its way showed the prompt to narrow the geography to someone who had.
+describe('ViewGeography — the município read loading, failed or empty', () => {
+  const MESH_PA = [
+    { cityCode: '1500107', cityName: 'Abaetetuba', uf: 'PA' },
+    { cityCode: '1500131', cityName: 'Abel Figueiredo', uf: 'PA' },
+  ];
+  const meshOk = () => ({ municipios: MESH_PA, loading: false, loadError: null });
+  const cube = (state) => vi.fn(() => ({ rows: null, priceBase: null, loading: false, loadError: null, ...state }));
+  // A single state with no sub-UF facet: the view's OWN município read (the fallback).
+  const openPA = (filtered = {}) => {
+    stubGlobals(fullFixture({ topMunis: [], ...filtered }), { geoLevel: 'municipio' });
+    return (setup) => {
+      setup();
+      return render(
+        <ViewGeography families={['mass']} summary={atMunicipio()} database="ibge_pevs" conventions={{ autoScale: true }} />,
+      ).container;
+    };
+  };
+
+  it('its municípios on their way: both cards say "carregando", nothing says "sem dados"', () => {
+    const c = openPA()(() => { window.geoMeshState = meshOk; window.municipioYearly = cube({ loading: true }); });
+    expect(c.textContent).toContain('Carregando municípios de PA…');
+    expect(c.textContent).toContain('Carregando o histórico de PA…');
+    expect(c.querySelector('.load-err')).toBeNull();
+    expect(c.textContent).not.toMatch(/Sem dados por município|Sem histórico/);
+  });
+
+  it('a failed read: the card alerts once, the heatmap points to it, nothing says "carregando"', () => {
+    const c = openPA()(() => { window.geoMeshState = meshOk; window.municipioYearly = cube({ loadError: 'HTTP 503' }); });
+    expect(c.querySelectorAll('.load-err')).toHaveLength(1);
+    expect(c.textContent).toContain('Sem histórico por município: a leitura falhou (veja o aviso acima).');
+    expect(c.textContent).not.toMatch(/Carregando|Sem dados por município/);
+  });
+
+  it('a read that answered empty is the only one that says "sem dados"', () => {
+    const c = openPA()(() => { window.geoMeshState = meshOk; window.municipioYearly = cube({ rows: [] }); });
+    expect(c.textContent).toContain('Sem dados por município na seleção atual: nenhum município de PA tem');
+    expect(c.textContent).toContain('Sem histórico anual por município na seleção atual.');
+    expect(c.textContent).not.toMatch(/Carregando|falhou/);
+    expect(c.querySelector('.load-err')).toBeNull();
+  });
+
+  it('a failed IBGE mesh: the cities cannot be named, so nothing is asked and the card says it failed', () => {
+    const muni = cube({ rows: [] });
+    const c = openPA()(() => {
+      window.geoMeshState = () => ({ municipios: null, loading: false, loadError: 'HTTP 503' });
+      window.municipioYearly = muni;
+    });
+    expect(c.querySelectorAll('.load-err')).toHaveLength(1);
+    expect(muni).not.toHaveBeenCalled();
+    expect(c.textContent).not.toMatch(/Carregando|recortar a geografia/);
+  });
+
+  it('an IBGE mesh on its way: "carregando", not the prompt to narrow the geography', () => {
+    const c = openPA()(() => {
+      window.geoMeshState = () => ({ municipios: null, loading: true, loadError: null });
+      window.municipioYearly = cube({ rows: [] });
+    });
+    expect(c.textContent).toContain('Carregando municípios de PA…');
+    expect(c.textContent).not.toContain('recortar a geografia');
+  });
+
+  it('a failed sub-UF narrowing (the shared cube) is named at município level too', () => {
+    stubGlobals(fullFixture({
+      topMunis: [], subUfActive: true, subUfLoaded: false, subUfLoading: false, subUfLoadError: 'HTTP 503',
+    }), { geoLevel: 'municipio' });
+    window.geoMeshState = meshOk;
+    const { container } = render(
+      <ViewGeography families={['mass']} summary={{ states: ['PA'], mesos: ['1502'] }}
+                     database="ibge_pevs" conventions={{ autoScale: true }} />,
+    );
+    expect(container.querySelectorAll('.load-err')).toHaveLength(1);
+    expect(container.textContent).not.toMatch(/Carregando|Sem dados por município/);
+  });
+
+  it('above município level, a failed narrowing alerts above the map and the heatmap says why it is empty', () => {
+    stubGlobals(fullFixture({
+      ufData: [], ufYearlySeries: [], topMunis: [], subUfLoadError: 'HTTP 503',
+    }), { geoLevel: 'municipio' });
+    const { container } = render(
+      <ViewGeography families={['mass']} summary={{}} database="ibge_pevs" conventions={{ autoScale: true }} />,
+    );
+    expect(container.querySelector('.load-err')).not.toBeNull();
+    expect(container.textContent).toContain('Sem histórico: a leitura do recorte falhou (veja o aviso acima).');
+    expect(container.textContent).not.toContain('Sem histórico anual disponível para o recorte atual.');
+  });
+
+  // The two cards under the map draw the narrowed grid, which is EMPTY while the narrowing is
+  // unresolved: they read "0 macrorregiões" over empty bars. And above município level the
+  // heatmap said "Sem histórico anual disponível" while the narrowing was still on its way.
+  const cardOf = (c, overline) => [...c.querySelectorAll('.card')]
+    .find((k) => (k.querySelector('.sh-ov') || {}).textContent?.startsWith(overline));
+  it.each([
+    ['failed', { subUfLoadError: 'HTTP 503' }, 'Sem números: a leitura do recorte falhou (veja o aviso acima).'],
+    ['on its way', { subUfLoading: true }, 'Carregando o recorte geográfico…'],
+  ])('a sub-UF narrowing %s: the cards under the map say so, not "0 macrorregiões"', (_, state, note) => {
+    stubGlobals(fullFixture({ ufData: [], regionData: [], ufYearlySeries: [], topMunis: [], ...state }));
+    const { container } = render(
+      <ViewGeography families={['mass']} summary={AT_UF} database="ibge_pevs" conventions={{ autoScale: true }} />,
+    );
+    const ranking = cardOf(container, '10 maiores');
+    const regions = [...container.querySelectorAll('.card')]
+      .find((k) => k.querySelector('.sh-title')?.textContent === 'Soma por região');
+    for (const card of [ranking, regions]) {
+      expect(card.textContent).toContain(note);
+      expect(card.querySelector('.barchart, .regionbars')).toBeNull();
+    }
+    expect(regions.querySelector('.sh-action').textContent).toBe('');
+  });
+
+  it('above município level, a narrowing on its way: the heatmap says "carregando", not "sem histórico"', () => {
+    stubGlobals(fullFixture({ ufData: [], ufYearlySeries: [], topMunis: [], subUfLoading: true }));
+    const { container } = render(
+      <ViewGeography families={['mass']} summary={AT_UF} database="ibge_pevs" conventions={{ autoScale: true }} />,
+    );
+    expect(container.textContent).toContain('Carregando o histórico do recorte…');
+    expect(container.textContent).not.toContain('Sem histórico anual disponível para o recorte atual.');
+  });
+
+  it('counter-proof: resolved, the cards draw their charts and count the regions', () => {
+    stubGlobals(fullFixture({}));
+    const { container } = render(
+      <ViewGeography families={['mass']} summary={AT_UF} database="ibge_pevs" conventions={{ autoScale: true }} />,
+    );
+    expect(container.textContent).not.toMatch(/Sem números|Carregando o recorte geográfico/);
+    expect(cardOf(container, '10 maiores').querySelector('.barchart')).not.toBeNull();
+  });
+
+  it('hands the município read state to the CSV export, so an empty list is not read as "nada"', () => {
+    openPA()(() => { window.geoMeshState = meshOk; window.municipioYearly = cube({ loadError: 'HTTP 503' }); });
+    expect(window.geoExportMuniRead).toEqual({ loading: false, loadError: 'HTTP 503' });
+    cleanup();
+    openPA()(() => { window.geoMeshState = meshOk; window.municipioYearly = cube({ loading: true }); });
+    expect(window.geoExportMuniRead).toEqual({ loading: true, loadError: null });
   });
 });

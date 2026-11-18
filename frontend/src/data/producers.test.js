@@ -419,20 +419,24 @@ describe('the cubes and their price base read one response', () => {
     expect(w.geoYearlyPriceBase('ibge_pevs', {})).toBeNull();
   });
 
-  it('municipioYearly and municipioYearlyPriceBase share the POST', async () => {
+  it('municipioYearly carries its base in the same state object, from one POST', async () => {
     const f = vi.fn(() => jsonRes({
       municipioYearly: [{ year: 2021, cityCode: '1500107', uf: 'PA', value: 9 }], priceBase: OUTUBRO,
     }));
     const w = await loadAll(f);
     w.bancoById = () => ({ provides: ['geo'] });
-    expect(w.municipioYearly('ibge_pevs', {}, ['1500107'], [2019, 2021])).toBeNull();
-    expect(w.municipioYearlyPriceBase('ibge_pevs', {}, ['1500107'], [2019, 2021])).toBeNull();
+    expect(w.municipioYearly('ibge_pevs', {}, ['1500107'], [2019, 2021]))
+      .toEqual({ rows: null, priceBase: null, loading: true, loadError: null });
     expect(f).toHaveBeenCalledTimes(1);
     expect(f.mock.calls[0][1].method).toBe('POST');
     await tick();
-    expect(w.municipioYearlyPriceBase('ibge_pevs', {}, ['1500107'], [2019, 2021])).toEqual(OUTUBRO);
-    expect(w.municipioYearly('ibge_pevs', {}, ['1500107'], [2019, 2021])).toHaveLength(1);
+    const r = w.municipioYearly('ibge_pevs', {}, ['1500107'], [2019, 2021]);
+    expect(r.priceBase).toEqual(OUTUBRO);
+    expect(r.rows).toHaveLength(1);
+    expect(r).toMatchObject({ loading: false, loadError: null });
     expect(f).toHaveBeenCalledTimes(1);
+    // The separate accessor is gone (v1.108.1): rows, base and state are one response.
+    expect(w.municipioYearlyPriceBase).toBeUndefined();
   });
 
   it('a banco without the geo grain asks nothing and has no base', async () => {
@@ -440,7 +444,81 @@ describe('the cubes and their price base read one response', () => {
     const w = await loadAll(f);
     w.bancoById = () => ({ provides: [] });
     expect(w.geoYearlyPriceBase('un_comtrade', {})).toBeNull();
-    expect(w.municipioYearlyPriceBase('un_comtrade', {}, ['1500107'])).toBeNull();
+    expect(w.municipioYearly('un_comtrade', {}, ['1500107']))
+      .toEqual({ rows: [], priceBase: null, loading: false, loadError: null });
+    expect(f).not.toHaveBeenCalled();
+  });
+});
+
+// ── The município-level loaders: loading, failed and empty are three answers ──────────
+// Until v1.108.1 window.geoMesh and window.municipioYearly returned null both in flight and
+// after every retry failed, so a failed fetch read as "carregando municípios…" forever (the
+// sub-UF selector) or as "Sem série" (Perfil do território). The shape is the one
+// productsByUf established in v1.107.0; only a response with no error is a measurement.
+describe('geoMeshState / municipioYearly tell loading, failed and empty apart', () => {
+  const MESH = [{ cityCode: '1500107', cityName: 'Abaetetuba', uf: 'PA' }];
+  // 503, not the 500 the products suite uses: the message must come from the response.
+  const failing = () => vi.fn(() => Promise.resolve({ ok: false, status: 503 }));
+
+  it('the mesh in flight is loading with no list yet, not an empty mesh', async () => {
+    const f = vi.fn(() => jsonRes({ municipios: MESH }));
+    const w = await loadAll(f);
+    expect(w.geoMeshState()).toEqual({ municipios: null, loading: true, loadError: null });
+    expect(urlOf(f)).toContain('/api/geo-mesh');
+    await tick();
+    expect(w.geoMeshState()).toEqual({ municipios: MESH, loading: false, loadError: null });
+    expect(w.geoMesh()).toEqual(MESH); // the lookup accessor reads the same response
+    expect(f).toHaveBeenCalledTimes(1);
+  });
+
+  it('a measured empty mesh is the only "no município"', async () => {
+    const w = await loadAll(vi.fn(() => jsonRes({ municipios: [] })));
+    w.geoMeshState();
+    await tick();
+    expect(w.geoMeshState()).toEqual({ municipios: [], loading: false, loadError: null });
+  });
+
+  it('the mesh is loading while retrying and failed once the retries run out', async () => {
+    const f = failing();
+    const w = await loadAll(f);
+    // A transient failure is not announced: errorOf answers only after MAX_ATTEMPTS.
+    for (let i = 0; i < 3; i++) {
+      expect(w.geoMeshState()).toEqual({ municipios: null, loading: true, loadError: null });
+      await tick();
+    }
+    expect(w.geoMeshState()).toEqual({ municipios: null, loading: false, loadError: 'HTTP 503' });
+    expect(w.geoMesh()).toBeNull(); // a label falls back to the code; never [] (that is "measured")
+    expect(f).toHaveBeenCalledTimes(3);
+  });
+
+  it('the cube is loading while retrying and failed once the retries run out', async () => {
+    const f = failing();
+    const w = await loadAll(f);
+    w.bancoById = () => ({ provides: ['geo'] });
+    const read = () => w.municipioYearly('ibge_pam', {}, ['1500107']);
+    for (let i = 0; i < 3; i++) {
+      expect(read()).toEqual({ rows: null, priceBase: null, loading: true, loadError: null });
+      await tick();
+    }
+    expect(read()).toEqual({ rows: null, priceBase: null, loading: false, loadError: 'HTTP 503' });
+    expect(f).toHaveBeenCalledTimes(3);
+  });
+
+  it('a measured empty cube is rows [] with no error', async () => {
+    const w = await loadAll(vi.fn(() => jsonRes({ municipioYearly: [], priceBase: null })));
+    w.bancoById = () => ({ provides: ['geo'] });
+    w.municipioYearly('ibge_pam', {}, ['1500107']);
+    await tick();
+    expect(w.municipioYearly('ibge_pam', {}, ['1500107']))
+      .toEqual({ rows: [], priceBase: null, loading: false, loadError: null });
+  });
+
+  it('no city set asks nothing and answers "nothing" (the caller knows why it is empty)', async () => {
+    const f = vi.fn(() => jsonRes({ municipioYearly: [] }));
+    const w = await loadAll(f);
+    w.bancoById = () => ({ provides: ['geo'] });
+    expect(w.municipioYearly('ibge_pam', {}, []))
+      .toEqual({ rows: [], priceBase: null, loading: false, loadError: null });
     expect(f).not.toHaveBeenCalled();
   });
 });

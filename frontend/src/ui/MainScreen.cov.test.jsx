@@ -281,6 +281,46 @@ describe('MainScreen — o contador de linhas ignora a seleção de qualidade', 
   });
 });
 
+// A sub-UF narrowing still on its way, or one that failed, owns an EMPTY grid, and counting it
+// gave "UFs cobertas 0 / 27": a claim that the selection covers no state, made by a read that
+// never answered (v1.108.1).
+describe('MainScreen — "UFs cobertas" de um recorte sub-UF que não resolveu', () => {
+  const comRecorte = (extra) => {
+    window.applyFilters = () => ({
+      ts: [{ y: 2024, v: 1 }],
+      ufData: [],
+      ufDataFull: [{ uf: 'PA', value: 5, real: true }, { uf: 'AM', value: 3, real: true }],
+      qualityFlags: [{ id: 'OK', count: 1000 }],
+      productsTotal: 3,
+      _shares: {},
+      ...extra,
+    });
+  };
+  const ufsCobertas = (container) => [...container.querySelectorAll('.meta-row')]
+    .find((e) => e.textContent.includes('UFs cobertas')).querySelector('.meta-val');
+
+  it('carregando: "…", e o título diz que ainda carrega', () => {
+    comRecorte({ subUfLoading: true, subUfLoadError: null });
+    const v = ufsCobertas(render(<MainScreen />).container);
+    expect(v.textContent).toBe('… / 2');
+    expect(v.getAttribute('title')).toBe('O recorte geográfico escolhido ainda está carregando.');
+  });
+
+  it('com falha: "—", e o título diz que não carregou', () => {
+    comRecorte({ subUfLoading: false, subUfLoadError: 'HTTP 503' });
+    const v = ufsCobertas(render(<MainScreen />).container);
+    expect(v.textContent).toBe('— / 2');
+    expect(v.getAttribute('title')).toBe('Não foi possível carregar o recorte geográfico escolhido.');
+  });
+
+  it('contraprova: resolvido e vazio, o zero é uma medida e aparece', () => {
+    comRecorte({ subUfLoading: false, subUfLoadError: null });
+    const v = ufsCobertas(render(<MainScreen />).container);
+    expect(v.textContent).toBe('0 / 2');
+    expect(v.getAttribute('title')).toBeNull();
+  });
+});
+
 // O aviso de "valores corrigidos de anos até 1994 são indicativos" (v1.103.0) é montado aqui,
 // uma vez, em vez de em cada perspectiva. A regra de QUANDO aparece é de window.inflacaoAltaNoPeriodo
 // (MonetaryNotes.test.jsx); o que se prova aqui é a montagem: recebe a convenção ativa e o início

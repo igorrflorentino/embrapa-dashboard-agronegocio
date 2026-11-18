@@ -43,13 +43,19 @@ const MUNI_ROWS = [
 
 let calls;
 function stub({ rows = UF_ROWS, geoLevel = 'municipio', muni = () => MUNI_ROWS, geoYearly = null,
-  products = [{ code: 'a' }, { code: 'b' }] } = {}) {
+  products = [{ code: 'a' }, { code: 'b' }], muniBase = null, muniError = null } = {}) {
   calls = { muni: [], geoYearly: 0 };
   window.dataStore = { get: () => ({ ufYearly: rows, products }) };
   window.applyFilters = () => ({ yearStart: 2019, yearEnd: 2021 });
   window.geoLevelFor = () => geoLevel;
   window.geoMesh = () => MESH;
-  window.municipioYearly = (banco, summary, codes) => { calls.muni.push(codes); return muni(); };
+  // The cube's read STATE (v1.108.1): `muni()` gives the rows (null = still on its way);
+  // `muniError` is a read that failed for good; the base comes in the same response.
+  window.municipioYearly = (banco, summary, codes) => {
+    calls.muni.push(codes);
+    const rows = muniError ? null : muni();
+    return { rows, priceBase: rows ? muniBase : null, loading: !muniError && rows == null, loadError: muniError };
+  };
   window.geoYearly = () => { calls.geoYearly += 1; return geoYearly; };
 }
 
@@ -153,6 +159,39 @@ describe('build — the numbers per territory', () => {
     const out = tc().build({ database: 'ibge_pevs', summary: {}, selection: [{ level: 'municipio', code: '1501402' }] });
     expect(out.items[0].loading).toBe(true);
     expect(out.loading).toBe(true);
+    expect(out.loadError).toBeNull();
+  });
+
+  // Until v1.108.1 a failed cube came back null like a pending one: the place read
+  // "carregando…" for good, and the CSV kept saying "espere".
+  it('marks a município as FAILED, not loading, when its cube failed for good', () => {
+    stub({ muniError: 'HTTP 503' });
+    const out = tc().build({ database: 'ibge_pevs', summary: {}, selection: [{ level: 'municipio', code: '1501402' }] });
+    expect(out.items[0]).toMatchObject({ loadError: 'HTTP 503', points: [] });
+    expect(out.items[0].loading).toBeFalsy();
+    expect(out.loading).toBe(false);
+    expect(out.loadError).toBe('HTTP 503');
+  });
+
+  it('a failed município does not hold the places that did load', () => {
+    stub({ muniError: 'HTTP 503' });
+    const out = tc().build({ database: 'ibge_pevs', summary: {}, selection: [
+      { level: 'uf', code: 'PA' }, { level: 'municipio', code: '1501402' },
+    ] });
+    expect(out.items[0].loadError).toBeUndefined();
+    expect(pts(out.items[0]).length).toBeGreaterThan(0);
+    expect(out.items[1].loadError).toBe('HTTP 503');
+  });
+
+  it('a município measured with no rows is a row of zeros, neither loading nor failed', () => {
+    stub({ muni: () => [] });
+    const out = tc().build({ database: 'ibge_pevs', summary: {}, selection: [
+      { level: 'uf', code: 'PA' }, { level: 'municipio', code: '1501402' },
+    ] });
+    expect(out.items[1].loading).toBeFalsy();
+    expect(out.items[1].loadError).toBeUndefined();
+    expect(pts(out.items[1]).every((v) => v === 0)).toBe(true);
+    expect(out.loadError).toBeNull();
   });
 
   it('declares a município unavailable on a banco without that grain, instead of zeroing it', () => {
@@ -264,23 +303,19 @@ describe('fromMapFocus — what "Comparar com outros" hands over from the Geogra
 // price base travels with the result, and the view says so (v1.105.0).
 describe('build — the month the município cube is at', () => {
   const NOVEMBRO = { column: null, month: '2026-11', fxDate: null };
-  afterEach(() => { delete window.municipioYearlyPriceBase; });
 
   it('carries the cube base, read from the same request as the rows', () => {
-    stub();
-    const pedidos = [];
-    window.municipioYearlyPriceBase = (banco, summary, codes) => { pedidos.push(codes); return NOVEMBRO; };
+    stub({ muniBase: NOVEMBRO });
     const out = tc().build({ database: 'ibge_pevs', summary: {}, selection: [
       { level: 'uf', code: 'PA' }, { level: 'municipio', code: '1501402' },
     ] });
     expect(out.priceBases).toEqual([NOVEMBRO]);
-    // The same city set the rows were asked for — the same cache key, not a second fetch.
-    expect(pedidos).toEqual(calls.muni);
+    // ONE read gives rows and base (v1.108.1: the separate accessor is gone).
+    expect(calls.muni).toEqual([['1501402']]);
   });
 
   it('with no município chosen there is no own read, and so no base of its own', () => {
-    stub();
-    window.municipioYearlyPriceBase = () => NOVEMBRO;
+    stub({ muniBase: NOVEMBRO });
     const out = tc().build({ database: 'ibge_pevs', summary: {}, selection: [{ level: 'uf', code: 'PA' }] });
     expect(out.priceBases).toEqual([]);
   });

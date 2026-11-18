@@ -589,7 +589,11 @@ function FilterMenu({ open = false, banco = 'ibge_pevs', value, onClose, onApply
   // COMEX) has no city_code, so the mesh is not loaded and only nação ▸ região ▸ UF
   // render. The mesh is static + cached; main.jsx's resource subscription re-renders
   // this menu once it lands, so the first open may briefly show empty sub-UF columns.
-  const mesh = (showMunis && window.geoMesh) ? window.geoMesh() : null;
+  // Read as a STATE (v1.108.1): a mesh on its way and one that FAILED both leave the list
+  // null, and the columns used to say "Carregando malha do IBGE…" for good after a failure.
+  const meshState = (showMunis && window.geoMeshState) ? window.geoMeshState() : null;
+  const mesh = meshState ? meshState.municipios : null;
+  const meshError = (meshState && meshState.loadError) || null;
   const { MUNIS, mesoNames, microNames, interNames, imediataNames } = useMemo(() => {
     const meso = {}, micro = {}, inter = {}, imediata = {};
     const list = (mesh || []).map(m => {
@@ -611,6 +615,17 @@ function FilterMenu({ open = false, banco = 'ibge_pevs', value, onClose, onApply
   // until then (or for a UF-origin banco) the columns are gated.
   const muniUniverseLive = MUNIS.length > 0;
   const muniSliceable = showMunis && muniUniverseLive;
+  // Why the sub-UF columns are gated, in the mesh's three states — only the last is a fact
+  // about the mesh itself. Short for the five columns, whole for the footer below them.
+  const meshGate = meshError
+    ? 'Malha do IBGE indisponível: falha ao carregar.'
+    : Array.isArray(mesh) ? 'A malha do IBGE não trouxe municípios.' : 'Carregando malha do IBGE…';
+  const meshFoot = meshError
+    ? 'Não foi possível carregar a malha municipal do IBGE (falha de rede ou do servidor). '
+      + 'Recarregue a página para tentar de novo.'
+    : Array.isArray(mesh)
+      ? 'A malha municipal do IBGE não trouxe municípios.'
+      : 'Carregando a malha municipal do IBGE…';
 
   // Period bounds + quick-ranges from the ACTIVE banco's snapshot (same source as
   // PRODS), so switching banco shifts the date min/max and the quick-range chips
@@ -875,6 +890,14 @@ function FilterMenu({ open = false, banco = 'ibge_pevs', value, onClose, onApply
     setQuickRange(null);
   };
 
+  // The mesh only SIZES the município universe. While it is not live — on its way, or failed
+  // for good — the local Set was never seeded (see the GEO seed) and Apply hands back the
+  // incoming selection verbatim, so both summaries count THAT one and are told the universe
+  // is unknown: a deep-linked "2 municípios" no longer reads "1 nação · 1 UF"
+  // (filterSummary.muniNarrowing, v1.108.1).
+  const muniUniverseUnknown = showMunis && !muniUniverseLive;
+  const munisCounted = muniUniverseUnknown ? ((value && value.munis) || []).length : munis.size;
+
   // summary
   const summary = useMemo(() => {
     const prodTxt = products.size === PRODS.length
@@ -890,13 +913,14 @@ function FilterMenu({ open = false, banco = 'ibge_pevs', value, onClose, onApply
       regionsTotal: FM_REGIONS.length,
       statesSize: states.size,
       statesTotal: STATES.length,
-      munisSize: munis.size,
+      munisSize: munisCounted,
       munisTotal: MUNIS.length,
       muniSliceable,
+      muniUniverseUnknown,
       subUf: subUfText,
     });
     return { prodTxt, period, geoTxt };
-  }, [products, startDate, endDate, nations, regions, states, munis, hasGeo, muniSliceable, MUNIS, PRODS.length, subUfText]);
+  }, [products, startDate, endDate, nations, regions, states, munisCounted, muniUniverseUnknown, hasGeo, muniSliceable, MUNIS, PRODS.length, subUfText]);
 
   // chip-bar summary published on apply (display strings only)
   const buildChipSummary = () => {
@@ -915,9 +939,10 @@ function FilterMenu({ open = false, banco = 'ibge_pevs', value, onClose, onApply
       regionsTotal: FM_REGIONS.length,
       statesSize: states.size,
       statesTotal: STATES.length,
-      munisSize: munis.size,
+      munisSize: munisCounted,
       munisTotal: MUNIS.length,
       muniSliceable,
+      muniUniverseUnknown,
       subUf: subUfText,
     });
     // Published beside the chip on this path too — see main.jsx. (The two paths derive
@@ -1420,9 +1445,14 @@ function FilterMenu({ open = false, banco = 'ibge_pevs', value, onClose, onApply
                   <strong>{nations.size}</strong> {nations.size === 1 ? 'nação' : 'nações'} ·{' '}
                   <strong>{regions.size}</strong> {regions.size === 1 ? 'região' : 'regiões'} ·{' '}
                   <strong>{states.size}</strong> {states.size === 1 ? 'UF' : 'UFs'}
+                  {/* Not "em breve" (what it said until v1.108.1): the município level exists,
+                      and what this line has to say is whether its mesh is coming or failed. */}
                   {showMunis && (muniUniverseLive
                     ? <>{' '}·{' '}<strong>{munis.size}</strong> {munis.size === 1 ? 'município' : 'municípios'}</>
-                    : <>{' '}·{' '}<span className="fm-soon-inline">municípios em breve</span></>)}
+                    : <>{' '}·{' '}<span className="fm-soon-inline">
+                        {meshError ? 'municípios indisponíveis'
+                          : Array.isArray(mesh) ? 'nenhum município' : 'carregando municípios…'}
+                      </span></>)}
                 </span>
               </div>
 
@@ -1514,7 +1544,7 @@ function FilterMenu({ open = false, banco = 'ibge_pevs', value, onClose, onApply
                         setSearch={setQMesos}
                         emptyAllNote="Todas as mesorregiões (nenhum recorte)."
                         disabledReason={
-                          !muniUniverseLive ? 'Carregando malha do IBGE…'
+                          !muniUniverseLive ? meshGate
                             : states.size === 0 ? 'Selecione ao menos um estado.' : null
                         }
                       />
@@ -1530,7 +1560,7 @@ function FilterMenu({ open = false, banco = 'ibge_pevs', value, onClose, onApply
                         setSearch={setQMicros}
                         emptyAllNote="Todas as microrregiões (nenhum recorte)."
                         disabledReason={
-                          !muniUniverseLive ? 'Carregando malha do IBGE…'
+                          !muniUniverseLive ? meshGate
                             : states.size === 0 ? 'Selecione ao menos um estado.' : null
                         }
                       />
@@ -1552,7 +1582,7 @@ function FilterMenu({ open = false, banco = 'ibge_pevs', value, onClose, onApply
                         setSearch={setQInters}
                         emptyAllNote="Todas as regiões intermediárias (nenhum recorte)."
                         disabledReason={
-                          !muniUniverseLive ? 'Carregando malha do IBGE…'
+                          !muniUniverseLive ? meshGate
                             : states.size === 0 ? 'Selecione ao menos um estado.' : null
                         }
                       />
@@ -1568,7 +1598,7 @@ function FilterMenu({ open = false, banco = 'ibge_pevs', value, onClose, onApply
                         setSearch={setQImediatas}
                         emptyAllNote="Todas as regiões imediatas (nenhum recorte)."
                         disabledReason={
-                          !muniUniverseLive ? 'Carregando malha do IBGE…'
+                          !muniUniverseLive ? meshGate
                             : states.size === 0 ? 'Selecione ao menos um estado.' : null
                         }
                       />
@@ -1587,11 +1617,12 @@ function FilterMenu({ open = false, banco = 'ibge_pevs', value, onClose, onApply
                       search={qMunis}
                       setSearch={setQMunis}
                       emptyAllNote="Todos os municípios (nenhum recorte)."
-                      // Município is LIVE via the IBGE mesh (code-keyed). Gate only while
-                      // the mesh loads, or when its parent UF level is empty.
+                      // Município is LIVE via the IBGE mesh (code-keyed). Gate while the
+                      // mesh is not here (loading, failed or empty), or when its parent UF
+                      // level is empty.
                       disabledReason={
                         !muniUniverseLive
-                          ? 'Carregando malha do IBGE…'
+                          ? meshGate
                           : eligibleStates.length === 0 || states.size === 0
                             ? 'Selecione ao menos um estado.'
                             : null
@@ -1605,7 +1636,7 @@ function FilterMenu({ open = false, banco = 'ibge_pevs', value, onClose, onApply
                           município + the two parallel sub-UF divisions. */}
                       {muniUniverseLive
                         ? `Malha IBGE: ${MUNIS.length} municípios · mesorregião/microrregião + região intermediária/imediata.`
-                        : 'Carregando a malha municipal do IBGE…'}
+                        : meshFoot}
                     </span>
                   </div>
                 </div>

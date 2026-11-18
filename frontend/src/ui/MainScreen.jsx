@@ -397,6 +397,14 @@ function MainScreen({ filters, view = 'overview', database = 'ibge_pevs', infoPa
   const ufsCovered = _f
     ? _f.ufData.filter(u => _isRealUf(u) && _covered(u)).length
     : (window.UF_DATA || []).filter(u => u.value > 0).length;
+  // A sub-UF narrowing still on its way, or one that failed, has no grid to count: the 0 its
+  // empty grid gives would read "covers no UF", a claim about the data (v1.108.1). Same
+  // marks as the Visão geral KPIs: "…" while it loads, "—" when it failed.
+  const ufsCoveredLabel = (_f && _f.subUfLoadError) ? '—'
+    : (_f && _f.subUfLoading) ? '…' : ufsCovered;
+  const ufsCoveredTitle = (_f && _f.subUfLoadError)
+    ? 'Não foi possível carregar o recorte geográfico escolhido.'
+    : (_f && _f.subUfLoading) ? 'O recorte geográfico escolhido ainda está carregando.' : undefined;
   // Denominator: real UFs in the banco's universe, capped at the canonical 27.
   const ufsTotalReal = _f
     ? Math.min(27, _f.ufDataFull.filter(_isRealUf).length || 27)
@@ -501,7 +509,7 @@ function MainScreen({ filters, view = 'overview', database = 'ibge_pevs', infoPa
             </div>
             <div className="meta-row">
               <span className="meta-label">UFs cobertas</span>
-              <span className="meta-val tnum">{ufsCovered} / {ufsTotalReal}</span>
+              <span className="meta-val tnum" title={ufsCoveredTitle}>{ufsCoveredLabel} / {ufsTotalReal}</span>
             </div>
             <div className="meta-row">
               <span className="meta-label">Anos cobertos</span>
