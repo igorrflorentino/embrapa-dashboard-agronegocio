@@ -40,6 +40,7 @@ distinction is preserved (rather than flattened to an empty frame) to keep the
 from __future__ import annotations
 
 import functools
+import logging
 from collections.abc import Sequence
 
 from google.api_core.exceptions import BadRequest, NotFound
@@ -48,6 +49,8 @@ from google.cloud import bigquery
 from embrapa_dashboard.config import get_credentials, get_settings
 from embrapa_dashboard.serving import sql as sqlbuild
 from embrapa_dashboard.serving.cache import cache
+
+logger = logging.getLogger(__name__)
 
 # Fallback short TTL for the curation-classification read, used only until
 # init_cache() binds the authoritative value from config.Settings. On
@@ -95,6 +98,51 @@ def run_query(sql: str, params: list, *, max_bytes: int | None = None) -> object
         job_config.maximum_bytes_billed = cap
     job = _client().query(sql, job_config=job_config)
     return job.result().to_dataframe(create_bqstorage_client=False)
+
+
+@cache.memoize()
+def fetch_table_columns(dataset_attr: str, table: str) -> frozenset[str]:
+    """Column names of one table (FREE — table metadata, no query).
+
+    For the readers that must not ask for a column before the table carries it: a merge to
+    main deploys the app and rebuilds the marts IN PARALLEL (webapi-deploy and
+    dbt-build-prod both fire on the push — on 2026-09-09 the app was live 3m32s before the
+    mart), so for a few minutes new code reads tables built by the old one. Memoized at the
+    mart TTL, so a rebuild is picked up within ``cache_default_timeout``. Raises on any
+    error, and flask-caching stores only a RETURNED value, so a failed read is retried on the
+    next call instead of being remembered for a whole TTL."""
+    settings = get_settings()
+    ref = sqlbuild.table_ref(settings, dataset_attr, table)
+    return frozenset(f.name for f in _client().get_table(ref).schema)
+
+
+def price_base_enabled(dataset_attr: str, table: str) -> bool:
+    """Whether ``table`` carries the price-base columns (v1.105.0). Fails CLOSED.
+
+    A reader that selected ``ipca_base_month`` from a mart built before the columns existed
+    would fail with "Unrecognized name" and take the whole screen down; asking the schema
+    first turns that window into the fallback text ("a preços do mês mais recente do
+    índice"). Any doubt is a no — a missing column, or an error reading the schema."""
+    try:
+        return fetch_table_columns(dataset_attr, table).issuperset(sqlbuild.PRICE_BASE_COLUMNS)
+    except Exception:
+        logger.warning("price base: could not read the schema of %s.%s", dataset_attr, table)
+        return False
+
+
+def _asks_price_base(
+    with_price_base: bool, value_column: str, dataset_attr: str, table: str
+) -> bool:
+    """Whether a reader should select the price base of ``value_column`` from ``table``.
+
+    Only when its caller asked, only for a column that HAS a base (a nominal or quantity
+    column has none — no metadata call is spent on it), and only once the table carries the
+    columns (:func:`price_base_enabled`)."""
+    return (
+        with_price_base
+        and value_column in sqlbuild.PRICE_BASE_MONTH_COLUMN
+        and price_base_enabled(dataset_attr, table)
+    )
 
 
 # (mart, product-code column, product-name column, default value column) per
@@ -188,13 +236,17 @@ def fetch_production_overview(
     source: str = "ibge_pevs",
     uf_codes: Sequence[str] = (),
     tabela: str | None = None,
+    with_price_base: bool = False,
 ):
     """Annual production total for a PEVS-shaped source (backs overviewTS).
 
     ``uf_codes`` optionally narrows to the producing UFs (cross-source per-UF scoping).
+    ``with_price_base`` adds ``price_base_month`` / ``price_base_fx_date`` (see
+    :func:`_asks_price_base`).
     """
     settings = get_settings()
-    table = sqlbuild.table_ref(settings, "bq_serving_dataset", _production_mart(source))
+    mart = _production_mart(source)
+    table = sqlbuild.table_ref(settings, "bq_serving_dataset", mart)
     sql, params = sqlbuild.production_overview(
         table,
         year_start=year_start,
@@ -204,6 +256,7 @@ def fetch_production_overview(
         uf_codes=tuple(uf_codes),
         has_measure_kind=source in _MEASURE_KIND_SOURCES,
         tabela=tabela,
+        price_base=_asks_price_base(with_price_base, value_column, "bq_serving_dataset", mart),
     )
     return run_query(sql, params)
 
@@ -249,10 +302,12 @@ def fetch_production_by_uf_yearly(
     value_column: str = "val_real_ipca_brl",
     source: str = "ibge_pevs",
     tabela: str | None = None,
+    with_price_base: bool = False,
 ):
     """Production by (UF, year) for a PEVS-shaped source (backs the ano × UF heatmap)."""
     settings = get_settings()
-    table = sqlbuild.table_ref(settings, "bq_serving_dataset", _production_mart(source))
+    mart = _production_mart(source)
+    table = sqlbuild.table_ref(settings, "bq_serving_dataset", mart)
     sql, params = sqlbuild.production_by_uf_yearly(
         table,
         year_start=year_start,
@@ -261,6 +316,7 @@ def fetch_production_by_uf_yearly(
         value_column=value_column,
         has_measure_kind=source in _MEASURE_KIND_SOURCES,
         tabela=tabela,
+        price_base=_asks_price_base(with_price_base, value_column, "bq_serving_dataset", mart),
     )
     return run_query(sql, params)
 
@@ -280,6 +336,7 @@ def fetch_production_by_municipio_yearly(
     value_column: str = "val_real_ipca_brl",
     source: str = "ibge_pevs",
     tabela: str | None = None,
+    with_price_base: bool = False,
 ):
     """Production by (município, year) for a PEVS-shaped source, straight from
     gold_<source>_production (already município-grained) — backs the sub-UF +
@@ -306,6 +363,10 @@ def fetch_production_by_municipio_yearly(
             settings, _SHORT_SOURCE[source], _GOLD_PRODUCT[source][0]
         ),
         tabela=tabela,
+        # Read from GOLD, so it is Gold's schema that must carry the base.
+        price_base=_asks_price_base(
+            with_price_base, value_column, "bq_gold_dataset", _GOLD_TABLE[source]
+        ),
     )
     return run_query(sql, params)
 
@@ -320,6 +381,7 @@ def fetch_products_by_municipio(
     source: str = "ibge_pevs",
     tabela: str | None = None,
     include_tabela: bool = False,
+    with_price_base: bool = False,
 ):
     """Per-product ranking WITHIN the given municípios — "o que este lugar produz".
 
@@ -349,6 +411,9 @@ def fetch_products_by_municipio(
         # F7 gate: exclude commodities marked indisponível (no-op while none are).
         visibility_predicate=sqlbuild.visibility_clause(
             settings, _SHORT_SOURCE[source], code_column
+        ),
+        price_base=_asks_price_base(
+            with_price_base, value_column, "bq_gold_dataset", _GOLD_TABLE[source]
         ),
     )
     return run_query(sql, params)
@@ -398,6 +463,7 @@ def fetch_comex_seasonality(
     flow: str | None = None,
     uf_codes: Sequence[str] = (),
     value_column: str = "val_yearfx_usd",
+    with_price_base: bool = False,
 ):
     """Monthly COMEX value for the seasonality view (backs monthlyData).
 
@@ -405,7 +471,8 @@ def fetch_comex_seasonality(
     ``state_acronym`` in its grain — P6 per-UF scoping). ``value_column`` is the
     currency × correction column the seam resolved from the conventions strip."""
     settings = get_settings()
-    table = sqlbuild.table_ref(settings, "bq_serving_dataset", "serving_comex_seasonality")
+    mart = "serving_comex_seasonality"
+    table = sqlbuild.table_ref(settings, "bq_serving_dataset", mart)
     sql, params = sqlbuild.comex_seasonality(
         table,
         year_start=year_start,
@@ -414,22 +481,18 @@ def fetch_comex_seasonality(
         flow=flow,
         uf_codes=tuple(uf_codes),
         value_column=value_column,
+        price_base=_asks_price_base(with_price_base, value_column, "bq_serving_dataset", mart),
     )
     return run_query(sql, params)
 
 
-@cache.memoize()
 def fetch_comex_seasonality_columns() -> frozenset[str]:
     """Column names of ``serving_comex_seasonality`` (FREE — table metadata, no query).
 
     The seam asks this before requesting a currency × correction column: the mart only
-    carries the full currency matrix since v1.77.0, and a merge to main deploys the app
-    and rebuilds the marts IN PARALLEL (webapi-deploy and dbt-build-prod both fire on the
-    push — on 2026-09-09 the app was live 3m32s before the mart). Memoized at the mart
-    TTL, so a rebuild is picked up within ``cache_default_timeout``."""
-    settings = get_settings()
-    ref = sqlbuild.table_ref(settings, "bq_serving_dataset", "serving_comex_seasonality")
-    return frozenset(f.name for f in _client().get_table(ref).schema)
+    carries the full currency matrix since v1.77.0, and the app can go live before the mart
+    is rebuilt (see :func:`fetch_table_columns`, which memoizes the read)."""
+    return fetch_table_columns("bq_serving_dataset", "serving_comex_seasonality")
 
 
 @cache.memoize()
@@ -510,6 +573,7 @@ def fetch_comex_overview(
     ncm_codes: Sequence[str] = (),
     flow: str | None = None,
     value_column: str = "val_yearfx_usd",
+    with_price_base: bool = False,
 ):
     """Annual COMEX value + weight (backs overviewTS for COMEX).
 
@@ -518,7 +582,8 @@ def fetch_comex_overview(
     matrix, so a BRL/EUR display serves the REAL column.
     """
     settings = get_settings()
-    table = sqlbuild.table_ref(settings, "bq_serving_dataset", "serving_comex_annual")
+    mart = "serving_comex_annual"
+    table = sqlbuild.table_ref(settings, "bq_serving_dataset", mart)
     sql, params = sqlbuild.trade_overview(
         table,
         code_column="ncm_code",
@@ -527,6 +592,7 @@ def fetch_comex_overview(
         codes=tuple(ncm_codes),
         flow=flow,
         value_column=value_column,
+        price_base=_asks_price_base(with_price_base, value_column, "bq_serving_dataset", mart),
     )
     return run_query(sql, params)
 
@@ -569,6 +635,7 @@ def fetch_comtrade_overview(
     reporters: Sequence[str] = (),
     partners: Sequence[str] = (),
     pin_reporter: str | None = _REPORTER_PIN_DEFAULT,
+    with_price_base: bool = False,
 ):
     """Annual COMTRADE value + weight (backs overviewTS for COMTRADE).
 
@@ -583,7 +650,8 @@ def fetch_comtrade_overview(
     passes ``None`` for a world/list selection (see :func:`_resolve_reporter_pin`).
     """
     settings = get_settings()
-    table = sqlbuild.table_ref(settings, "bq_serving_dataset", "serving_comtrade_annual")
+    mart = "serving_comtrade_annual"
+    table = sqlbuild.table_ref(settings, "bq_serving_dataset", mart)
     sql, params = sqlbuild.trade_overview(
         table,
         code_column="cmd_code",
@@ -601,6 +669,7 @@ def fetch_comtrade_overview(
         # "All flows" sums only the primary totals (export/import): re-export/re-import are
         # subsets (X ⊇ RX, M ⊇ RM), so adding them would double-count.
         sum_flows=sqlbuild.COMTRADE_TOTAL_FLOWS,
+        price_base=_asks_price_base(with_price_base, value_column, "bq_serving_dataset", mart),
     )
     return run_query(sql, params)
 
@@ -646,6 +715,7 @@ def fetch_comex_by_uf_yearly(
     ncm_codes: Sequence[str] = (),
     flow: str | None = None,
     value_column: str = "val_yearfx_usd",
+    with_price_base: bool = False,
 ):
     """COMEX value by (UF, year) (backs the ano × UF heatmap for COMEX).
 
@@ -661,6 +731,9 @@ def fetch_comex_by_uf_yearly(
         ncm_codes=tuple(ncm_codes),
         flow=flow,
         value_column=value_column,
+        price_base=_asks_price_base(
+            with_price_base, value_column, "bq_serving_dataset", "serving_comex_annual"
+        ),
     )
     return run_query(sql, params)
 
@@ -674,6 +747,7 @@ def fetch_comex_partners(
     flow: str | None = None,
     rank_by: str = "value",
     value_column: str = "val_yearfx_usd",
+    with_price_base: bool = False,
 ):
     """COMEX partner (country) ranking with export/import split (backs partnerData).
 
@@ -685,7 +759,8 @@ def fetch_comex_partners(
     is the currency × correction column the seam resolved from the conventions strip.
     """
     settings = get_settings()
-    table = sqlbuild.table_ref(settings, "bq_serving_dataset", "serving_comex_annual")
+    mart = "serving_comex_annual"
+    table = sqlbuild.table_ref(settings, "bq_serving_dataset", mart)
     sql, params = sqlbuild.trade_by_partner(
         table,
         partner_code_column="country_code",
@@ -702,6 +777,7 @@ def fetch_comex_partners(
         flow=flow,
         rank_by=rank_by,
         value_column=value_column,
+        price_base=_asks_price_base(with_price_base, value_column, "bq_serving_dataset", mart),
     )
     return run_query(sql, params)
 
@@ -719,6 +795,7 @@ def fetch_comtrade_partners(
     partners: Sequence[str] = (),
     pin_reporter: str | None = _REPORTER_PIN_DEFAULT,
     value_column: str = "val_yearfx_usd",
+    with_price_base: bool = False,
 ):
     """COMTRADE partner ranking with export/import split (backs partnerData).
 
@@ -732,7 +809,8 @@ def fetch_comtrade_partners(
     currency × correction column the seam resolved from the conventions strip.
     """
     settings = get_settings()
-    table = sqlbuild.table_ref(settings, "bq_serving_dataset", "serving_comtrade_annual")
+    mart = "serving_comtrade_annual"
+    table = sqlbuild.table_ref(settings, "bq_serving_dataset", mart)
     sql, params = sqlbuild.trade_by_partner(
         table,
         partner_code_column="partner_code",
@@ -755,6 +833,7 @@ def fetch_comtrade_partners(
         # o autocomércio é a comparação entre as duas colunas, não um ISO fixo.
         partner_iso_column="partner_iso_a3",
         reporter_iso_column="reporter_iso_a3",
+        price_base=_asks_price_base(with_price_base, value_column, "bq_serving_dataset", mart),
     )
     return run_query(sql, params)
 
@@ -773,6 +852,7 @@ def fetch_products_by_uf(
     flow: str | None = None,
     tabela: str | None = None,
     include_tabela: bool = False,
+    with_price_base: bool = False,
 ):
     """Per-product ranking within a UF selection (backs the 'Base de dados' per-UF
     product breakdown). ``table_key`` + columns are internal literals the seam picks
@@ -792,6 +872,7 @@ def fetch_products_by_uf(
         flow=flow,
         tabela=tabela,
         include_tabela=include_tabela,
+        price_base=_asks_price_base(with_price_base, value_column, "bq_serving_dataset", table_key),
     )
     return run_query(sql, params)
 
@@ -804,6 +885,7 @@ def fetch_comex_flows(
     flow: str | None = None,
     uf_codes: Sequence[str] = (),
     value_column: str = "val_yearfx_usd",
+    with_price_base: bool = False,
 ):
     """COMEX origin(UF)->destination(country) links (backs flowData for COMEX).
 
@@ -812,7 +894,8 @@ def fetch_comex_flows(
     correction column the seam resolved from the conventions strip.
     """
     settings = get_settings()
-    table = sqlbuild.table_ref(settings, "bq_serving_dataset", "serving_comex_annual")
+    mart = "serving_comex_annual"
+    table = sqlbuild.table_ref(settings, "bq_serving_dataset", mart)
     sql, params = sqlbuild.trade_flows(
         table,
         origin_code_column="state_acronym",
@@ -826,6 +909,7 @@ def fetch_comex_flows(
         flow=flow,
         uf_codes=tuple(uf_codes),
         value_column=value_column,
+        price_base=_asks_price_base(with_price_base, value_column, "bq_serving_dataset", mart),
     )
     return run_query(sql, params)
 
@@ -842,6 +926,7 @@ def fetch_comtrade_flows(
     partners: Sequence[str] = (),
     pin_reporter: str | None = _REPORTER_PIN_DEFAULT,
     value_column: str = "val_yearfx_usd",
+    with_price_base: bool = False,
 ):
     """COMTRADE reporter->partner links (backs flowData for COMTRADE).
 
@@ -853,7 +938,8 @@ def fetch_comtrade_flows(
     ``value_column`` is the currency × correction column the seam resolved.
     """
     settings = get_settings()
-    table = sqlbuild.table_ref(settings, "bq_serving_dataset", "serving_comtrade_annual")
+    mart = "serving_comtrade_annual"
+    table = sqlbuild.table_ref(settings, "bq_serving_dataset", mart)
     sql, params = sqlbuild.trade_flows(
         table,
         origin_code_column="reporter_code",
@@ -874,6 +960,7 @@ def fetch_comtrade_flows(
         reporters=tuple(reporters),
         partners=tuple(partners),
         value_column=value_column,
+        price_base=_asks_price_base(with_price_base, value_column, "bq_serving_dataset", mart),
     )
     return run_query(sql, params)
 

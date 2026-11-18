@@ -2123,7 +2123,8 @@ def test_products_by_municipio_empty_when_banco_has_no_municipio_grain(monkeypat
         json={"cityCodes": ["3550308"]},
     )
     assert resp.status_code == 200
-    assert resp.get_json() == {"products": []}
+    # No rows → no price base to name (v1.105.0): the key is there, and null.
+    assert resp.get_json() == {"products": [], "priceBase": None}
 
 
 # ── tabela: every route reaching a PEVS reader must parse it ─────────────

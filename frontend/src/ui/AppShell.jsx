@@ -221,15 +221,24 @@ function AppShell({
   // existed: a `conventions` without `units` published
   // "Convenções métricas: BRL · IPCA · undefined · undefined" into a reference someone
   // pastes into a paper. Swept in AppShell.cov.test.jsx (N1).
+  //
+  // A corrected value is at the prices of ONE month, and a reference pasted into a paper must
+  // date the money it cites: "BRL · IPCA (a preços de outubro de 2026) · t · m³" (v1.105.0).
+  // "IPCA" alone named a month that moved with every build. The month comes from the loaded
+  // snapshot (window.priceBaseFor); unknown — not loaded yet, or a cross perspective, whose
+  // series carry conventions of their own — the parenthesis is left out, never guessed.
+  const activeView2 = window.viewById ? window.viewById(view) : null;
+  const isCrossView = !!(activeView2 && activeView2.crossBanco);
+  const _corr = conventions?.correction || 'Nominal';
+  const _mesBase = !isCrossView && _corr !== 'Nominal' && window.priceBaseFor && window.mesBase
+    ? window.mesBase(window.priceBaseFor(database, { currency: conventions?.currency || 'BRL', correction: _corr }))
+    : null;
   const convLabel = [
     conventions?.currency || 'BRL',
-    conventions?.correction || 'Nominal',
+    _mesBase ? `${_corr} (a pre\u00e7os de ${_mesBase})` : _corr,
     conventions?.units?.mass || 't',
     conventions?.units?.volume || 'm\u00b3',
   ].join(' \u00b7 ');
-
-  const activeView2 = window.viewById ? window.viewById(view) : null;
-  const isCrossView = !!(activeView2 && activeView2.crossBanco);
 
   // Human label for the cross-source selection (used in citation + chips).
   const crossLabel = () => {

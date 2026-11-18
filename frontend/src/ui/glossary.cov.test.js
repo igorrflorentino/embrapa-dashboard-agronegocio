@@ -112,6 +112,36 @@ describe('GLOSSARY structure', () => {
     expect(t.short).not.toContain('parece muito maior');
   });
 
+  it('says deflating is NOT interest, and names the finance concept only to deny it', () => {
+    // v1.105.0: a corrected value is at the prices of one month; capitalizing it at the real
+    // interest rate would answer a different question (what the money would be worth had it
+    // been invested). The glossary is where a researcher who looks up "valor presente" lands.
+    const t = GLOSSARY.metodos.terms.find((x) => x.term === 'Deflacionar');
+    expect(t.short).toContain('não é aplicar juros');
+    expect(t.short).toContain('custo de oportunidade');
+    expect(t.short).toContain('não é o valor presente das finanças');
+    expect(t.short).toContain('juro real');
+  });
+
+  it('defines the base month and names the seven Gold columns that carry it', () => {
+    const t = GLOSSARY.metodos.terms.find((x) => x.term === 'Mês-base');
+    expect(t, 'verbete Mês-base ausente').toBeTruthy();
+    for (const coluna of ['ipca_base_month', 'igpm_base_month', 'igpdi_base_month', 'cpi_base_month',
+      'hicp_base_month', 'fx_usd_base_date', 'fx_eur_base_date']) {
+      expect(t.short).toContain(coluna);
+    }
+  });
+
+  it('every cross-reference (veja "…") points to a term that exists', () => {
+    // A renamed entry would leave the others pointing at nothing — the search finds no match
+    // and the researcher is sent nowhere.
+    const termos = new Set(Object.values(GLOSSARY).flatMap((s) => s.terms.map((t) => t.term)));
+    const remissoes = Object.values(GLOSSARY).flatMap((s) => s.terms)
+      .flatMap((t) => [...t.short.matchAll(/veja "([^"]+)"/g)].map((m) => [t.term, m[1]]));
+    expect(remissoes.length).toBeGreaterThan(5);
+    for (const [de, para] of remissoes) expect(termos.has(para), `${de} → "${para}"`).toBe(true);
+  });
+
   it('names the per-banco Gold table in each banco section', () => {
     const expectedTable = {
       ibge_pevs: 'gold_pevs_production',

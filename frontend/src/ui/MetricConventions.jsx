@@ -30,11 +30,15 @@ import { magnitudeParts } from '../charts/magnitude.js';
 // mostrar as duas em vez de fundi-las num eixo só de "correção":
 //
 //   • índice da MESMA moeda exibida → converte pelo câmbio do ANO DE REGISTRO e só então
-//     deflaciona. "Dólares da época, trazidos a dólares de hoje." Num banco de aduana,
-//     cujo valor de origem JÁ É US$, não entra câmbio nenhum.
-//   • índice de OUTRA economia → deflaciona na moeda do índice e converte pelo câmbio de
-//     HOJE. O número mede poder de compra brasileiro e só está impresso com um símbolo
-//     estrangeiro — leitura legítima, e que NÃO é "o dólar corrigido pela inflação".
+//     deflaciona. "Dólares da época, trazidos aos preços do mês mais recente do CPI." Num
+//     banco de aduana, cujo valor de origem JÁ É US$, não entra câmbio nenhum.
+//   • índice de OUTRA economia → deflaciona na moeda do índice e converte por UM dia de
+//     PTAX, o mais recente (fx_<moeda>_base_date). O número mede poder de compra brasileiro
+//     e só está impresso com um símbolo estrangeiro — leitura legítima, e que NÃO é "o dólar
+//     corrigido pela inflação".
+//
+// Nenhuma das duas está "em dinheiro de hoje": cada uma está a preços de UM mês, o mais
+// recente do índice quando a base analítica foi construída, e a frase o nomeia (v1.105.0).
 //
 // Até a v1.82.0 só a segunda existia, rotulada como se fosse a primeira: "US$ · IPCA" se
 // lê como dólares corrigidos pela inflação brasileira, que não é uma coisa que exista.
@@ -326,9 +330,16 @@ window.clampConvention = (conv) => {
 };
 
 // O que o número É, em uma frase — a linha que a faixa inteira existe para poder dizer.
-// `banco` é opcional: num banco cuja moeda de origem já é a exibida (aduana em US$), a
-// correção pela própria moeda não passa por câmbio NENHUM, e vale dizer isso.
-window.conventionExplain = (conv, banco) => {
+// `banco` (id ou o objeto do registro) é opcional: num banco cuja moeda de origem já é a
+// exibida (aduana em US$), a correção pela própria moeda não passa por câmbio NENHUM, e vale
+// dizer isso. Até a v1.105.0 a faixa passava o OBJETO e canonCurrencyFor esperava o id: o
+// COMEX em US$ · CPI dizia "convertido pelo câmbio do ano de registro" sem câmbio algum.
+//
+// `base` é o `priceBase` do servidor (o mês a cujos preços o valor está). Omitido, a frase o
+// lê do snapshot carregado (window.priceBaseFor); null, cai no texto que não nomeia o mês.
+// A correção troca a unidade de medida — "a preços de" um mês — e não soma juros: a frase
+// nunca diz "valor presente" nem "dinheiro de hoje".
+window.conventionExplain = (conv, banco, base) => {
   if (!conv) return '';
   const { currency, correction } = conv;
   const sym = (window.CURRENCY_FX[currency] || {}).symbol || currency;
@@ -339,23 +350,29 @@ window.conventionExplain = (conv, banco) => {
   }
   const eco = window.CORRECTION_ECONOMY[correction];
   if (!eco) return '';
+  const bancoId = banco && typeof banco === 'object' ? banco.id : banco;
+  const pb = base !== undefined
+    ? base
+    : (bancoId && window.priceBaseFor ? window.priceBaseFor(bancoId, conv) : null);
+  const precos = window.precosDe ? window.precosDe(pb) : 'a preços do mês mais recente do índice';
   if (eco === 'BR' && currency === 'BRL') {
-    return `Corrigido pela inflação do Brasil (${correction}), em reais de hoje.`;
+    return `Corrigido pela inflação do Brasil (${correction}), ${precos}.`;
   }
   if (eco === 'BR') {
     // A negativa explícita é o ponto: sem ela, o leitor completa a frase sozinho, e
     // completa errado. Nomeia a inflação que este número NÃO é, pela moeda na tela.
     const outra = window.ECONOMY_DA[{ USD: 'US', EUR: 'EA' }[currency]] || 'de fora';
-    return `Corrigido pela inflação do Brasil (${correction}) e convertido pelo câmbio de hoje. `
+    const cambio = window.cambioDe ? window.cambioDe(pb) : 'ao câmbio mais recente';
+    return `Corrigido pela inflação do Brasil (${correction}), ${precos}, e convertido ${cambio}. `
       + `Mede o poder de compra brasileiro escrito em ${moeda}, e não a inflação ${outra}.`;
   }
-  const base = window.canonCurrencyFor ? window.canonCurrencyFor(banco) : 'BRL';
-  const semCambio = base === currency;
+  const origem = window.canonCurrencyFor && bancoId ? window.canonCurrencyFor(bancoId) : 'BRL';
+  const semCambio = origem === currency;
   return semCambio
-    ? `Corrigido pela inflação ${window.ECONOMY_DA[eco]} (${correction}), em ${moeda} de hoje. `
+    ? `Corrigido pela inflação ${window.ECONOMY_DA[eco]} (${correction}), ${precos}. `
       + `O valor já vem em ${sym} da fonte, então não passa por câmbio nenhum.`
     : `Convertido pelo câmbio do ano de registro e corrigido pela inflação `
-      + `${window.ECONOMY_DA[eco]} (${correction}), em ${moeda} de hoje.`;
+      + `${window.ECONOMY_DA[eco]} (${correction}), ${precos}.`;
 };
 
 // O valor do chip recolhido: o índice mais a economia que ele mede, porque é a economia

@@ -129,6 +129,17 @@ function ViewTerritoryCompare({ summary, conventions, database, territoryCompare
         </p>
       </div>
 
+      {/* The município cube (a read of this view's own, from the analytical base) against
+          the snapshot's month — the share column divides one by the other (v1.105.0). Only
+          for value: a quantity has no price base. */}
+      {metric === 'value' && window.PriceBaseSkewNote && (
+        <window.PriceBaseSkewNote
+          bases={data.priceBases}
+          jaComparadas={data.comparedPriceBases}
+          database={database}
+          conventions={conventions || window.DEFAULT_CONVENTIONS} />
+      )}
+
       <div className="card tc-picker">
         <window.SectionHeader
           overline={`Territórios · ${selection.length} de ${MAX}`}

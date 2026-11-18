@@ -26,6 +26,7 @@ from embrapa_dashboard import release
 
 from . import format as fmt
 from . import measures
+from . import price_base as pbase
 
 # Sentinel so a genuine "no release date" (None) is cached instead of re-read forever.
 _UNRESOLVED = object()
@@ -251,6 +252,9 @@ def serialize_snapshot(snap: dict) -> dict:
         "qualityTs": _quality_ts(snap.get("quality_ts")),
         "qualityByProduct": _quality_by_product(snap.get("quality_by_product")),
         "valueLabel": snap.get("value_label", ""),
+        # O mês a cujos preços a coluna corrigida está, lido na MESMA consulta que somou a
+        # série (v1.105.0). `null` em valor nominal, ou enquanto a tabela não traz a base.
+        "priceBase": snap.get("price_base"),
         # Anos em que o BRL mudou de identidade, para a coluna de valor ATIVA (vazio
         # em toda convenção que não seja nominal em R$). É o que permite à tela recusar
         # "variação acumulada" entre 1974 e 2024 em valores nominais — a razão existe,
@@ -605,8 +609,12 @@ def serialize_municipio_yearly(df: pd.DataFrame | None) -> dict:
     The basket-scoped per-(município, year) cube — the finest geography grain. The
     client joins ``cityCode`` to /geo-mesh to roll it up to the selected sub-UF level
     (meso/micro/intermediária/imediata) or down to município. Empty list when the
-    banco has no município grain (COMEX/COMTRADE)."""
-    return {"municipioYearly": _municipio_yearly(df)}
+    banco has no município grain (COMEX/COMTRADE).
+
+    ``priceBase`` dates the cube's values. It is read from Gold, not from the marts the
+    snapshot sums, and a build that stops between the two leaves them a month apart."""
+    df, base = pbase.take(df)
+    return {"municipioYearly": _municipio_yearly(df), "priceBase": pbase.payload(None, base)}
 
 
 def serialize_geo_mesh(df: pd.DataFrame | None) -> dict:
@@ -708,8 +716,13 @@ def serialize_geo_yearly(df: pd.DataFrame | None) -> dict:
     ÷1e3 → mil t, q_vol ÷1e6 → mi m³, q_count ÷1e6 → mi un) is BYTE-IDENTICAL to the
     snapshot's ``ufYearly`` — the frontend treats both interchangeably (so the cube path
     must keep q_count too, or a herd's geographic concentration zeroes out). ``{ ufYearly:
-    [] }`` when df is None/empty (no geo grain, or the basket matched nothing)."""
-    return {"ufYearly": _uf_yearly(df)}
+    [] }`` when df is None/empty (no geo grain, or the basket matched nothing).
+
+    ``priceBase`` dates the cube's values. It reads the same pre-aggregated tables as the
+    snapshot, but in a request of its own, cached on its own: across a build the two can come
+    back a month apart, and the screen draws them side by side."""
+    df, base = pbase.take(df)
+    return {"ufYearly": _uf_yearly(df), "priceBase": pbase.payload(None, base)}
 
 
 def serialize_productivity(payload: dict | None) -> dict | None:
@@ -921,6 +934,23 @@ def _flat_years(cells) -> set[int]:
     return years
 
 
+def _sum_range(df: pd.DataFrame | None) -> list[int] | None:
+    """The first and last year a multi-year sum actually ADDS — ``[1997, 2026]``.
+
+    A Sankey link or a partner total is one number over many years, and until v1.105.0 the
+    screen never said which: the selection can be open (every year the mart has), and the
+    convention can value only part of it. So the range is read off the rows themselves, the
+    years with a VALUE (``years_with_value``) — the ones the sum contains. Years the
+    convention cannot value (€ before 1999) are out of the sum, and the value-gap note
+    already names them; a range that included them would claim the sum covers them.
+    ``None`` when the frame has no such column or no valued year.
+    """
+    if _empty(df) or "years_with_value" not in df.columns:
+        return None
+    years = _flat_years(df["years_with_value"])
+    return [min(years), max(years)] if years else None
+
+
 def _value_gap(df: pd.DataFrame | None, gap_rows: pd.DataFrame | None = None) -> dict | None:
     """Where the convention's column is ABSENT inside the window, and how much trade that
     leaves out of the sum — measured in the declared US$, which never is. ``None`` when
@@ -975,6 +1005,28 @@ def _value_gap(df: pd.DataFrame | None, gap_rows: pd.DataFrame | None = None) ->
     }
 
 
+def _top_node(links_df: pd.DataFrame, code_col: str, name_col: str) -> dict | None:
+    """The origin (or destination) with the largest total over EVERY route, in ``unit`` mi.
+
+    The Sankey nodes sum only the routes the diagram draws, so a card that took the largest
+    NODE understated it — measured 2026-11-17 on COMEX exports, US$ · CPI: Mato Grosso showed
+    US$ 292,7 bi from the 40 drawn routes against US$ 373,9 bi over all 3.063 (−21,7%), and
+    under a narrower filter the cut can also crown the wrong place. ``min_count=1`` keeps a
+    place with no valued route absent instead of a measured zero; ``None`` when none has one.
+    """
+    v = pd.to_numeric(links_df["total_value"], errors="coerce")
+    codes = links_df[code_col].astype(str)
+    sums = v.groupby(codes).sum(min_count=1).dropna()
+    if sums.empty:
+        return None
+    code = sums.idxmax()
+    name = links_df.loc[codes == code, name_col].iloc[0]
+    return {
+        "label": code if name is None or pd.isna(name) else str(name),
+        "value": float(sums[code]) / 1e6,
+    }
+
+
 def serialize_flow(d: dict | None, max_links: int = 40) -> dict:
     """seam.flow_data() → FlowData. Builds the Sankey nodes/links from the
     origin→dest link frame (top ``max_links`` by value for a readable diagram).
@@ -982,21 +1034,41 @@ def serialize_flow(d: dict | None, max_links: int = 40) -> dict:
     ``unit`` is the symbol of the column the seam ACTUALLY summed (``value_column``;
     default the US$-native nominal one) and ``valueLabel`` names the convention — the
     same rule as :func:`serialize_partner`, so a US$ × IGP-M request that fell back to
-    R$ is labelled R$. ``valueGap`` names the years the convention cannot value."""
+    R$ is labelled R$. ``valueGap`` names the years the convention cannot value.
+
+    ``total`` is the sum over EVERY route, before the ``max_links`` cut, and ``routeCount``
+    how many routes carry a value. The "Fluxo total" card summed the drawn nodes until
+    v1.105.0 — the top 40 routes only, presented as the total. ``topOrigin`` / ``topDest``
+    are the largest origin and destination over every route too (:func:`_top_node`), for
+    the same reason. ``sumRange`` is the years that total adds (:func:`_sum_range`);
+    ``priceBase`` the month its values are at."""
     d = d or {}
     currency = fmt.column_currency(d.get("value_column") or "val_yearfx_usd") or "USD"
     shell = {
         "preview": False,
         "unit": fmt.CURRENCY_SYMBOL[currency],
         "valueLabel": d.get("value_label"),
+        "priceBase": d.get("price_base"),
         "valueGap": None,
         "originLabel": d.get("origin_label", "Origem"),
         "destLabel": d.get("dest_label", "Destino"),
+        "total": None,
+        "routeCount": 0,
+        "topOrigin": None,
+        "topDest": None,
+        "sumRange": None,
     }
     links_df = d.get("links")
     if _empty(links_df):
         return {**shell, "nodes": [], "links": []}
     shell["valueGap"] = _value_gap(links_df, d.get("gap_rows"))
+    shell["sumRange"] = _sum_range(links_df)
+    # Over ALL routes — the cut below is for a readable diagram, not for the cards.
+    total = _present_sum(links_df["total_value"])
+    shell["total"] = None if total is None else total / 1e6  # → unit mi
+    shell["routeCount"] = int(pd.to_numeric(links_df["total_value"], errors="coerce").notna().sum())
+    shell["topOrigin"] = _top_node(links_df, "origin_code", "origin_name")
+    shell["topDest"] = _top_node(links_df, "dest_code", "dest_name")
     df = links_df.head(max_links)
     origins: dict[str, str] = {}
     dests: dict[str, str] = {}
@@ -1050,13 +1122,16 @@ def serialize_partner(
     value_column: str | None = None,
     value_label: str | None = None,
     gap_rows: pd.DataFrame | None = None,
+    price_base: dict | None = None,
 ) -> dict:
     """seam.partner_data() → PartnerData. Partner ranking with exp/imp split.
 
     ``value_column`` is the currency × correction column the seam summed (default: the
     US$-native nominal one) and sets ``unit`` — the symbol of THAT column, not of the
     request, since a combo the mart lacks falls back to R$. ``value_label`` names the
-    convention on screen ("Valor real (IPCA) — US$ · FOB").
+    convention on screen ("Valor real (IPCA) — US$ · FOB"), and ``price_base`` the month a
+    corrected value is at (``priceBase``). ``sumRange`` is the years each partner's total
+    adds — one number over many years, and the screen has to say which.
 
     Each partner carries three comparable measures so the view can rank/display by
     Capital / Volume / Preço médio without a re-fetch when the row set is unchanged:
@@ -1081,8 +1156,10 @@ def serialize_partner(
         "flowLabel": "Parceiro",
         "unit": fmt.CURRENCY_SYMBOL[currency],
         "valueLabel": value_label,
+        "priceBase": price_base,
         # Over the WHOLE frame, before the top-N cut: the share describes the window.
         "valueGap": _value_gap(df, gap_rows),
+        "sumRange": _sum_range(df),
     }
     if _empty(df):
         return {**head, "partners": [], "belowFloor": []}
@@ -1134,9 +1211,14 @@ def serialize_products_by_uf(df: pd.DataFrame | None, max_rows: int = 100) -> di
     unchanged. Carrying q_count lets the 'Produtos do estado' ranking surface a herd by
     headcount (a value-less stock would otherwise rank all-zero). Rows arrive
     value-ranked; the view re-sorts client-side by the chosen metric over the (small)
-    product set."""
+    product set.
+
+    ``priceBase`` dates the values, read off the frame itself: this reader returns a bare
+    frame, and the município one reads Gold, which a build that stops midway leaves at a
+    different base than the marts."""
+    df, base = pbase.take(df)
     if _empty(df):
-        return {"products": []}
+        return {"products": [], "priceBase": None}
     products = [
         {
             "code": str(r.product_code),
@@ -1159,7 +1241,7 @@ def serialize_products_by_uf(df: pd.DataFrame | None, max_rows: int = 100) -> di
         }
         for r in df.head(max_rows).itertuples()
     ]
-    return {"products": products}
+    return {"products": products, "priceBase": pbase.payload(None, base)}
 
 
 def _monthly_avg(matrix: dict[int, list[float | None]], years: list[int]) -> list[float]:
@@ -1178,6 +1260,7 @@ def serialize_monthly(
     *,
     value_column: str | None = None,
     value_label: str | None = None,
+    price_base: dict | None = None,
 ) -> dict:
     """seam.monthly_data() → MonthlyData. year→12 monthly values + the 12-month avg,
     for BOTH Capital (value, millions of ``unit``) and Volume (net weight, mil t), so the
@@ -1185,12 +1268,14 @@ def serialize_monthly(
 
     ``unit`` is the symbol of the column the seam ACTUALLY summed (``value_column``;
     default the US$-native nominal one) and ``valueLabel`` names the convention — the
-    same rule as :func:`serialize_partner` / :func:`serialize_flow`."""
+    same rule as :func:`serialize_partner` / :func:`serialize_flow` — and ``priceBase`` the
+    month a corrected value is at."""
     currency = fmt.column_currency(value_column or "val_yearfx_usd") or "USD"
     base = {
         "preview": False,
         "unit": fmt.CURRENCY_SYMBOL[currency],
         "valueLabel": value_label,
+        "priceBase": price_base,
         "valueGap": None,
         "weightUnit": "mil t",
         "months": list(range(1, 13)),

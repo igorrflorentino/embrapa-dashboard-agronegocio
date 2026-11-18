@@ -61,7 +61,8 @@ The macro `dbt/macros/generate_schema_name.sql` enforces:
 - **Columns:** one row per `(reference_year, state_acronym, city_code, product_code)`. `dbt/models/gold/_gold.yml` is the authoritative column list — a hard-coded count here goes stale silently (this line read "28" while prod carried 31).
 - **Monetary conventions:**
   - `val_yearfx_*` — raw value ÷ year's average FX. NULL pre-1994.
-  - `val_real_{ipca,igpm,igpdi}_*` — value projected to today via chain-linked IPCA/IGP-M/IGP-DI index, converted to a foreign currency at today's FX. **Use this for cross-year comparison.**
+  - `val_real_{ipca,igpm,igpdi}_*` — value deflated by the chain-linked IPCA/IGP-M/IGP-DI index (the MEAN of the record year's twelve months over the index's LATEST month) and, for USD/EUR, converted at the latest PTAX in the base. **Use this for cross-year comparison.**
+  - **Price base (v1.105.0):** every Gold carries `{ipca,igpm,igpdi,cpi,hicp}_base_month` + `fx_{usd,eur}_base_date` (constant DATE columns, from `inflation_latest_cte()` / `fx_latest_cte()` in `macros/annual_deflation_ctes.sql`), and every mart carries their `max()`. A NEW Gold or mart that outputs a `val_real_*` column must carry the seven too — `tests/test_price_base.py` derives the list from the SQL and fails otherwise. Never write a month into a persisted description (it would change the build fingerprint every build); the month lives in the data.
   - `val_real_cpi_usd` / `val_real_hicp_eur` — converted at the record's FX, then deflated by US CPI-U / euro-area HICP. An index only corrects the money of the economy it measures, so these pair with one currency each and `val_real_cpi_brl` does not exist. Behind `enable_foreign_inflation` (build-order gate; NULL until the first ingest).
 - **Naming:** `gold_<source>_<form>` where `<form>` is `production` (output measurement, e.g. `gold_pevs_production`) or `flows` (origin→destination trade, e.g. `gold_comex_flows`).
 

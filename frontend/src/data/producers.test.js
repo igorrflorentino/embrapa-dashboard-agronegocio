@@ -389,3 +389,58 @@ describe('produtores data-blocked devolvem AUSÊNCIA nas medidas', () => {
     expect(l.preview).toBe(true);
   });
 });
+
+// The cubes' rows and the month their corrected values are at come from ONE response: the
+// price-base producers reuse the cube's request helper, so they never cost a second fetch and
+// can never describe a different read than the rows on screen (v1.105.0).
+describe('the cubes and their price base read one response', () => {
+  const OUTUBRO = { column: null, month: '2026-10', fxDate: null };
+
+  it('geoYearly and geoYearlyPriceBase: one fetch, the rows and the month', async () => {
+    const f = vi.fn(() => jsonRes({ ufYearly: [{ year: 2024, uf: 'PA', value: 1 }], priceBase: OUTUBRO }));
+    const w = await loadAll(f);
+    w.bancoById = () => ({ provides: ['geo'] });
+    expect(w.geoYearly('ibge_pevs', {})).toBeNull();            // cold
+    expect(w.geoYearlyPriceBase('ibge_pevs', {})).toBeNull();   // same key: no second fetch
+    expect(f).toHaveBeenCalledTimes(1);
+    expect(urlOf(f)).toContain('/api/geo-yearly');
+    await tick();
+    expect(w.geoYearly('ibge_pevs', {})).toEqual([{ year: 2024, uf: 'PA', value: 1 }]);
+    expect(w.geoYearlyPriceBase('ibge_pevs', {})).toEqual(OUTUBRO);
+    expect(f).toHaveBeenCalledTimes(1);
+  });
+
+  it('a payload without the base (an app ahead of the build) reads as unknown', async () => {
+    const f = vi.fn(() => jsonRes({ ufYearly: [] }));
+    const w = await loadAll(f);
+    w.bancoById = () => ({ provides: ['geo'] });
+    w.geoYearly('ibge_pevs', {});
+    await tick();
+    expect(w.geoYearlyPriceBase('ibge_pevs', {})).toBeNull();
+  });
+
+  it('municipioYearly and municipioYearlyPriceBase share the POST', async () => {
+    const f = vi.fn(() => jsonRes({
+      municipioYearly: [{ year: 2021, cityCode: '1500107', uf: 'PA', value: 9 }], priceBase: OUTUBRO,
+    }));
+    const w = await loadAll(f);
+    w.bancoById = () => ({ provides: ['geo'] });
+    expect(w.municipioYearly('ibge_pevs', {}, ['1500107'], [2019, 2021])).toBeNull();
+    expect(w.municipioYearlyPriceBase('ibge_pevs', {}, ['1500107'], [2019, 2021])).toBeNull();
+    expect(f).toHaveBeenCalledTimes(1);
+    expect(f.mock.calls[0][1].method).toBe('POST');
+    await tick();
+    expect(w.municipioYearlyPriceBase('ibge_pevs', {}, ['1500107'], [2019, 2021])).toEqual(OUTUBRO);
+    expect(w.municipioYearly('ibge_pevs', {}, ['1500107'], [2019, 2021])).toHaveLength(1);
+    expect(f).toHaveBeenCalledTimes(1);
+  });
+
+  it('a banco without the geo grain asks nothing and has no base', async () => {
+    const f = vi.fn(() => jsonRes({}));
+    const w = await loadAll(f);
+    w.bancoById = () => ({ provides: [] });
+    expect(w.geoYearlyPriceBase('un_comtrade', {})).toBeNull();
+    expect(w.municipioYearlyPriceBase('un_comtrade', {}, ['1500107'])).toBeNull();
+    expect(f).not.toHaveBeenCalled();
+  });
+});

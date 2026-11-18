@@ -18,7 +18,7 @@ from embrapa_dashboard.serving import gateway
 from embrapa_dashboard.serving import sql as sqlbuild
 from embrapa_dashboard.serving.cache import cache
 
-from . import measures, seam_base
+from . import measures, price_base, seam_base
 from .registries import Banco, banco_by_id
 from .seam_base import _LIVE_SOURCES
 
@@ -82,6 +82,7 @@ def cross_series(
     if not cov:
         return None
     yy0, yy1 = (y0 or cov[0]), (y1 or cov[1])
+    points, base = _cross_points(banco_id, metric_id, yy0, yy1, unit, uf_codes)
     return {
         "banco": banco_id,
         "banco_short": banco.short,
@@ -91,17 +92,22 @@ def cross_series(
         "unit": unit,
         "family": metric["family"],
         "coverage": cov,
-        "points": _cross_points(banco_id, metric_id, yy0, yy1, unit, uf_codes),
+        "points": points,
+        # The month the corrected series is at (only PEVS `prod_value` is corrected — every
+        # other cross metric is a quantity or the declared US$). The metric's own text says
+        # "Valor real (IPCA)", and the screen completes it with this month (v1.105.0).
+        "priceBase": base,
     }
 
 
 def _cross_points(
     banco_id: str, metric_id: str, y0: int, y1: int, unit: str, uf_codes: tuple = ()
-) -> list[dict]:
+) -> tuple[list[dict], dict | None]:
+    """The series points, and the ``priceBase`` payload of a corrected one (else None)."""
     if banco_id == "ibge_pevs":
         return _pevs_cross_points(metric_id, y0, y1, uf_codes)
     if metric_id == "exp_price":
-        return _exp_price_cross_points(y0, y1, uf_codes)
+        return _exp_price_cross_points(y0, y1, uf_codes), None
     df = gateway.fetch_cross_series(
         f"{banco_id}:{metric_id}", year_start=y0, year_end=y1, uf_codes=uf_codes
     )
@@ -110,26 +116,34 @@ def _cross_points(
     return [
         {"y": int(r.reference_year), "v": measures.scale_present(r.value, scale)}
         for r in df.itertuples()
-    ]
+    ], None
 
 
-def _pevs_cross_points(metric_id: str, y0: int, y1: int, uf_codes: tuple = ()) -> list[dict]:
-    """PEVS cross points: value (÷1e9) or per-family native quantity (÷1e3 / ÷1e6)."""
+def _pevs_cross_points(
+    metric_id: str, y0: int, y1: int, uf_codes: tuple = ()
+) -> tuple[list[dict], dict | None]:
+    """PEVS cross points: value (÷1e9) or per-family native quantity (÷1e3 / ÷1e6) — and,
+    for the value, its price base."""
     if metric_id == "prod_value":
         df = gateway.fetch_production_overview(
-            year_start=y0, year_end=y1, value_column="val_real_ipca_brl", uf_codes=uf_codes
+            year_start=y0,
+            year_end=y1,
+            value_column="val_real_ipca_brl",
+            uf_codes=uf_codes,
+            with_price_base=True,
         )
+        df, base = price_base.take(df)
         return [
             {"y": int(r.reference_year), "v": measures.scale_present(r.total_value, 1e9)}
             for r in df.itertuples()
-        ]
+        ], price_base.payload("val_real_ipca_brl", base)
     fam = "massa" if metric_id == "prod_mass" else "volume"
     scale = 1e3 if metric_id == "prod_mass" else 1e6
     pts = gateway.fetch_product_timeseries(
         "ibge_pevs", year_start=y0, year_end=y1, value_column="val_real_ipca_brl", uf_codes=uf_codes
     )
     sub = pts[pts["family"] == fam].groupby("reference_year")["total_qty_native"].sum()
-    return [{"y": int(y), "v": float(v) / scale} for y, v in sub.items()]
+    return [{"y": int(y), "v": float(v) / scale} for y, v in sub.items()], None
 
 
 def _exp_price_cross_points(y0: int, y1: int, uf_codes: tuple = ()) -> list[dict]:

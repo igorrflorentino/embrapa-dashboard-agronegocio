@@ -35,12 +35,17 @@
 --   • val_yearfx_*   = primary_value_usd converted at THAT year's avg FX. usd is
 --                      the source value; brl/eur triangulate through BRL.
 --                      Nominal — no inflation correction.
---   • val_real_cpi_usd = the declared US$ projected to today by US CPI — no FX at
---                     all, so it has no pre-1994 hole; val_real_hicp_eur is the
---                     euro counterpart (one year-FX conversion, then HICP).
---   • val_real_{ipca,igpm,igpdi}_* = USD → BRL at the year FX → projected to today
---                      via the BCB chain index → optionally reconverted to
---                      USD/EUR at TODAY's FX. Use these for cross-year comparison.
+--   • val_real_cpi_usd = the declared US$ brought to the CPI's latest month by US
+--                     CPI — no FX at all, so it has no pre-1994 hole;
+--                     val_real_hicp_eur is the euro counterpart (one year-FX
+--                     conversion, then HICP).
+--   • val_real_{ipca,igpm,igpdi}_* = USD → BRL at the year FX → brought to the
+--                      index's latest month via the BCB chain index → optionally
+--                      reconverted to USD/EUR at the LATEST PTAX rate. Use these
+--                      for cross-year comparison.
+--   • *_base_month / fx_*_base_date = that latest month / PTAX day, per series —
+--                      the price base the val_real columns are expressed at. It
+--                      floats with every build; the columns date it (v1.105.0).
 --
 -- NULL semantics: missing year FX (EUR pre-1999) → NULL that
 -- currency's columns; missing year inflation index → NULL the real_* columns;
@@ -119,6 +124,15 @@ enriched as (
         fy.brl_per_eur_avg,
         fxl.brl_per_usd_current,
         fxl.brl_per_eur_current,
+        -- The price base: constant across rows, read from the SAME CTE rows as the
+        -- *_current values the real columns below divide by.
+        il.ipca_base_month,
+        il.igpm_base_month,
+        il.igpdi_base_month,
+        il.cpi_base_month,
+        il.hicp_base_month,
+        fxl.fx_usd_base_date,
+        fxl.fx_eur_base_date,
 
         -- Nominal BRL at the year-average FX (US$ → R$ of that year). Pre-1994
         -- the PTAX series is denominated in the old currencies (Cz$/NCz$/Cr$/CR$),
@@ -126,7 +140,7 @@ enriched as (
         -- columns built on it), mirroring gold_pevs_production's year-FX guard.
         case when b.reference_year >= 1994
             then b.primary_value_usd * fy.brl_per_usd_avg end                                 as val_nominal_brl,
-        -- Real BRL today: nominal BRL projected forward via each inflation chain.
+        -- Real BRL at the index's latest month: nominal BRL brought forward via each chain.
         case when b.reference_year >= 1994
             then (b.primary_value_usd * fy.brl_per_usd_avg)
                 * safe_divide(il.ipca_current, iy.ipca_year_avg) end                          as val_real_ipca_brl,
@@ -141,7 +155,7 @@ enriched as (
         -- The source value here IS US$ — a customs declaration, not a conversion — so
         -- correcting it by US inflation is the one reading of "real dollars" that never
         -- touches an exchange rate at all. Every val_real_*_usd above is the same value
-        -- pushed through TWO FX rates (the year's, into R$; today's, back out) and
+        -- pushed through TWO FX rates (the year's, into R$; the latest, back out) and
         -- deflated by Brazilian prices in between; it answers what the trade was worth
         -- in Brazilian purchasing power, which is a legitimate question and a different
         -- one. Note what that costs them and this one does not: they are NULL before
@@ -222,7 +236,7 @@ select
     val_nominal_brl                                        as val_yearfx_brl,
     safe_divide(val_nominal_brl, brl_per_eur_avg)          as val_yearfx_eur,
 
-    -- ── Real via IPCA (comparable across years, in today's units) ────────────
+    -- ── Real via IPCA (comparable across years, at ipca_base_month's prices) ─
     val_real_ipca_brl                                      as val_real_ipca_brl,
     safe_divide(val_real_ipca_brl, brl_per_usd_current)    as val_real_ipca_usd,
     safe_divide(val_real_ipca_brl, brl_per_eur_current)    as val_real_ipca_eur,
@@ -237,7 +251,7 @@ select
     safe_divide(val_real_igpdi_brl, brl_per_usd_current)   as val_real_igpdi_usd,
     safe_divide(val_real_igpdi_brl, brl_per_eur_current)   as val_real_igpdi_eur,
 
-    -- ── Real via CPI (EUA) — o US$ declarado, em dólares de hoje ─────────────
+    -- ── Real via CPI (US) — the declared US$, at cpi_base_month's prices ─────
     val_real_cpi_usd                                       as val_real_cpi_usd,
 
     -- ── Real via HICP (zona do euro) ─────────────────────────────────────────
@@ -273,7 +287,7 @@ select
     -- quantity". A missing VALUE still wins (the macro's INCOMPLETE / MISSING_VALUE), as in
     -- COMEX. Gated with the rest of the Q1 taxonomy: with the feature off, the model emits
     -- the bare macro expression it emitted before, and no MISSING_WEIGHT.
-    {%- set base_flag = data_quality_flag('coalesce(qty_native, net_weight_kg)', 'primary_value_usd',
+    {% set base_flag = data_quality_flag('coalesce(qty_native, net_weight_kg)', 'primary_value_usd',
          quality_qty_level('primary_value_usd', 'net_weight_kg'),
          quality_val_level('primary_value_usd', 'net_weight_kg'),
          quality_scored('primary_value_usd', 'net_weight_kg')) %}
@@ -286,6 +300,18 @@ select
     {{ base_flag }}
     {%- endif %}                                             as data_quality_flag,
     source_rows,
+
+    -- ── Price base (constant per build, like last_refresh) ───────────────────
+    -- The month each index's val_real columns are expressed at, and the PTAX day the
+    -- cross columns (val_real_{ipca,igpm,igpdi}_{usd,eur}) convert at. In the row so a
+    -- reader dates a corrected number from the same table it read the number from.
+    ipca_base_month,
+    igpm_base_month,
+    igpdi_base_month,
+    cpi_base_month,
+    hicp_base_month,
+    fx_usd_base_date,
+    fx_eur_base_date,
     last_refresh
 
 from {% if var('enable_quality_outliers', false) -%}

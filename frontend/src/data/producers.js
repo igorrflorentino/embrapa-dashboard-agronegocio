@@ -155,6 +155,24 @@ function axisKey(ax) {
 }
 
 window.geoYearly = function geoYearly(bancoId, summary) {
+  const key = geoYearlyRequest(bancoId, summary);
+  const data = key ? get(key) : null;
+  return data && Array.isArray(data.ufYearly) ? data.ufYearly : null;
+};
+
+// The month the basket cube's corrected values are at (`priceBase`, v1.105.0), or null until
+// it lands (and for a nominal convention). Same key as window.geoYearly, so it reads the SAME
+// response, never a second fetch. The cube reads the same pre-aggregated tables as the
+// snapshot, but in a request cached on its own: across a build the two can come back at
+// different months, and window.PriceBaseSkewNote is how the screen says so.
+window.geoYearlyPriceBase = function geoYearlyPriceBase(bancoId, summary) {
+  const key = geoYearlyRequest(bancoId, summary);
+  const data = key ? get(key) : null;
+  return (data && data.priceBase) || null;
+};
+
+// The basket cube's cache key, with its fetch ensured — null for a banco with no geo grain.
+function geoYearlyRequest(bancoId, summary) {
   const b = window.bancoById && window.bancoById(bancoId);
   if (!b || !(b.provides || []).includes('geo')) return null;
   const conv = window.dataStore && window.dataStore.conv
@@ -177,9 +195,8 @@ window.geoYearly = function geoYearly(bancoId, summary) {
       ...ax,
     })}`,
   );
-  const data = get(key);
-  return data && Array.isArray(data.ufYearly) ? data.ufYearly : null;
-};
+  return key;
+}
 
 // ── IBGE municipal mesh universe (sub-UF + município cascade) ──────────────────
 // One-shot fetch of every município → UF + grande região + BOTH sub-UF divisions
@@ -220,6 +237,24 @@ window.comtradeCountries = function comtradeCountries() {
 // unchanged. It is part of the cache key, so the one-year map and the full-history
 // heatmap coexist instead of evicting each other.
 window.municipioYearly = function municipioYearly(bancoId, summary, cityCodes, years) {
+  const key = municipioYearlyRequest(bancoId, summary, cityCodes, years);
+  const data = key ? get(key) : null;
+  return data && Array.isArray(data.municipioYearly) ? data.municipioYearly : null;
+};
+
+// The month the cube's corrected values are at (`priceBase`, v1.105.0), or null until the
+// cube lands (and for a nominal convention). Same key as window.municipioYearly, so it reads
+// the SAME response, never a second fetch. The cube reads the analytical base directly while
+// the snapshot reads the pre-aggregated tables: the two can come back at different months
+// across a build, and window.PriceBaseSkewNote is how the screen says so.
+window.municipioYearlyPriceBase = function municipioYearlyPriceBase(bancoId, summary, cityCodes, years) {
+  const key = municipioYearlyRequest(bancoId, summary, cityCodes, years);
+  const data = key ? get(key) : null;
+  return (data && data.priceBase) || null;
+};
+
+// The cube's cache key, with its fetch ensured — null when there is nothing to fetch.
+function municipioYearlyRequest(bancoId, summary, cityCodes, years) {
   const b = window.bancoById && window.bancoById(bancoId);
   if (!b || !(b.provides || []).includes('geo')) return null;
   const conv = window.dataStore && window.dataStore.conv
@@ -256,9 +291,8 @@ window.municipioYearly = function municipioYearly(bancoId, summary, cityCodes, y
     })}`,
     { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cityCodes }) },
   ]);
-  const data = get(key);
-  return data && Array.isArray(data.municipioYearly) ? data.municipioYearly : null;
-};
+  return key;
+}
 
 // ── cross-source comparable series ────────────────────────────────────────────
 window.crossSeries = function crossSeries(bancoId, metricId, opts = {}) {

@@ -192,8 +192,10 @@ município passes the cascade iff it clears every active facet (intersection).
   ~4 KB request-line limit → 414). A **non-empty `cityCodes` is required** (so the backend
   never scans the full ~146k-row município grid). Same `/1e6`-style scaling as `ufData`
   (§3.4). The client rolls these city rows up to whichever sub-UF level is active.
-  `{ municipioYearly: [] }` for a banco with no município grain (COMEX/COMTRADE) or a
-  not-built table.
+  `{ municipioYearly: [], priceBase: null }` for a banco with no município grain
+  (COMEX/COMTRADE) or a not-built table. `priceBase` (§3.8) is the cube's OWN: it reads
+  Gold, not the snapshot's mart, so a build landing between the two requests can date them
+  differently — the screen names both rather than borrowing one.
 
 ### 3.7 `valueGap` — the periods the active convention cannot value (every banco)
 `{ years, partial, months, valuedRange, share: null }` or `null`.
@@ -236,12 +238,61 @@ nominal one covered through August, on every COMEX screen but the three trade vi
   `MainScreen` renders one `ValueGapNote` under the conventions strip for every COMEX
   view except the three trade views, which carry their own (with the share — §4).
 
+### 3.8 `priceBase` — the month a corrected value is at (every value payload, v1.105.0)
+`{ column, month: 'YYYY-MM', fxDate: 'YYYY-MM-DD' | null }` or `null`.
+
+A deflated value is not "in today's money": it is at the prices of ONE month, the latest
+month of its index when Gold was built, and that month moves with every build that ingests
+a new one (the 2026-11-17 build moved every IPCA value from September's prices to October's,
++0,14%). So the base travels WITH the data:
+
+- Gold stamps it on every row — `{ipca,igpm,igpdi,cpi,hicp}_base_month` (the first day of
+  the latest month of EACH index: they follow different publisher calendars) and
+  `fx_{usd,eur}_base_date` (the single PTAX day a cross column converts at). The marts carry
+  them as `max()`; `assert_price_base_single_valued` fails the build if one ever holds two.
+- Each reader that sums a corrected column reads it back with `max()` in the SAME select
+  (`serving.sql._price_base_select`), opted in with `with_price_base=True`. `price_base.take`
+  reads it off the frame and DROPS the two columns, so nothing downstream ever meets them.
+- `column` names the value column the base dates, so the screen can refuse to borrow a base
+  for a different convention (`window.priceBaseFor`). It is `null` on the bare-frame
+  payloads (`products`, `municipioYearly`), whose serializer never learns the column — the
+  base still belongs to the request's own convention.
+- `fxDate` is set only for a cross column (a Brazilian index under US$ or €). An
+  own-currency column converts at each period's rate and has no single day.
+
+`null` means unknown, never a guess: a nominal or quantity column (no month to name), an
+empty frame, two distinct months in one frame, or a mart that predates v1.105.0 — the app and
+the marts deploy in parallel, so the reader asks the table schema first (free metadata) and
+fails closed. The screen then prints the honest fallback, "a preços do mês mais recente do
+índice". Where the payload carries its own `valueLabel` (snapshot, §4.1–§4.3) the server
+already appended " · a preços de outubro de 2026" — or that fallback — as its LAST clause.
+
+What a price base is NOT: an interest rate. Deflating changes the unit of measure; it adds no
+return and is not the present value of finance.
+
+**Which payloads carry one.** Every request of its own that sums a corrected column: the
+snapshot (from its overview read), flows, partners, the monthly profile, the cross series,
+the município cube, the two product rankings (by UF and by município) and the UF cube
+(`geo-yearly` → `{ ufYearly, priceBase }`). Not the one-product UF ranking of Perfil do
+produto (`/api/product-uf`), a single card read from the same mart as the snapshot.
+
+**What can still disagree, and for how long.** The server caches each READ for 10 minutes,
+per instance (`CACHE_DEFAULT_TIMEOUT`). Only a build that ingests a new index month moves the
+base, and for up to 10 minutes after it two reads can sit on either side of it. Between
+separate requests the screen sees it and says so: `window.PriceBaseSkewNote` compares the
+snapshot with the cubes `applyFilters` reads (in `MainScreen`) and with a perspective's own
+reads (Perfil do território, Geografia, Comparação de territórios), and the CSV names no month
+when they differ. Inside ONE payload it cannot: the snapshot is assembled from several cached
+reads (overview, per-product series, per-UF rows), and only the overview's base is stamped.
+The difference is one month of the index while it lasts.
+
 ---
 
 ## 4. Generic adapters (brief §3)
 
 ### 4.1 `flowData` → Sankey origin→destination
-`{ preview, unit, valueLabel, originLabel, destLabel, nodes, links }`.
+`{ preview, unit, valueLabel, priceBase, originLabel, destLabel, nodes, links, total,
+routeCount, topOrigin, topDest, sumRange }`.
 - COMEX: origin = `state_acronym` (UF), dest = `country_name` — exports only.
 - COMTRADE: origin = `reporter_name`, dest = `partner_name`.
 - value = `SUM(<value column>)`, the column `currency` + `correction` resolve through
@@ -253,18 +304,29 @@ nominal one covered through August, on every COMEX screen but the three trade vi
 - `valueGap` = `{ years, share }` or `null` — same meaning as in §4.2. A link with no value
   in the convention (traded only in those years) is not drawn: it lies wholly inside the
   gap the view names.
+- `total` = Σ of EVERY route's value in **`unit` mi** (`null` when none has one), and
+  `routeCount` = how many routes have a value — both computed BEFORE the diagram's cut to
+  the 40 largest. Until v1.105.0 the "Fluxo total" card summed only the drawn routes.
+- `topOrigin` / `topDest` = `{ label, value }` of the origin and destination with the largest
+  total over EVERY route (`unit` mi), or `null`. The largest NODE sums only the drawn routes:
+  on 2026-11-17 the "Maior origem" card read Mato Grosso US$ 292,7 bi against US$ 373,9 bi
+  over all 3.063 routes (COMEX exports, US$ · CPI).
+- `sumRange` = `[first, last]` year actually summed, or `null` (v1.105.0): a multi-year sum
+  must say its period. The years the convention cannot value are `valueGap`'s, not these.
+- `priceBase` = §3.8, and `valueLabel` already ends with it.
 
 ### 4.2 `partnerData` → partner ranking
-`{ preview, flowLabel, unit, valueLabel, partners: [{ name, exp, imp, value, weight, price,
-pricedShare }], belowFloor: [...] }`.
+`{ preview, flowLabel, unit, valueLabel, priceBase, sumRange, partners: [{ name, exp, imp,
+value, weight, price, pricedShare }], belowFloor: [...] }`.
 
 The ranking DIMENSION is chosen server-side (`/api/partners?metric=value|weight|price` →
 `rank_by`), because the row order IS the top-N cut: the SQL has no `LIMIT` and the
 serializer's `head(max_rows)` does the cutting, so re-sorting a value-ranked page in the
 client would drop the niche high-price buyer the price ranking exists to find.
 
-The VALUATION follows the conventions strip: `currency` + `correction` (default BRL·IPCA,
-same as `/snapshot`) resolve the summed column through `seam.effective_value_column`, and
+The VALUATION follows the conventions strip: `currency` + `correction` (default R$ · Nominal
+since v1.88.0, same as `/snapshot`) resolve the summed column through
+`seam.effective_value_column`, and
 every monetary measure — exp, imp, value, the priced share and the price numerator — reads
 that ONE column. Until v1.77.0 the endpoint took neither and always summed nominal US$
 while the strip claimed "IPCA"; a historical ranking is where that hurts most, because the
@@ -272,7 +334,11 @@ oldest flows get the largest correction and the order itself can change.
 
 - `unit` = symbol of the column ACTUALLY summed (R$ / US$ / €) — not of the request: a
   combo the mart lacks (US$ × IGP-M) falls back to R$, and the unit follows it.
-- `valueLabel` = the convention as the view prints it, e.g. "Valor real (IPCA) — US$ · FOB".
+- `valueLabel` = the convention as the view prints it, e.g. "Valor real (CPI · inflação dos
+  EUA) — US$ · FOB … · a preços de outubro de 2026" — the price base (§3.8) is always the
+  LAST clause, after the FOB/CIF note.
+- `priceBase` = §3.8. `sumRange` = `[first, last]` year actually summed, or `null` — the
+  ranking is a multi-year sum, and a sum must say its period (v1.105.0).
 - `valueGap` = `{ years, partial, share }` or `null`: the years inside the window the
   convention cannot value, which of them are missing only IN PART (`partial`), and the share
   of the window's trade — measured in the declared US$, which never goes missing — they
@@ -313,7 +379,8 @@ oldest flows get the largest correction and the order itself can change.
 COMEX Gold has `reference_month`. Build `matrix[year][1..12]`, `monthlyAvg[12]`,
 `series[{ym,y,m,v}]` from `SUM(<value column>)` by (year, month), in **`unit` mi**.
 - The column follows the conventions strip like §4.1/§4.2: `unit` = symbol of the column
-  actually summed, `valueLabel` = the convention on screen.
+  actually summed, `valueLabel` = the convention on screen, `priceBase` = §3.8 (COMEX
+  deflates month by month, but every month is brought to the prices of the same base month).
 - `valueGap` = `{ years, share }` or `null` (§4.2). A month whose rows exist but the
   convention cannot value (€ sem correção before 1999) is `null` in `matrix` and out of
   `monthlyAvg`; a month with no ROW stays `0` — COMEX lists only what was traded. Until
@@ -440,11 +507,12 @@ wants the abbreviations {N, NE, CO, SE, S} — map in the BFF.
 
 Both flows tables share the monetary conventions: `val_yearfx_*` (nominal at the
 year/month FX), `val_real_{ipca,igpm,igpdi}_*` (deflated by a Brazilian index, then
-converted at today's FX) and `val_real_cpi_usd` / `val_real_hicp_eur` (converted at the
-record's FX, then deflated by the foreign index). This is **not** a
+converted at the latest PTAX in the base) and `val_real_cpi_usd` / `val_real_hicp_eur`
+(converted at the record's FX, then deflated by the foreign index). This is **not** a
 `correction × currency` grid — a foreign index pairs with its own currency only. Use any
-`val_real_*` for cross-year comparison, naming which. See `dbt/models/gold/_gold.yml` for
-per-column docs.
+`val_real_*` for cross-year comparison, naming which — and at which base month: every
+Gold carries `{ipca,igpm,igpdi,cpi,hicp}_base_month` and `fx_{usd,eur}_base_date` (§3.8).
+See `dbt/models/gold/_gold.yml` for per-column docs.
 
 - **gold_pevs_production**: reference_year, reference_date, state_acronym, state_name,
   region, city_code, city_name, product_code, product_description, family, unit_native,
