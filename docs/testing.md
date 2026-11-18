@@ -249,24 +249,78 @@ different, so a clean build exits 0, and an exit 2 means something really failed
 A green CI proves the project **compiles** under the new version. It does not prove the numbers
 are the same. For a `dbt-core` or `dbt-bigquery` bump (the adapter writes the SQL of every
 materialization), compare a full dev build against prod built from the SAME Bronze, before
-the merge. This is how #476 (dbt-core 1.12) and #481 (dbt-bigquery 1.12.1) were validated:
+the merge. This is how #476 (dbt-core 1.12), #481 (dbt-bigquery 1.12.1) and #575 (dbt-core
+1.12.7 + dbt-bigquery 1.12.4) were validated:
 
 1. Install the PR's lock (`gh pr checkout <n>` + `uv sync --frozen --all-extras`) and run a
    full dev build with the prod vars in ONE mapping:
    `bash scripts/dbt-with-env.sh build --target dev --vars '{enable_curation: true, enable_foreign_inflation: true}'`.
-   Make sure no ingestion ran between the last prod build and this one.
+   Make sure no ingestion ran between the last prod build and this one. Measured on #575:
+   21.8 GiB billed, 6.5 min.
 2. **Metadata (free):** compare `row_count` / `size_bytes` of `dbt_dev_{silver,gold,serving}.__TABLES__`
    against `{silver,gold,serving}.__TABLES__`. Tables present only in prod can be leftovers of
    removed models (check that no file in `dbt/` still produces them).
 3. **Content:** per table, `SELECT BIT_XOR(FARM_FINGERPRINT(TO_JSON_STRING(t)))` over all
-   columns except `last_refresh`, on each side (~14 GiB billed for the whole project). Equal
-   fingerprints mean identical content.
+   columns except `last_refresh`, on each side (~14 GiB billed for the whole project in
+   2026-09; 27.1 GiB for 41 tables on #575). Equal fingerprints mean identical content.
+   Leave out `serving_quality_history`: it only accumulates, so dev and prod never match.
 4. **For tables whose fingerprint differs:** join dev and prod on every non-FLOAT64 column,
    and per FLOAT64 column take `max(abs(dev - prod) / abs(prod))`, counting rows above 1e-9
    and nulls present on one side only. Expect differences around 1e-15 in the Gold facts and
    marts. BigQuery's parallel AVG/SUM (the yearly FX mean, the mart aggregates) varies in the
    last bit between ANY two builds, so that is noise. Anything above 1e-9, a row with no
    partner, or a changed non-float column (e.g. `data_quality_flag`) is a real change.
+
+### Reading a Dependabot group PR's lock
+
+A grouped `uv` PR can DOWNGRADE packages under a "Bump" title, and its own table can misstate
+a version. #567 took `dbt-bigquery` 1.12.1 → 1.11.1 and `google-cloud-storage` 3.1.1 → 2.19.0
+to fit a `tenacity` 9.2.1 target (`google-genai` 2.x caps `tenacity<9.2`), while its table
+advertised storage 3.17.1. Before merging one:
+
+1. Diff `uv.lock` against `main` and list every package that goes DOWN, is ADDED or is
+   REMOVED, not only the ones the title names.
+2. To find what forces a downgrade, copy `pyproject.toml`, `uv.lock` and `README.md` to a
+   scratch directory, add the suspect target as a requirement (e.g. `tenacity>=9.2.1`) and
+   run `uv lock` there. Since v1.107.2 the floor `dbt-bigquery>=1.12` makes uv refuse and
+   print the conflict chain; without the floor it reproduces the PR's lock. Drop the
+   constraint again and watch the downgrade disappear: only then is the cause measured.
+3. If one target forces the downgrade, take the others in a PR of your own (#575 took 16 of
+   #567's 17) and close the group PR with a pointer. Closing a GROUP PR does not make
+   Dependabot ignore those versions: it asks for them again on its next run.
+
+### Validating a runtime-library upgrade (`google-cloud-*`, `pandas`, `pyarrow`)
+
+The dev × prod build above exercises dbt and the adapter, not the Python that the dashboard
+and the ingestion Job run. For those libraries, run the same reads and writes under BOTH
+lockfiles and diff the outputs. This is how #575 was validated:
+
+1. **Old environment from `main`'s lock**, with the SAME project code on both sides. From a
+   checkout of `main` (or a scratch copy of its `pyproject.toml`, `uv.lock` and `README.md`):
+   `uv export --frozen --no-hashes --all-extras --all-groups --no-emit-project --format requirements-txt > req.txt`,
+   then `uv venv <scratch>/oldenv --python 3.12`,
+   `uv pip install --python <scratch>/oldenv -r req.txt` and
+   `uv pip install --python <scratch>/oldenv --no-deps -e <worktree>`.
+   The new environment is the PR's own (`uv sync --frozen --all-extras`).
+2. **One probe script, run in each environment**, writing a JSON of digests. The #575 script
+   lived outside the repo; this is what it covered:
+   - the Flask app's own routes through `create_app().test_client()` against PROD data:
+     snapshots of the five bancos in several conventions, flows, partners, seasonality,
+     cross-source series and views, the raw-table and seed readers, mesh and município;
+   - the BCB raw trail in GCS: list, provenance metadata, bytes, and the frame `pandas` reads;
+   - the Parquet that `land_raw` writes, round-tripped locally;
+   - `load_dataframe` into a DEV table (`dbt_dev_silver.zz_probe_*`, which the dataset
+     expires after 7 days), read back through the gateway.
+
+   It needs `GCP_PROJECT_ID`, `GCS_BUCKET`, `BQ_LOCATION=us-central1` and an EMPTY
+   `GCP_IMPERSONATION_SA`.
+3. **Diff the two JSONs.** On #575 the 35 API responses and the GCS and Bronze checks were
+   identical; the only expected difference is the `pandas` version the Parquet records.
+4. **Run `pytest` under both locks** and compare the "warnings summary" sections, not the
+   totals: a new deprecation warning is information to read, not a failure.
+5. **Not covered:** uploads to GCS (`upload_from_file`, `upload_from_filename`, the metadata
+   `patch`). The only bucket is prod's, so they keep their mocked tests, and the first real
+   upload is the next scheduled ingestion; `embrapa doctor`'s heartbeat flags a failure.
 
 ### Test ingestion
 ```bash
