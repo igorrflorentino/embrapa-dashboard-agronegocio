@@ -6,6 +6,8 @@
 // garantia isso em produção, mas os testes importam dataFilters sozinho — a
 // dependência precisa ser real, não convencional.
 import './seriesUtils.js';
+// countGroups: the basket's counts, split by what they count (countUnits.js).
+import './countUnits.js';
 //
 // Input shape (from FilterMenu.onApply):
 //   { basket:    string[]  // product codes;  null = all · [] = none
@@ -93,11 +95,17 @@ import './seriesUtils.js';
       // `value` nasce null (ausente) e só vira número quando algum município do
       // recorte tiver valor — mesma regra de sumStates/addPresent. As quantidades
       // nascem em 0 porque ali o zero é um zero de verdade.
-      if (!row) { row = { uf: r.uf, year: r.year, value: null, q_mass: 0, q_vol: 0, q_count: 0 }; byUfYear.set(key, row); }
+      if (!row) {
+        row = { uf: r.uf, year: r.year, value: null, q_mass: 0, q_vol: 0,
+                q_count_stock: 0, q_count_flow: 0 };
+        byUfYear.set(key, row);
+      }
       row.value = window.addPresent(row.value, r.value == null ? NaN : r.value);
       row.q_mass += r.q_mass || 0;
       row.q_vol += r.q_vol || 0;
-      row.q_count += r.q_count || 0;
+      // The herd and the counted production stay two totals (countUnits.js).
+      row.q_count_stock += r.q_count_stock || 0;
+      row.q_count_flow += r.q_count_flow || 0;
     }
     return [...byUfYear.values()];
   }
@@ -232,7 +240,7 @@ import './seriesUtils.js';
       // As quantidades continuam somando de 0 — elas vêm direto da fonte, sem
       // dependência de índice, e um zero ali é um zero de verdade.
       let v = null;
-      let qMass = 0, qVol = 0, qCount = 0;
+      let qMass = 0, qVol = 0, qStock = 0, qFlow = 0;
       for (const r of rows) {
         if (r.year !== y) continue;
         if (stateNarrowing && !stateSet.has(r.uf)) continue;
@@ -240,9 +248,10 @@ import './seriesUtils.js';
         v = window.addPresent(v, r.value == null ? NaN : r.value / 1000);
         qMass += (r.q_mass || 0);        // already mil t
         qVol  += (r.q_vol  || 0);        // already mi m³
-        qCount += (r.q_count || 0);      // already mi un (livestock head / eggs)
+        qStock += (r.q_count_stock || 0); // already mi un — heads (the herd)
+        qFlow  += (r.q_count_flow || 0);  // already mi un — eggs, fruits
       }
-      return { v, q_mass: qMass, q_vol: qVol, q_count: qCount };
+      return { v, q_mass: qMass, q_vol: qVol, q_count_stock: qStock, q_count_flow: qFlow };
     };
     // Engage the geo-derived series only when it adds correctness the national series
     // can't: a real state narrowing, OR a basket whose territorial cube has loaded —
@@ -256,17 +265,23 @@ import './seriesUtils.js';
     );
 
     // ── Aggregated time series ────────────────────────────────────────
+    // A count is routed to the SAME two totals the server returns for a sum across
+    // products (sql._count_split): the herd (stock) and the counted production (flow).
+    // There is no `q_count`: heads plus eggs is not a quantity (countUnits.js).
+    const isStock = {};
+    PRODUCTS_T.forEach(p => { isStock[p.code] = p.measure_kind === 'stock'; });
     const allYears = OVERVIEW_T.map(d => d.y).filter(y => y >= yearStart && y <= yearEnd);
     const ts = allYears.map(y => {
       if (geoDerivedTs) {
         const g = sumStates(geoSource, y);
-        return { y, v: g.v, q: g.q_mass, q_mass: g.q_mass, q_vol: g.q_vol, q_count: g.q_count };
+        return { y, v: g.v, q: g.q_mass, q_mass: g.q_mass, q_vol: g.q_vol,
+                 q_count_stock: g.q_count_stock, q_count_flow: g.q_count_flow };
       }
       // National path (no state narrowing): per-product series, basket + year aware.
       // Mesma regra do sumStates: o valor só existe se ALGUM produto da cesta tiver
       // valor naquele ano; senão fica null e vira lacuna no gráfico.
       let v = null;
-      let qMass = 0, qVol = 0, qCount = 0;
+      let qMass = 0, qVol = 0, qStock = 0, qFlow = 0;
       selectedProducts.forEach(code => {
         const series = PRODUCT_TS_T[code];
         if (!series) return;
@@ -275,9 +290,11 @@ import './seriesUtils.js';
         v = window.addPresent(v, pt.v == null ? NaN : pt.v / 1000);  // productTS.v is mi → ts.v is bi
         if (pt.family === 'mass')   qMass += pt.q;
         if (pt.family === 'volume') qVol  += pt.q;
-        if (pt.family === 'count')  qCount += pt.q;  // head/eggs — never blended with mass/vol
+        if (pt.family === 'count') {
+          if (isStock[code]) qStock += pt.q; else qFlow += pt.q;
+        }
       });
-      return { y, v, q: qMass, q_mass: qMass, q_vol: qVol, q_count: qCount };
+      return { y, v, q: qMass, q_mass: qMass, q_vol: qVol, q_count_stock: qStock, q_count_flow: qFlow };
     });
 
     // ── Per-product time series, restricted to basket + window ───────
@@ -344,7 +361,8 @@ import './seriesUtils.js';
             .filter(r => r.year === ufLatestYear)
             .filter(u => keep(u.uf))
             .map(r => ({ uf: r.uf, name: r.name, region: r.region,
-                         value: r.value, q_mass: r.q_mass, q_vol: r.q_vol, q_count: r.q_count })),
+                         value: r.value, q_mass: r.q_mass, q_vol: r.q_vol,
+                         q_count_stock: r.q_count_stock, q_count_flow: r.q_count_flow })),
         )
       : UF_DATA_T
           .filter(u => keep(u.uf))
@@ -401,7 +419,9 @@ import './seriesUtils.js';
         value:  ufs.reduce((s, u) => s + u.value,  0),
         q_mass: ufs.reduce((s, u) => s + u.q_mass, 0),
         q_vol:  ufs.reduce((s, u) => s + u.q_vol,  0),
-        q_count: ufs.reduce((s, u) => s + (u.q_count || 0), 0),  // head/eggs — herd geo
+        // The two count totals, each summed over the region's UFs — never into each other.
+        q_count_stock: ufs.reduce((s, u) => s + (u.q_count_stock || 0), 0),
+        q_count_flow:  ufs.reduce((s, u) => s + (u.q_count_flow || 0), 0),
         ufs:    ufs.length,
         // How many UFs this region WOULD carry without the state filter, and whether the
         // sum is therefore a fraction of the region it is named after.
@@ -424,7 +444,7 @@ import './seriesUtils.js';
     // replaces the legacy name-keyed snapshot.topMunis path, which had no backend
     // producer (always []) and a dead muniNames filter. Values are already at the
     // município grain and per-family scaled identically to ufData (value mi, q_mass
-    // mil t, q_vol mi m³, q_count mi un), so they slot into the same valueKey/mul.
+    // mil t, q_vol mi m³, both count totals mi un), so they slot into the same valueKey/mul.
     let topMunis = [];
     if (subUfLoaded && mesh && Array.isArray(muniCube) && muniCube.length) {
       const meshByCode = {};
@@ -447,7 +467,8 @@ import './seriesUtils.js';
             city: (meshByCode[r.cityCode] || {}).cityName || r.cityCode,
             uf: r.uf,
             product: '',  // the cube is basket-aggregated (no per-product split here)
-            value: r.value, q_mass: r.q_mass, q_vol: r.q_vol, q_count: r.q_count,
+            value: r.value, q_mass: r.q_mass, q_vol: r.q_vol,
+            q_count_stock: r.q_count_stock, q_count_flow: r.q_count_flow,
           }))
           .sort((a, b) => (b.value || 0) - (a.value || 0));
         // NOT truncated here. This used to .slice(0, 100), which is a DISPLAY cap
@@ -560,6 +581,11 @@ import './seriesUtils.js';
       // desmarcou uma chip. Quem quer o recorte usa `qualityFlags`.
       qualityFlagsFull: qualityFlagsAll,
       qualityTs, selectedProducts,
+      // The basket's counts by what they count: one group per server total (the herd,
+      // the counted production), each named from its products' native unit, and REFUSED
+      // (`mixed`) when its products count different things. Every screen that draws a
+      // count reads the group's `key` and `label` from here (countUnits.js).
+      countGroups: window.countGroups(PRODUCTS_T, selectedProducts),
       yearStart, yearEnd,
       // The choropleth/tile map's TRUE data year (max UF year within the window),
       // and whether it stops short of the requested yearEnd. The geo views label the

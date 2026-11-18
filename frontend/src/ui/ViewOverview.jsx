@@ -2,6 +2,10 @@
 // All datasets pass through window.applyFilters(summary) so KPIs,
 // charts and the donut only reflect the rows the researcher selected.
 
+// The count notes: a group refused for counting different things, and the count a
+// value-less map leaves to another reading (countUnits.js).
+import './CountUnitNotes.jsx';
+
 function ViewOverview({ families, summary, database, conventions }) {
   const conv      = conventions || window.DEFAULT_CONVENTIONS;
   const monLabel  = window.conventionMonetaryLabel(conv);
@@ -30,7 +34,7 @@ function ViewOverview({ families, summary, database, conventions }) {
   const meta        = (window.dataStore && window.dataStore.meta)
     ? window.dataStore.meta(database) : null;
   const latestMeta  = (meta && meta.latest) || null;
-  const lastPoint   = ts[ts.length - 1] || { v: null, q_mass: 0, q_vol: 0, q_count: 0, y: null };
+  const lastPoint   = ts[ts.length - 1] || { v: null, q_mass: 0, q_vol: 0, y: null };
   const partialLatest =
     !!latestMeta &&
     latestMeta.yearComplete === false &&
@@ -39,20 +43,26 @@ function ViewOverview({ families, summary, database, conventions }) {
     ts.length >= 2;
   const partialYr = partialLatest ? lastPoint.y : null;
   // Compute over EXACTLY the selected window — latest year included, never dropped.
-  const last      = ts[ts.length - 1] || { v: null, q_mass: 0, q_vol: 0, q_count: 0, y: null };
+  const last      = ts[ts.length - 1] || { v: null, q_mass: 0, q_vol: 0, y: null };
   const prev      = ts[ts.length - 2] || last;
   const first     = ts[0] || last;
   // null (= '—' na tela) quando os extremos não são comparáveis; ver seriesUtils.
   // A acumulada é montada por window.deltaTitle direto de (first, last), que já
   // acrescenta o MOTIVO da recusa — por isso não há um deltaTotV aqui.
   const deltaV    = window.deltaPctIn(prev, last, eraBreaks);
+  // The counted PRODUCTION of the basket (eggs, fruits) — the one count a headline can
+  // carry: a year's flow, of ONE thing counted. The herd is a stock and stays out of the
+  // strip (see the note under it); a group whose products count different things has no
+  // headline at all (CountRefusedNote). countUnits.js.
+  const countGroups = filtered.countGroups || [];
+  const flowCount = countGroups.find(g => g.total === 'flow' && !g.mixed) || null;
   // A variação de cada família de quantidade, nomeada uma vez: o número no card e a
   // direção da seta têm de sair da MESMA conta. Comparar `last.q >= prev.q` colore a
   // seta a partir de outra grandeza, e as duas só divergem onde importa — na ausência,
   // onde `null >= null` é true e pintava de verde o próprio travessão.
   const dMass     = window.deltaPct(prev.q_mass, last.q_mass);
   const dVol      = window.deltaPct(prev.q_vol, last.q_vol);
-  const dCount    = window.deltaPct(prev.q_count, last.q_count);
+  const dCount    = flowCount ? window.deltaPct(prev.q_count_flow, last.q_count_flow) : null;
   const spark12   = ts.slice(-12);
   // Year tag that marks the latest year "(parcial)" wherever it is shown.
   const yTag      = (y) => `${y ?? ''}${partialLatest && y === partialYr ? ' (parcial)' : ''}`;
@@ -110,11 +120,15 @@ function ViewOverview({ families, summary, database, conventions }) {
   const isRealUf  = u => (u.real != null ? u.real : window.isCanonicalUf(u.uf));
   const realUfs   = filtered.ufData.filter(isRealUf);
   // A value-less basket (the livestock herd — a stock) has R$ 0 everywhere, so the geo
-  // digest must read HEADCOUNT (q_count); reading value would give an empty map + 0/27
-  // UFs covered. A value-bearing basket is unaffected (onCount stays false).
+  // digest must read a COUNT instead; reading value would give an empty map + 0/27 UFs
+  // covered. ONE count group, never their sum: the herd first, else the counted
+  // production — and the other one is named under the map. A value-bearing basket is
+  // unaffected (countGeo stays null).
   const anyValue  = realUfs.some(u => u.value > 0) || ts.some(d => d.v > 0);
-  const onCount   = !anyValue && families.includes('count');
-  const geoVal    = u => (onCount ? (u.q_count || 0) : u.value);
+  const countGeo  = (!anyValue && families.includes('count'))
+    ? window.countGroupWithData(countGroups, realUfs) : null;
+  const onCount   = !!countGeo;
+  const geoVal    = u => (onCount ? (u[countGeo.key] || 0) : u.value);
   const ufCovered = realUfs.filter(u => geoVal(u) > 0).length;
   // Denominator = real UFs in the banco's full set, capped at the canonical 27.
   const ufTotalReal = Math.min(
@@ -140,12 +154,13 @@ function ViewOverview({ families, summary, database, conventions }) {
 
   const massFamily = families.includes('mass');
   const volFamily  = families.includes('volume');
-  const countFamily = families.includes('count');  // PPM livestock head / eggs
-  // The aggregate count KPI sums the WHOLE count family (herd STOCK + egg FLOW + every
-  // species) — heads are not additive, so that headline is a meaningless blend. Suppress
-  // it when a stock is in the basket and point researchers to the per-species Rebanho view.
-  const hasStock = (filtered.products || []).some(
-    p => p.measure_kind === 'stock' && (filtered.selectedProducts || []).includes(p.code));
+  const countFamily = families.includes('count');  // PPM livestock head / eggs, PAM fruits
+  // The herd never gets a headline: heads are not additive across species, so a total
+  // over the basket's species is a blend. The strip points to the per-species Rebanho view
+  // instead. Until v1.108.0 the count headline was the WHOLE family (herd + eggs), so it
+  // was hidden whenever a herd was in the basket; it now reads only the counted production,
+  // which a herd beside it no longer contaminates.
+  const hasStock = countGroups.some(g => g.total === 'stock');
 
   return (
     <>
@@ -188,15 +203,17 @@ function ViewOverview({ families, summary, database, conventions }) {
             sparkColor="var(--viz-4)"
           />
         )}
-        {countFamily && !hasStock && (
+        {countFamily && flowCount && (
           <window.KpiCardSpark
-            label={<>Quantidade · <window.UnitFamilyTag family="count" conv={conv}/></>}
-            value={kpiVal(window.formatCountQty(last.q_count, conv))}
+            label={<>Quantidade · <window.UnitFamilyTag family="count" conv={conv}
+                                                         unit={window.countGroupUnit(flowCount, conv)}/></>}
+            value={kpiVal(window.formatCountQty(last.q_count_flow, conv,
+                                                window.countGroupUnit(flowCount, conv)))}
             delta={comboPending ? null : window.fmtSigned(dCount)}
             deltaPositive={window.deltaUp(dCount)}
             sub={comboPending ? 'cruzando produto × UF…' : `${yTag(last.y)} vs. ${prev.y || ''}`}
             spark={comboPending ? null : spark12}
-            sparkKey="q_count"
+            sparkKey="q_count_flow"
             sparkColor="var(--viz-9)"
           />
         )}
@@ -233,6 +250,11 @@ function ViewOverview({ families, summary, database, conventions }) {
           cabeças não são somáveis entre espécies. Veja a perspectiva <strong>Rebanho</strong> para a
           composição e a evolução por espécie.
         </p>
+      )}
+      {countFamily && (
+        <div style={{ margin: '-4px 2px 8px' }}>
+          <window.CountRefusedNote groups={countGroups} database={database} marginTop={0} />
+        </div>
       )}
 
       {/* Hero: timeseries + composition */}
@@ -300,10 +322,12 @@ function ViewOverview({ families, summary, database, conventions }) {
             // Only REAL UFs reach the tile map: a trade banco's ufData carries
             // non-state pseudo-origins (ND/EX/ZN…) with no tile col/row, which the
             // BrazilTileMap would position at `undefined * cell = NaN` (FINDING #4/#5).
-            // Measure-aware: a value-less herd basket maps HEADCOUNT (q_count → cabeças)
-            // instead of an all-zero value. geoVal already selects the right field.
+            // Measure-aware: a value-less basket maps ONE count group (the herd's heads,
+            // else the counted production) instead of an all-zero value. geoVal already
+            // selects the right field; the unit names what is counted.
             const geoMul  = onCount ? window.countQtyMul(conv) : (1e6 * ufFactor);
-            const geoUnit = onCount ? window.countAxisLabel(conv) : valAxis;
+            const geoUnit = onCount ? window.countGroupUnit(countGeo, conv) : valAxis;
+            const geoWhat = !onCount ? 'Valor' : countGeo.total === 'stock' ? 'Efetivo' : 'Quantidade';
             const ufRows = realUfs.map(u => ({
               ...u,
               value: geoVal(u) * geoMul,
@@ -312,7 +336,7 @@ function ViewOverview({ families, summary, database, conventions }) {
               <>
                 <window.SectionHeader
                   overline={`Distribuição geográfica · ${mapYearTag}`}
-                  title={`${onCount ? 'Cabeças' : 'Valor'} por UF · ${geoUnit}`}
+                  title={`${geoWhat} por UF · ${geoUnit}`}
                   action={
                     <span className="caption">
                       {top3.length ? '3 maiores: ' + top3.map(u => u.uf).join(' · ') : '—'}
@@ -338,6 +362,9 @@ function ViewOverview({ families, summary, database, conventions }) {
                     <strong>{mapYear} (parcial):</strong> o último ano com dados por UF fica antes do
                     fim do período ({filtered.yearEnd}); o mapa mostra {mapYear}.
                   </p>
+                )}
+                {onCount && (
+                  <window.CountLeftOutNote groups={countGroups} shown={countGeo} database={database} />
                 )}
                 {filtered.notFilteredByBasket && (
                   <p className="caption" style={{ padding: '8px 4px 0' }}>

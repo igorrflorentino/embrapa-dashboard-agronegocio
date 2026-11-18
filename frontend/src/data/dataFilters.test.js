@@ -86,9 +86,9 @@ const GEO_MESH = [
     intermediaria: { code: 'I2', name: 'Int 2' }, imediata: { code: 'im3', name: 'Ime 3' } },
 ];
 const MUNI_CUBE = [
-  { year: 2021, cityCode: '1', uf: 'PA', value: 60, q_mass: 30, q_vol: 0, q_count: 0 },
-  { year: 2021, cityCode: '2', uf: 'PA', value: 30, q_mass: 15, q_vol: 0, q_count: 0 },
-  { year: 2021, cityCode: '3', uf: 'PA', value: 10, q_mass: 5, q_vol: 0, q_count: 0 },
+  { year: 2021, cityCode: '1', uf: 'PA', value: 60, q_mass: 30, q_vol: 0, q_count_stock: 0, q_count_flow: 0 },
+  { year: 2021, cityCode: '2', uf: 'PA', value: 30, q_mass: 15, q_vol: 0, q_count_stock: 0, q_count_flow: 0 },
+  { year: 2021, cityCode: '3', uf: 'PA', value: 10, q_mass: 5, q_vol: 0, q_count_stock: 0, q_count_flow: 0 },
 ];
 
 describe('applyFilters — sub-UF (mesorregião) narrowing rolls the município cube up by UF', () => {
@@ -482,8 +482,8 @@ describe('applyFilters — o recorte sub-UF sai nomeado do seam', () => {
     const applyFilters = await loadApplyFilters();
     window.geoMesh = () => MESH;
     window.municipioYearly = () => ([
-      { year: 2021, cityCode: '1', uf: 'PA', value: 7, q_mass: 3, q_vol: 0, q_count: 0 },
-      { year: 2021, cityCode: '2', uf: 'PA', value: 5, q_mass: 2, q_vol: 0, q_count: 0 },
+      { year: 2021, cityCode: '1', uf: 'PA', value: 7, q_mass: 3, q_vol: 0, q_count_stock: 0, q_count_flow: 0 },
+      { year: 2021, cityCode: '2', uf: 'PA', value: 5, q_mass: 2, q_vol: 0, q_count_stock: 0, q_count_flow: 0 },
     ]);
     expect(applyFilters({ mesos: ['M1'] }, 'ibge_pevs').recorte).toBe('Marajó (PA)');
   });

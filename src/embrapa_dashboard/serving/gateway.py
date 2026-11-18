@@ -373,6 +373,8 @@ def fetch_production_by_municipio_yearly(
         price_base=_asks_price_base(
             with_price_base, value_column, "bq_gold_dataset", _GOLD_TABLE[source]
         ),
+        # The herd and the counted flows (eggs) come back as separate totals.
+        has_measure_kind=source in _MEASURE_KIND_SOURCES,
     )
     return run_query(sql, params)
 

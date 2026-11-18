@@ -855,6 +855,91 @@ def test_uf_data_emits_per_family_quantities():
     assert uf["value"] == 1.5 and uf["q_mass"] == 5000.0 and uf["q_vol"] == 6.0
 
 
+def test_uf_data_never_adds_the_herd_to_the_eggs():
+    """The count reaches the map as TWO totals, and no third one adds them.
+
+    Mato Grosso 2025, measured in prod: 31.6 mi bovinos (efetivo) and 3.74 bi ovos de
+    galinha (produção), two of its ten count products. The old ``q_count`` put 3.88 bi on
+    the map under "Quantidade (cabeças)", and 98% of that figure was eggs."""
+    snap = {
+        "products": None,
+        "product_ts": None,
+        "overview_ts": None,
+        "uf_data": pd.DataFrame(
+            [
+                {
+                    "state_acronym": "MT",
+                    "state_name": "Mato Grosso",
+                    "region_abbrev": "CO",
+                    "total_value": 9_000_000_000,
+                    "q_count_stock": 31_600_000,
+                    "q_count_flow": 3_740_000_000,
+                }
+            ]
+        ),
+        "quality": None,
+        "value_label": "",
+    }
+    uf = s.serialize_snapshot(snap)["ufData"][0]
+    assert uf["q_count_stock"] == pytest.approx(31.6)  # mi cabeças
+    assert uf["q_count_flow"] == pytest.approx(3740.0)  # mi ovos
+    assert "q_count" not in uf
+
+
+def test_overview_ts_carries_no_count():
+    """overviewTS sums every product of the banco, so a count there would add heads to
+    eggs. The screens build their counts from productTS, product by product."""
+    ov = s._overview_ts(
+        pd.DataFrame([{"reference_year": 2025, "total_value": 1e9, "q_mass": 1e3, "q_vol": 0}])
+    )
+    assert ov == [{"y": 2025, "v": 1.0, "q": 1.0, "q_mass": 1.0, "q_vol": 0.0}]
+
+
+def test_products_carry_the_native_unit_that_names_a_count():
+    """A count product's base unit is 'un' whatever it counts, so the product list also
+    carries the unit the SOURCE publishes. It is what lets the screens tell heads from
+    eggs from fruits, and refuse to add them."""
+    snap = {
+        "products": pd.DataFrame(
+            [
+                {
+                    "code": "2670",
+                    "name": "Bovino",
+                    "unit": "un",
+                    "unit_native": "Cabeças",
+                    "family": "contagem",
+                    "measure_kind": "stock",
+                },
+                {
+                    "code": "2685",
+                    "name": "Ovos de galinha",
+                    "unit": "un",
+                    "unit_native": "Mil dúzias",
+                    "family": "contagem",
+                    "measure_kind": "flow",
+                },
+                {
+                    "code": "9",
+                    "name": "Sem unidade",
+                    "unit": "un",
+                    "unit_native": float("nan"),
+                    "family": "contagem",
+                },
+            ]
+        ),
+        "product_ts": None,
+        "overview_ts": None,
+        "uf_data": None,
+        "quality": None,
+        "value_label": "",
+    }
+    prods = {p["code"]: p for p in s.serialize_snapshot(snap)["products"]}
+    assert prods["2670"]["unit_native"] == "Cabeças"
+    assert prods["2685"]["unit_native"] == "Mil dúzias"
+    assert prods["2670"]["unit"] == prods["2685"]["unit"] == "un"  # the base cannot tell
+    assert "unit_native" not in prods["9"]  # NaN → omitted, never NaN in JSON
+
+
 def test_uf_yearly_emits_real_per_uf_year_rows():
     """ufYearly is REAL per-(UF, year) Gold history (backs the ano × UF heatmap),
     scaled like ufData: value ÷1e6, q_mass ÷1e3 → mil t, q_vol ÷1e6 → mi m³."""
@@ -898,7 +983,8 @@ def test_uf_yearly_emits_real_per_uf_year_rows():
         "value": 1.0,
         "q_mass": 2000.0,
         "q_vol": 3.0,
-        "q_count": 0.0,
+        "q_count_stock": 0.0,
+        "q_count_flow": 0.0,
     }
     assert rows[1]["value"] == 1.5 and rows[1]["q_mass"] == 2500.0 and rows[1]["q_vol"] == 0.0
 
@@ -946,7 +1032,8 @@ def test_serialize_geo_yearly_wraps_uf_yearly_with_same_scaling():
                 "value": 1.0,
                 "q_mass": 2000.0,
                 "q_vol": 3.0,
-                "q_count": 0.0,
+                "q_count_stock": 0.0,
+                "q_count_flow": 0.0,
             }
         ],
         "priceBase": None,
@@ -1380,7 +1467,8 @@ def test_serialize_product_uf_valor_deflacionado_ausente_nao_e_zero():
                 "total_value": None,  # o euro não alcança 1986-1998
                 "q_mass": 874.0,
                 "q_vol": None,
-                "q_count": None,
+                "q_count_stock": None,
+                "q_count_flow": None,
             }
         ]
     )
@@ -1408,7 +1496,8 @@ def test_serialize_product_uf_ordena_com_valores_ausentes_sem_estourar():
                 "total_value": v,
                 "q_mass": 1.0,
                 "q_vol": None,
-                "q_count": None,
+                "q_count_stock": None,
+                "q_count_flow": None,
             }
             for uf, v in (("AM", None), ("PA", 10.0), ("AP", None), ("MA", 50.0))
         ]
@@ -1742,7 +1831,11 @@ def test_serialize_products_by_uf_says_whether_the_banco_has_a_reader():
 def test_serialize_product_uf_carries_per_family_quantities():
     """serialize_product_uf feeds the herd-by-UF map + ranking (ViewProductProfile +
     ViewRebanho). A value-less stock must rank by q_count, so the per-family quantities
-    ride along (same ÷1e3/÷1e6 scaling as ufData). Empty df → {uf: []}."""
+    ride along (same ÷1e3/÷1e6 scaling as ufData). Empty df → {uf: []}.
+
+    The reader is the cross-product one, which returns the count in TWO totals (herd /
+    counted production). For ONE product only one of them can be non-empty, so the payload
+    keeps its single ``q_count``: the herd's heads, or the eggs, never both."""
     assert s.serialize_product_uf(None) == {"uf": []}
     df = pd.DataFrame(
         [
@@ -1753,7 +1846,8 @@ def test_serialize_product_uf_carries_per_family_quantities():
                 "total_value": 0,
                 "q_mass": float("nan"),
                 "q_vol": float("nan"),
-                "q_count": 32_000_000,
+                "q_count_stock": 32_000_000,
+                "q_count_flow": float("nan"),
             },
             {
                 "state_acronym": "PA",
@@ -1762,7 +1856,8 @@ def test_serialize_product_uf_carries_per_family_quantities():
                 "total_value": 0,
                 "q_mass": float("nan"),
                 "q_vol": float("nan"),
-                "q_count": 25_000_000,
+                "q_count_stock": 25_000_000,
+                "q_count_flow": float("nan"),
             },
         ]
     )
@@ -1771,6 +1866,23 @@ def test_serialize_product_uf_carries_per_family_quantities():
     mt = next(r for r in rows if r["uf"] == "MT")
     assert mt["q_count"] == 32.0 and mt["value"] == 0.0  # 32M head → 32 mi un, no value
     assert mt["q_mass"] == 0.0 and mt["q_vol"] == 0.0  # NaN → 0 (a herd has no mass/vol)
+    assert "q_count_stock" not in mt and "q_count_flow" not in mt
+    # A counted FLOW (hen eggs, in Perfil do produto) arrives in the other total.
+    (ovos,) = s.serialize_product_uf(
+        pd.DataFrame(
+            [
+                {
+                    "state_acronym": "MT",
+                    "state_name": "Mato Grosso",
+                    "region_abbrev": "CO",
+                    "total_value": 1_000_000,
+                    "q_count_stock": float("nan"),
+                    "q_count_flow": 3_740_000_000,
+                }
+            ]
+        )
+    )["uf"]
+    assert ovos["q_count"] == 3740.0  # 3.74 bi eggs → 3740 mi un
 
 
 def test_serialize_table_page_shapes_columns_rows_total():

@@ -16,6 +16,8 @@ import './RecorteNote.jsx';
 // DELIBERADAMENTE incondicional: um helper ausente tem de estourar, não voltar a rotular
 // duas metades do PEVS com o mesmo nome em silêncio.
 import './filtersSchema.js';
+// The REAL count rule: which counts may be added, and what each one is called.
+import './countUnits.js';
 
 function stubGlobals(filtered) {
   window.applyFilters = () => filtered;
@@ -27,7 +29,8 @@ function stubGlobals(filtered) {
   window.formatValue = (v) => `val:${v}`;
   window.formatMassQty = (v) => `mass:${v}`;
   window.formatVolumeQty = (v) => `vol:${v}`;
-  window.formatCountQty = (v) => `count:${v}`;
+  // The unit rides in the text: a count must say WHAT it counts (countUnits.js).
+  window.formatCountQty = (v, _conv, unit) => (unit ? `count:${v} ${unit}` : `count:${v}`);
   window.fmtSigned = () => '+0%';
   window.fmtPct = (x) => `${Math.round((x || 0) * 100)}%`;
   window.convertSeries = (s) => s;
@@ -72,8 +75,9 @@ afterEach(() => cleanup());
 
 const FIXTURE = {
   ts: [
-    { y: 2019, v: 1, q_mass: 100, q_vol: 10, q_count: 1000 },
-    { y: 2020, v: 2, q_mass: 200, q_vol: 20, q_count: 2000 },
+    // The count in its two totals (dataFilters): the herd's heads and the counted production.
+    { y: 2019, v: 1, q_mass: 100, q_vol: 10, q_count_stock: 30, q_count_flow: 1000 },
+    { y: 2020, v: 2, q_mass: 200, q_vol: 20, q_count_stock: 31.6, q_count_flow: 2000 },
   ],
   qualityFlags: [
     { id: 'OK', label: 'OK', color: 'var(--ok)', share: 0.8, count: 800000 },
@@ -91,6 +95,16 @@ const FIXTURE = {
   ufYearPartial: false,
   notFilteredByBasket: false,
   geoComboPending: false,
+};
+
+// Count products as the PPM serves them (unit_native as SIDRA publishes it). The count
+// groups come from the REAL rule (countUnits.js), as applyFilters builds them.
+const BOVINO = { code: '2670', name: 'Bovino', family: 'count', measure_kind: 'stock', unit_native: 'Cabeças' };
+const OVOS = { code: '2685', name: 'Ovos de galinha', family: 'count', measure_kind: 'flow', unit_native: 'Mil dúzias' };
+const ABACAXI = { code: '40092', name: 'Abacaxi', family: 'count', unit_native: 'Mil frutos' };
+const withCounts = (products) => {
+  const codes = products.map((p) => p.code);
+  return { ...FIXTURE, products, selectedProducts: codes, countGroups: window.countGroups(products, codes) };
 };
 
 describe('ViewOverview — KPI strip + quality digest (H3 + P0 lock-in)', () => {
@@ -174,30 +188,74 @@ describe('ViewOverview — KPI strip + quality digest (H3 + P0 lock-in)', () => 
     expect(card.textContent).not.toContain('97% do valor examinado');
   });
 
-  it('renders the count (efetivo) KPI off q_count for a livestock (count) basket', () => {
-    stubGlobals(FIXTURE);
+  it('renders the count KPI off q_count_flow, named by what it counts (ovos, never cabeças)', () => {
+    stubGlobals(withCounts([OVOS]));
     const { container } = render(
       <ViewOverview families={['count']} summary={{}} database="ibge_ppm" conventions={{}} />
     );
     const values = [...container.querySelectorAll('.kpi-value')].map((e) => e.textContent);
-    expect(values).toContain('count:2000'); // latest q_count via formatCountQty (keystone)
+    expect(values).toContain('count:2000 ovos'); // latest q_count_flow, in eggs (keystone)
     expect(values).not.toContain('mass:200'); // mass KPI absent — no mass family in the basket
   });
 
-  it('SUPPRESSES the blended count KPI when the basket has a stock (herd), pointing to Rebanho', () => {
-    // The count KPI sums the whole count family (herd STOCK + egg FLOW + every species),
-    // which is not additive — for a stock basket it must NOT be shown as one headline.
-    stubGlobals({
-      ...FIXTURE,
-      products: [{ code: '2670', name: 'Bovino', measure_kind: 'stock' }],
-      selectedProducts: ['2670'],
-    });
+  it('the herd gets no headline: heads do not add across species, and the strip points to Rebanho', () => {
+    stubGlobals(withCounts([BOVINO]));
     const { container } = render(
       <ViewOverview families={['count']} summary={{}} database="ibge_ppm" conventions={{}} />
     );
     const values = [...container.querySelectorAll('.kpi-value')].map((e) => e.textContent);
-    expect(values).not.toContain('count:2000'); // blended count KPI suppressed for a stock basket
+    expect(values.some((v) => v.startsWith('count:'))).toBe(false);
     expect(container.textContent).toContain('Rebanho'); // redirect note instead
+  });
+
+  it('a herd beside the eggs no longer hides them, and never enters their figure', () => {
+    // Until v1.108.0 the headline read the whole count family (herd + eggs), so a herd in
+    // the basket hid it. It reads only the counted production now.
+    stubGlobals(withCounts([BOVINO, OVOS]));
+    const { container } = render(
+      <ViewOverview families={['count']} summary={{}} database="ibge_ppm" conventions={{}} />
+    );
+    const values = [...container.querySelectorAll('.kpi-value')].map((e) => e.textContent);
+    expect(values).toContain('count:2000 ovos'); // q_count_flow alone
+    expect(values).not.toContain('count:2031.6 ovos'); // never heads + eggs
+    expect(container.textContent).toContain('Rebanho');
+  });
+
+  it('products that count different things get no headline, and the strip names them', () => {
+    // No banco holds eggs and counted fruits together today; this proves the refusal.
+    stubGlobals(withCounts([OVOS, ABACAXI]));
+    const { container } = render(
+      <ViewOverview families={['count']} summary={{}} database="ibge_ppm" conventions={{}} />
+    );
+    const values = [...container.querySelectorAll('.kpi-value')].map((e) => e.textContent);
+    expect(values.some((v) => v.startsWith('count:'))).toBe(false);
+    expect(container.textContent).toContain('Contagens que não se somam');
+    expect(container.textContent).toContain('Abacaxi (frutos)');
+    expect(container.textContent).toContain('Ovos de galinha (ovos)');
+  });
+
+  it('a value-less basket maps ONE count, the herd, and names the eggs it leaves out', () => {
+    let mapa = null;
+    stubGlobals({
+      ...withCounts([BOVINO, OVOS]),
+      ts: [
+        { y: 2019, v: 0, q_mass: 0, q_vol: 0, q_count_stock: 30, q_count_flow: 1000 },
+        { y: 2020, v: 0, q_mass: 0, q_vol: 0, q_count_stock: 31.6, q_count_flow: 2000 },
+      ],
+      // Mato Grosso 2025 as measured on prod: 80,4 mi heads, 3,80 bi eggs (mi un).
+      ufData: [{ uf: 'MT', value: 0, real: true, q_count_stock: 80.4, q_count_flow: 3803.2 }],
+      ufDataFull: [{ uf: 'MT', value: 0, real: true, q_count_stock: 80.4, q_count_flow: 3803.2 }],
+    });
+    window.countQtyMul = () => 1e6; // mi un → un, the convention's 'un'
+    window.BrazilTileMap = (props) => { mapa = props; return null; };
+    const { container } = render(
+      <ViewOverview families={['count']} summary={{}} database="ibge_ppm" conventions={{}} />
+    );
+    expect(mapa.label).toBe('cabeças');
+    expect(mapa.data.map((u) => u.value)).toEqual([80.4e6]); // the herd alone, never + the eggs
+    expect(container.textContent).toContain('Efetivo por UF · cabeças');
+    expect(container.textContent).toContain('Fora desta leitura: Ovos de galinha');
+    delete window.countQtyMul;
   });
 
   it('o Donut não mostra duas fatias com o MESMO rótulo quando o nome se repete', () => {

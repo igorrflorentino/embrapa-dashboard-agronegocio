@@ -48,14 +48,14 @@ function makeSnapshot() {
     productTS,
     overviewTS: [{ y: 2020 }, { y: 2021 }],
     ufData: [
-      { uf: 'PA', name: 'Pará', region: 'N', value: 5, q_mass: 2, q_vol: 1, q_count: 0 },
-      { uf: 'SP', name: 'São Paulo', region: 'SE', value: 3, q_mass: 1, q_vol: 0, q_count: 0 },
+      { uf: 'PA', name: 'Pará', region: 'N', value: 5, q_mass: 2, q_vol: 1, q_count_stock: 0, q_count_flow: 0 },
+      { uf: 'SP', name: 'São Paulo', region: 'SE', value: 3, q_mass: 1, q_vol: 0, q_count_stock: 0, q_count_flow: 0 },
     ],
     ufYearly: [
-      { uf: 'PA', year: 2020, value: 4000, q_mass: 2, q_vol: 1, q_count: 0 },
-      { uf: 'PA', year: 2021, value: 5000, q_mass: 3, q_vol: 1, q_count: 0 },
-      { uf: 'SP', year: 2020, value: 2000, q_mass: 1, q_vol: 0, q_count: 0 },
-      { uf: 'SP', year: 2021, value: 3000, q_mass: 2, q_vol: 0, q_count: 0 },
+      { uf: 'PA', year: 2020, value: 4000, q_mass: 2, q_vol: 1, q_count_stock: 0, q_count_flow: 0 },
+      { uf: 'PA', year: 2021, value: 5000, q_mass: 3, q_vol: 1, q_count_stock: 0, q_count_flow: 0 },
+      { uf: 'SP', year: 2020, value: 2000, q_mass: 1, q_vol: 0, q_count_stock: 0, q_count_flow: 0 },
+      { uf: 'SP', year: 2021, value: 3000, q_mass: 2, q_vol: 0, q_count_stock: 0, q_count_flow: 0 },
     ],
     // `share` vem SEMPRE da API (serving_quality_by_source), e a fixture não o trazia —
     // invisível enquanto o cliente renormalizava por cima. Sem ele, `share` era undefined.
@@ -345,8 +345,8 @@ describe('applyFilters — state + basket narrowing (geoYearly cube)', () => {
     const snap = makeSnapshot();
     // Basket-scoped (UF × year) cube — value in mi, decorated client-side.
     const geoCube = [
-      { uf: 'PA', year: 2021, value: 6000, q_mass: 3, q_vol: 1, q_count: 0 },
-      { uf: 'SP', year: 2021, value: 2000, q_mass: 1, q_vol: 0, q_count: 0 },
+      { uf: 'PA', year: 2021, value: 6000, q_mass: 3, q_vol: 1, q_count_stock: 0, q_count_flow: 0 },
+      { uf: 'SP', year: 2021, value: 2000, q_mass: 1, q_vol: 0, q_count_stock: 0, q_count_flow: 0 },
     ];
     installGlobals(snap, { geoCube });
     const out = window.applyFilters(
@@ -405,8 +405,8 @@ describe('applyFilters — sub-UF mesh narrowing (município cube)', () => {
   it('a meso narrowing rolls the município cube up to (UF, year) + ranks topMunis', () => {
     const snap = makeSnapshot();
     const muniCube = [
-      { cityCode: 'c1', uf: 'PA', year: 2021, value: 100, q_mass: 1, q_vol: 0, q_count: 0 },
-      { cityCode: 'c2', uf: 'PA', year: 2021, value: 50, q_mass: 0.5, q_vol: 0, q_count: 0 },
+      { cityCode: 'c1', uf: 'PA', year: 2021, value: 100, q_mass: 1, q_vol: 0, q_count_stock: 0, q_count_flow: 0 },
+      { cityCode: 'c2', uf: 'PA', year: 2021, value: 50, q_mass: 0.5, q_vol: 0, q_count_stock: 0, q_count_flow: 0 },
     ];
     installGlobals(snap, { mesh: MESH, muniCube });
     // mesos = ['M1'] is a PROPER non-empty subset (universe has M1,M2) → narrows.
@@ -448,5 +448,87 @@ describe('applyFilters — map data-year labelling', () => {
     // UF rows stop at 2021, but the window runs to 2024 → partial.
     expect(out.ufLatestYear).toBe(2021);
     expect(out.ufYearPartial).toBe(true);
+  });
+});
+
+// ── Counts (v1.108.0): two totals, never one ─────────────────────────────────
+// The 'contagem' family reduces heads, eggs and fruits to one base unit. Every sum ACROSS
+// products keeps the herd (stock) and the counted production (flow) apart, as the server
+// does (sql._count_split); until v1.108.0 one q_count added them.
+describe('applyFilters — a count is two totals, the herd and the counted production', () => {
+  const MESH = [
+    { cityCode: 'c1', cityName: 'Cidade 1', uf: 'PA', meso: { code: 'M1' }, micro: { code: 'mi1' },
+      intermediaria: { code: 'I1' }, imediata: { code: 'im1' } },
+    { cityCode: 'c3', cityName: 'Cidade 3', uf: 'SP', meso: { code: 'M2' }, micro: { code: 'mi3' },
+      intermediaria: { code: 'I2' }, imediata: { code: 'im3' } },
+  ];
+  function countSnapshot() {
+    const snap = makeSnapshot();
+    snap.products = [
+      { code: 'B', name: 'Bovino', family: 'count', measure_kind: 'stock', unit_native: 'Cabeças' },
+      { code: 'O', name: 'Ovos de galinha', family: 'count', measure_kind: 'flow', unit_native: 'Mil dúzias' },
+      { code: 'M', name: 'Mel', family: 'mass', measure_kind: 'flow', unit_native: 'Quilogramas' },
+    ];
+    // mi un for the counts, mil t for the honey.
+    snap.productTS = {
+      B: [{ y: 2020, v: null, q: 30, family: 'count' }, { y: 2021, v: null, q: 31.6, family: 'count' }],
+      O: [{ y: 2020, v: 800, q: 3500, family: 'count' }, { y: 2021, v: 900, q: 3744.2, family: 'count' }],
+      M: [{ y: 2020, v: 10, q: 2, family: 'mass' }, { y: 2021, v: 11, q: 3, family: 'mass' }],
+    };
+    snap.ufYearly = [
+      { uf: 'PA', year: 2021, value: 500, q_mass: 1, q_vol: 0, q_count_stock: 20, q_count_flow: 1000 },
+      { uf: 'SP', year: 2021, value: 400, q_mass: 2, q_vol: 0, q_count_stock: 11.6, q_count_flow: 2744.2 },
+    ];
+    snap.ufData = [
+      { uf: 'PA', name: 'Pará', region: 'N', value: 500, q_mass: 1, q_vol: 0, q_count_stock: 20, q_count_flow: 1000 },
+      { uf: 'SP', name: 'São Paulo', region: 'SE', value: 400, q_mass: 2, q_vol: 0, q_count_stock: 11.6, q_count_flow: 2744.2 },
+    ];
+    return snap;
+  }
+  const at = (out, y) => out.ts.find((d) => d.y === y);
+
+  it('the national series routes each product to its own total, and has no q_count', () => {
+    installGlobals(countSnapshot());
+    const out = window.applyFilters({ basket: null }, 'ibge_pevs');
+    expect(at(out, 2021).q_count_stock).toBeCloseTo(31.6);   // the herd
+    expect(at(out, 2021).q_count_flow).toBeCloseTo(3744.2);  // the eggs
+    expect(at(out, 2021).q_mass).toBe(3);                    // the honey, apart
+    expect(at(out, 2021)).not.toHaveProperty('q_count');
+  });
+
+  it('a state narrowing sums each total over the states, never one into the other', () => {
+    installGlobals(countSnapshot());
+    const out = window.applyFilters({ basket: null, states: ['PA'] }, 'ibge_pevs');
+    expect(at(out, 2021).q_count_stock).toBe(20);
+    expect(at(out, 2021).q_count_flow).toBe(1000);
+    expect(at(out, 2021)).not.toHaveProperty('q_count');
+  });
+
+  it('the município cube rolled up to its UFs and regions keeps the two totals apart', () => {
+    const muniCube = [
+      { cityCode: 'c1', uf: 'PA', year: 2021, value: 100, q_mass: 1, q_vol: 0, q_count_stock: 2, q_count_flow: 50 },
+    ];
+    installGlobals(countSnapshot(), { mesh: MESH, muniCube });
+    const out = window.applyFilters({ basket: null, mesos: ['M1'] }, 'ibge_pevs');
+    expect(out.ufData.map((u) => [u.uf, u.q_count_stock, u.q_count_flow])).toEqual([['PA', 2, 50]]);
+    const norte = out.regionData.find((r) => r.id === 'N');
+    expect([norte.q_count_stock, norte.q_count_flow]).toEqual([2, 50]);
+    expect(out.topMunis.map((m) => [m.q_count_stock, m.q_count_flow])).toEqual([[2, 50]]);
+  });
+
+  it('carries the basket\'s count groups, each named by what it counts', () => {
+    installGlobals(countSnapshot());
+    const out = window.applyFilters({ basket: ['B', 'O', 'M'] }, 'ibge_pevs');
+    expect(out.countGroups.map((g) => [g.id, g.key, g.label, g.mixed])).toEqual([
+      ['count_stock', 'q_count_stock', 'Efetivo (cabeças)', false],
+      ['count_flow', 'q_count_flow', 'Quantidade (ovos)', false],
+    ]);
+    // Only the basket's count products: honey is not a count.
+    expect(out.countGroups.flatMap((g) => g.products.map((p) => p.code))).toEqual(['B', 'O']);
+  });
+
+  it('a basket with no count product has no count group', () => {
+    installGlobals(countSnapshot());
+    expect(window.applyFilters({ basket: ['M'] }, 'ibge_pevs').countGroups).toEqual([]);
   });
 });

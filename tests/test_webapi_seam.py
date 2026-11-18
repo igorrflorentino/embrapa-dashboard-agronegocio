@@ -260,11 +260,16 @@ def test_with_overview_quantities_sums_qty_base_per_family():
                 "q_vol": 7e6,
                 "family": "volume",
             },
+            # two counts of different things: no yearly total may add them
+            {"code": "2670", "reference_year": 2022, "q_count": 31.6e6, "family": "contagem"},
+            {"code": "2685", "reference_year": 2022, "q_count": 3.74e9, "family": "contagem"},
         ]
     )
     out = seam._with_overview_quantities(overview, pts)
     assert float(out.loc[0, "q_mass"]) == 5_003_000.0  # t — never 5e9 + 3e3
     assert float(out.loc[0, "q_vol"]) == 7_000_000.0  # m³ — never blended with mass
+    # heads + eggs is not a quantity: the overview carries no count at all
+    assert "q_count" not in out.columns
 
 
 # ── snapshot: a REAL per-(UF, year) frame backs the ano × UF heatmap ───────────

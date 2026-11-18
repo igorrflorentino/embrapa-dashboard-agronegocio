@@ -32,6 +32,10 @@ import './geoSelect.js';
 // four-line component, and stubbing it away would hide the very disclosure these views
 // exist to carry.
 import './RecorteNote.jsx';
+// The REAL count rule (which counts may be added, what each is called) and the notes that
+// name what a count reading leaves out: the defect they fix lived in a hand-written label.
+import './countUnits.js';
+import './CountUnitNotes.jsx';
 
 // Captured props from the stubbed chart widgets, so we can assert what each branch fed.
 let choroProps, tileMapProps, heatmapProps, barChartCalls, productsByUfCalls, muniMapProps, regionBarsProps;
@@ -141,10 +145,10 @@ afterEach(() => {
 // dataStore.get(db).ufYearly — the always-all-products snapshot field that used to
 // silently diverge from the map/ranking once a basket cube had loaded.
 const UF_YEARLY = [
-  { uf: 'PA', name: 'Pará', year: 2019, value: 60, q_mass: 24, q_vol: 6, q_count: 10 },
-  { uf: 'PA', name: 'Pará', year: 2020, value: 75, q_mass: 30, q_vol: 8, q_count: 12 },
-  { uf: 'SP', name: 'São Paulo', year: 2019, value: 20, q_mass: 8, q_vol: 3, q_count: 5 },
-  { uf: 'SP', name: 'São Paulo', year: 2020, value: 25, q_mass: 10, q_vol: 4, q_count: 6 },
+  { uf: 'PA', name: 'Pará', year: 2019, value: 60, q_mass: 24, q_vol: 6, q_count_stock: 10 },
+  { uf: 'PA', name: 'Pará', year: 2020, value: 75, q_mass: 30, q_vol: 8, q_count_stock: 12 },
+  { uf: 'SP', name: 'São Paulo', year: 2019, value: 20, q_mass: 8, q_vol: 3, q_count_stock: 5 },
+  { uf: 'SP', name: 'São Paulo', year: 2020, value: 25, q_mass: 10, q_vol: 4, q_count_stock: 6 },
 ];
 
 // A representative snapshot: two UFs, two regions, two top municípios, plus the real
@@ -160,16 +164,16 @@ const atMunicipio = (uf = 'PA') => ({ states: [uf] });
 function fullFixture(overrides = {}) {
   return {
     ufData: [
-      { uf: 'PA', value: 75, q_mass: 30, q_vol: 8, q_count: 12, real: true },
-      { uf: 'SP', value: 25, q_mass: 10, q_vol: 4, q_count: 6, real: true },
+      { uf: 'PA', value: 75, q_mass: 30, q_vol: 8, q_count_stock: 12, real: true },
+      { uf: 'SP', value: 25, q_mass: 10, q_vol: 4, q_count_stock: 6, real: true },
     ],
     regionData: [
-      { id: 'N',  label: 'Norte',   value: 75, q_mass: 30, q_vol: 8, q_count: 12 },
-      { id: 'SE', label: 'Sudeste', value: 25, q_mass: 10, q_vol: 4, q_count: 6 },
+      { id: 'N',  label: 'Norte',   value: 75, q_mass: 30, q_vol: 8, q_count_stock: 12 },
+      { id: 'SE', label: 'Sudeste', value: 25, q_mass: 10, q_vol: 4, q_count_stock: 6 },
     ],
     topMunis: [
-      { city: 'Belém', uf: 'PA', product: '', value: 40, q_mass: 16, q_vol: 5, q_count: 7 },
-      { city: 'Santos', uf: 'SP', product: '', value: 12, q_mass: 6, q_vol: 2, q_count: 3 },
+      { city: 'Belém', uf: 'PA', product: '', value: 40, q_mass: 16, q_vol: 5, q_count_stock: 7 },
+      { city: 'Santos', uf: 'SP', product: '', value: 12, q_mass: 6, q_vol: 2, q_count_stock: 3 },
     ],
     yearStart: 2018,
     yearEnd: 2020,
@@ -192,8 +196,8 @@ describe('ViewGeography — smoke + main branches', () => {
     // to explain away.
     stubGlobals(fullFixture({
       ufData: [
-        { uf: 'PA', region: 'N', value: 75, q_mass: 30, q_vol: 8, q_count: 12, real: true },
-        { uf: 'SP', region: 'SE', value: 25, q_mass: 10, q_vol: 4, q_count: 6, real: true },
+        { uf: 'PA', region: 'N', value: 75, q_mass: 30, q_vol: 8, q_count_stock: 12, real: true },
+        { uf: 'SP', region: 'SE', value: 25, q_mass: 10, q_vol: 4, q_count_stock: 6, real: true },
       ],
     }));
     const { container } = render(
@@ -236,9 +240,9 @@ describe('ViewGeography — smoke + main branches', () => {
   it('CONF-3: excludes a non-real pseudo-UF row from the map/ranking/heatmap', () => {
     const fx = fullFixture({
       ufData: [
-        { uf: 'PA', value: 75, q_mass: 30, q_vol: 8, q_count: 12, real: true },
-        { uf: 'SP', value: 25, q_mass: 10, q_vol: 4, q_count: 6, real: true },
-        { uf: 'ND', value: 9999, q_mass: 0, q_vol: 0, q_count: 0, real: false },
+        { uf: 'PA', value: 75, q_mass: 30, q_vol: 8, q_count_stock: 12, real: true },
+        { uf: 'SP', value: 25, q_mass: 10, q_vol: 4, q_count_stock: 6, real: true },
+        { uf: 'ND', value: 9999, q_mass: 0, q_vol: 0, q_count_stock: 0, real: false },
       ],
     });
     stubGlobals(fx);
@@ -360,8 +364,8 @@ describe('ViewGeography — gating and honest-note branches', () => {
     // and the metric segment falls back to Valor only.
     const fx = fullFixture({
       ufData: [
-        { uf: 'PA', value: 75, q_mass: 0, q_vol: 0, q_count: 0, real: true },
-        { uf: 'SP', value: 25, q_mass: 0, q_vol: 0, q_count: 0, real: true },
+        { uf: 'PA', value: 75, q_mass: 0, q_vol: 0, q_count_stock: 0, real: true },
+        { uf: 'SP', value: 25, q_mass: 0, q_vol: 0, q_count_stock: 0, real: true },
       ],
     });
     stubGlobals(fx);
@@ -372,28 +376,6 @@ describe('ViewGeography — gating and honest-note branches', () => {
     expect(container.textContent).toContain('ainda não estão disponíveis');
     // Only Valor remains in the metric segment.
     expect(container.textContent).not.toContain('Quantidade (massa)');
-  });
-
-  it('shows the cabeças cross-species caveat when the active dim is count', () => {
-    const fx = fullFixture({
-      ufData: [
-        { uf: 'MT', value: 0, q_mass: 0, q_vol: 0, q_count: 200, real: true },
-        { uf: 'SP', value: 0, q_mass: 0, q_vol: 0, q_count: 50, real: true },
-      ],
-      regionData: [
-        { id: 'CO', label: 'Centro-Oeste', value: 0, q_count: 200 },
-        { id: 'SE', label: 'Sudeste', value: 0, q_count: 50 },
-      ],
-      topMunis: [],
-      ufYearlySeries: [],
-    });
-    stubGlobals(fx, { geoLevel: 'municipio' });
-    const { container } = render(
-      <ViewGeography families={['count']} summary={{}} database="ibge_ppm" conventions={{ autoScale: true }} />
-    );
-    // value is all-zero → valueAvail false; count is the only available dim → active.
-    expect(container.textContent).toContain('cabeças');
-    expect(container.textContent).toContain('Rebanho');
   });
 
   it('renders the ufYearPartial caption and "(parcial)" tag when the UF year lags the window', () => {
@@ -417,8 +399,8 @@ describe('ViewGeography — gating and honest-note branches', () => {
 
   it('EST-6: singles out "Estado produtor" (no "maiores") when only one UF ranks', () => {
     const fx = fullFixture({
-      ufData: [{ uf: 'PA', value: 75, q_mass: 30, q_vol: 8, q_count: 12, real: true }],
-      regionData: [{ id: 'N', label: 'Norte', value: 75, q_mass: 30, q_vol: 8, q_count: 12 }],
+      ufData: [{ uf: 'PA', value: 75, q_mass: 30, q_vol: 8, q_count_stock: 12, real: true }],
+      regionData: [{ id: 'N', label: 'Norte', value: 75, q_mass: 30, q_vol: 8, q_count_stock: 12 }],
     });
     stubGlobals(fx);
     const { container } = render(
@@ -588,13 +570,13 @@ describe('ViewGeography — the região map', () => {
   const regionFixture = () => fullFixture({
     ufYearlySeries: UF_YEARLY,
     ufData: [
-      { uf: 'PA', region: 'N', value: 75, q_mass: 30, q_vol: 8, q_count: 12, real: true },
-      { uf: 'AM', region: 'N', value: 20, q_mass: 8, q_vol: 2, q_count: 3, real: true },
-      { uf: 'SP', region: 'SE', value: 25, q_mass: 10, q_vol: 4, q_count: 6, real: true },
+      { uf: 'PA', region: 'N', value: 75, q_mass: 30, q_vol: 8, q_count_stock: 12, real: true },
+      { uf: 'AM', region: 'N', value: 20, q_mass: 8, q_vol: 2, q_count_stock: 3, real: true },
+      { uf: 'SP', region: 'SE', value: 25, q_mass: 10, q_vol: 4, q_count_stock: 6, real: true },
     ],
     regionData: [
-      { id: 'N', label: 'Norte', value: 95, q_mass: 38, q_vol: 10, q_count: 15, ufs: 2 },
-      { id: 'SE', label: 'Sudeste', value: 25, q_mass: 10, q_vol: 4, q_count: 6, ufs: 1 },
+      { id: 'N', label: 'Norte', value: 95, q_mass: 38, q_vol: 10, q_count_stock: 15, ufs: 2 },
+      { id: 'SE', label: 'Sudeste', value: 25, q_mass: 10, q_vol: 4, q_count_stock: 6, ufs: 1 },
     ],
   });
 
@@ -650,9 +632,9 @@ describe('ViewGeography — navigating back up the trail', () => {
 
   const deep = { regions: ['N'], states: ['PA'] };
   const universe = [
-    { uf: 'PA', region: 'N', value: 75, q_mass: 30, q_vol: 8, q_count: 12, real: true },
-    { uf: 'AM', region: 'N', value: 20, q_mass: 8, q_vol: 2, q_count: 3, real: true },
-    { uf: 'SP', region: 'SE', value: 25, q_mass: 10, q_vol: 4, q_count: 6, real: true },
+    { uf: 'PA', region: 'N', value: 75, q_mass: 30, q_vol: 8, q_count_stock: 12, real: true },
+    { uf: 'AM', region: 'N', value: 20, q_mass: 8, q_vol: 2, q_count_stock: 3, real: true },
+    { uf: 'SP', region: 'SE', value: 25, q_mass: 10, q_vol: 4, q_count_stock: 6, real: true },
   ];
 
   it('the região crumb re-enters the region with ALL its UFs, not just the selected one', () => {
@@ -662,7 +644,7 @@ describe('ViewGeography — navigating back up the trail', () => {
     // as dead. The region's membership must come from the UF universe.
     const patch = vi.fn();
     stubGlobals(fullFixture({
-      ufData: [{ uf: 'PA', region: 'N', value: 75, q_mass: 30, q_vol: 8, q_count: 12, real: true }],
+      ufData: [{ uf: 'PA', region: 'N', value: 75, q_mass: 30, q_vol: 8, q_count_stock: 12, real: true }],
       ufDataFull: universe,
     }));
     window.patchFilter = patch;
@@ -734,7 +716,7 @@ describe('ViewGeography — the loading notice names what is being waited on', (
 // ---------------------------------------------------------------------------
 describe('ViewGeography — "Soma por região" must name what it actually summed', () => {
   const oneRegion = (over = {}) => fullFixture({
-    regionData: [{ id: 'N', label: 'Norte', value: 75, q_mass: 30, q_vol: 8, q_count: 12,
+    regionData: [{ id: 'N', label: 'Norte', value: 75, q_mass: 30, q_vol: 8, q_count_stock: 12,
                    ufs: 1, ufsTotal: 7, partial: true, ufNames: ['Pará'], ...over }],
   });
 
@@ -755,8 +737,8 @@ describe('ViewGeography — "Soma por região" must name what it actually summed
     // A value-less banco (the livestock herd is the real case) drops the Valor
     // dimension entirely, so the card falls to a physical unit.
     stubGlobals(fullFixture({
-      ufData: [{ uf: 'PA', value: 0, q_mass: 30, q_vol: 0, q_count: 0, real: true }],
-      regionData: [{ id: 'N', label: 'Norte', value: 0, q_mass: 30, q_vol: 0, q_count: 0,
+      ufData: [{ uf: 'PA', value: 0, q_mass: 30, q_vol: 0, q_count_stock: 0, real: true }],
+      regionData: [{ id: 'N', label: 'Norte', value: 0, q_mass: 30, q_vol: 0, q_count_stock: 0,
                      ufs: 1, ufsTotal: 7, partial: true, ufNames: ['Pará'] }],
     }));
     const { container } = render(
@@ -792,9 +774,9 @@ describe('ViewGeography — "Soma por região" must name what it actually summed
   it('com duas ou mais regiões as barras voltam — e só a parcial leva a marca', () => {
     stubGlobals(fullFixture({
       regionData: [
-        { id: 'N',  label: 'Norte',   value: 75, q_mass: 30, q_vol: 8, q_count: 12,
+        { id: 'N',  label: 'Norte',   value: 75, q_mass: 30, q_vol: 8, q_count_stock: 12,
           ufs: 1, ufsTotal: 7, partial: true,  ufNames: ['Pará'] },
-        { id: 'SE', label: 'Sudeste', value: 25, q_mass: 10, q_vol: 4, q_count: 6,
+        { id: 'SE', label: 'Sudeste', value: 25, q_mass: 10, q_vol: 4, q_count_stock: 6,
           ufs: 4, ufsTotal: 4, partial: false, ufNames: ['São Paulo'] },
       ],
     }));
@@ -810,9 +792,9 @@ describe('ViewGeography — "Soma por região" must name what it actually summed
   // name while carrying only part of itself.
   it('INVARIANTE: nenhuma região parcial aparece com o nome pelado', () => {
     const partials = [
-      { id: 'N',  label: 'Norte',   value: 75, q_mass: 30, q_vol: 8, q_count: 12,
+      { id: 'N',  label: 'Norte',   value: 75, q_mass: 30, q_vol: 8, q_count_stock: 12,
         ufs: 1, ufsTotal: 7, partial: true, ufNames: ['Pará'] },
-      { id: 'SE', label: 'Sudeste', value: 25, q_mass: 10, q_vol: 4, q_count: 6,
+      { id: 'SE', label: 'Sudeste', value: 25, q_mass: 10, q_vol: 4, q_count_stock: 6,
         ufs: 2, ufsTotal: 4, partial: true, ufNames: ['São Paulo', 'Minas Gerais'] },
     ];
     stubGlobals(fullFixture({ regionData: partials }));
@@ -895,5 +877,141 @@ describe('ViewGeography — the Comparativo entre territórios shortcut', () => 
     );
     expect([...container.querySelectorAll('button')].some((b) => /^Comparar/.test(b.textContent.trim())))
       .toBe(false);
+  });
+});
+
+// ── Counts (v1.108.0) ───────────────────────────────────────────────────────────────
+// The 'contagem' family reduces heads, eggs and fruits to one base unit, and until v1.108.0
+// ONE "Quantidade (cabeças)" metric summed all of it: Mato Grosso 2025 read 3,88 bi
+// "cabeças", 80,4 mi heads of eight species plus 3,80 bi eggs (measured on prod).
+describe('ViewGeography — a count map never adds different things', () => {
+  // PPM count products as the API serves them; the groups come from the REAL rule.
+  const BOVINO = { code: '2670', name: 'Bovino', family: 'count', measure_kind: 'stock', unit_native: 'Cabeças' };
+  const SUINO = { code: '32794', name: 'Suíno - total', family: 'count', measure_kind: 'stock', unit_native: 'Cabeças' };
+  const OVOS = { code: '2685', name: 'Ovos de galinha', family: 'count', measure_kind: 'flow', unit_native: 'Mil dúzias' };
+  // No banco holds eggs and counted fruits together today; this one proves the refusal.
+  const ABACAXI = { code: '40092', name: 'Abacaxi', family: 'count', unit_native: 'Mil frutos' };
+
+  // Per-UF totals in mi un, Mato Grosso as measured. `value` 0 everywhere: a value-less
+  // basket, so the map opens on a count. The eggs' total is the larger one on purpose.
+  function countFixture(products, overrides = {}) {
+    const codes = products.map((p) => p.code);
+    return fullFixture({
+      ufData: [
+        { uf: 'MT', region: 'CO', value: 0, q_mass: 0, q_vol: 0, q_count_stock: 80.4, q_count_flow: 3803.2, real: true },
+        { uf: 'SP', region: 'SE', value: 0, q_mass: 0, q_vol: 0, q_count_stock: 12, q_count_flow: 1500, real: true },
+      ],
+      regionData: [
+        { id: 'CO', label: 'Centro-Oeste', value: 0, q_count_stock: 80.4, q_count_flow: 3803.2 },
+        { id: 'SE', label: 'Sudeste', value: 0, q_count_stock: 12, q_count_flow: 1500 },
+      ],
+      topMunis: [],
+      ufYearlySeries: [],
+      products,
+      selectedProducts: codes,
+      countGroups: window.countGroups(products, codes),
+      ...overrides,
+    });
+  }
+  const AT_UF_CO = { regions: ['CO'] };
+  const metricButtons = (container) =>
+    [...container.querySelectorAll('[aria-label="Métrica"] button')].map((b) => b.textContent.trim());
+  const clickMetric = (container, label) => fireEvent.click(
+    [...container.querySelectorAll('[aria-label="Métrica"] button')].find((b) => b.textContent.trim() === label));
+
+  it('maps the herd in cabeças, says heads do not compare across species, and points to Rebanho', () => {
+    stubGlobals(countFixture([BOVINO, SUINO]));
+    const { container } = render(
+      <ViewGeography families={['count']} summary={AT_UF_CO} database="ibge_ppm" conventions={{ autoScale: true }} />
+    );
+    expect(metricButtons(container)).toEqual(['Efetivo (cabeças)']);
+    expect(choroProps.valueKey).toBe('q_count_stock');
+    expect(choroProps.label).toBe('cabeças');
+    expect(choroProps.data.find((u) => u.uf === 'MT').q_count_stock).toBeCloseTo(80.4e6);
+    expect(container.textContent).toContain('soma as cabeças de 2 espécies');
+    expect(container.textContent).toContain('Rebanho');
+    expect(container.textContent).not.toContain('Quantidade (cabeças)');
+  });
+
+  it('a count heading names its unit once: "Efetivo (cabeças)", never "(cabeças) · cabeças"', () => {
+    stubGlobals(countFixture([BOVINO, SUINO]));
+    const { container } = render(
+      <ViewGeography families={['count']} summary={AT_UF_CO} database="ibge_ppm" conventions={{ autoScale: false }} />
+    );
+    const overlines = [...container.querySelectorAll('.sh-ov')].map((el) => el.textContent);
+    expect(overlines.some((o) => o.includes('Efetivo (cabeças)'))).toBe(true);
+    expect(overlines.filter((o) => (o.match(/cabeças/g) || []).length > 1)).toEqual([]);
+  });
+
+  it('the herd and the eggs are two metrics, and each names the other', () => {
+    stubGlobals(countFixture([BOVINO, OVOS]));
+    const { container } = render(
+      <ViewGeography families={['count']} summary={AT_UF_CO} database="ibge_ppm" conventions={{ autoScale: true }} />
+    );
+    expect(metricButtons(container)).toEqual(['Efetivo (cabeças)', 'Quantidade (ovos)']);
+    // Opens on the herd: its map holds the heads alone, never heads plus eggs.
+    expect(choroProps.valueKey).toBe('q_count_stock');
+    expect(choroProps.data.find((u) => u.uf === 'MT').q_count_stock).toBeCloseTo(80.4e6);
+    expect(container.textContent).toContain('Fora desta leitura: Ovos de galinha');
+    expect(container.textContent).toContain('Veja a métrica Quantidade (ovos)');
+
+    clickMetric(container, 'Quantidade (ovos)');
+    expect(choroProps.valueKey).toBe('q_count_flow');
+    expect(choroProps.label).toBe('ovos');
+    expect(choroProps.data.find((u) => u.uf === 'MT').q_count_flow).toBeCloseTo(3803.2e6);
+    expect(container.textContent).toContain('Fora desta leitura: Bovino');
+    expect(container.textContent).toContain('Veja a métrica Efetivo (cabeças)');
+  });
+
+  it('a count total whose products count different things gets no metric, and is named', () => {
+    stubGlobals(countFixture([OVOS, ABACAXI]));
+    const { container } = render(
+      <ViewGeography families={['count']} summary={AT_UF_CO} database="ibge_ppm" conventions={{ autoScale: true }} />
+    );
+    expect(metricButtons(container).some((l) => /ovos|frutos/.test(l))).toBe(false);
+    expect(choroProps.valueKey).not.toMatch(/^q_count/);
+    expect(container.textContent).toContain('Contagens que não se somam');
+    expect(container.textContent).toContain('Abacaxi (frutos)');
+    expect(container.textContent).toContain('Ovos de galinha (ovos)');
+  });
+
+  // The "Base de dados" card ranks the products of the selected state. Per product the count
+  // is ONE thing (`q_count`), but the card used to rank the eggs among the species under
+  // "cabeças" (CHANGELOG v1.107.0, Notas).
+  const MT_PRODUCTS = {
+    products: [
+      { code: '2685', name: 'Ovos de galinha', measure_kind: 'flow', value: 900, q_count: 3744.2 },
+      { code: '2670', name: 'Bovino', measure_kind: 'stock', value: null, q_count: 31.6 },
+      { code: '32794', name: 'Suíno - total', measure_kind: 'stock', value: null, q_count: 2.1 },
+    ],
+  };
+
+  it('"Base de dados" on the herd ranks only the species, and names the eggs', () => {
+    stubGlobals(countFixture([BOVINO, SUINO, OVOS]), { productsByUf: MT_PRODUCTS });
+    const { container } = render(
+      <ViewGeography families={['count']} summary={{ states: ['MT'] }} database="ibge_ppm" conventions={{ autoScale: true }} />
+    );
+    const card = barChartCalls[barChartCalls.length - 1];
+    expect(card.valueKey).toBe('q_count_stock');
+    expect(card.data.map((r) => r.name)).toEqual(['Bovino', 'Suíno - total']);
+    expect(card.data[0].q_count_stock).toBeCloseTo(31.6e6); // the product's own count
+    expect(container.textContent).toContain('ranking por efetivo (cabeças)');
+    expect(container.textContent).toContain('Fora desta leitura: Ovos de galinha');
+  });
+
+  it('"Base de dados" by value ranks the eggs and names the herd, pointing to its own metric', () => {
+    stubGlobals(countFixture([BOVINO, SUINO, OVOS], {
+      ufData: [
+        { uf: 'MT', region: 'CO', value: 900, q_mass: 0, q_vol: 0, q_count_stock: 80.4, q_count_flow: 3803.2, real: true },
+      ],
+    }), { productsByUf: MT_PRODUCTS });
+    const { container } = render(
+      <ViewGeography families={['count']} summary={{ states: ['MT'] }} database="ibge_ppm" conventions={{ autoScale: true }} />
+    );
+    const card = barChartCalls[barChartCalls.length - 1];
+    expect(card.valueKey).toBe('value');
+    expect(card.data.map((r) => r.name)).toEqual(['Ovos de galinha']);
+    expect(container.textContent).toContain('Efetivo dos rebanhos: Bovino, Suíno - total');
+    expect(container.textContent).toContain('Veja a métrica Efetivo (cabeças) ou a perspectiva Rebanho');
   });
 });

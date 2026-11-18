@@ -163,6 +163,19 @@ def _str_or_none(value: Any) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
+def _count_totals(row: Any) -> dict[str, float]:
+    """The two count totals of a row that sums ACROSS products (``sql._count_split``), un → mi un.
+
+    They are never added together. ``q_count_stock`` is the herd (heads at year end) and
+    ``q_count_flow`` is counted production (eggs, fruits): one figure for both put 3.80 bi
+    eggs under "cabeças" on the Geografia map (Mato Grosso 2025). Absent → 0, like every
+    quantity here (see :func:`_measure` for why quantities and values differ on that)."""
+    return {
+        "q_count_stock": _num(getattr(row, "q_count_stock", 0)) / 1e6,
+        "q_count_flow": _num(getattr(row, "q_count_flow", 0)) / 1e6,
+    }
+
+
 # ── snapshot ──────────────────────────────────────────────────────────────────
 
 
@@ -465,6 +478,13 @@ def _products(df: pd.DataFrame | None) -> list[dict]:
         mk = getattr(r, "measure_kind", None)
         if isinstance(mk, str) and mk:
             row["measure_kind"] = mk
+        # The unit as the SOURCE publishes it ("Cabeças", "Mil dúzias", "Mil frutos").
+        # `unit` above is the family's base, and in 'contagem' every base is 'un': it cannot
+        # say whether a product counts heads, eggs or fruits, and the screens must never add
+        # two of those (the frontend's countUnits.js names each from this field).
+        un = getattr(r, "unit_native", None)
+        if isinstance(un, str) and un:
+            row["unit_native"] = un
         out.append(row)
     return out
 
@@ -513,7 +533,9 @@ def _overview_ts(df: pd.DataFrame | None) -> list[dict]:
     for r in df.itertuples():
         q_mass = _num(getattr(r, "q_mass", 0)) / 1e3
         q_vol = _num(getattr(r, "q_vol", 0)) / 1e6
-        q_count = _num(getattr(r, "q_count", 0)) / 1e6  # un → mi un (head / eggs)
+        # No count here: a yearly total over every product would add the herd's heads to
+        # the eggs (see _count_totals). The screens compute counts from productTS, where
+        # each product carries its own.
         out.append(
             {
                 "y": int(r.reference_year),
@@ -521,7 +543,6 @@ def _overview_ts(df: pd.DataFrame | None) -> list[dict]:
                 "q": q_mass,
                 "q_mass": q_mass,
                 "q_vol": q_vol,
-                "q_count": q_count,
             }
         )
     return out
@@ -530,8 +551,8 @@ def _overview_ts(df: pd.DataFrame | None) -> list[dict]:
 def _uf_data(df: pd.DataFrame | None) -> list[dict]:
     # value (the choropleth measure) → millions; q_mass/q_vol come from the by-UF
     # reader's per-family qty_base sums (massa → t, volume → m³), scaled the same
-    # way as overviewTS: q_mass ÷1e3 → mil t, q_vol ÷1e6 → mi m³. col/row added
-    # client-side from UF_DATA.
+    # way as overviewTS: q_mass ÷1e3 → mil t, q_vol ÷1e6 → mi m³; the count in its
+    # two totals (_count_totals). col/row added client-side from UF_DATA.
     if _empty(df):
         return []
     return [
@@ -542,7 +563,7 @@ def _uf_data(df: pd.DataFrame | None) -> list[dict]:
             "value": _measure_scaled(r.total_value, 1e6),
             "q_mass": _num(getattr(r, "q_mass", 0)) / 1e3,
             "q_vol": _num(getattr(r, "q_vol", 0)) / 1e6,
-            "q_count": _num(getattr(r, "q_count", 0)) / 1e6,  # un → mi un (head / eggs)
+            **_count_totals(r),
             # True for a real Brazilian UF, False for a COMEX special trade pseudo-code
             # (EX/ND/ZN/MN/RE…). These have no state_name from the UF lookup (same
             # discriminator gold_source_metadata.ufs_total uses), so the frontend can
@@ -565,8 +586,9 @@ def _uf_yearly(df: pd.DataFrame | None) -> list[dict]:
     # Per-(UF, year) rows backing the geography 'ano × UF' heatmap — REAL Gold
     # history, never the national curve rescaled per UF. Same per-family scaling as
     # ufData/overviewTS: value ÷1e6 → millions, q_mass ÷1e3 → mil t, q_vol ÷1e6 →
-    # mi m³. ``name``/``region`` ride along so the heatmap can label each row; col/row
-    # come client-side from UF_DATA (decorate.js). ~27 UFs × covered years (small).
+    # mi m³, the count in its two totals. ``name``/``region`` ride along so the heatmap
+    # can label each row; col/row come client-side from UF_DATA (decorate.js). ~27 UFs ×
+    # covered years (small).
     if _empty(df):
         return []
     return [
@@ -578,7 +600,7 @@ def _uf_yearly(df: pd.DataFrame | None) -> list[dict]:
             "value": _measure_scaled(r.total_value, 1e6),
             "q_mass": _num(getattr(r, "q_mass", 0)) / 1e3,
             "q_vol": _num(getattr(r, "q_vol", 0)) / 1e6,
-            "q_count": _num(getattr(r, "q_count", 0)) / 1e6,  # un → mi un (head / eggs)
+            **_count_totals(r),
         }
         for r in df.itertuples()
     ]
@@ -587,8 +609,8 @@ def _uf_yearly(df: pd.DataFrame | None) -> list[dict]:
 def _municipio_yearly(df: pd.DataFrame | None) -> list[dict]:
     # Per-(município, year) rows backing the sub-UF + live-município geography
     # cascade. SAME per-family scaling as _uf_yearly (value ÷1e6 → mi, q_mass ÷1e3 →
-    # mil t, q_vol ÷1e6 → mi m³, q_count ÷1e6 → mi un) so the client can aggregate
-    # município rows up to ANY level and stay byte-consistent with the UF cube. The
+    # mil t, q_vol ÷1e6 → mi m³, the two count totals ÷1e6 → mi un) so the client can
+    # aggregate município rows up to ANY level and stay byte-consistent with the UF cube. The
     # município's UF/região/meso/micro/intermediária/imediata are NOT carried per row
     # (that would bloat ~5570× years × products) — the client maps cityCode → ancestry
     # via /geo-mesh, served once and cached.
@@ -602,7 +624,7 @@ def _municipio_yearly(df: pd.DataFrame | None) -> list[dict]:
             "value": _measure_scaled(r.total_value, 1e6),
             "q_mass": _num(getattr(r, "q_mass", 0)) / 1e3,
             "q_vol": _num(getattr(r, "q_vol", 0)) / 1e6,
-            "q_count": _num(getattr(r, "q_count", 0)) / 1e6,
+            **_count_totals(r),
         }
         for r in df.itertuples()
     ]
@@ -610,7 +632,7 @@ def _municipio_yearly(df: pd.DataFrame | None) -> list[dict]:
 
 def serialize_municipio_yearly(df: pd.DataFrame | None) -> dict:
     """seam.geo_municipio_yearly() → { municipioYearly: [{year, cityCode, uf, value,
-    q_mass, q_vol, q_count}] }.
+    q_mass, q_vol, q_count_stock, q_count_flow}] }.
 
     The basket-scoped per-(município, year) cube — the finest geography grain. The
     client joins ``cityCode`` to /geo-mesh to roll it up to the selected sub-UF level
@@ -681,8 +703,11 @@ def serialize_product_uf(df: pd.DataFrame | None) -> dict:
     sine jitter over a synthetic affinity table). ``value`` is the reader's raw
     total_value; the per-family quantities ride along (same ÷1e3/÷1e6 scaling as
     ufData) so a VALUE-LESS stock (the livestock herd) can rank UFs by headcount
-    (``q_count``) instead of an all-zero value. Rows are emitted descending by value;
-    the client re-sorts by the family it displays. Empty list when df is None/empty.
+    (``q_count``) instead of an all-zero value. The reader is the cross-product one,
+    which splits the count in two (``sql._count_split``); for one product the two are
+    the same count, so this payload keeps the single ``q_count``. Rows are emitted
+    descending by value; the client re-sorts by the family it displays. Empty list when
+    df is None/empty.
     """
     if _empty(df):
         return {"uf": []}
@@ -702,7 +727,12 @@ def serialize_product_uf(df: pd.DataFrame | None) -> dict:
             "value": _measure(getattr(r, "total_value", getattr(r, "total_value_usd", None))),
             "q_mass": _num(getattr(r, "q_mass", 0)) / 1e3,
             "q_vol": _num(getattr(r, "q_vol", 0)) / 1e6,
-            "q_count": _num(getattr(r, "q_count", 0)) / 1e6,
+            # ONE product, so ONE of the two count totals is empty by construction: a
+            # product is either a herd or a counted production, never both (its
+            # measure_kind follows its table — assert_ppm_measure_kind_matches_tabela).
+            # Adding them here rebuilds that product's own count, not a cross-species sum.
+            "q_count": (_num(getattr(r, "q_count_stock", 0)) + _num(getattr(r, "q_count_flow", 0)))
+            / 1e6,
         }
         for r in df.itertuples()
     ]
@@ -715,14 +745,16 @@ def serialize_product_uf(df: pd.DataFrame | None) -> dict:
 
 
 def serialize_geo_yearly(df: pd.DataFrame | None) -> dict:
-    """seam.geo_yearly() → { ufYearly: [{year, uf, name, region, value, q_mass, q_vol, q_count}] }.
+    """seam.geo_yearly() → { ufYearly: [{year, uf, name, region, value, q_mass, q_vol,
+    q_count_stock, q_count_flow}] }.
 
     The basket-scoped per-(UF, year) cube backing the geography-aware hero/map/series.
     Reuses :func:`_uf_yearly` so the value/quantity scaling (value ÷1e6 → mi, q_mass
-    ÷1e3 → mil t, q_vol ÷1e6 → mi m³, q_count ÷1e6 → mi un) is BYTE-IDENTICAL to the
-    snapshot's ``ufYearly`` — the frontend treats both interchangeably (so the cube path
-    must keep q_count too, or a herd's geographic concentration zeroes out). ``{ ufYearly:
-    [] }`` when df is None/empty (no geo grain, or the basket matched nothing).
+    ÷1e3 → mil t, q_vol ÷1e6 → mi m³, the two count totals ÷1e6 → mi un) is
+    BYTE-IDENTICAL to the snapshot's ``ufYearly`` — the frontend treats both
+    interchangeably (so the cube path must keep the counts too, or a herd's geographic
+    concentration zeroes out). ``{ ufYearly: [] }`` when df is None/empty (no geo grain,
+    or the basket matched nothing).
 
     ``priceBase`` dates the cube's values. It reads the same pre-aggregated tables as the
     snapshot, but in a request of its own, cached on its own: across a build the two can come

@@ -250,8 +250,10 @@ def test_production_value_is_flow_only_when_measure_kind_present():
     assert "sum(case when measure_kind = 'flow' then val_real_ipca_brl end) as total_value" in q_ov
     q_uf, _ = sql.production_by_uf("p.serving.serving_ppm_annual", has_measure_kind=True)
     assert "sum(case when measure_kind = 'flow' then val_real_ipca_brl end)" in q_uf
-    # quantity stays unguarded (herd headcount is a valid quantity for the Rebanho view)
-    assert "sum(case when family = 'contagem' then qty_base end) as q_count" in q_uf
+    # quantity stays unguarded (herd headcount is a valid quantity for the Rebanho view),
+    # but split: the herd and the counted production (eggs) are two totals, never one.
+    assert "measure_kind = 'stock' then qty_base end) as q_count_stock" in q_uf
+    assert "coalesce(measure_kind, '') != 'stock' then qty_base end) as q_count_flow" in q_uf
     q_uy, _ = sql.production_by_uf_yearly("p.serving.serving_ppm_annual", has_measure_kind=True)
     assert "sum(case when measure_kind = 'flow' then val_real_ipca_brl end)" in q_uy
     q_ts, _ = sql.product_timeseries(
@@ -261,6 +263,67 @@ def test_production_value_is_flow_only_when_measure_kind_present():
         has_measure_kind=True,
     )
     assert "sum(case when measure_kind = 'flow' then val_real_ipca_brl end) as total_value" in q_ts
+
+
+def test_count_split_partitions_the_count_family_exactly():
+    """The two count totals partition 'contagem': disjoint, and together the old total.
+
+    Executed, not string-matched: sqlite runs the very fragment the readers embed. The case
+    that matters is a count row with NO measure_kind (PAM's fruits): ``measure_kind !=
+    'stock'`` is NULL for it, and a NULL predicate drops the row from BOTH totals. It is
+    the ``coalesce`` that keeps the pineapples on the map."""
+    import sqlite3
+
+    rows = [
+        ("contagem", "stock", 31_600_000.0),  # bovinos, Mato Grosso 2025
+        ("contagem", "flow", 3_740_000_000.0),  # ovos de galinha, same place and year
+        ("contagem", None, 1_000_000.0),  # abacaxi (PAM carries no measure_kind)
+        ("massa", "flow", 500.0),  # never a count
+        ("volume", None, 7.0),
+    ]
+    con = sqlite3.connect(":memory:")
+    con.execute("create table t (family text, measure_kind text, qty_base real)")
+    con.executemany("insert into t values (?, ?, ?)", rows)
+    (old_total,) = con.execute(
+        "select sum(case when family = 'contagem' then qty_base end) from t"
+    ).fetchone()
+
+    stock, flow = con.execute(f"select {sql._count_split(True)} from t").fetchone()
+    assert stock == 31_600_000.0
+    assert flow == 3_741_000_000.0
+    assert stock + flow == old_total  # nothing lost, nothing counted twice
+
+    # Without measure_kind (PAM, PEVS): no herd total, every count is counted production.
+    stock, flow = con.execute(f"select {sql._count_split(False)} from t").fetchone()
+    assert stock is None
+    assert flow == old_total
+
+
+def test_cross_product_readers_never_return_one_count_total():
+    """A reader that sums ACROSS products returns the two count totals and no mixed one;
+    a per-product reader keeps its single ``q_count`` (one product counts one thing)."""
+    import re
+
+    mixed = re.compile(r"\bas q_count\b")  # q_count_stock/_flow do not match (\b before _)
+    t = "p.serving.serving_ppm_annual"
+    cross = [
+        sql.production_by_uf(t, has_measure_kind=True)[0],
+        sql.production_by_uf_yearly(t, has_measure_kind=True)[0],
+        sql.production_by_municipio_yearly("p.gold.gold_ppm_production", has_measure_kind=True)[0],
+        sql.production_by_uf("p.serving.serving_pam_annual")[0],
+    ]
+    for q in cross:
+        assert not mixed.search(q), q
+        assert "as q_count_stock" in q and "as q_count_flow" in q
+    per_product = [
+        sql.products_by_uf(
+            t, code_column="product_code", name_column="product_description", has_measure_kind=True
+        )[0],
+        sql.products_by_municipio(t, has_measure_kind=True)[0],
+        sql.product_timeseries(t, code_column="product_code", has_measure_kind=True)[0],
+    ]
+    for q in per_product:
+        assert mixed.search(q), q
 
 
 def test_value_column_allowlist_blocks_injection():

@@ -19,8 +19,43 @@
   const LEVEL_LABEL = { regiao: 'região', uf: 'estado', municipio: 'município' };
   // The cube columns for each metric, in the units the serializers emit: value in millions
   // of the chosen currency (nullable: the chosen correction may not reach a year), mass in
-  // mil t, volume in mi m³, count in mi un.
-  const FIELD = { value: 'value', mass: 'q_mass', volume: 'q_vol', count: 'q_count' };
+  // mil t, volume in mi m³, each count total in mi un. A count is TWO metrics, the herd
+  // and the counted production, because the cube never adds them (countUnits.js).
+  const FIELD = {
+    value: 'value', mass: 'q_mass', volume: 'q_vol',
+    count_stock: 'q_count_stock', count_flow: 'q_count_flow',
+  };
+  const LABEL = { value: 'Valor', mass: 'Quantidade (massa)', volume: 'Quantidade (volume)' };
+
+  /** The metrics a basket can be compared on: value always, the quantity families it
+   *  carries (tonnes are never summed with cubic metres, here as everywhere), and one
+   *  metric per count group that counts ONE thing — "Efetivo (cabeças)" and "Quantidade
+   *  (ovos)" are two metrics, never one. A group whose products count different things
+   *  has no unit and is not offered; `refused` lists it for the note that says why. */
+  function metricsFor(database, summary) {
+    const families = (window.familiesInBasket
+      ? window.familiesInBasket(summary && summary.basket, database) : []) || [];
+    const options = [{ id: 'value', label: LABEL.value }];
+    ['mass', 'volume'].forEach((m) => {
+      if (families.includes(m)) options.push({ id: m, label: LABEL[m] });
+    });
+    const groups = families.includes('count') && window.applyFilters
+      ? (window.applyFilters(summary || {}, database).countGroups || []) : [];
+    groups.filter((g) => !g.mixed).forEach((g) => options.push({ id: g.id, label: g.label, group: g }));
+    return { options, refused: groups.filter((g) => g.mixed) };
+  }
+
+  /** The metric in force. A link from before v1.108.0 says `tm=count`, the one count total
+   *  of the time: with ONE count group in the basket that total was this group, so the link
+   *  opens it with the same numbers; with two it was heads plus eggs, which no metric is any
+   *  more, and the link opens on the default. */
+  function metricOf(requested, options) {
+    const ids = options.map((o) => o.id);
+    if (ids.includes(requested)) return requested;
+    const counts = options.filter((o) => o.group);
+    if (requested === 'count' && counts.length === 1) return counts[0].id;
+    return 'value';
+  }
 
   const keyOf = (t) => `${PREFIX[t.level]}:${t.code}`;
 
@@ -219,6 +254,6 @@
   window.TERRITORY_COMPARE_MAX = MAX;
   window.territoryCompare = {
     decode, encode, build, containments, labelOf, keyOf, defaultSelection, selectionOf,
-    selectionLabels, fromMapFocus, LEVEL_LABEL,
+    selectionLabels, fromMapFocus, metricsFor, metricOf, LEVEL_LABEL,
   };
 })();

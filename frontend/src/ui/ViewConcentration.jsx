@@ -6,6 +6,9 @@
 // HHI:  sum of squared percentage shares (0–10000). >2500 = highly
 //       concentrated (US DoJ convention).
 
+// A count fallback names what it leaves out (countUnits.js).
+import './CountUnitNotes.jsx';
+
 function ViewConcentration({ summary, conventions, database }) {
   const filtered = window.applyFilters(summary || {}, database);
   const hasGeo = filtered.ufDataFull.length > 0;
@@ -49,17 +52,30 @@ function ViewConcentration({ summary, conventions, database }) {
   const realUf   = filtered.ufData.filter(isRealUf);
 
   // Concentration is computed on VALUE by default. A value-less basket (the livestock
-  // herd — a stock with no money) falls back to HEADCOUNT so the Gini/HHI/Lorenz are
-  // real instead of all-zero. The metric formulas are measure-agnostic; we just feed
-  // them the headcount and relabel "valor" → "cabeças".
+  // herd — a stock with no money) falls back to a COUNT so the Gini/HHI/Lorenz are real
+  // instead of all-zero. The metric formulas are measure-agnostic; we feed them ONE count
+  // group (countUnits.js) — the herd's heads, else the counted production — and relabel
+  // "valor" with what it counts. Never the whole family: heads plus eggs is not a measure.
   const anyValue = realUf.some(u => u.value > 0)
     || Object.values(filtered.productTS).some(s => (s[s.length - 1]?.v || 0) > 0);
-  const onCount = !anyValue && (
-    realUf.some(u => (u.q_count || 0) > 0)
-    || Object.values(filtered.productTS).some(s => (s[s.length - 1]?.q || 0) > 0)
-  );
-  const measureLabel = onCount ? 'cabeças' : 'valor';
-  const ufMeasure   = u => (onCount ? (u.q_count || 0) : u.value);
+  const countGroups = filtered.countGroups || [];
+  const lastQ = (code) => {
+    const s = filtered.productTS[code];
+    return (s && s.length && s[s.length - 1].q) || 0;
+  };
+  const countGroup = anyValue ? null
+    : (window.countGroupWithData(countGroups, realUf)
+      || countGroups.find(g => !g.mixed && g.products.some(p => lastQ(p.code) > 0))
+      || null);
+  const onCount = !!countGroup;
+  const inCountGroup = new Set(onCount ? countGroup.products.map(p => p.code) : []);
+  // A basket of herds has no money BY NATURE; anything else in it has value, just not in
+  // this convention (eggs in € before 1999). The note says which of the two it is.
+  const selected = filtered.selectedProducts || [];
+  const soRebanho = onCount && selected.length > 0 && selected.every(
+    c => (filtered.products.find(p => p.code === c) || {}).measure_kind === 'stock');
+  const measureLabel = onCount ? countGroup.plural : 'valor';
+  const ufMeasure   = u => (onCount ? (u[countGroup.key] || 0) : u.value);
   const prodMeasure = last => (onCount ? (last?.q || 0) : (last ? last.v : 0));
 
   const ufValues = realUf.map(ufMeasure).filter(v => v > 0);
@@ -70,10 +86,16 @@ function ViewConcentration({ summary, conventions, database }) {
     .sort((a, b) => b.value - a.value);
 
   // ── Product distribution (latest year, by product) ──────────────────
-  const prodValues = Object.entries(filtered.productTS).map(([code, s]) => {
-    const last = s[s.length - 1];
-    return { code, name: (filtered.products.find(p => p.code === code) || {}).name || code, value: prodMeasure(last) };
-  }).filter(p => p.value > 0).sort((a, b) => b.value - a.value);
+  // On a count, only the group's own products enter (each by its own count): the rest of
+  // the basket counts something else, and is named on screen (CountLeftOutNote).
+  const prodValues = Object.entries(filtered.productTS)
+    .filter(([code]) => !onCount || inCountGroup.has(code))
+    .map(([code, s]) => {
+      const last = s[s.length - 1];
+      return { code, name: (filtered.products.find(p => p.code === code) || {}).name || code, value: prodMeasure(last) };
+    })
+    .filter(p => p.value > 0)
+    .sort((a, b) => b.value - a.value);
 
   // ── Metrics ──────────────────────────────────────────────────────────
   const gini = (vals) => {
@@ -141,10 +163,18 @@ function ViewConcentration({ summary, conventions, database }) {
     <>
       <window.RecorteNote recorte={filtered.recorte} />
       {onCount && (
-        <p className="caption" style={{ margin: '0 2px 4px' }}>
-          ⓘ Esta cesta não tem valor monetário (efetivo dos rebanhos) — a concentração
-          é calculada sobre as <strong>cabeças</strong>.
-        </p>
+        <div style={{ margin: '0 2px 4px' }}>
+          <p className="caption" style={{ margin: 0 }}>
+            {soRebanho
+              ? <>ⓘ Esta cesta não tem valor monetário (efetivo dos rebanhos) — a concentração
+                  é calculada sobre as <strong>cabeças</strong>.</>
+              : <>ⓘ Esta cesta não tem valor nesta convenção — a concentração é calculada sobre
+                  {countGroup.total === 'stock' ? ' o efetivo' : ' a quantidade'}, em{' '}
+                  <strong>{countGroup.plural}</strong>.</>}
+          </p>
+          <window.CountLeftOutNote groups={countGroups} shown={countGroup} database={database}
+                                   marginTop={4} />
+        </div>
       )}
 
       {/* The per-UF concentration reads the all-products UF grid until the product×UF

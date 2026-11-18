@@ -7,6 +7,101 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.108.0] - 2026-11-18
+
+**Uma contagem só soma o que conta a mesma coisa: o rebanho e os ovos deixam de ser um número só, e
+cada medida diz o que conta.** A métrica "Quantidade (cabeças)" do mapa da Geografia lia a família de
+contagem inteira, que reduz cabeças, ovos e frutos à mesma unidade de base (`un`). Na PPM, somava o
+efetivo dos rebanhos (um estoque: cabeças vivas no fim do ano) com a produção de ovos do ano (um
+fluxo) e chamava a soma de cabeças. Mato Grosso, 2025, medido na produção em 18/11: 3,88 bi
+"cabeças", das quais 80,4 mi eram cabeças de oito espécies e 3,80 bi eram ovos (98% da soma). No
+abacaxi e no coco-da-baía do PAM, que o IBGE conta em frutos, o mapa também dizia "cabeças".
+
+### Corrigido
+- **Geografia: uma métrica por coisa contada.** No lugar de "Quantidade (cabeças)", o mapa oferece
+  **Efetivo (cabeças)** para o rebanho e **Quantidade (ovos)** ou **Quantidade (frutos)** para a
+  produção contada, cada uma com a própria unidade na legenda, no mapa de calor, na soma por região
+  e no ranking.
+  - Medido numa prévia local contra a produção (só leitura), PPM · Mato Grosso · 2025: a soma por
+    região diz 80,4 mi cabeças numa métrica e 3,8 bi ovos na outra. O CSV dos 142 municípios soma
+    80.445.350 cabeças e 3.803.208.000 ovos, em colunas separadas.
+  - Quando o mapa soma vários produtos, ele diz quantos e por que isso pede cuidado (cabeças de 8
+    espécies não se comparam entre si; ovos de galinha e de codorna não se equivalem). E nomeia as
+    contagens da cesta que ficaram para outra métrica: "Fora desta leitura: Ovos de codorna, Ovos de
+    galinha."
+- **Card "Base de dados" da Geografia, com UF selecionada.** Na métrica do efetivo, ranqueia só as
+  espécies, pelas cabeças de cada uma; antes os ovos entravam no ranking das espécies sob
+  "cabeças". Na métrica de valor, o rebanho, que não tem valor monetário, deixa de sumir sem aviso: é
+  nomeado em "Efetivo dos rebanhos", com o motivo e a métrica onde aparece. Um produto sem valor na
+  convenção é nomeado em "Sem valor nesta convenção".
+- **A legenda e o balão dos mapas da Geografia diziam "R$" em toda métrica.** Os mapas por UF e por
+  município recebiam sempre a unidade da moeda, e um mapa de toneladas ou de cabeças saía com "R$".
+  Agora recebem a da métrica ativa. Achado no caminho.
+- **Os títulos dos cards não repetem a unidade.** Com a escala fixa, "Efetivo (cabeças) · cabeças"
+  passa a "Efetivo (cabeças)". Com a escala automática a unidade fica, porque diz a ordem de grandeza
+  ("mi cabeças").
+- **Visão geral.** O indicador de quantidade contada lê só a produção contada (ovos, frutos), com a
+  unidade nomeada. Antes somava a família inteira e, para não somar o rebanho, sumia sempre que a
+  cesta tinha uma espécie. Agora aparece ao lado do rebanho, que segue sem indicador próprio (cabeças
+  de espécies diferentes não se somam) e remete à perspectiva Rebanho. O mapa por UF de uma cesta sem
+  valor desenha um grupo só (o efetivo; sem rebanho, a produção contada) e nomeia o outro.
+- **Concentração e desigualdade.** Uma cesta sem valor na convenção calcula a concentração sobre um
+  grupo de contagem só e diz qual ("sobre as cabeças", "sobre a quantidade, em ovos"), nomeando o que
+  ficou de fora.
+- **Comparativo entre territórios.** A métrica "Contagem" vira uma por grupo, com a unidade nomeada
+  no eixo ("mi cabeças") e na tabela. Um link antigo com `tm=count` abre a métrica de contagem da
+  cesta quando ela tem uma só; com duas, aquele número era a soma das duas, e o link abre em Valor.
+- **"UFs cobertas"**, numa cesta sem valor, conta a UF que tem qualquer contagem, sem somar o rebanho
+  aos ovos.
+- **A faixa da família de unidades dizia que as contagens eram somáveis.** Para uma cesta só de
+  contagens, ela afirmava "as quantidades são somáveis". Agora diz que, na contagem, só se somam
+  produtos que contam a mesma coisa.
+- **Um grupo cujos produtos contam coisas diferentes não é desenhado, e é nomeado.** O servidor separa
+  estoque de fluxo, mas não distingue ovos de frutos: dois fluxos que contam coisas diferentes caem
+  no mesmo total. Nenhuma tela oferece esse total; a tela diz quais produtos ele junta e o que cada
+  um conta. Hoje nenhum banco tem ovos e frutos juntos; a regra existe para que um produto novo não
+  reabra o defeito.
+
+### Alterado
+- **CSV: uma coluna por coisa contada.** Sai `qtd_contagem_un`, que carregava cabeças mais ovos.
+  Entram `efetivo_cabecas` e `qtd_<coisa>` (`qtd_ovos`, `qtd_frutos`), só as que a cesta tem. Vale
+  para os arquivos da Visão geral, da Geografia (UF, região e município), da Concentração e do
+  Comparativo entre territórios. Um grupo recusado não tem coluna, como não tem mapa.
+- **Contrato da API.** As leituras que somam através dos produtos (por UF, UF × ano e município ×
+  ano) devolvem dois totais no lugar de `q_count`: `q_count_stock` (o efetivo; só a PPM tem estoque)
+  e `q_count_flow` (a produção contada). `overviewTS` deixa de trazer contagem: as telas a montam de
+  `productTS`, produto a produto.
+  - Cada produto de `products` traz `unit_native`, a unidade como a fonte a publica ("Cabeças", "Mil
+    dúzias", "Mil frutos"). É dela que o painel lê o que cada contagem conta.
+  - As leituras por produto mantêm `q_count`: um produto tem uma unidade só.
+  - Contrato em `docs/frontend_data_contract.md`.
+
+### Testes
+- vitest: `countUnits.test.js` lê os quatro arquivos de referência do dbt que tornam uma quantidade
+  uma contagem (`unit_family_conversions`, `pam_count_unit_products`, `comex_unit`,
+  `comtrade_unit`). Exige que toda unidade de contagem que eles produzem tenha nome, e que nenhum
+  nome sobre. Contraprova: trocar `pares` por uma unidade inventada derruba os dois testes.
+- vitest: as métricas do mapa (`geoDimensions.test.js`), as do Comparativo (link antigo e a série de
+  cada total) e, na Geografia, as notas, o card "Base de dados" nos dois modos e o título que não
+  repete "cabeças" (falha sem a correção). Também Visão geral, Concentração, os arquivos CSV e
+  `applyFilters` (os dois totais na série nacional, no recorte por UF e no cubo de municípios).
+- pytest: o SQL dos dois totais com e sem `measure_kind`, os leitores que pedem a separação e o
+  serializador (`_count_totals`, `unit_native`, `overviewTS` sem contagem).
+
+### Notas
+- **Pendências achadas no caminho, fora do escopo desta versão:**
+  - As perspectivas por produto (Perfil do produto, Rebanho) ainda escrevem a unidade de contagem da
+    convenção (`un`, `cab`) no lugar do que o produto conta, e o CSV por produto diz `un` na coluna
+    `unidade`. Um produto conta uma coisa só, então nenhum número soma coisas diferentes: falta só o
+    nome.
+  - COMTRADE: quatro códigos (080119, 080520, 440311, 440399) têm algumas linhas em "Número de
+    itens" e as demais em outra unidade. A lista de produtos escolhe a família e a unidade de cada
+    código com `any_value`, uma independente da outra. Se sair família de contagem com unidade que
+    não é de contagem, a contagem é recusada como "unidade não identificada" (nunca rotulada
+    errado), mas a escolha não é determinística.
+
+---
+
 ## [1.107.3] - 2026-11-18
 
 Documenta o que o #567 ensinou e como o #575 foi validado. Nada muda no painel, nos dados ou nas
