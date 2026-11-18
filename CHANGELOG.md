@@ -7,6 +7,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.107.2] - 2026-11-18
+
+Substitui o PR agrupado de Python do Dependabot (#567), que **rebaixava** o adaptador do BigQuery e
+o cliente do Cloud Storage sob um título de atualização. Entram 16 dos 17 alvos dele, resolvidos pelo
+`uv` a partir do `main`, e o lock só sobe: 21 pacotes, nenhum para baixo, nenhum entrando ou saindo.
+Fica de fora o `tenacity` 9.2.1, o alvo que obrigava a descida.
+
+### Por que não o #567
+- O lock do #567 trocava `dbt-bigquery` 1.12.1 → **1.11.1** e `google-cloud-storage` 3.1.1 →
+  **2.19.0** (uma versão principal abaixo), arrastando `google-cloud-aiplatform` 1.153 → 1.115,
+  `google-genai` 2.3 → 1.20 e `websockets` 16 → 15; ainda acrescentava o `shapely` e tirava o
+  `distro` e o `sniffio`. O título dizia "Bump"; a tabela do PR mostrava o adaptador descendo, mas
+  anunciava o `google-cloud-storage` 3.17.1.
+- **A causa é o alvo `tenacity` 9.2.1.** O `dbt-bigquery` 1.12 exige `google-cloud-aiplatform>=1.148`,
+  que exige `google-genai>=1.66`, e o `google-genai` 2.3 limita `tenacity<9.2.0`. Para dar o 9.2.1, o
+  resolvedor desceu o `google-genai` para 1.20 e o `google-cloud-aiplatform` para 1.115, e com eles o
+  adaptador para 1.11.1, que limita o `google-cloud-storage` abaixo de 3.
+- Medido: uma cópia do projeto que só acrescenta `tenacity>=9.2.1` reproduz o lock do #567 pacote a
+  pacote; com o piso abaixo, a mesma exigência não tem solução, e o `uv` aponta essa cadeia. O
+  `tenacity` fica no 9.1.4 até um `google-genai` estável aceitar o 9.2.
+
+### Alterado
+- dbt: `dbt-core` 1.12.5 → 1.12.7, `dbt-bigquery` 1.12.1 → 1.12.4, `dbt-adapters` 1.24.5 → 1.24.6.
+- Google e dados: `google-cloud-bigquery` 3.45.2 → 3.47.0, `google-cloud-storage` 3.1.1 → 3.17.1,
+  `google-auth` 2.58.0 → 2.62.2, `pandas` 3.0.6 → 3.1.1, `pydantic` 2.13.5 → 2.14.3,
+  `pydantic-settings` 2.15.0 → 2.16.3, `certifi`, `typer` e `python-dotenv`.
+- Ferramentas: `ruff` 0.16.8 → 0.17.5 (nenhum ajuste de código), `sqlfluff` e o templater do dbt
+  4.3.0 → 4.5.0, `pytest` 9.1.1 → 9.2.0, `pre-commit` 4.6.2 → 4.7.0.
+- **Piso `dbt-bigquery>=1.12`** no `pyproject.toml` (era `>=1.8`). O adaptador escreve o SQL de toda
+  materialização, e nada impedia o resolvedor de descê-lo para encaixar outra atualização: com o piso,
+  o próximo PR que pedir o `tenacity` 9.2 dá conflito visível em vez de trocar o adaptador calado.
+
+### Validação (antes do merge)
+- `ruff` 0.17.5 limpo, `uv lock --check` sem divergência e 2535 testes passando nos dois locks (o
+  do `main` e o deste PR), com os mesmos 15 pulados.
+- **O adaptador.** Build de dev completo com `dbt-core` 1.12.7 e `dbt-bigquery` 1.12.4, comparado
+  com o build de produção que o #551 disparou (18/11, 13:15 UTC, ainda com `dbt-core` 1.12.5 e
+  `dbt-bigquery` 1.12.1), sobre o mesmo Bronze, sem nenhuma ingestão entre os dois:
+  - 440 nós, sem erro, com os mesmos 2 avisos da produção e as mesmas contagens
+    (`assert_pam_area_planted_ge_harvested`, 2 linhas; `assert_unconvertible_quantities_for_curation`, 1);
+  - 41 tabelas com as mesmas linhas e os mesmos bytes;
+  - conteúdo idêntico em 29;
+  - nas 12 restantes, diferença relativa máxima de 2,72 × 10⁻¹⁵, sem nenhuma linha sem par e sem
+    nenhum nulo divergente;
+  - fora da comparação: `serving_quality_history`, que só acumula e por isso nunca coincide, e duas
+    tabelas de Silver que só existem em produção (`comtrade_market_nature` e `ibge_product_codes`,
+    restos de seeds aposentados que nenhum build gera);
+  - custo: 21,84 GiB no build e 27,08 GiB na comparação.
+- **Sonda de execução nos dois locks** (`google-cloud-bigquery` 3.45 → 3.47, `google-cloud-storage`
+  3.1 → 3.17, `pandas` 3.0.6 → 3.1.1), com saídas idênticas:
+  - 35 respostas da API pelas rotas do próprio app, contra os dados de produção, todas com 200 e o
+    mesmo corpo, inclusive o mês-base do valor corrigido (`priceBase`, em 19 delas);
+  - a trilha do Bronze bruto do BCB no GCS (câmbio e inflação): lista, metadados, bytes e os tipos
+    lidos pelo `pandas`;
+  - o Parquet que o `land_raw` escreve, ida e volta (só muda a versão do `pandas` que o próprio
+    arquivo registra);
+  - a carga de um Bronze de teste pelo `load_dataframe` num dataset de dev (438 linhas, mesmo
+    esquema e mesma partição), lida de volta pelo gateway.
+- **Não coberto:** o envio de objetos ao GCS (`upload_from_file`, `upload_from_filename` e o
+  `patch` dos metadados) só tem os testes com dublês, porque não há bucket fora da produção. O
+  primeiro envio real será a próxima ingestão, a de câmbio, diária, às 08:00 UTC; se falhar, o
+  `doctor` acusa.
+- Avisos novos, nenhum é falha:
+  - o pytest 9.2 renomeou `CallSpec2` para `CallSpec`, e o plugin do `anyio` ainda importa o nome
+    antigo (190 avisos contra 189; o nome antigo só some no pytest 10);
+  - o `google-auth` 2.62 adiou de outubro de 2026 para abril de 2027 a exigência de `grpcio` ≥ 1.83.
+    O lock segue no 1.80, e, como registrado na v1.88.5, nada em produção usa gRPC.
+- O build de produção não roda no merge: o gatilho de push olha `dbt/**`, o `config.py` e o próprio
+  workflow, não o lock. O adaptador novo entra no próximo build de produção: o agendado de quinta,
+  19/11, se nenhum merge em `dbt/**` vier antes. O painel e o Job de ingestão, ao contrário, são
+  publicados no merge.
+
+---
+
 ## [1.107.1] - 2026-11-18
 
 **Um link cujo `?b=` não nomeia um banco do painel abre o banco padrão (IBGE PEVS), em vez de
