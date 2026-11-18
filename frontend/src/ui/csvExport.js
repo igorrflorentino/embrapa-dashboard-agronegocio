@@ -5,6 +5,9 @@
 // client-side download. (In the Cloud Run deploy, the same filtered slice
 // is what's held in memory; this writes it out verbatim.)
 
+// What a count column is called (window.countColumn): one per thing counted.
+import './countUnits.js';
+
 (function () {
   // A view is exportable when its registry entry (views.js) declares
   // `exportable: true` — i.e. it has an applyFilters-backed tabular slice.
@@ -131,18 +134,25 @@
       const abs = window.scalePresent(v, escala);
       return abs == null ? '' : Math.round(dispV(abs));
     };
+    // One count column per group the basket holds, named by what it counts
+    // (window.countColumn: efetivo_cabecas, qtd_ovos, qtd_frutos…). Until v1.108.0 a single
+    // qtd_contagem_un column carried the herd's heads plus a year's eggs. A group whose
+    // products count different things has no unit, so it gets no column, as it gets no map.
+    const countCols = (f.countGroups || []).filter((g) => !g.mixed);
+    const countHeaders = countCols.map((g) => window.countColumn(g));
+    const countCells = (row) => countCols.map((g) => Math.round((row[g.key] || 0) * 1e6)); // mi un → un
 
     switch (view) {
       case 'value':
       case 'overview': {
         // annual aggregate series (value + qty per family)
-        const headers = ['ano', `valor_${conv.currency}`, 'qtd_massa_t', 'qtd_volume_m3', 'qtd_contagem_un'];
+        const headers = ['ano', `valor_${conv.currency}`, 'qtd_massa_t', 'qtd_volume_m3', ...countHeaders];
         const rows = f.ts.map(d => [
           d.y,
           celulaValor(d.v, 1e9),
           Math.round(d.q_mass * 1e3),
           Math.round(d.q_vol * 1e6),
-          Math.round((d.q_count || 0) * 1e6),  // mi un → un (livestock head / eggs)
+          ...countCells(d),
         ]);
         return { headers, rows, subject: 'serie_agregada' };
       }
@@ -179,7 +189,7 @@
         const tcm = window.territoryCompare;
         const sel = tcm ? tcm.selectionOf(ctx.territoryCompare, database, summary) : [];
         const headers = ['ano', 'territorio', 'nivel', 'codigo', `valor_${conv.currency}`,
-          'massa_t', 'volume_m3', 'contagem_un']
+          'massa_t', 'volume_m3', ...countHeaders]
           .concat(origem ? ['tabela_sidra'] : []).concat(nivel ? ['nivel_industrializacao'] : []);
         // Two refusals the generic "sem linhas" would explain wrongly: nothing chosen (its
         // advice to widen the geography does nothing here), and a place still loading
@@ -187,7 +197,7 @@
         if (!tcm || !sel.length) {
           return { headers, rows: [], subject: 'comparativo_territorios', motivo: 'sem-territorios' };
         }
-        const by = Object.fromEntries(['value', 'mass', 'volume', 'count'].map((m) => (
+        const by = Object.fromEntries(['value', 'mass', 'volume', ...countCols.map((g) => g.id)].map((m) => (
           [m, tcm.build({ database, summary, selection: sel, metric: m })])));
         if (Object.values(by).some((b) => b.loading)) {
           return { headers, rows: [], subject: 'comparativo_territorios', motivo: 'carregando' };
@@ -202,7 +212,7 @@
               celulaValor(pt.v, 1e6),
               Math.round((q('mass') || 0) * 1e3),     // mil t → t
               Math.round((q('volume') || 0) * 1e6),   // mi m³ → m³
-              Math.round((q('count') || 0) * 1e6),    // mi un → un
+              ...countCols.map((g) => Math.round((q(g.id) || 0) * 1e6)),  // mi un → un
               ...(origem ? [origem] : []), ...(nivel ? [nivel] : []),
             ]);
           });
@@ -226,37 +236,37 @@
         // falls back to the per-UF table — the original, always-available shape.
         const geoScope = window.geoExportScope || 'uf';
         if (geoScope === 'region') {
-          const headers = ['ano', 'regiao', `valor_${conv.currency}`, 'qtd_massa_t', 'qtd_volume_m3', 'qtd_contagem_un', 'escopo_produto', 'recorte_geografico'].concat(origem ? ['tabela_sidra'] : []).concat(nivel ? ['nivel_industrializacao'] : []);
+          const headers = ['ano', 'regiao', `valor_${conv.currency}`, 'qtd_massa_t', 'qtd_volume_m3', ...countHeaders, 'escopo_produto', 'recorte_geografico'].concat(origem ? ['tabela_sidra'] : []).concat(nivel ? ['nivel_industrializacao'] : []);
           const rows = (f.regionData || []).map(r => [
             ano, r.label || r.id,
             celulaValor(r.value, 1e6),
             Math.round((r.q_mass || 0) * 1e3),
             Math.round((r.q_vol || 0) * 1e6),
-            Math.round((r.q_count || 0) * 1e6),
+            ...countCells(r),
             escopo, recorte, ...(origem ? [origem] : []), ...(nivel ? [nivel] : []),
           ]);
           return { headers, rows, subject: 'distribuicao_por_regiao' };
         }
         if (geoScope === 'municipio') {
           const munis = Array.isArray(window.geoExportMunis) ? window.geoExportMunis : [];
-          const headers = ['ano', 'municipio', 'uf', `valor_${conv.currency}`, 'qtd_massa_t', 'qtd_volume_m3', 'qtd_contagem_un', 'escopo_produto', 'recorte_geografico'].concat(origem ? ['tabela_sidra'] : []).concat(nivel ? ['nivel_industrializacao'] : []);
+          const headers = ['ano', 'municipio', 'uf', `valor_${conv.currency}`, 'qtd_massa_t', 'qtd_volume_m3', ...countHeaders, 'escopo_produto', 'recorte_geografico'].concat(origem ? ['tabela_sidra'] : []).concat(nivel ? ['nivel_industrializacao'] : []);
           const rows = munis.map(m => [
             ano, m.city, m.uf,
             celulaValor(m.value, 1e6),
             Math.round((m.q_mass || 0) * 1e3),
             Math.round((m.q_vol || 0) * 1e6),
-            Math.round((m.q_count || 0) * 1e6),
+            ...countCells(m),
             escopo, recorte, ...(origem ? [origem] : []), ...(nivel ? [nivel] : []),
           ]);
           return { headers, rows, subject: 'distribuicao_por_municipio' };
         }
-        const headers = ['ano', 'uf', 'nome', 'regiao', `valor_${conv.currency}`, 'qtd_massa_t', 'qtd_volume_m3', 'qtd_contagem_un', 'escopo_produto', 'recorte_geografico'].concat(origem ? ['tabela_sidra'] : []).concat(nivel ? ['nivel_industrializacao'] : []);
+        const headers = ['ano', 'uf', 'nome', 'regiao', `valor_${conv.currency}`, 'qtd_massa_t', 'qtd_volume_m3', ...countHeaders, 'escopo_produto', 'recorte_geografico'].concat(origem ? ['tabela_sidra'] : []).concat(nivel ? ['nivel_industrializacao'] : []);
         const rows = f.ufData.map(u => [
           ano, u.uf, u.name, u.region,
           celulaValor(u.value, 1e6),
           Math.round(u.q_mass * 1e3),
           Math.round(u.q_vol * 1e6),
-          Math.round((u.q_count || 0) * 1e6),  // mi un → un (livestock head / eggs)
+          ...countCells(u),
           escopo, recorte, ...(origem ? [origem] : []), ...(nivel ? [nivel] : []),
         ]);
         return { headers, rows, subject: 'distribuicao_geografica' };
@@ -264,9 +274,9 @@
       case 'concentration': {
         const ano = f.ufYearPartial ? `${f.ufLatestYear} (parcial)` : (f.ufLatestYear ?? '');
         const escopo = f.notFilteredByBasket ? 'todos os produtos' : 'cesta selecionada';
-        const headers = ['ano', 'uf', 'nome', 'regiao', `valor_${conv.currency}`, 'qtd_contagem_un', 'escopo_produto', 'recorte_geografico'].concat(origem ? ['tabela_sidra'] : []).concat(nivel ? ['nivel_industrializacao'] : []);
+        const headers = ['ano', 'uf', 'nome', 'regiao', `valor_${conv.currency}`, ...countHeaders, 'escopo_produto', 'recorte_geografico'].concat(origem ? ['tabela_sidra'] : []).concat(nivel ? ['nivel_industrializacao'] : []);
         const rows = f.ufData.slice().sort((a, b) => b.value - a.value)
-          .map(u => [ano, u.uf, u.name, u.region, celulaValor(u.value, 1e6), Math.round((u.q_count || 0) * 1e6), escopo, recorte, ...(origem ? [origem] : []), ...(nivel ? [nivel] : [])]);
+          .map(u => [ano, u.uf, u.name, u.region, celulaValor(u.value, 1e6), ...countCells(u), escopo, recorte, ...(origem ? [origem] : []), ...(nivel ? [nivel] : [])]);
         return { headers, rows, subject: 'concentracao' };
       }
       case 'quality': {

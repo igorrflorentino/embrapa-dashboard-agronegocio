@@ -10,6 +10,8 @@ import { cleanup, render } from '@testing-library/react';
 // four-line component, and stubbing it away would hide the very disclosure these views
 // exist to carry.
 import './RecorteNote.jsx';
+// The REAL count rule: which counts may be added, and what each one is called.
+import './countUnits.js';
 
 function stubGlobals(filtered) {
   window.applyFilters = () => filtered;
@@ -78,37 +80,71 @@ describe('ViewConcentration — Gini/HHI computation renders (H3)', () => {
 });
 
 // A value-less herd basket (a stock, R$ 0 every year) must compute concentration on
-// HEADCOUNT (q_count) instead of an all-zero value — else Gini/HHI/Lorenz collapse.
-const HERD_FIXTURE = {
-  ufDataFull: [
-    { uf: 'MT', value: 0, q_count: 75, real: true },
-    { uf: 'SP', value: 0, q_count: 25, real: true },
-  ],
-  ufData: [
-    { uf: 'MT', value: 0, q_count: 75, real: true },
-    { uf: 'SP', value: 0, q_count: 25, real: true },
-  ],
-  productTS: { P1: [{ y: 2020, v: 0, q: 60 }], P2: [{ y: 2020, v: 0, q: 40 }] },
-  products: [
-    { code: 'P1', name: 'Bovino', measure_kind: 'stock' },
-    { code: 'P2', name: 'Suíno', measure_kind: 'stock' },
-  ],
-  yearEnd: 2020,
-  ufLatestYear: 2020,
-  ufYearPartial: false,
+// HEADCOUNT (q_count_stock) instead of an all-zero value — else Gini/HHI/Lorenz collapse.
+// The count groups come from the REAL rule (countUnits.js), as applyFilters builds them.
+const BOVINO = { code: 'P1', name: 'Bovino', family: 'count', measure_kind: 'stock', unit_native: 'Cabeças' };
+const SUINO = { code: 'P2', name: 'Suíno', family: 'count', measure_kind: 'stock', unit_native: 'Cabeças' };
+const OVOS = { code: 'P3', name: 'Ovos de galinha', family: 'count', measure_kind: 'flow', unit_native: 'Mil dúzias' };
+const herdFixture = (products) => {
+  const codes = products.map((p) => p.code);
+  return {
+    // The eggs' total is the LARGER one on purpose (as in Mato Grosso, where 3,80 bi eggs
+    // sit beside 80,4 mi heads): a fallback that read it, or added it, would show it.
+    ufDataFull: [
+      { uf: 'MT', value: 0, q_count_stock: 75, q_count_flow: 100, real: true },
+      { uf: 'SP', value: 0, q_count_stock: 25, q_count_flow: 900, real: true },
+    ],
+    ufData: [
+      { uf: 'MT', value: 0, q_count_stock: 75, q_count_flow: 100, real: true },
+      { uf: 'SP', value: 0, q_count_stock: 25, q_count_flow: 900, real: true },
+    ],
+    productTS: {
+      P1: [{ y: 2020, v: 0, q: 60 }], P2: [{ y: 2020, v: 0, q: 40 }], P3: [{ y: 2020, v: 0, q: 1000 }],
+    },
+    products,
+    selectedProducts: codes,
+    countGroups: window.countGroups(products, codes),
+    yearEnd: 2020,
+    ufLatestYear: 2020,
+    ufYearPartial: false,
+  };
 };
 
 describe('ViewConcentration — value-less herd falls back to cabeças', () => {
-  it('computes geographic Gini/HHI on q_count when the basket has no value', () => {
-    stubGlobals(HERD_FIXTURE);
+  const byLabelIn = (container) => (l) =>
+    container.querySelector(`.kpi[data-label="${l}"] .kpi-value`)?.textContent;
+
+  it('computes geographic Gini/HHI on the herd when the basket has no value', () => {
+    stubGlobals(herdFixture([BOVINO, SUINO]));
     const { container } = render(<ViewConcentration summary={{}} conventions={{}} database="ibge_ppm" />);
-    const byLabel = (l) =>
-      container.querySelector(`.kpi[data-label="${l}"] .kpi-value`)?.textContent;
-    // same [75,25] distribution as the value case, now read from q_count → HHI 6250, Gini 0,25
+    const byLabel = byLabelIn(container);
+    // same [75,25] distribution as the value case, now read from q_count_stock → HHI 6250, Gini 0,25
     expect(byLabel('HHI · geográfico (UF)')).toBe('6.250');
     expect(byLabel('Gini · geográfico (UF)')).toBe('0,25');
     // the onCount note explains the basis is headcount, not value
+    expect(container.textContent).toContain('efetivo dos rebanhos');
     expect(container.textContent).toContain('cabeças');
+  });
+
+  it('reads the herd alone beside the eggs, and names the eggs it leaves out', () => {
+    stubGlobals(herdFixture([BOVINO, SUINO, OVOS]));
+    const { container } = render(<ViewConcentration summary={{}} conventions={{}} database="ibge_ppm" />);
+    const byLabel = byLabelIn(container);
+    // [75,25] again: the eggs ([100,900]) never enter, and heads + eggs ([175,925]) is no measure.
+    expect(byLabel('HHI · geográfico (UF)')).toBe('6.250');
+    expect(container.textContent).toContain('Fora desta leitura: Ovos de galinha');
+    // The eggs HAVE value, just not in this convention: the note must not call the whole
+    // basket value-less by nature.
+    expect(container.textContent).not.toContain('não tem valor monetário');
+    expect(container.textContent).toContain('não tem valor nesta convenção');
+  });
+
+  it('the product distribution ranks only the products of the group it reads', () => {
+    // No geography: the product KPIs carry the reading. Herd only → 60² + 40² = 5200.
+    // With the eggs (q 1000) it would be 1000/1100 of one product, an HHI of ~8.300.
+    stubGlobals({ ...herdFixture([BOVINO, SUINO, OVOS]), ufDataFull: [], ufData: [] });
+    const { container } = render(<ViewConcentration summary={{}} conventions={{}} database="ibge_ppm" />);
+    expect(byLabelIn(container)('HHI · por produto')).toBe('5.200');
   });
 });
 

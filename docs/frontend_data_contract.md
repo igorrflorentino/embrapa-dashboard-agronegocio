@@ -115,12 +115,23 @@ mix; `exp_weight` (`'mil t'`) never mixes with them.
 > `with_measure_kind` flag; the column lives only in `serving_ppm_annual`). `stock` =
 > the herd (efetivo, a value-less headcount); `flow` = animal products (eggs/milk, with
 > value). It lets the UI gate the **Rebanho** view and tell the two apart. (2) The
-> **`count`** family (head/eggs) gets its own quantity track **`q_count`** (mi un)
-> alongside `q_mass`/`q_vol` on `productTS` (as `q`), `ufData`, `ufYearly` and
-> `serving.product_uf`/`products_by_uf`. Heads are **never summed across species**, so
-> there is no aggregate count headline — `overviewTS` does NOT carry `q_count` (the
-> Overview count series is computed client-side in `dataFilters` and suppressed for a
-> stock basket).
+> **`count`** family (heads, eggs, PAM's counted fruits) gets its own quantity track,
+> in mi un, and it is **never one total** (v1.108.0). Per product, one product counts one
+> thing: `productTS` carries it as `q`, and `serving.product_uf` / `products_by_uf` /
+> `products_by_municipio` as `q_count`. Every reader that sums ACROSS products (`ufData`,
+> `ufYearly`, `municipioYearly`) returns two totals instead (`sql._count_split`):
+> **`q_count_stock`**, the herd (`measure_kind = 'stock'`, PPM only), and
+> **`q_count_flow`**, every other count. Nothing adds them, and `overviewTS` carries no
+> count at all. Until v1.108.0 one `q_count` summed both, and the Geografia map put
+> Mato Grosso 2025 at 3,88 bi "cabeças": 80,4 mi heads of eight species plus 3,80 bi eggs.
+>
+> One total can still hold products that count different things (eggs and fruits would
+> share `q_count_flow` in a banco that had both), so `products` also carries
+> **`unit_native`**, the unit as the source publishes it ("Cabeças", "Mil dúzias",
+> "Mil frutos"): `unit` is the family's base, and every count's base is `un`. The client
+> groups the basket's counts by total and by what they count (`countUnits.js`), names
+> each group from it ("Efetivo (cabeças)", "Quantidade (ovos)") and refuses to draw a group
+> whose products count different things, naming them instead.
 
 ### 3.2 `overviewTS` — annual `[{ y, v, q_mass, q_vol, q }]`
 Aggregate to the year. **COMEX is monthly in Gold → SUM over months for the annual
@@ -146,7 +157,9 @@ One annual series per product, keyed by the same `code` as `products`.
 - `family` = the product's `family` (→ en).
 
 ### 3.4 `ufData` — COMEX + PEVS only (`geo` capability)
-`[{ uf, name, region, col, row, value, q_mass, q_vol }]`, grouped by UF.
+`[{ uf, name, region, col, row, value, q_mass, q_vol, q_count_stock, q_count_flow }]`,
+grouped by UF. The two count totals are §3.1's: the herd and every other count, never
+added.
 
 | field | source |
 |---|---|
@@ -186,7 +199,7 @@ município passes the cascade iff it clears every active facet (intersection).
   the `cityCode → ancestry` map from it. `{ municipios: [] }` if the dim isn't built.
 - **`POST /api/municipio-yearly`** — body `{ cityCodes: [...] }`; `banco` / `codes` /
   `currency` / `correction` in the query string → `{ municipioYearly: [{ year, cityCode,
-  uf, value, q_mass, q_vol, q_count }] }`. The basket + **city-scoped** per-(município,
+  uf, value, q_mass, q_vol, q_count_stock, q_count_flow }] }`. The basket + **city-scoped** per-(município,
   year) cube, read straight from Gold (`maximum_bytes_billed`-guarded). **POST, not GET**:
   the resolved city set can be hundreds of codes — too large for a query string (gunicorn's
   ~4 KB request-line limit → 414). A **non-empty `cityCodes` is required** (so the backend

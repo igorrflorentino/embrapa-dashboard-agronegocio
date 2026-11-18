@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import './data.js';          // REGIONS / UF_DATA reais: a região de cada UF vem daqui
 import './seriesUtils.js';   // addPresent real: a regra "ausência não é zero"
+import './countUnits.js';    // the real count groups, as applyFilters builds them
 import './territoryCompare.js';
 
 const tc = () => window.territoryCompare;
@@ -290,5 +291,71 @@ describe('build — the month the município cube is at', () => {
     window.applyFilters = () => ({ yearStart: 2019, yearEnd: 2021, muniPriceBase: SETEMBRO, geoPriceBase: null });
     const out = tc().build({ database: 'ibge_pevs', summary: {}, selection: [{ level: 'uf', code: 'PA' }] });
     expect(out.comparedPriceBases).toEqual([SETEMBRO, null]);
+  });
+});
+
+// ── Counts (v1.108.0): one metric per thing counted ──────────────────────────
+// Until v1.108.0 the comparison had ONE count metric over every count of the basket: on
+// the PPM, the herd's heads plus a year's eggs.
+describe('metricsFor / metricOf — a count metric per thing counted', () => {
+  const BOVINO = { code: '2670', family: 'count', measure_kind: 'stock', unit_native: 'Cabeças' };
+  const OVOS = { code: '2685', family: 'count', measure_kind: 'flow', unit_native: 'Mil dúzias' };
+  const ABACAXI = { code: '40092', family: 'count', unit_native: 'Mil frutos' };
+  function stubBasket(families, products) {
+    window.familiesInBasket = () => families;
+    window.applyFilters = () => ({
+      yearStart: 2019, yearEnd: 2021,
+      countGroups: window.countGroups(products, products.map((p) => p.code)),
+    });
+  }
+  afterEach(() => { delete window.familiesInBasket; });
+
+  it('offers value, the quantity families, and the herd and the eggs as two metrics', () => {
+    stubBasket(['mass', 'count'], [BOVINO, OVOS]);
+    const { options, refused } = tc().metricsFor('ibge_ppm', {});
+    expect(options.map((o) => [o.id, o.label])).toEqual([
+      ['value', 'Valor'],
+      ['mass', 'Quantidade (massa)'],
+      ['count_stock', 'Efetivo (cabeças)'],
+      ['count_flow', 'Quantidade (ovos)'],
+    ]);
+    expect(refused).toEqual([]);
+  });
+
+  it('a group that counts different things is no metric, and comes back as refused', () => {
+    stubBasket(['count'], [OVOS, ABACAXI]);
+    const { options, refused } = tc().metricsFor('ibge_ppm', {});
+    expect(options.map((o) => o.id)).toEqual(['value']);
+    expect(refused.map((g) => g.plurals)).toEqual([['ovos', 'frutos']]);
+  });
+
+  it('a basket without the count family reads no count group at all', () => {
+    stubBasket(['mass'], [BOVINO]);
+    expect(tc().metricsFor('ibge_ppm', {}).options.map((o) => o.id)).toEqual(['value', 'mass']);
+  });
+
+  it('an old link (tm=count) opens its one count group; with two it was a sum, and opens on Valor', () => {
+    stubBasket(['count'], [OVOS]);
+    const one = tc().metricsFor('ibge_ppm', {}).options;
+    expect(tc().metricOf('count', one)).toBe('count_flow');
+    stubBasket(['count'], [BOVINO, OVOS]);
+    const two = tc().metricsFor('ibge_ppm', {}).options;
+    expect(tc().metricOf('count', two)).toBe('value');
+    expect(tc().metricOf('count_stock', two)).toBe('count_stock');
+    expect(tc().metricOf('volume', two)).toBe('value');   // not in this basket
+    expect(tc().metricOf(undefined, two)).toBe('value');
+  });
+
+  it('each count metric reads its own total, never the other', () => {
+    stub({ rows: [
+      { year: 2019, uf: 'PA', value: null, q_mass: 0, q_count_stock: 20, q_count_flow: 1000 },
+      { year: 2020, uf: 'PA', value: null, q_mass: 0, q_count_stock: 21, q_count_flow: 1100 },
+    ] });
+    const sel = [{ level: 'uf', code: 'PA' }];
+    const herd = tc().build({ database: 'ibge_ppm', summary: {}, selection: sel, metric: 'count_stock' });
+    const eggs = tc().build({ database: 'ibge_ppm', summary: {}, selection: sel, metric: 'count_flow' });
+    expect(pts(herd.items[0])).toEqual([20, 21]);
+    expect(pts(eggs.items[0])).toEqual([1000, 1100]);
+    expect(herd.brasil.map((p) => p.v)).toEqual([20, 21]);
   });
 });

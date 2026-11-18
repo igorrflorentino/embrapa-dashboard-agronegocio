@@ -624,23 +624,26 @@ def value_era_breaks(value_column: str | None) -> list[int]:
 
 
 def _with_overview_quantities(overview_ts: pd.DataFrame, product_ts: pd.DataFrame) -> pd.DataFrame:
-    """Attach q_mass / q_vol / q_count per year, summed from the per-product series.
+    """Attach q_mass / q_vol per year, summed from the per-product series.
 
     ``production_overview`` sums only the value; quantities (which must never be
     summed across families) come from ``product_ts``' per-family base columns —
-    ``q_mass`` (the 'massa' family), ``q_vol`` ('volume') and ``q_count``
-    ('contagem', e.g. PPM herd head), already CASE-split upstream
-    (sql.product_timeseries) so the families are never blended and an energy/area
-    family contributes to none. Sums the base unit (t / m³ / un), NOT the native
+    ``q_mass`` (the 'massa' family) and ``q_vol`` ('volume'), already CASE-split
+    upstream (sql.product_timeseries) so the families are never blended and an
+    energy/area family contributes to none. Sums the base unit (t / m³), NOT the native
     quantity: trade sources mix kg- and t-native codes inside the 'massa' family,
     so only the base unit is summable (for PEVS/PAM native == base, so nothing
-    changes there). q_count rides along for parity with productTS/ufData so a
-    consumer reading overviewTS.q_count gets the real headcount, not 0.
+    changes there).
+
+    There is no ``q_count``. The 'contagem' family is not one unit: its base 'un' counts
+    heads of cattle, hen eggs and pineapples alike, and a total over every product added
+    them (80.4 mi heads + 3.80 bi eggs in Mato Grosso 2025). The screens build counts
+    from productTS, product by product, where each one knows what it counts.
     """
     if overview_ts is None or overview_ts.empty:
         return overview_ts
     out = overview_ts.copy()
-    _QCOLS = ("q_mass", "q_vol", "q_count")
+    _QCOLS = ("q_mass", "q_vol")
     has_q = product_ts is not None and any(c in product_ts.columns for c in _QCOLS)
     if product_ts is None or product_ts.empty or not has_q:
         for c in _QCOLS:

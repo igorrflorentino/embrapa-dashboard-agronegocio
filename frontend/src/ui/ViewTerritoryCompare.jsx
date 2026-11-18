@@ -6,6 +6,10 @@
 // why). The selection lives in main.jsx's state and travels in the URL (`tc`, `tm`, `tx`),
 // so a reload or a shared link reopens the same comparison.
 
+// A count group the comparison cannot draw (its products count different things) is
+// named, not dropped (countUnits.js).
+import './CountUnitNotes.jsx';
+
 const { useState: useTCState, useMemo: useTCMemo } = React;
 
 const TC_COLORS = [
@@ -14,23 +18,22 @@ const TC_COLORS = [
 ];
 
 // The chart's unit for each metric, in the cube's own units (see territoryCompare.FIELD).
-const tcUnit = (metric, conv) => {
-  if (metric === 'mass') return 'mil t';
-  if (metric === 'volume') return 'mi m³';
-  if (metric === 'count') return 'mi un';
+// A count names what it counts: "mi cabeças", "mi ovos", never the bare "mi un".
+const tcUnit = (m, conv) => {
+  if (m.id === 'mass') return 'mil t';
+  if (m.id === 'volume') return 'mi m³';
+  if (m.group) return `mi ${m.group.plural}`;
   const sym = ((window.CURRENCY_FX || {})[conv.currency] || {}).symbol || conv.currency;
   return `${sym} milhões`;
 };
 
 // One formatter per metric for the table, reusing the app's own (they render absence as '—').
-const tcFormat = (metric, v, conv) => {
-  if (metric === 'mass') return window.formatMassQty(v, conv);
-  if (metric === 'volume') return window.formatVolumeQty(v, conv);
-  if (metric === 'count') return window.formatCountQty(v, conv);
+const tcFormat = (m, v, conv) => {
+  if (m.id === 'mass') return window.formatMassQty(v, conv);
+  if (m.id === 'volume') return window.formatVolumeQty(v, conv);
+  if (m.group) return window.formatCountQty(v, conv, window.countGroupUnit(m.group, conv));
   return window.formatValue(window.scalePresent(v, 1e6), conv);
 };
-
-const TC_METRIC_LABEL = { value: 'Valor', mass: 'Quantidade (massa)', volume: 'Quantidade (volume)', count: 'Contagem' };
 
 function ViewTerritoryCompare({ summary, conventions, database, territoryCompare, setTerritoryCompare }) {
   const conv = conventions || window.DEFAULT_CONVENTIONS;
@@ -40,10 +43,11 @@ function ViewTerritoryCompare({ summary, conventions, database, territoryCompare
   const setState = (patch) => setTerritoryCompare && setTerritoryCompare({ ...state, ...patch });
 
   // Metric options: value always, plus the quantity families the basket actually carries
-  // (summing tonnes with cubic metres is refused everywhere else in the app, and here too).
-  const families = (window.familiesInBasket ? window.familiesInBasket(summary && summary.basket, database) : []) || [];
-  const metricOptions = ['value', ...['mass', 'volume', 'count'].filter((m) => families.includes(m))];
-  const metric = metricOptions.includes(state.metric) ? state.metric : 'value';
+  // (summing tonnes with cubic metres is refused everywhere else in the app, and here too),
+  // and one metric per count group (territoryCompare.metricsFor).
+  const { options: metricOptions, refused: refusedCounts } = tc.metricsFor(database, summary);
+  const metric = tc.metricOf(state.metric, metricOptions);
+  const metricMeta = metricOptions.find((o) => o.id === metric) || metricOptions[0];
   const mode = state.mode === 'index' ? 'index' : 'abs';
 
   // Default selection: the three largest states by the latest value, shown but NOT written
@@ -230,14 +234,14 @@ function ViewTerritoryCompare({ summary, conventions, database, territoryCompare
             <window.SectionHeader
               overline={mode === 'index'
                 ? (baseYear ? `Índice · base 100 em ${baseYear}` : 'Índice · sem ano-base comum')
-                : `${TC_METRIC_LABEL[metric]} · ${tcUnit(metric, conv)}`}
+                : `${metricMeta.label} · ${tcUnit(metricMeta, conv)}`}
               title="Evolução lado a lado"
               action={(
                 <div className="tc-controls">
                   <div className="seg" role="group" aria-label="Métrica">
                     {metricOptions.map((m) => (
-                      <button key={m} type="button" className={'seg-opt ' + (m === metric ? 'on' : '')}
-                              onClick={() => setState({ metric: m })}>{TC_METRIC_LABEL[m]}</button>
+                      <button key={m.id} type="button" className={'seg-opt ' + (m.id === metric ? 'on' : '')}
+                              onClick={() => setState({ metric: m.id })}>{m.label}</button>
                     ))}
                   </div>
                   <div className="seg" role="group" aria-label="Escala">
@@ -251,7 +255,7 @@ function ViewTerritoryCompare({ summary, conventions, database, territoryCompare
             />
             {ready.length > 0 && (
               <window.MultiLineChart series={series} valueKey="v" height={320} showLegend={false}
-                                     label={mode === 'index' ? `índice (${baseYear ?? '—'}=100)` : tcUnit(metric, conv)} />
+                                     label={mode === 'index' ? `índice (${baseYear ?? '—'}=100)` : tcUnit(metricMeta, conv)} />
             )}
             <div className="pc-legend">
               {items.map((it) => (
@@ -283,11 +287,12 @@ function ViewTerritoryCompare({ summary, conventions, database, territoryCompare
                 {tc.labelOf(outer)} já inclui a de {tc.labelOf(inner)}.
               </p>
             ))}
+            <window.CountRefusedNote groups={refusedCounts} database={database} marginTop={8} />
           </div>
 
           <div className="card">
             <window.SectionHeader
-              overline={`Métricas comparativas · ${TC_METRIC_LABEL[metric]}`}
+              overline={`Métricas comparativas · ${metricMeta.label}`}
               title="Tamanho, crescimento e peso no país"
             />
             <div className="pc-table-wrap">
@@ -307,7 +312,7 @@ function ViewTerritoryCompare({ summary, conventions, database, territoryCompare
                     <tr key={it.key}>
                       <td><span className="pc-row-dot" style={{ background: it.color }}></span>{it.label}</td>
                       <td>{it.levelLabel}</td>
-                      <td className="num tnum">{tcFormat(metric, it.vT, conv)}</td>
+                      <td className="num tnum">{tcFormat(metricMeta, it.vT, conv)}</td>
                       <td className="num tnum" style={{ color: window.deltaColor(it.accum) }}>{window.fmtSigned(it.accum, 0)}</td>
                       <td className="num tnum" style={{ color: window.deltaColor(it.cagr) }}>{window.fmtSigned(it.cagr, 1)}</td>
                       <td className="num tnum">{it.share == null ? '—' : `${it.share.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`}</td>

@@ -156,8 +156,8 @@ describe('prepareTableCSV — o descritor que a janela de confirmação mostra',
   const FILTRADO = {
     products: PRODUCTS,
     ts: [
-      { y: 2020, v: 1.5, q_mass: 10, q_vol: 2, q_count: 0 },
-      { y: 2021, v: 2.0, q_mass: 12, q_vol: 3, q_count: 0 },
+      { y: 2020, v: 1.5, q_mass: 10, q_vol: 2 },
+      { y: 2021, v: 2.0, q_mass: 12, q_vol: 3 },
     ],
   };
 
@@ -175,8 +175,7 @@ describe('prepareTableCSV — o descritor que a janela de confirmação mostra',
     stubRegistry(FILTRADO);
     const p = window.prepareTableCSV({ view: 'overview', summary: {}, database: 'ibge_pevs' });
     expect(p.linhas).toBe(2);                                   // uma por ano em `ts`
-    expect(p.colunas).toEqual(['ano', 'valor_BRL', 'qtd_massa_t', 'qtd_volume_m3', 'qtd_contagem_un',
-      'correcao_monetaria']);
+    expect(p.colunas).toEqual(['ano', 'valor_BRL', 'qtd_massa_t', 'qtd_volume_m3', 'correcao_monetaria']);
     expect(p.banco).toBe('IBGE PEVS');
     expect(p.assunto).toMatch(/Série anual agregada/);
     expect(p.arquivo).toBe('ibge_pevs_serie_agregada_2020-2021.csv');
@@ -197,7 +196,7 @@ describe('prepareTableCSV — o descritor que a janela de confirmação mostra',
   });
 
   it('um único ano no arquivo vira um ano só no nome, não "2024-2024"', () => {
-    stubRegistry({ products: PRODUCTS, ts: [{ y: 2024, v: 1, q_mass: 1, q_vol: 1, q_count: 0 }] });
+    stubRegistry({ products: PRODUCTS, ts: [{ y: 2024, v: 1, q_mass: 1, q_vol: 1 }] });
     const p = window.prepareTableCSV({ view: 'overview', summary: {}, database: 'ibge_pevs' });
     expect(p.arquivo).toBe('ibge_pevs_serie_agregada_2024.csv');
   });
@@ -232,7 +231,7 @@ describe('prepareTableCSV — o descritor que a janela de confirmação mostra',
     // arquivo sairia com os dados novos e a janela teria mentido.
     stubRegistry(FILTRADO);
     const p = window.prepareTableCSV({ view: 'overview', summary: {}, database: 'ibge_pevs' });
-    stubRegistry({ products: PRODUCTS, ts: [{ y: 1999, v: 9, q_mass: 9, q_vol: 9, q_count: 0 }] });
+    stubRegistry({ products: PRODUCTS, ts: [{ y: 1999, v: 9, q_mass: 9, q_vol: 9 }] });
     p.baixar();
     const linhas = lastCsv.replace('\uFEFF', '').split('\n');
     expect(linhas.length - 1).toBe(2);            // os 2 anos preparados, não o 1 novo
@@ -260,8 +259,8 @@ describe('exportActiveTableCSV — overview/value aggregate series', () => {
   const FILTERED = {
     products: PRODUCTS,
     ts: [
-      { y: 2020, v: 1.5, q_mass: 2.0, q_vol: 3.0, q_count: 4.0 },
-      { y: 2021, v: 2.5, q_mass: 1.0, q_vol: 0, q_count: 0 }, // q_count 0 hits the || 0 branch
+      { y: 2020, v: 1.5, q_mass: 2.0, q_vol: 3.0 },
+      { y: 2021, v: 2.5, q_mass: 1.0, q_vol: 0 },
     ],
   };
 
@@ -271,10 +270,11 @@ describe('exportActiveTableCSV — overview/value aggregate series', () => {
     expect(lastCsv).toBeTruthy();
     expect(lastCsv.startsWith('﻿')).toBe(true); // Excel UTF-8 BOM
     const lines = lastCsv.replace('﻿', '').split('\n');
-    expect(lines[0]).toBe('ano;valor_BRL;qtd_massa_t;qtd_volume_m3;qtd_contagem_un;correcao_monetaria');
-    // v*1e9 (applyConv identity) → 1.5e9 ; q_mass*1e3 → 2000 ; q_vol*1e6 → 3e6 ; q_count*1e6
-    expect(lines[1]).toBe(`2020;1500000000;2000;3000000;4000000;${CORRECAO_CSV}`);
-    expect(lines[2]).toBe(`2021;2500000000;1000;0;0;${CORRECAO_CSV}`);
+    // No count column: this basket counts nothing (one per count group, see the end).
+    expect(lines[0]).toBe('ano;valor_BRL;qtd_massa_t;qtd_volume_m3;correcao_monetaria');
+    // v*1e9 (applyConv identity) → 1.5e9 ; q_mass*1e3 → 2000 ; q_vol*1e6 → 3e6
+    expect(lines[1]).toBe(`2020;1500000000;2000;3000000;${CORRECAO_CSV}`);
+    expect(lines[2]).toBe(`2021;2500000000;1000;0;${CORRECAO_CSV}`);
   });
 
   it('o ano sem valor na convenção escolhida sai com a célula VAZIA, nunca com 0', () => {
@@ -284,14 +284,14 @@ describe('exportActiveTableCSV — overview/value aggregate series', () => {
     stubRegistry({
       products: PRODUCTS,
       ts: [
-        { y: 1974, v: null, q_mass: 329.2, q_vol: 0, q_count: 0 },
-        { y: 1980, v: 0.4745, q_mass: 377.2, q_vol: 0, q_count: 0 },
+        { y: 1974, v: null, q_mass: 329.2, q_vol: 0 },
+        { y: 1980, v: 0.4745, q_mass: 377.2, q_vol: 0 },
       ],
     });
     window.exportActiveTableCSV({ view: 'overview', summary: {}, database: 'ibge_pevs' });
     const lines = lastCsv.replace('\ufeff', '').split('\n');
-    expect(lines[1]).toBe(`1974;;329200;0;0;${CORRECAO_CSV}`);   // valor vazio, quantidade presente
-    expect(lines[2]).toBe(`1980;474500000;377200;0;0;${CORRECAO_CSV}`);
+    expect(lines[1]).toBe(`1974;;329200;0;${CORRECAO_CSV}`);   // valor vazio, quantidade presente
+    expect(lines[2]).toBe(`1980;474500000;377200;0;${CORRECAO_CSV}`);
     expect(lines[1]).not.toContain(';0;329200');      // o zero fabricado de antes
   });
 
@@ -381,15 +381,15 @@ describe('exportActiveTableCSV — per-product series with per-family units', ()
 // ── geo: single-year snapshot, partial-year + escopo columns ─────────────────
 describe('exportActiveTableCSV — geo snapshot', () => {
   const baseUf = [
-    { uf: 'PA', name: 'Pará', region: 'Norte', value: 5.0, q_mass: 1.0, q_vol: 2.0, q_count: 3.0 },
-    { uf: 'AM', name: 'Amazonas', region: 'Norte', value: 1.0, q_mass: 0, q_vol: 0, q_count: 0 },
+    { uf: 'PA', name: 'Pará', region: 'Norte', value: 5.0, q_mass: 1.0, q_vol: 2.0 },
+    { uf: 'AM', name: 'Amazonas', region: 'Norte', value: 1.0, q_mass: 0, q_vol: 0 },
   ];
 
   it('flags a partial year + "todos os produtos" escopo and escapes commas/quotes', () => {
     stubRegistry({
       products: PRODUCTS,
       ufData: [
-        { uf: 'SP', name: 'São Paulo, "Capital"', region: 'Sudeste', value: 5, q_mass: 1, q_vol: 2, q_count: 3 },
+        { uf: 'SP', name: 'São Paulo, "Capital"', region: 'Sudeste', value: 5, q_mass: 1, q_vol: 2 },
       ],
       ufLatestYear: 2022,
       ufYearPartial: true,
@@ -397,7 +397,7 @@ describe('exportActiveTableCSV — geo snapshot', () => {
     });
     window.exportActiveTableCSV({ view: 'geo', summary: {}, database: 'ibge_pevs' });
     const lines = lastCsv.replace('﻿', '').split('\n');
-    expect(lines[0]).toBe('ano;uf;nome;regiao;valor_BRL;qtd_massa_t;qtd_volume_m3;qtd_contagem_un;escopo_produto;recorte_geografico;tabela_sidra;correcao_monetaria');
+    expect(lines[0]).toBe('ano;uf;nome;regiao;valor_BRL;qtd_massa_t;qtd_volume_m3;escopo_produto;recorte_geografico;tabela_sidra;correcao_monetaria');
     // partial-year string contains a space but no delimiter → not quoted
     expect(lines[1]).toContain('2022 (parcial)');
     // a value containing a comma AND a double-quote must be CSV-escaped
@@ -442,8 +442,8 @@ describe('exportActiveTableCSV — geo snapshot', () => {
       products: PRODUCTS,
       ufData: baseUf,
       regionData: [
-        { id: 'N', label: 'Norte', value: 6, q_mass: 1, q_vol: 2, q_count: 3 },
-        { id: 'S', label: 'Sul', value: 2, q_mass: 0.5, q_vol: 0, q_count: 0 },
+        { id: 'N', label: 'Norte', value: 6, q_mass: 1, q_vol: 2 },
+        { id: 'S', label: 'Sul', value: 2, q_mass: 0.5, q_vol: 0 },
       ],
       ufLatestYear: 2021,
       ufYearPartial: false,
@@ -452,8 +452,8 @@ describe('exportActiveTableCSV — geo snapshot', () => {
     window.geoExportScope = 'region';
     window.exportActiveTableCSV({ view: 'geo', summary: {}, database: 'ibge_pevs' });
     const lines = lastCsv.replace('﻿', '').split('\n');
-    expect(lines[0]).toBe('ano;regiao;valor_BRL;qtd_massa_t;qtd_volume_m3;qtd_contagem_un;escopo_produto;recorte_geografico;tabela_sidra;correcao_monetaria');
-    expect(lines[1]).toBe(`2021;Norte;6000000;1000;2000000;3000000;cesta selecionada;sem recorte sub-UF;ambas as metades;${CORRECAO_CSV}`);
+    expect(lines[0]).toBe('ano;regiao;valor_BRL;qtd_massa_t;qtd_volume_m3;escopo_produto;recorte_geografico;tabela_sidra;correcao_monetaria');
+    expect(lines[1]).toBe(`2021;Norte;6000000;1000;2000000;cesta selecionada;sem recorte sub-UF;ambas as metades;${CORRECAO_CSV}`);
     expect(lines.length).toBe(3); // header + 2 regions, NOT the per-UF table
   });
 
@@ -467,14 +467,14 @@ describe('exportActiveTableCSV — geo snapshot', () => {
     });
     window.geoExportScope = 'municipio';
     window.geoExportMunis = [
-      { city: 'Belém', uf: 'PA', value: 4, q_mass: 1, q_vol: 0, q_count: 0 },
-      { city: 'Santos', uf: 'SP', value: 1, q_mass: 0, q_vol: 0.2, q_count: 0 },
+      { city: 'Belém', uf: 'PA', value: 4, q_mass: 1, q_vol: 0 },
+      { city: 'Santos', uf: 'SP', value: 1, q_mass: 0, q_vol: 0.2 },
     ];
     window.exportActiveTableCSV({ view: 'geo', summary: {}, database: 'ibge_pevs' });
     const lines = lastCsv.replace('﻿', '').split('\n');
-    expect(lines[0]).toBe('ano;municipio;uf;valor_BRL;qtd_massa_t;qtd_volume_m3;qtd_contagem_un;escopo_produto;recorte_geografico;tabela_sidra;correcao_monetaria');
-    expect(lines[1]).toBe(`2021;Belém;PA;4000000;1000;0;0;cesta selecionada;sem recorte sub-UF;ambas as metades;${CORRECAO_CSV}`);
-    expect(lines[2]).toBe(`2021;Santos;SP;1000000;0;200000;0;cesta selecionada;sem recorte sub-UF;ambas as metades;${CORRECAO_CSV}`);
+    expect(lines[0]).toBe('ano;municipio;uf;valor_BRL;qtd_massa_t;qtd_volume_m3;escopo_produto;recorte_geografico;tabela_sidra;correcao_monetaria');
+    expect(lines[1]).toBe(`2021;Belém;PA;4000000;1000;0;cesta selecionada;sem recorte sub-UF;ambas as metades;${CORRECAO_CSV}`);
+    expect(lines[2]).toBe(`2021;Santos;SP;1000000;0;200000;cesta selecionada;sem recorte sub-UF;ambas as metades;${CORRECAO_CSV}`);
   });
 
   it('falls back to the per-UF table when geoExportScope is absent (unchanged default)', () => {
@@ -488,7 +488,7 @@ describe('exportActiveTableCSV — geo snapshot', () => {
     // no window.geoExportScope set — export triggered before Geografia ever mounted.
     window.exportActiveTableCSV({ view: 'geo', summary: {}, database: 'ibge_pevs' });
     const lines = lastCsv.replace('﻿', '').split('\n');
-    expect(lines[0]).toBe('ano;uf;nome;regiao;valor_BRL;qtd_massa_t;qtd_volume_m3;qtd_contagem_un;escopo_produto;recorte_geografico;tabela_sidra;correcao_monetaria');
+    expect(lines[0]).toBe('ano;uf;nome;regiao;valor_BRL;qtd_massa_t;qtd_volume_m3;escopo_produto;recorte_geografico;tabela_sidra;correcao_monetaria');
     expect(lines[1].startsWith('2021;PA;')).toBe(true);
   });
 });
@@ -499,8 +499,8 @@ describe('exportActiveTableCSV — concentration (sorted desc by value)', () => 
     stubRegistry({
       products: PRODUCTS,
       ufData: [
-        { uf: 'AM', name: 'Amazonas', region: 'Norte', value: 1.0, q_count: 1.0 },
-        { uf: 'PA', name: 'Pará', region: 'Norte', value: 9.0, q_count: 2.0 },
+        { uf: 'AM', name: 'Amazonas', region: 'Norte', value: 1.0 },
+        { uf: 'PA', name: 'Pará', region: 'Norte', value: 9.0 },
       ],
       ufLatestYear: 2021,
       ufYearPartial: false,
@@ -508,7 +508,7 @@ describe('exportActiveTableCSV — concentration (sorted desc by value)', () => 
     });
     window.exportActiveTableCSV({ view: 'concentration', summary: {}, database: 'ibge_pevs' });
     const lines = lastCsv.replace('﻿', '').split('\n');
-    expect(lines[0]).toBe('ano;uf;nome;regiao;valor_BRL;qtd_contagem_un;escopo_produto;recorte_geografico;tabela_sidra;correcao_monetaria');
+    expect(lines[0]).toBe('ano;uf;nome;regiao;valor_BRL;escopo_produto;recorte_geografico;tabela_sidra;correcao_monetaria');
     // PA (9) must come before AM (1) after the descending sort
     expect(lines[1]).toContain(';PA;');
     expect(lines[2]).toContain(';AM;');
@@ -539,14 +539,14 @@ describe('exportActiveTableCSV — quality flags', () => {
 // ── conventions fallback: ctx.conventions omitted → DEFAULT_CONVENTIONS ───────
 describe('exportActiveTableCSV — conventions default', () => {
   it('uses window.DEFAULT_CONVENTIONS when ctx.conventions is absent', () => {
-    stubRegistry({ products: PRODUCTS, ts: [{ y: 2020, v: 1, q_mass: 1, q_vol: 1, q_count: 1 }] });
+    stubRegistry({ products: PRODUCTS, ts: [{ y: 2020, v: 1, q_mass: 1, q_vol: 1 }] });
     window.exportActiveTableCSV({ view: 'overview', summary: {}, database: 'ibge_pevs' });
     // header currency comes from DEFAULT_CONVENTIONS.currency = 'BRL'
     expect(lastCsv).toContain('valor_BRL');
   });
 
   it('honours an explicit ctx.conventions currency in the header', () => {
-    stubRegistry({ products: PRODUCTS, ts: [{ y: 2020, v: 1, q_mass: 1, q_vol: 1, q_count: 1 }] });
+    stubRegistry({ products: PRODUCTS, ts: [{ y: 2020, v: 1, q_mass: 1, q_vol: 1 }] });
     window.exportActiveTableCSV({
       view: 'overview',
       summary: {},
@@ -562,7 +562,7 @@ describe('exportActiveTableCSV — conventions default', () => {
 // correção, e um CSV solto não tem a faixa de convenções ao lado. Um valor corrigido está a
 // preços de UM mês, e o arquivo tem de dizer qual.
 describe('exportActiveTableCSV — a correção monetária viaja com o arquivo', () => {
-  const TS = [{ y: 2020, v: 1, q_mass: 1, q_vol: 1, q_count: 0 }];
+  const TS = [{ y: 2020, v: 1, q_mass: 1, q_vol: 1 }];
   const OUTUBRO = { column: 'val_real_ipca_brl', month: '2026-10', fxDate: null };
   // O valor da última coluna da primeira linha de dados, sem as aspas do CSV.
   const correcaoDoArquivo = (conventions) => {
@@ -631,7 +631,7 @@ describe('exportActiveTableCSV — a correção monetária viaja com o arquivo',
 // chip nem permalink ao lado, um número que soma floresta nativa com plantada (5:1 a
 // favor da plantada) tem de dizer isso na própria tabela.
 describe('exportActiveTableCSV — a tabela SIDRA viaja junto com o arquivo', () => {
-  const UF_ROW = [{ uf: 'SP', name: 'São Paulo', region: 'Sudeste', value: 5, q_mass: 1, q_vol: 2, q_count: 3 }];
+  const UF_ROW = [{ uf: 'SP', name: 'São Paulo', region: 'Sudeste', value: 5, q_mass: 1, q_vol: 2 }];
   // O registro REAL (filtersSchema.js, importado no topo). Dublá-lo com valores próprios
   // deixaria o CSV concordar com um vocabulário de tabelas que o produto não tem — foi
   // assim que este teste seguiu verde com 'extrativa'/'silvicultura' depois que o dado
@@ -673,7 +673,7 @@ describe('exportActiveTableCSV — o recorte sub-UF viaja junto com o arquivo', 
       imediata: { code: '150004', name: 'Breves' } },
   ];
 
-  const UF_ROW = [{ uf: 'PA', name: 'Pará', region: 'Norte', value: 5, q_mass: 1, q_vol: 2, q_count: 3 }];
+  const UF_ROW = [{ uf: 'PA', name: 'Pará', region: 'Norte', value: 5, q_mass: 1, q_vol: 2 }];
 
   it('nomeia o recorte em cada linha quando há um', () => {
     stubRegistry({ products: PRODUCTS, ufData: UF_ROW, ufLatestYear: 2024, notFilteredByBasket: true });
@@ -698,9 +698,9 @@ describe('exportActiveTableCSV — o recorte sub-UF viaja junto com o arquivo', 
 describe('exportActiveTableCSV — comparativo entre territórios', () => {
   // Norte = Pará + Amazonas. 2021 has no deflator (value null) but measured tonnes.
   const UF_ROWS = [
-    { year: 2020, uf: 'PA', value: 2, q_mass: 3, q_vol: 0.5, q_count: 0 },
-    { year: 2020, uf: 'AM', value: 1, q_mass: 1, q_vol: 0, q_count: 0 },
-    { year: 2021, uf: 'PA', value: null, q_mass: 4, q_vol: 0, q_count: 0 },
+    { year: 2020, uf: 'PA', value: 2, q_mass: 3, q_vol: 0.5 },
+    { year: 2020, uf: 'AM', value: 1, q_mass: 1, q_vol: 0 },
+    { year: 2021, uf: 'PA', value: null, q_mass: 4, q_vol: 0 },
   ];
   const MESH = [{ cityCode: 1501402, cityName: 'Belém', uf: 'PA', region: 'N' }];
   const ctx = (items) => ({
@@ -723,14 +723,14 @@ describe('exportActiveTableCSV — comparativo entre territórios', () => {
     window.exportActiveTableCSV(ctx([{ level: 'regiao', code: 'N' }, { level: 'municipio', code: '1501402' }]));
     const lines = lastCsv.replace('﻿', '').split('\n');
     // PEVS has two halves, so the file names which one it covers, like every PEVS export.
-    expect(lines[0]).toBe('ano;territorio;nivel;codigo;valor_BRL;massa_t;volume_m3;contagem_un;tabela_sidra;correcao_monetaria');
+    expect(lines[0]).toBe('ano;territorio;nivel;codigo;valor_BRL;massa_t;volume_m3;tabela_sidra;correcao_monetaria');
     expect(lines.slice(1)).toEqual([
-      `2020;Norte;região;N;3000000;4000;500000;0;ambas as metades;${CORRECAO_CSV}`,
+      `2020;Norte;região;N;3000000;4000;500000;ambas as metades;${CORRECAO_CSV}`,
       // The deflator gap leaves the value cell EMPTY, not 0; the tonnes were measured.
-      `2021;Norte;região;N;;4000;0;0;ambas as metades;${CORRECAO_CSV}`,
+      `2021;Norte;região;N;;4000;0;ambas as metades;${CORRECAO_CSV}`,
       // No row for Belém in 2020: the cube is sparse, so that is a measured 0.
-      `2020;Belém (PA);município;1501402;0;0;0;0;ambas as metades;${CORRECAO_CSV}`,
-      `2021;Belém (PA);município;1501402;500000;1000;0;0;ambas as metades;${CORRECAO_CSV}`,
+      `2020;Belém (PA);município;1501402;0;0;0;ambas as metades;${CORRECAO_CSV}`,
+      `2021;Belém (PA);município;1501402;500000;1000;0;ambas as metades;${CORRECAO_CSV}`,
     ]);
     expect(lastDownloadName).toBe('ibge_pevs_comparativo_territorios_2020-2021.csv');
   });
@@ -753,5 +753,102 @@ describe('exportActiveTableCSV — comparativo entre territórios', () => {
     const p = window.prepareTableCSV(ctx([{ level: 'uf', code: 'PA' }, { level: 'municipio', code: '1501402' }]));
     expect(p).toMatchObject({ erro: true, motivo: 'carregando' });
     expect(lastDownloadName).toBeUndefined();
+  });
+});
+
+// ── Counts (v1.108.0): one column per thing counted ──────────────────────────
+// Until v1.108.0 every file had ONE qtd_contagem_un column, and for the PPM it carried the
+// herd's heads plus a year's eggs: Mato Grosso 2025 would read 3.883.600.000 "unidades".
+describe('exportActiveTableCSV — a count column per thing counted', () => {
+  // PPM count products as the API serves them; the groups come from the REAL rule.
+  const BOVINO = { code: '2670', name: 'Bovino', family: 'count', measure_kind: 'stock', unit_native: 'Cabeças' };
+  const OVOS = { code: '2685', name: 'Ovos de galinha', family: 'count', measure_kind: 'flow', unit_native: 'Mil dúzias' };
+  // No banco holds eggs and counted fruits together today; this one proves the refusal.
+  const ABACAXI = { code: '40092', name: 'Abacaxi', family: 'count', unit_native: 'Mil frutos' };
+  const withCounts = (products, rest = {}) => {
+    const codes = products.map((p) => p.code);
+    return { products, selectedProducts: codes, countGroups: window.countGroups(products, codes), ...rest };
+  };
+  // Mato Grosso 2025 as measured on prod, in mi un: 80,4 mi heads, 3,80 bi eggs.
+  const MT = {
+    uf: 'MT', name: 'Mato Grosso', region: 'Centro-Oeste', value: 900, q_mass: 0, q_vol: 0,
+    q_count_stock: 80.4, q_count_flow: 3803.2,
+  };
+  const GEO = { ufData: [MT], ufLatestYear: 2025, ufYearPartial: false, notFilteredByBasket: false };
+  const header = () => lastCsv.replace('﻿', '').split('\n')[0].split(';');
+  const firstRow = () => lastCsv.replace('﻿', '').split('\n')[1].split(';');
+  const cell = (col) => firstRow()[header().indexOf(col)];
+
+  it('the aggregate series carries the herd and the eggs in two named columns, never their sum', () => {
+    stubRegistry(withCounts([BOVINO, OVOS], {
+      ts: [{ y: 2025, v: 1, q_mass: 0, q_vol: 0, q_count_stock: 80.4, q_count_flow: 3803.2 }],
+    }));
+    window.exportActiveTableCSV({ view: 'overview', summary: {}, database: 'ibge_ppm' });
+    expect(header()).toEqual(['ano', 'valor_BRL', 'qtd_massa_t', 'qtd_volume_m3',
+      'efetivo_cabecas', 'qtd_ovos', 'correcao_monetaria']);
+    expect(cell('efetivo_cabecas')).toBe('80400000');     // heads
+    expect(cell('qtd_ovos')).toBe('3803200000');          // eggs
+    expect(lastCsv).not.toContain('3883600000');          // heads + eggs, the old column
+  });
+
+  it('every geography file carries the same two columns: UF, região and município', () => {
+    stubRegistry(withCounts([BOVINO, OVOS], {
+      ...GEO,
+      regionData: [{ id: 'CO', label: 'Centro-Oeste', value: 900, q_mass: 0, q_vol: 0,
+        q_count_stock: 80.4, q_count_flow: 3803.2 }],
+    }));
+    window.exportActiveTableCSV({ view: 'geo', summary: {}, database: 'ibge_ppm' });
+    expect([cell('efetivo_cabecas'), cell('qtd_ovos')]).toEqual(['80400000', '3803200000']);
+
+    window.geoExportScope = 'region';
+    window.exportActiveTableCSV({ view: 'geo', summary: {}, database: 'ibge_ppm' });
+    expect(header()[1]).toBe('regiao');
+    expect([cell('efetivo_cabecas'), cell('qtd_ovos')]).toEqual(['80400000', '3803200000']);
+
+    window.geoExportScope = 'municipio';
+    window.geoExportMunis = [{ city: 'Cáceres', uf: 'MT', value: 1, q_mass: 0, q_vol: 0,
+      q_count_stock: 1.1, q_count_flow: 2.5 }];
+    window.exportActiveTableCSV({ view: 'geo', summary: {}, database: 'ibge_ppm' });
+    expect(header()[1]).toBe('municipio');
+    expect([cell('efetivo_cabecas'), cell('qtd_ovos')]).toEqual(['1100000', '2500000']);
+  });
+
+  it('the concentration file too', () => {
+    stubRegistry(withCounts([BOVINO, OVOS], GEO));
+    window.exportActiveTableCSV({ view: 'concentration', summary: {}, database: 'ibge_ppm' });
+    expect([cell('efetivo_cabecas'), cell('qtd_ovos')]).toEqual(['80400000', '3803200000']);
+  });
+
+  it('a herd-only basket has the herd column alone', () => {
+    stubRegistry(withCounts([BOVINO], GEO));
+    window.exportActiveTableCSV({ view: 'geo', summary: {}, database: 'ibge_ppm' });
+    expect(header().filter((h) => /^(efetivo|qtd)_/.test(h) && !/massa|volume/.test(h)))
+      .toEqual(['efetivo_cabecas']);
+  });
+
+  it('products that count different things get no column, as they get no map', () => {
+    stubRegistry(withCounts([OVOS, ABACAXI], GEO));
+    window.exportActiveTableCSV({ view: 'geo', summary: {}, database: 'ibge_ppm' });
+    expect(header().some((h) => /ovos|frutos|unidade/.test(h))).toBe(false);
+  });
+
+  it('the territory comparison builds one series per count group, each in its own column', () => {
+    const ROWS = [
+      { year: 2025, uf: 'MT', value: 900, q_mass: 0, q_vol: 0, q_count_stock: 80.4, q_count_flow: 3803.2 },
+    ];
+    stubRegistry(withCounts([BOVINO, OVOS], { yearStart: 2025, yearEnd: 2025 }));
+    window.UF_DATA = [{ uf: 'MT', name: 'Mato Grosso', region: 'CO' }];
+    window.dataStore = { get: () => ({ ufYearly: ROWS, products: [BOVINO, OVOS] }) };
+    try {
+      window.exportActiveTableCSV({
+        view: 'territory_compare', database: 'ibge_ppm', summary: {}, conventions: CONV,
+        territoryCompare: { items: [{ level: 'uf', code: 'MT' }] },
+      });
+      expect(header().slice(0, 9)).toEqual(['ano', 'territorio', 'nivel', 'codigo', 'valor_BRL',
+        'massa_t', 'volume_m3', 'efetivo_cabecas', 'qtd_ovos']);
+      expect([cell('efetivo_cabecas'), cell('qtd_ovos')]).toEqual(['80400000', '3803200000']);
+    } finally {
+      for (const k of ['UF_DATA', 'dataStore']) delete window[k];
+    }
   });
 });

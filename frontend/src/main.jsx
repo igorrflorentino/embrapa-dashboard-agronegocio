@@ -23,12 +23,15 @@ import './ui/scopeChips.js';
 import './ui/RecorteNote.jsx';
 import './ui/CollapsingNameList.jsx';
 import './ui/MaterialityFloorNote.jsx';
+import './ui/CountUnitNotes.jsx';
 import './ui/MonetaryNotes.jsx';
 import './ui/filterSummary.js';
 import './ui/geoSelect.js';
 import './ui/geoDrill.js';
 import './ui/useGeoCascade.js';
 import './ui/seriesUtils.js';
+import './ui/countUnits.js'; // window.countGroups — what each count counts, and which may be added
+import './ui/geoDimensions.js'; // the Geografia metrics: one per count group, never one for all
 import './ui/territoryCompare.js'; // data layer of "Comparativo entre territórios"
 import './ui/dataFilters.js';
 import './ui/csvExport.js';

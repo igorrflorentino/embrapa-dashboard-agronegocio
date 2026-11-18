@@ -1,6 +1,11 @@
 // ViewGeography — territorial distribution of production, value and volume.
 // All scales come from the global metric conventions (props.conventions).
 
+// The metric rule (one per count group) and the notes that name what a count map leaves
+// out — loaded here so the view never renders without them.
+import './geoDimensions.js';
+import './CountUnitNotes.jsx';
+
 const { useState: useGeoState, useMemo: useGeoMemo, useEffect: useGeoEffect } = React;
 
 // A row counts as a real Brazilian UF when the backend's own `real` flag says so;
@@ -46,7 +51,8 @@ function rankMunisFromCube(cube, mesh, yearStart, yearEnd) {
       // `city` stays the display name.
       cityCode: r.cityCode,
       city: nameByCode[r.cityCode] || r.cityCode, uf: r.uf, product: '',
-      value: r.value, q_mass: r.q_mass, q_vol: r.q_vol, q_count: r.q_count,
+      value: r.value, q_mass: r.q_mass, q_vol: r.q_vol,
+      q_count_stock: r.q_count_stock, q_count_flow: r.q_count_flow,
     }))
     .sort((a, b) => (b.value || 0) - (a.value || 0));
 }
@@ -79,11 +85,12 @@ function ViewGeography({ families, conventions, summary, database, territoryComp
   const valueMul = window.convFactorFor(baseCcy, conv) * 1e6;  // mi → absolute, base-aware
   const massMul  = window.massQtyMul(conv);   // 1e3 (t) or 1e6 (kg)
   const volMul   = window.volumeQtyMul(conv); // 1e6 (m³) or 1e9 (L)
-  const countMul = window.countQtyMul(conv);  // 1e6 — internal mi un → cabeças/un
+  const countMul = window.countQtyMul(conv);  // 1e6 — internal mi un → un
   const valueUnitLabel = window.valueAxisLabel(conv); // "R$" / "US$" / etc.
   const massUnitLabel  = window.massAxisLabel(conv);  // "t" or "kg"
   const volUnitLabel   = window.volumeAxisLabel(conv);// "m³" or "L"
-  const countUnitLabel = window.countAxisLabel(conv); // "un" / "cab" / …
+  // A count's unit is named by WHAT it counts (cabeças, ovos, frutos), per group — see
+  // window.countGroupUnit, called by geoDimensions.
 
   const filtered = window.applyFilters(summary || {}, database);
   // The per-UF maps/bars are scoped to the latest UF year IN the window, which can
@@ -128,10 +135,6 @@ function ViewGeography({ families, conventions, summary, database, territoryComp
   // blocks read a ranking worse than five bars do, so neither view is the answer alone.
   const [regViz, setRegViz] = useGeoState('map');
 
-  const massFamily = families.includes('mass');
-  const volFamily  = families.includes('volume');
-  const countFamily = families.includes('count'); // PPM livestock head/eggs
-
   // CONF-3: exclude non-state pseudo-origins (a trade banco's ND/EX/ZN…) BEFORE
   // anything derives from ufData — the map/blocks, the shared auto-scale factor,
   // the Top-N ranking and the heatmap's UF keep-set all read `scaledUFs`, so
@@ -143,44 +146,51 @@ function ViewGeography({ families, conventions, summary, database, territoryComp
     [filtered],
   );
 
-  // A quantity dimension is only offered when the per-UF rows actually CARRY it —
-  // gating on the basket family alone (the old behaviour) offered a toggle that
-  // rendered an all-zero map for a banco whose per-UF reader returns no quantity.
-  // We require both the family AND at least one non-zero per-UF value.
-  const hasUfQty = (key) => realUfData.some(u => (u[key] || 0) > 0);
-  const massAvail = massFamily && hasUfQty('q_mass');
-  const volAvail  = volFamily  && hasUfQty('q_vol');
-  const countAvail = countFamily && hasUfQty('q_count');
-  // The family is in the basket but the per-UF grain has no quantity → tell the
-  // researcher honestly instead of silently dropping the toggle or showing zeros.
-  const massUnavailNote = massFamily && !massAvail;
-  const volUnavailNote  = volFamily  && !volAvail;
-  // Value is the universal measure for a MONETARY banco, but a value-LESS stock (the
-  // livestock herd) has all-zero per-UF value — gate it on a non-zero value so the herd
-  // defaults to its cabeças map instead of an all-zero "Valor" map. Monetary bancos
-  // always have value, so they are unaffected.
-  const valueAvail = hasUfQty('value');
-
-  // Dimensions with active unit label
-  const dims = [
-    { id: 'value',  label: 'Valor',               key: 'value',   unit: valueUnitLabel, mul: valueMul, available: valueAvail },
-    { id: 'mass',   label: 'Quantidade (massa)',  key: 'q_mass',  unit: massUnitLabel,  mul: massMul,  available: massAvail },
-    { id: 'volume', label: 'Quantidade (volume)', key: 'q_vol',   unit: volUnitLabel,   mul: volMul,   available: volAvail },
-    { id: 'count',  label: 'Quantidade (cabeças)',key: 'q_count', unit: countUnitLabel, mul: countMul, available: countAvail },
-  ].filter(d => d.available);
-  // Never render zero dimensions (activeDim would be undefined): fall back to value.
-  if (!dims.length) dims.push({ id: 'value', label: 'Valor', key: 'value', unit: valueUnitLabel, mul: valueMul, available: true });
+  // The metrics this basket can be mapped by (geoDimensions.js): Valor, massa, volume —
+  // each only when the per-UF rows carry it — and ONE per count group. Heads, eggs and
+  // fruits are never one figure: "Quantidade (cabeças)" used to read the whole 'contagem'
+  // family, and Mato Grosso 2025 showed 80,4 mi heads + 3,80 bi eggs as 3,88 bi cabeças.
+  // A family in the basket with no per-UF quantity is said out loud (the *Unavail notes),
+  // and a count group whose products count different things is named (refusedCounts).
+  const countGroups = filtered.countGroups || [];
+  const {
+    dims,
+    refused: refusedCounts,
+    massUnavail: massUnavailNote,
+    volUnavail: volUnavailNote,
+  } = window.geoDimensions({
+    families,
+    countGroups,
+    rows: realUfData,
+    units: {
+      value: { unit: valueUnitLabel, mul: valueMul },
+      mass: { unit: massUnitLabel, mul: massMul },
+      volume: { unit: volUnitLabel, mul: volMul },
+      count: { mul: countMul },
+    },
+    conv,
+  });
 
   // If the active dimension is no longer available (e.g. the basket changed
   // from a mixed cesta to mass-only), reset to the first available one.
   // Done in an effect — never call setState during render.
+  const dimIds = dims.map(d => d.id).join(',');
   useGeoEffect(() => {
     if (!dims.find(d => d.id === dim)) setDim(dims[0].id);
-  }, [dim, massAvail, volAvail, countAvail, valueAvail]);
+  }, [dim, dimIds]);
   const activeDim = dims.find(d => d.id === dim) || dims[0];
   const valueKey  = activeDim.key;
   const unit      = activeDim.unit;
   const mul       = activeDim.mul;
+  // The unit beside the metric in the card headings. A count metric already names its
+  // thing ("Efetivo (cabeças)"), so the tag is dropped when it only repeats it; a tag that
+  // says more (a magnitude, the researcher's 'dz') stays.
+  const unitTag = (u) => (activeDim.group && u === activeDim.group.plural ? null : u);
+  // The count group the map is drawing (null for Valor/massa/volume), and the OTHER count
+  // metrics the basket has — named under the map so the eggs are known to be elsewhere,
+  // not silently missing from the herd.
+  const activeCount = activeDim.group || null;
+  const otherCountDims = dims.filter(d => d.group && d.id !== activeDim.id);
 
   // ---- Map-click ↔ filter bridge (state selection from the map itself) ------
   // Extracted to geoSelect.js so the other territorial maps (Visão geral, Qualidade)
@@ -644,13 +654,48 @@ function ViewGeography({ families, conventions, summary, database, territoryComp
           </p>
         </div>
       )}
-      {activeDim.id === 'count' && (
+      {/* A count map sums ONE thing counted. It says what it adds when that is several
+          products, and names the basket's other counts, which have a metric of their own. */}
+      {activeCount && (activeCount.products.length > 1 || otherCountDims.length > 0) && (
         <div className="card subtle" style={{ marginBottom: 12 }}>
-          <p className="caption" style={{ padding: '10px 12px' }}>
-            O mapa de <strong>cabeças</strong> soma os produtos de contagem selecionados; cabeças
-            <strong> não são comparáveis entre espécies</strong>. Filtre por uma única espécie para um
-            mapa limpo, ou use a perspectiva <strong>Rebanho</strong> (mapa por espécie).
-          </p>
+          <div style={{ padding: '10px 12px' }}>
+            {activeCount.products.length > 1 && (
+              <p className="caption" style={{ margin: 0 }}>
+                {activeCount.total === 'stock'
+                  ? (
+                    <>
+                      O mapa do <strong>efetivo</strong> soma as cabeças
+                      de {activeCount.products.length} espécies; cabeças <strong>não são
+                      comparáveis entre espécies</strong>. Filtre por uma única espécie para um
+                      mapa limpo, ou use a perspectiva <strong>Rebanho</strong> (mapa por espécie).
+                    </>
+                  )
+                  : (
+                    <>
+                      O mapa soma {activeCount.plural} de {activeCount.products.length} produtos,
+                      e {activeCount.plural} de produtos diferentes <strong>não se
+                      equivalem</strong>. Filtre por um único produto para um mapa limpo.
+                    </>
+                  )}
+              </p>
+            )}
+            <window.CountLeftOutNote
+              groups={countGroups}
+              shown={activeCount}
+              database={database}
+              marginTop={activeCount.products.length > 1 ? 6 : 0}
+              onde={otherCountDims.length
+                ? `Veja a métrica ${otherCountDims.map(d => d.label).join(' ou ')}.`
+                : null}
+            />
+          </div>
+        </div>
+      )}
+      {refusedCounts.length > 0 && (
+        <div className="card subtle" style={{ marginBottom: 12 }}>
+          <div style={{ padding: '10px 12px' }}>
+            <window.CountRefusedNote groups={countGroups} database={database} marginTop={0} />
+          </div>
         </div>
       )}
 
@@ -698,7 +743,7 @@ function ViewGeography({ families, conventions, summary, database, territoryComp
 
       <div className="card">
         <window.SectionHeader
-          overline={`${distKind} · ${activeDim.label} · ${displayUnit} · ${mapYearTag}`}
+          overline={[distKind, activeDim.label, unitTag(displayUnit), mapYearTag].filter(Boolean).join(' · ')}
           title={distTitle}
           // Geografia and Perfil do território are two halves of one question: this view
           // shows how the activity spreads ACROSS places, that one what happens INSIDE a
@@ -782,18 +827,20 @@ function ViewGeography({ families, conventions, summary, database, territoryComp
                 <button className={'seg-opt ' + (ufViz === 'tiles' ? 'on' : '')} aria-pressed={ufViz === 'tiles'} onClick={() => setUfViz('tiles')}>Blocos</button>
               </div>
             </div>
-            {/* The UF maps get the RAW (unscaled) per-UF values + just the currency symbol:
-                each cell/popup is formatted with its OWN compact magnitude (e.g. "2,9 bi",
+            {/* The UF maps get the RAW (unscaled) per-UF values + just the active metric's
+                unit: each cell/popup is formatted with its OWN compact magnitude (e.g. "2,9 bi",
                 "384 mi", "3,0 mi"), so small UFs never round to "0" (the global-factor
-                auto-scale problem) and big ones never overflow the cell. Clicking a UF
-                filters the whole dashboard to it (click again to clear). */}
+                auto-scale problem) and big ones never overflow the cell. The unit is the
+                metric's (R$, t, cabeças, ovos…): until v1.108.0 every metric got the currency,
+                so a herd's or a harvest's popup and legend said "R$". Clicking a UF filters
+                the whole dashboard to it (click again to clear). */}
             {ufViz === 'map'
-              ? <window.BrazilChoropleth data={scaledUFs} valueKey={valueKey} label={valueUnitLabel}
+              ? <window.BrazilChoropleth data={scaledUFs} valueKey={valueKey} label={unit}
                                          recorte={filtered.recorte}
                                          onSelect={handleUfEnter} selectedUf={selectedSingleUf}
                                          onBackground={handleMapBackground}
                                          focusUfs={selectedRegion ? ufsOfRegion(selectedRegion) : null} />
-              : <window.BrazilTileMap data={scaledUFs} valueKey={valueKey} label={valueUnitLabel} onSelect={handleTileEnter} selectedUf={selectedSingleUf} />}
+              : <window.BrazilTileMap data={scaledUFs} valueKey={valueKey} label={unit} onSelect={handleTileEnter} selectedUf={selectedSingleUf} />}
             {filtered.ufYearPartial && (
               <p className="caption" style={{ padding: '8px 4px 0' }}>
                 <strong>{mapYear} (parcial):</strong> o último ano com dados por UF disponíveis fica
@@ -861,7 +908,7 @@ function ViewGeography({ families, conventions, summary, database, territoryComp
                   uf={muniMapUf}
                   data={rows}
                   valueKey={valueKey}
-                  label={valueUnitLabel}
+                  label={unit}
                   selectedCity={selectedSingleCity}
                   onSelect={handleCityClick}
                   onBackground={handleMapBackground}
@@ -879,7 +926,9 @@ function ViewGeography({ families, conventions, summary, database, territoryComp
 
       <div className="card">
         <window.SectionHeader
-          overline={`Evolução temporal · ${activeDim.label} (${heatScaled.label})`}
+          overline={unitTag(heatScaled.label)
+            ? `Evolução temporal · ${activeDim.label} (${heatScaled.label})`
+            : `Evolução temporal · ${activeDim.label}`}
           title={`Mapa de calor · ano × ${scopeNoun} ${heatCountTag}`.trim()}
         />
         {heatScaled.rows.length
@@ -943,24 +992,72 @@ function ViewGeography({ families, conventions, summary, database, territoryComp
       {pbu && (() => {
         // Mesma desambiguação de "O que <lugar> produz": duas metades do PEVS podem trazer
         // o mesmo NOME, e o BarChart usa o nome como categoria (o Plotly funde homônimas).
-        const rows = window.labelProductRows(pbu.products || [], database)
-          .map(p => ({ ...p, [valueKey]: (p[valueKey] || 0) * mul }))
+        const labelled = window.labelProductRows(pbu.products || [], database);
+        // A count metric ranks only the products of ITS group, by each one's own count
+        // (`q_count`: one product counts one thing). Until v1.108.0 the eggs were ranked
+        // among the species under "cabeças". The basket's other counts are named below.
+        const sameProduct = (a, b) => String(a.code) === String(b.code)
+          && (!a.tabela || !b.tabela || String(a.tabela) === String(b.tabela));
+        const candidates = activeCount
+          ? labelled.filter(p => activeCount.products.some(g => sameProduct(g, p)))
+          : labelled;
+        const productKey = activeCount ? 'q_count' : valueKey;
+        const rows = candidates
+          .map(p => ({ ...p, [valueKey]: (p[productKey] || 0) * mul }))
           .filter(r => (r[valueKey] || 0) > 0)
           .sort((a, b) => b[valueKey] - a[valueKey])
           .slice(0, 20);
+        // Ranked by VALUE, a product with no value is not a zero-length bar — it is absent,
+        // and it stays NAMED (as in "O que <lugar> produz"): the herd is a stock with no
+        // monetary value by nature, a flow may have none in this convention.
+        const nomes = (ps) => ps.map(p => p.name || p.code).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+        const byValue = valueKey === 'value';
+        const rebanho = byValue ? nomes(labelled.filter(p => p.measure_kind === 'stock')) : [];
+        const semValor = byValue
+          ? nomes(labelled.filter(p => p.measure_kind !== 'stock' && p.value == null))
+          : [];
         // A failed /api/products-by-uf fetch leaves products:[] → rows empty; surface the error
         // instead of silently rendering nothing (would read as "este estado não tem produtos").
-        if (!rows.length) return pbu.loadError ? <window.LoadErrorNote error={pbu.loadError} /> : null;
+        if (!rows.length && !rebanho.length && !semValor.length) {
+          return pbu.loadError ? <window.LoadErrorNote error={pbu.loadError} /> : null;
+        }
         const scaled = window.scaleSeries(rows, Math.max(...rows.map(r => r[valueKey] || 0)), conv, valueKey, unit);
         const estadoLabel = pl(summary.states.length, 'Produtos do estado', 'Produtos dos estados');
+        // Where the herd IS ranked: the herd's own metric when this basket offers it.
+        const herdDim = dims.find(d => d.group && d.group.total === 'stock');
         return (
           <div className="card">
             <window.SectionHeader
-              overline={`Base de dados · ${activeDim.label} · ${scaled.label} · ${mapYearTag}`}
+              overline={['Base de dados', activeDim.label, unitTag(scaled.label), mapYearTag].filter(Boolean).join(' · ')}
               title={`${estadoLabel} (${summary.states.join(', ')})`}
               action={<span className="caption">{rows.length} produtos · ranking por {activeDim.label.toLowerCase()}</span>}
             />
-            <window.BarChart data={scaled.data} valueKey={valueKey} color="var(--viz-2)" height={Math.max(240, rows.length * 26)} />
+            {rows.length > 0 && (
+              <window.BarChart data={scaled.data} valueKey={valueKey} color="var(--viz-2)" height={Math.max(240, rows.length * 26)} />
+            )}
+            <window.CollapsingNameList
+              titulo="Efetivo dos rebanhos"
+              itens={rebanho}
+              substantivo="espécies"
+              regra={(
+                <>
+                  É um <strong>estoque</strong> (nº de cabeças), não uma produção: não tem valor
+                  monetário e por isso não entra no ranking por valor.
+                  {herdDim
+                    ? <> Veja a métrica <strong>{herdDim.label}</strong> ou a perspectiva <strong>Rebanho</strong>.</>
+                    : <> Veja a perspectiva <strong>Rebanho</strong>.</>}
+                </>
+              )}
+            />
+            <window.CollapsingNameList
+              titulo="Sem valor nesta convenção"
+              itens={semValor}
+              substantivo="produtos"
+              regra={`Não têm valor nesta convenção em ${mapYear}, por isso não entram no ranking por valor.`}
+            />
+            {activeCount && (
+              <window.CountLeftOutNote groups={countGroups} shown={activeCount} database={database} />
+            )}
           </div>
         );
       })()}

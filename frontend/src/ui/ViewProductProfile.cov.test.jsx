@@ -141,7 +141,7 @@ const STOCK_FIXTURE = {
     { code: 'H1', name: 'Bovino', family: 'count', unit: 'cabeças', measure_kind: 'stock' },
     { code: 'H2', name: 'Suíno', family: 'count', unit: 'cabeças', measure_kind: 'stock' },
   ],
-  ufDataFull: [{ uf: 'MT', value: 0, q_count: 75, real: true }],
+  ufDataFull: [{ uf: 'MT', value: 0, q_count_stock: 75, real: true }],
   qualityByProduct: [{ code: 'H1', OK: 0.95, MISSING_QUANTITY: 0.02 }],
   yearStart: 2019,
   yearEnd: 2020,

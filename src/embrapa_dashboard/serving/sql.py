@@ -465,6 +465,42 @@ def _value_sum(value_column: str, has_measure_kind: bool) -> str:
     return f"sum({value_column})"
 
 
+def _count_split(has_measure_kind: bool) -> str:
+    """SQL for the count quantity of a reader that sums ACROSS products, in two totals.
+
+    The 'contagem' family converts everything it counts to 'un' (heads of cattle, eggs,
+    pineapples), so its rows add up as numbers and mean nothing as a sum. Summed into one
+    ``q_count``, the Geografia map gave Mato Grosso 2025 3.88 bi under "Quantidade
+    (cabeças)": 80.4 mi heads of eight species and 3.80 bi eggs (measured on prod
+    2026-11-18; CHANGELOG v1.107.0, Notas). So a reader
+    that sums across products returns two totals, never added together:
+
+    * ``q_count_stock``: the herd (``measure_kind = 'stock'``, PPM's efetivo dos
+      rebanhos, heads at year end). Only the livestock mart has the column. Everywhere
+      else this is NULL, because no other source carries a stock.
+    * ``q_count_flow``: counted PRODUCTION (eggs, fruits). This is every other 'contagem'
+      row, a NULL ``measure_kind`` included, so stock + flow is exactly the old total.
+
+    The data names stock and flow itself (``measure_kind``, held to the SIDRA table by
+    ``assert_ppm_measure_kind_matches_tabela``). The UNITS inside each total must also
+    agree, since two flows that count different things add just as badly. That is checked
+    where the products are named (frontend ``countUnits.js``), which never offers a total
+    whose products count different things. Per-product readers keep a plain ``q_count``,
+    because one product has one unit.
+    """
+    if has_measure_kind:
+        return (
+            "sum(case when family = 'contagem' and measure_kind = 'stock' "
+            "then qty_base end) as q_count_stock,\n"
+            "            sum(case when family = 'contagem' and coalesce(measure_kind, '') "
+            "!= 'stock' then qty_base end) as q_count_flow"
+        )
+    return (
+        "cast(null as float64) as q_count_stock,\n"
+        "            sum(case when family = 'contagem' then qty_base end) as q_count_flow"
+    )
+
+
 def production_overview(
     table: str,
     *,
@@ -531,7 +567,8 @@ def production_by_uf(
     family (the same rule the marts enforce): ``q_mass`` sums ``qty_base`` (t) of
     the 'massa' family, ``q_vol`` sums ``qty_base`` (m³) of 'volume'. qty_base —
     not qty_native — is the only summable quantity across a family's mixed-unit
-    codes. The serializer scales them to mil t / mi m³.
+    codes. The serializer scales them to mil t / mi m³. The 'contagem' family is not
+    one unit, so it comes as two totals (:func:`_count_split`).
     """
     value_column = _validate_column(value_column, ALLOWED_VALUE_COLUMNS, "value_column")
     conditions: list[str] = []
@@ -558,7 +595,7 @@ def production_by_uf(
             {_value_sum(value_column, has_measure_kind)}     as total_value,
             sum(case when family = 'massa'  then qty_base end) as q_mass,
             sum(case when family = 'volume' then qty_base end) as q_vol,
-            sum(case when family = 'contagem' then qty_base end) as q_count
+            {_count_split(has_measure_kind)}
         from `{table}`
         {_where(conditions)}
         group by state_acronym
@@ -584,8 +621,8 @@ def production_by_uf_yearly(
     ``reference_year`` to the grain so the geography heatmap renders REAL per-UF
     history instead of fabricating it from the national curve. Quantities are
     split by ``family`` (``q_mass`` = ``qty_base`` t of 'massa', ``q_vol`` = m³ of
-    'volume') so they are only ever summed WITHIN a unit family — the same rule
-    :func:`production_by_uf` follows.
+    'volume', the count in the two totals of :func:`_count_split`) so they are only
+    ever summed WITHIN a unit family — the same rule :func:`production_by_uf` follows.
 
     ``price_base`` adds the month the summed column is at (:func:`_price_base_select`).
     The basket cube (``/api/geo-yearly``) asks for it: it is a separate read, cached on
@@ -609,7 +646,7 @@ def production_by_uf_yearly(
             {_value_sum(value_column, has_measure_kind)}      as total_value,
             sum(case when family = 'massa'  then qty_base end) as q_mass,
             sum(case when family = 'volume' then qty_base end) as q_vol,
-            sum(case when family = 'contagem' then qty_base end) as q_count{base}
+            {_count_split(has_measure_kind)}{base}
         from `{table}`
         {_where(conditions)}
         group by state_acronym, reference_year
@@ -665,6 +702,7 @@ def production_by_municipio_yearly(
     visibility_predicate: str = "",
     tabela: str | None = None,
     price_base: bool = False,
+    has_measure_kind: bool = False,
 ) -> tuple[str, list]:
     """Production by (município, year) straight from ``gold_<source>_production``,
     which is ALREADY município-grained — backs the sub-UF + live-município geography
@@ -679,7 +717,8 @@ def production_by_municipio_yearly(
     ~5570 — the full município×year grid is ~146k rows, far too heavy to ship whole.
     The client then rolls these (already-narrowed) city rows up to the selected level.
     Quantities split by ``family`` so they are only ever summed WITHIN a unit family —
-    identical rule to :func:`production_by_uf_yearly`."""
+    identical rule to :func:`production_by_uf_yearly`. ``has_measure_kind`` (PPM's Gold
+    carries the column) keeps the herd and the counted flows apart (:func:`_count_split`)."""
     value_column = _validate_column(value_column, ALLOWED_VALUE_COLUMNS, "value_column")
     conditions: list[str] = []
     params: list = []
@@ -698,7 +737,7 @@ def production_by_municipio_yearly(
             sum({value_column})      as total_value,
             sum(case when family = 'massa'    then qty_base end) as q_mass,
             sum(case when family = 'volume'   then qty_base end) as q_vol,
-            sum(case when family = 'contagem' then qty_base end) as q_count{base}
+            {_count_split(has_measure_kind)}{base}
         from `{table}`
         {_where(conditions)}
         group by city_code, state_acronym, reference_year

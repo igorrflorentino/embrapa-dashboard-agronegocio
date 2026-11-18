@@ -505,11 +505,13 @@ window.formatVolumeQty = (miM3, conv) => {
 };
 // Contagem (head / eggs — PPM livestock): internal q_count holds *millions of units*
 // (mi un), the same ÷1e6 scaling the serializer applies. Mirrors mass/volume so the
-// herd reads in the user-picked count unit (un / dz / milheiro / cabeça).
-window.formatCountQty = (miUn, conv) => {
+// herd reads in the user-picked count unit (un / dz / milheiro / cabeça). `unitLabel`
+// names what is counted when the caller knows it (window.countGroupUnit: "ovos",
+// "frutos"); the multiplier stays the convention's.
+window.formatCountQty = (miUn, conv, unitLabel) => {
   if (miUn == null) return '—';
   const v = miUn * window.countQtyMul(conv);
-  return _fmtRescaled(v, conv, window.unitOf(conv, 'count'));
+  return _fmtRescaled(v, conv, unitLabel || window.unitOf(conv, 'count'));
 };
 
 // Multipliers: internal dataset units (mil t / mi m³) → selected display

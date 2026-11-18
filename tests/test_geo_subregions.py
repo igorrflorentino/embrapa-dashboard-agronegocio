@@ -42,10 +42,29 @@ def test_production_by_municipio_yearly_groups_by_city_code():
     )
     assert "group by city_code, state_acronym, reference_year" in sql
     assert "val_real_ipca_brl" in sql
-    # family-split quantities (only summed within a family)
-    assert "q_mass" in sql and "q_vol" in sql and "q_count" in sql
+    # family-split quantities (only summed within a family), the count in two totals
+    assert "q_mass" in sql and "q_vol" in sql
+    assert "as q_count_stock" in sql and "as q_count_flow" in sql
+    # PEVS has no measure_kind: no herd total, every count is a flow
+    assert "cast(null as float64) as q_count_stock" in sql
     # basket + year window are bound as params (no interpolation of user values)
     assert any(getattr(p, "name", "") == "product_codes" for p in params)
+
+
+def test_production_by_municipio_yearly_splits_the_herd_from_the_eggs():
+    """PPM's município cube carries the herd and the counted production apart.
+
+    Mato Grosso 2025 summed 80.4 mi heads and 3.80 bi eggs into one figure on the map,
+    labelled "cabeças". The gateway passes ``has_measure_kind`` for PPM so the cube can
+    tell them apart."""
+    sql, _ = sqlbuild.production_by_municipio_yearly(
+        "proj.gold.gold_ppm_production", has_measure_kind=True
+    )
+    assert "measure_kind = 'stock' then qty_base end) as q_count_stock" in sql
+    assert "coalesce(measure_kind, '') != 'stock' then qty_base end) as q_count_flow" in sql
+    # the value is untouched: only the count is split
+    assert "sum(val_real_ipca_brl)" in sql
+    assert "measure_kind = 'flow'" not in sql
 
 
 def test_production_by_municipio_yearly_scopes_to_city_codes():
@@ -86,7 +105,8 @@ def test_serialize_municipio_yearly_scales_like_uf_cube():
                 "total_value": 5e6,
                 "q_mass": 2e3,
                 "q_vol": 1e6,
-                "q_count": 3e6,
+                "q_count_stock": 3e6,
+                "q_count_flow": 4e6,
             }
         ]
     )
@@ -96,7 +116,9 @@ def test_serialize_municipio_yearly_scales_like_uf_cube():
     assert out[0]["value"] == 5.0  # ÷1e6 → mi
     assert out[0]["q_mass"] == 2.0  # ÷1e3 → mil t
     assert out[0]["q_vol"] == 1.0  # ÷1e6 → mi m³
-    assert out[0]["q_count"] == 3.0  # ÷1e6 → mi un
+    assert out[0]["q_count_stock"] == 3.0  # ÷1e6 → mi un (heads)
+    assert out[0]["q_count_flow"] == 4.0  # ÷1e6 → mi un (eggs, fruits)
+    assert "q_count" not in out[0]  # the herd + eggs sum is gone for good
 
 
 def test_serialize_municipio_yearly_empty():
@@ -152,7 +174,8 @@ def test_serialize_municipio_yearly_keeps_absence_absent_and_zero_zero():
                 "total_value": np.nan,  # value-less stock
                 "q_mass": np.nan,
                 "q_vol": np.nan,
-                "q_count": 3e6,
+                "q_count_stock": 3e6,
+                "q_count_flow": np.nan,
             }
         ]
     )
@@ -160,7 +183,8 @@ def test_serialize_municipio_yearly_keeps_absence_absent_and_zero_zero():
     assert row["value"] is None  # ausente, não zero
     assert row["q_mass"] == 0.0
     assert row["q_vol"] == 0.0
-    assert row["q_count"] == 3.0  # the one present family still scales (÷1e6)
+    assert row["q_count_stock"] == 3.0  # the one present family still scales (÷1e6)
+    assert row["q_count_flow"] == 0.0  # no counted production → zero of it
 
 
 def test_serialize_geo_mesh_empty_frame():

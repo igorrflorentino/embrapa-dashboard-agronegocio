@@ -387,14 +387,15 @@ function MainScreen({ filters, view = 'overview', database = 'ibge_pevs', infoPa
   // audit caught COMEX showing 32/27). Prefer the backend's per-row `real` flag,
   // else canonical-registry membership (FINDING #4).
   const _isRealUf = (u) => (u.real != null ? u.real : (window.isCanonicalUf ? window.isCanonicalUf(u.uf) : true));
-  // A value-less basket (PPM herd — a stock with R$ 0 everywhere) must be counted by
-  // HEADCOUNT (q_count), else "UFs cobertas" reads 0/N while ViewOverview shows the real
-  // coverage. Mirror ViewOverview's onCount path (RVC-3); a value-bearing banco is
-  // unaffected (anyValue stays true → counts by value as before).
+  // A value-less basket (PPM herd — a stock with R$ 0 everywhere) must be counted by what
+  // it COUNTS, else "UFs cobertas" reads 0/N while ViewOverview shows the real coverage.
+  // Mirror ViewOverview's onCount path (RVC-3); a value-bearing banco is unaffected
+  // (anyValue stays true → counts by value as before). A presence test: the herd and the
+  // eggs are two totals, and nothing adds them into one figure (countUnits.js).
   const _anyValue = _f ? (_f.ufData.some(u => u.value > 0) || (_f.ts || []).some(d => d.v > 0)) : true;
-  const _ufMeasure = (u) => (_anyValue ? u.value : (u.q_count || 0));
+  const _covered = (u) => (_anyValue ? u.value > 0 : window.hasCount(u));
   const ufsCovered = _f
-    ? _f.ufData.filter(u => _isRealUf(u) && _ufMeasure(u) > 0).length
+    ? _f.ufData.filter(u => _isRealUf(u) && _covered(u)).length
     : (window.UF_DATA || []).filter(u => u.value > 0).length;
   // Denominator: real UFs in the banco's universe, capped at the canonical 27.
   const ufsTotalReal = _f
