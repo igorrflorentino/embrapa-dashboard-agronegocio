@@ -1,6 +1,6 @@
 [project]
 name = "embrapa-dashboard"
-version = "1.107.1"
+version = "1.107.2"
 description = "Medallion pipeline (IBGE PEVS + PAM + PPM + BCB + COMEX + UN Comtrade) → BigQuery → Looker Studio + React/Flask dashboard"
 readme = "README.md"
 requires-python = "==3.12.*"
@@ -21,7 +21,14 @@ dependencies = [
     "rich>=13.7",
     "python-dotenv>=1.0",
     "dbt-core>=1.8",
-    "dbt-bigquery>=1.8",
+    # Floor at the series prod was validated on (#481): the adapter writes the SQL of every
+    # materialization, and nothing else stops the resolver from DOWNGRADING it to make room
+    # for another bump. Dependabot's #567 did exactly that under a title that read as an
+    # upgrade (1.12.1 -> 1.11.1, dragging google-cloud-storage 3.1 -> 2.19 along with it), to
+    # fit tenacity 9.2.1: dbt-bigquery 1.12 -> google-cloud-aiplatform>=1.148 ->
+    # google-genai>=1.66, and google-genai 2.x caps tenacity<9.2. With this floor that bump is
+    # a visible resolution conflict instead.
+    "dbt-bigquery>=1.12",
 ]
 
 [project.optional-dependencies]
