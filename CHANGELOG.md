@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.107.3] - 2026-11-18
+
+Documenta o que o #567 ensinou e como o #575 foi validado. Nada muda no painel, nos dados ou nas
+imagens publicadas (sem tag, pela política de release).
+
+### Alterado
+- **`CLAUDE.md`, seção "Dependências"**: um PR de grupo do Dependabot pode **descer** pacotes sob
+  um título de "Bump". O #567 rebaixava o `dbt-bigquery` 1.12.1 → 1.11.1 para encaixar o alvo
+  `tenacity` 9.2.1. O texto registra o piso da v1.107.2, manda ler o diff do lock nos dois
+  sentidos e diz como achar a causa de uma descida.
+- **`docs/testing.md`**:
+  - a receita de validação do adaptador cita o #575 com os custos medidos (build de dev de
+    21,8 GiB; comparação de 41 tabelas, 27,1 GiB) e manda deixar de fora o
+    `serving_quality_history`, que só acumula;
+  - seção nova para ler o lock de um PR de grupo: o que desce, entra ou sai, e como reproduzir a
+    causa com `uv lock` numa cópia descartável do projeto;
+  - seção nova para validar bibliotecas de execução (`google-cloud-*`, `pandas`, `pyarrow`): a
+    mesma sonda rodada nos dois locks, e o que ela não cobre (o envio ao GCS).
+
+---
+
 ## [1.107.2] - 2026-11-18
 
 Substitui o PR agrupado de Python do Dependabot (#567), que **rebaixava** o adaptador do BigQuery e
