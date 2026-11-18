@@ -247,10 +247,12 @@ window.readStateFromURL = (search = location.search) => {
   let view = q.get('v') || 'overview';
   if (window.viewById && !window.viewById(view)) view = 'overview';
   const isCross = !!(window.viewById && window.viewById(view)?.crossBanco);
-  // Validate ?b (banco) like ?v: an unknown/stale id would silently resolve to a wrong banco
-  // (bancoById falls back internally), so pin it to the default when it isn't a real banco.
+  // Validate ?b (banco) like ?v, but by MEMBERSHIP: an unknown/stale id, or a hidden banco,
+  // pins to the default. Not through bancoById — it falls back to BANCOS[0] instead of failing,
+  // so the `!bancoById(id)` that stood here until v1.107.1 never fired, and `?b=comex` reached
+  // the API and broke the Visão geral (see isSelectableBanco in bancos.js).
   let database = q.get('b') || 'ibge_pevs';
-  if (window.bancoById && !window.bancoById(database)) database = 'ibge_pevs';
+  if (!window.isSelectableBanco || !window.isSelectableBanco(database)) database = 'ibge_pevs';
   // Clamp the server-side trade filters (flow/customs/market) to the banco's OFFERED options,
   // mirroring the ?cur/?v/?b clamps: a stale/hand-edited URL carrying a value this banco doesn't
   // offer must not be sent to the API (a 400) nor paint a phantom filter chip. absent (null) =
