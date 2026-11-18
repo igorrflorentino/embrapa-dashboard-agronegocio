@@ -194,6 +194,10 @@ def _product_source(source: str) -> tuple[str, str, str, str]:
 # the memoize key, following the ``flow``/``customs``/``market`` precedent — a
 # request differing only by an un-keyed filter would otherwise serve a stale result.
 _MEASURE_KIND_SOURCES = {"ibge_ppm"}
+# The same knowledge keyed by MART, for the readers that take a ``table_key`` instead of a
+# ``source`` (fetch_products_by_uf). Derived, never re-listed, so the two cannot drift; and
+# ``table_key`` is a memoize argument, so the derived flag is part of the cache key too.
+# Defined below _PRODUCTION_MART, which it reads.
 
 # TODA fonte carrega o id da tabela desde a v1.47.0 — não existe mais o ramo "este banco
 # tem tabela / aquele não". `fetch_products` a expõe sempre porque a identidade de um
@@ -216,6 +220,8 @@ _PRODUCTION_MART = {
     "ibge_pam": "serving_pam_annual",
     "ibge_ppm": "serving_ppm_annual",
 }
+
+_MEASURE_KIND_MARTS = frozenset(_PRODUCTION_MART[s] for s in _MEASURE_KIND_SOURCES)
 
 
 def _production_mart(source: str) -> str:
@@ -405,6 +411,9 @@ def fetch_products_by_municipio(
         year_end=year_end,
         tabela=tabela,
         include_tabela=include_tabela,
+        # The herd (stock) has no value by nature; the row must say so, or the screen
+        # cannot tell it from a flow the convention does not reach (both arrive null).
+        has_measure_kind=source in _MEASURE_KIND_SOURCES,
         product_codes=tuple(product_codes),
         city_codes=tuple(city_codes),
         value_column=value_column,
@@ -855,9 +864,10 @@ def fetch_products_by_uf(
     with_price_base: bool = False,
 ):
     """Per-product ranking within a UF selection (backs the 'Base de dados' per-UF
-    product breakdown). ``table_key`` + columns are internal literals the seam picks
-    per banco (PEVS production / COMEX export); the SQL builder validates each
-    interpolated identifier against its allowlist."""
+    product breakdown and the território profile's composition). ``table_key`` + columns
+    are internal literals the seam picks per banco (IBGE production / COMEX export); the
+    SQL builder validates each interpolated identifier against its allowlist. The PPM mart
+    also carries the stock|flow discriminator, derived from ``table_key`` here."""
     settings = get_settings()
     table = sqlbuild.table_ref(settings, "bq_serving_dataset", table_key)
     sql, params = sqlbuild.products_by_uf(
@@ -873,6 +883,7 @@ def fetch_products_by_uf(
         tabela=tabela,
         include_tabela=include_tabela,
         price_base=_asks_price_base(with_price_base, value_column, "bq_serving_dataset", table_key),
+        has_measure_kind=table_key in _MEASURE_KIND_MARTS,
     )
     return run_query(sql, params)
 

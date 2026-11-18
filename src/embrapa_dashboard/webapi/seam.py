@@ -1229,17 +1229,54 @@ def partner_data(
     }
 
 
+# The pre-aggregated table that answers "o que esta UF produz" for each IBGE banco: the
+# SAME table its snapshot reads, so the composition and the map beside it agree. The three
+# share the product columns (product_code / product_description / tabela / family), so one
+# call serves all of them. PAM and PPM were left out until v1.107.0, and the território
+# profile then answered "sem produtos" for every UF of both — while the município level,
+# which reads Gold, named them.
+_PRODUCTION_PRODUCTS_BY_UF = {
+    "ibge_pevs": "serving_pevs_annual",
+    "ibge_pam": "serving_pam_annual",
+    "ibge_ppm": "serving_ppm_annual",
+}
+
+
+def products_by_uf_available(banco_id: str) -> bool:
+    """Whether :func:`products_by_uf` has a reader for this banco at all.
+
+    The route sends it beside the rows (``available``) because an EMPTY list means two
+    things a screen must not confuse: "this UF produced nothing in the selection" (a
+    measurement) and "there is no reader for this banco" (no measurement at all). Today
+    every live geo banco has one; the flag is what keeps a future banco without a reader
+    from reading as a territory that produces nothing."""
+    return banco_id in _LIVE_SOURCES and (
+        banco_id == "mdic_comex" or banco_id in _PRODUCTION_PRODUCTS_BY_UF
+    )
+
+
+def products_by_municipio_available(banco_id: str) -> bool:
+    """Whether :func:`products_by_municipio` has a reader for this banco — a município
+    grain, which only the IBGE surveys have (COMEX origin is a UF, COMTRADE a country).
+    Same contract as :func:`products_by_uf_available`."""
+    if banco_id not in _LIVE_SOURCES:
+        return False
+    banco = banco_by_id(banco_id)
+    return "geo" in banco.provides and banco.geo_level == "municipio"
+
+
 def products_by_uf(
     banco_id: str, summary: dict | None = None, conv: dict | None = None
 ) -> pd.DataFrame | None:
     """Per-product ranking WITHIN the selected UF(s) — the "Base de dados" per-UF
-    product breakdown (the inverse of the by-UF rankings, which sum products away).
+    product breakdown and the território profile's composition (the inverse of the
+    by-UF rankings, which sum products away).
 
     Only meaningful with a geo banco AND an explicit UF selection (``states``). With
     no UF selected it returns None so the view shows its "selecione uma UF" hint
     instead of a nationwide product ranking (which Visão geral already covers).
-    Supported for IBGE PEVS (production) and MDIC COMEX (export); other geo bancos
-    return None (honest not-yet-wired)."""
+    Supported for the three IBGE surveys (production) and MDIC COMEX (export); any other
+    banco returns None, which :func:`products_by_uf_available` reports as such."""
     banco = banco_by_id(banco_id)
     if banco_id not in _LIVE_SOURCES or "geo" not in banco.provides:
         return None
@@ -1264,23 +1301,26 @@ def products_by_uf(
             # (price_base.take) — this reader returns a bare frame, not a labelled payload.
             with_price_base=True,
         )
-    if banco_id == "ibge_pevs":
-        return gateway.fetch_products_by_uf(
-            table_key="serving_pevs_annual",
-            code_column="product_code",
-            name_column="product_description",
-            year_start=y0,
-            year_end=y1,
-            codes=codes,
-            uf_codes=states,
-            value_column=value_col,
-            tabela=_tabela_from_summary(summary),
-            # A metade viaja junto com a linha: madeira, lenha e carvão existem nas DUAS
-            # com o mesmo nome, e quem exibe precisa distingui-las. Só o PEVS tem a coluna.
-            include_tabela=True,
-            with_price_base=True,
-        )
-    return None
+    table_key = _PRODUCTION_PRODUCTS_BY_UF.get(banco_id)
+    if table_key is None:
+        return None
+    return gateway.fetch_products_by_uf(
+        table_key=table_key,
+        code_column="product_code",
+        name_column="product_description",
+        year_start=y0,
+        year_end=y1,
+        codes=codes,
+        uf_codes=states,
+        value_column=value_col,
+        tabela=_tabela_from_summary(summary),
+        # A tabela viaja junto com a linha: madeira, lenha e carvão existem nas DUAS metades
+        # do PEVS com o mesmo nome, e quem exibe precisa distingui-las. A PPM também tem
+        # duas tabelas (rebanho e produção animal); na PAM ela é constante, e constante é
+        # mais simples que ausente.
+        include_tabela=True,
+        with_price_base=True,
+    )
 
 
 def monthly_data(

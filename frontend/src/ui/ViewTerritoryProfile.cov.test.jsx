@@ -18,6 +18,16 @@ import './filtersSchema.js';
 // The REAL period/price-base helpers (periodoDaSoma, mesBase, PriceBaseSkewNote): the screen
 // text under test is theirs, and a stub would agree with whatever the view passed it.
 import './MonetaryNotes.jsx';
+// Same reason for the two atoms the composition card states with. NotApplicableNote was
+// stubbed with a `children` signature the real atom does not have (it reads a `note`
+// OBJECT), so the screen passed its UF-only notice as children, the stub drew it, the
+// test passed — and production drew nothing. stubGlobals below overrides the OTHER atoms
+// of Atoms.jsx, never this one.
+import './Atoms.jsx';
+import './CollapsingNameList.jsx';
+
+// The shell the real producers return (data/producers.js · productBreakdownOf).
+const MEDIDO = (products) => ({ products, loading: false, unavailable: false, loadError: null });
 
 function stubGlobals(filtered, opts = {}) {
   window.applyFilters = () => filtered;
@@ -32,15 +42,16 @@ function stubGlobals(filtered, opts = {}) {
   window.fmtPct = (x) => `${((x || 0) * 100).toFixed(1)}%`;
   window.geoLevelFor = () => opts.geoLevel || 'municipio';
   window.selectedSingleUf = (s) => (s && s.states && s.states.length === 1 ? s.states[0] : null);
-  window.geoMesh = () => opts.mesh || [];
+  // `mesh: null` is the IBGE mesh still on its way (the real geoMesh returns null until
+  // the fetch lands); omitted, it is an empty mesh.
+  window.geoMesh = () => ('mesh' in opts ? opts.mesh : []);
   window.municipioYearly = opts.municipioYearly || (() => []);
-  window.productsByUf = opts.productsByUf || (() => ({ products: [], loadError: null }));
-  window.productsByMunicipio = opts.productsByMunicipio
-    || (() => ({ products: [], loadError: null }));
+  window.productsByUf = opts.productsByUf || (() => MEDIDO([]));
+  window.productsByMunicipio = opts.productsByMunicipio || (() => MEDIDO([]));
   window.municipioYearlyPriceBase = opts.municipioYearlyPriceBase || (() => null);
 
+  window.Icon = () => null;   // the real NotApplicableNote draws one
   window.EmptyCard = ({ children }) => <div className="empty-card">{children}</div>;
-  window.NotApplicableNote = ({ children }) => <div className="na-note">{children}</div>;
   window.LoadErrorNote = ({ error }) => (error ? <div className="load-err" /> : null);
   window.KpiCardSpark = ({ label, value, sub }) => (
     <div className="kpi"><span className="kpi-label">{label}</span>
@@ -218,6 +229,131 @@ describe('ViewTerritoryProfile — empty state', () => {
     stubGlobals({ yearStart: 2019, yearEnd: 2021, ufDataFull: [], ufYearlySeries: [] });
     const { container } = render(<View summary={{}} database="ibge_pevs" conventions={CONV} />);
     expect(container.querySelector('.empty-card').textContent).toContain('Nenhum território');
+  });
+});
+
+// ── A composição só diz "sem produtos" quando MEDIU ─────────────────────────────────
+// Até a v1.107.0 o card de composição dizia "Sem produtos registrados para este território
+// na seleção atual." em três situações em que nada tinha sido medido: com o pedido ainda a
+// caminho, com o pedido falhado e — no PAM e no PPM por UF — sem leitor nenhum no servidor.
+describe('ViewTerritoryProfile — a composição só afirma o que mediu', () => {
+  const SEM_PRODUTOS = 'Sem produtos registrados';
+  const composicao = (c) => [...c.querySelectorAll('.sh')]
+    .find((h) => h.textContent.includes('Composição')).parentElement;
+  const naoMedido = (c) => {
+    expect(composicao(c).textContent).not.toContain(SEM_PRODUTOS);
+    expect(composicao(c).querySelector('.bar-chart')).toBeNull();
+  };
+
+  it('com o pedido a caminho, diz que está carregando', () => {
+    stubGlobals(BASE, {
+      productsByUf: () => ({ products: [], loading: true, unavailable: false, loadError: null }),
+    });
+    const { container } = render(
+      <View summary={{ states: ['PA'] }} database="ibge_pam" conventions={CONV} />,
+    );
+    expect(composicao(container).textContent).toContain('Carregando a composição');
+    naoMedido(container);
+  });
+
+  it('no nível município, com a malha do IBGE a caminho, também está carregando', () => {
+    // Sem a malha não há lista de cidades a perguntar; o produtor nem é chamado. Antes,
+    // esse "não perguntei" caía no mesmo "Sem produtos registrados".
+    const productsByMunicipio = vi.fn(() => MEDIDO([]));
+    stubGlobals(BASE, { mesh: null, productsByMunicipio });
+    const { container } = render(<View summary={{}} database="ibge_ppm" conventions={CONV} />);
+    fireEvent.click([...container.querySelectorAll('.seg-opt')]
+      .find((b) => b.textContent === 'Município'));
+    expect(productsByMunicipio).not.toHaveBeenCalled();
+    expect(composicao(container).textContent).toContain('Carregando a composição');
+    naoMedido(container);
+  });
+
+  it('com o pedido falhado, mostra a falha dentro do card', () => {
+    stubGlobals(BASE, {
+      productsByUf: () => ({ products: [], loading: false, unavailable: false, loadError: 'HTTP 500' }),
+    });
+    const { container } = render(
+      <View summary={{ states: ['PA'] }} database="ibge_ppm" conventions={CONV} />,
+    );
+    expect(composicao(container).querySelector('.load-err')).toBeTruthy();
+    naoMedido(container);
+  });
+
+  it('sem leitor para o banco nesse nível, diz que ainda não está disponível', () => {
+    stubGlobals(BASE, {
+      productsByUf: () => ({ products: [], loading: false, unavailable: true, loadError: null }),
+    });
+    const { container } = render(
+      <View summary={{ states: ['PA'] }} database="ibge_pam" conventions={CONV} />,
+    );
+    expect(composicao(container).querySelector('.na-note').textContent)
+      .toContain('ainda não está disponível para este banco no nível UF');
+    naoMedido(container);
+  });
+
+  it('só com a resposta medida e vazia diz "sem produtos"', () => {
+    stubGlobals(BASE, { productsByUf: () => MEDIDO([]) });
+    const { container } = render(
+      <View summary={{ states: ['PA'] }} database="ibge_pam" conventions={CONV} />,
+    );
+    expect(composicao(container).textContent).toContain(SEM_PRODUTOS);
+  });
+
+  it('o rebanho do PPM fica fora das barras, nomeado e com o motivo', () => {
+    // measure_kind = 'stock': cabeças, sem valor de produção por construção. Uma barra de
+    // tamanho zero afirmaria uma medição que nunca houve; sumir com ele seria filtrar em
+    // silêncio. Nomear é o que resta.
+    stubGlobals(BASE, {
+      productsByUf: () => MEDIDO([
+        { code: '2670', name: 'Bovino', tabela: '3939', measure_kind: 'stock', value: null, q_count: 21 },
+        { code: '2682', name: 'Leite', tabela: '74', measure_kind: 'flow', value: 9 },
+        { code: '2685', name: 'Ovos de galinha', tabela: '74', measure_kind: 'flow', value: 4 },
+      ]),
+    });
+    const { container } = render(
+      <View summary={{ states: ['PA'] }} database="ibge_ppm" conventions={CONV} />,
+    );
+    const card = composicao(container);
+    expect(card.querySelector('.bar-chart').getAttribute('data-cats')).toBe('Leite|Ovos de galinha');
+    expect(card.textContent).toContain('Efetivo dos rebanhos: Bovino.');
+    expect(card.textContent).toContain('perspectiva Rebanho');
+    expect(card.textContent).not.toContain(SEM_PRODUTOS);
+  });
+
+  it('um produto sem valor nesta convenção é nomeado, não vira barra de zero', () => {
+    // PAM em IPCA antes de 1980: a soma da janela é NULL — ausência, não zero.
+    stubGlobals(BASE, {
+      productsByUf: () => MEDIDO([
+        { code: '40124', name: 'Soja (em grão)', tabela: '5457', value: null },
+        { code: '40122', name: 'Milho (em grão)', tabela: '5457', value: 7 },
+      ]),
+    });
+    const { container } = render(
+      <View summary={{ states: ['PA'] }} database="ibge_pam" conventions={CONV} />,
+    );
+    const card = composicao(container);
+    expect(card.querySelector('.bar-chart').getAttribute('data-cats')).toBe('Milho (em grão)');
+    expect(card.textContent).toContain('Sem valor nesta convenção: Soja (em grão).');
+  });
+
+  it('com só o rebanho na seleção, não desenha gráfico vazio nem diz "sem produtos"', () => {
+    // Fora de ordem de propósito: o servidor ordena por valor, e o rebanho não tem valor —
+    // a lista chega em ordem arbitrária e a tela a põe em ordem alfabética.
+    stubGlobals(BASE, {
+      productsByUf: () => MEDIDO([
+        { code: '2675', name: 'Suíno', tabela: '3939', measure_kind: 'stock', value: null },
+        { code: '2670', name: 'Bovino', tabela: '3939', measure_kind: 'stock', value: null },
+      ]),
+    });
+    const { container } = render(
+      <View summary={{ states: ['PA'] }} database="ibge_ppm" conventions={CONV} />,
+    );
+    const card = composicao(container);
+    expect(card.querySelector('.bar-chart')).toBeNull();
+    expect(card.textContent).toContain('Nenhum produto deste território tem valor a mostrar');
+    expect(card.textContent).toContain('Efetivo dos rebanhos: Bovino, Suíno.');
+    expect(card.textContent).not.toContain(SEM_PRODUTOS);
   });
 });
 

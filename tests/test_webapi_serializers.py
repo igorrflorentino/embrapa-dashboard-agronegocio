@@ -1638,7 +1638,11 @@ def test_serialize_products_by_uf_carries_the_sidra_table_when_the_reader_select
 def test_serialize_products_by_uf_scales_value_and_quantities():
     """serialize_products_by_uf → value ÷1e6 (mi), q_mass ÷1e3 (mil t), q_vol ÷1e6
     (mi m³) — the SAME magnitudes the snapshot's productTS/ufData use; empty → []."""
-    assert s.serialize_products_by_uf(None) == {"products": [], "priceBase": None}
+    assert s.serialize_products_by_uf(None) == {
+        "products": [],
+        "priceBase": None,
+        "available": True,
+    }
     df = pd.DataFrame(
         [
             {
@@ -1668,6 +1672,8 @@ def test_serialize_products_by_uf_scales_value_and_quantities():
         # Sem coluna `tabela` no df (banco de tabela única) → None, e a chave CONTINUA
         # presente: uma chave que aparece e some por banco faz o consumidor adivinhar.
         "tabela": None,
+        # Idem para o discriminador estoque|fluxo, que só a PPM tem.
+        "measure_kind": None,
     }
     assert out["products"][1]["q_mass"] == 0.0  # None → 0
     # A livestock row carries q_count (mi un) so a value-less herd ranks by headcount.
@@ -1684,6 +1690,53 @@ def test_serialize_products_by_uf_scales_value_and_quantities():
         )
     )["products"][0]
     assert herd["q_count"] == 238.0 and herd["value"] == 0.0  # 238M head → 238 mi un
+
+
+def test_serialize_products_by_uf_tells_a_herd_from_a_flow_without_value():
+    """Um rebanho e um fluxo que a convenção não alcança chegam os DOIS com valor nulo, e
+    são ausências diferentes: estoque não tem valor por natureza; o fluxo tem, só não nesta
+    convenção. O `measure_kind` da linha é o que deixa a tela dar o motivo certo — e o
+    nulo continua nulo nos dois (nunca 0, que se leria como produção sem valor)."""
+    df = pd.DataFrame(
+        [
+            {
+                "product_code": "2682",
+                "product_name": "Leite",
+                "measure_kind": "flow",
+                "total_value": None,
+                "q_vol": 5_000_000,
+            },
+            {
+                "product_code": "2670",
+                "product_name": "Bovino",
+                "measure_kind": "stock",
+                "total_value": None,
+                "q_count": 30_000_000,
+            },
+            {
+                "product_code": "4403",
+                "product_name": "Madeira",
+                "measure_kind": float("nan"),
+                "total_value": 1_000_000,
+            },
+        ]
+    )
+    rows = s.serialize_products_by_uf(df)["products"]
+    assert [r["measure_kind"] for r in rows] == ["flow", "stock", None]  # NaN → None (JSON)
+    assert [r["value"] for r in rows] == [None, None, 1.0]
+
+
+def test_serialize_products_by_uf_says_whether_the_banco_has_a_reader():
+    """`available` separa uma lista vazia MEDIDA ("nada registrado") de uma que ninguém
+    pôde medir (banco sem leitor). Sempre presente, com ou sem linhas."""
+    assert s.serialize_products_by_uf(None, available=False) == {
+        "products": [],
+        "priceBase": None,
+        "available": False,
+    }
+    assert s.serialize_products_by_uf(pd.DataFrame(), available=True)["available"] is True
+    df = pd.DataFrame([{"product_code": "1", "product_name": "X", "total_value": 1.0}])
+    assert s.serialize_products_by_uf(df)["available"] is True
 
 
 def test_serialize_product_uf_carries_per_family_quantities():

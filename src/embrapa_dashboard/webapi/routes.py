@@ -946,7 +946,11 @@ def products_by_municipio():
         return err
     df = seam.products_by_municipio(banco, conv, summary)
     # Same shape as the per-UF breakdown, so the view reuses one renderer.
-    return jsonify(serializers.serialize_products_by_uf(df))
+    return jsonify(
+        serializers.serialize_products_by_uf(
+            df, available=seam.products_by_municipio_available(banco)
+        )
+    )
 
 
 @api.get("/products-by-uf")
@@ -956,8 +960,8 @@ def products_by_uf():
 
     currency+correction pick the deflated value column server-side; codes/states/
     y0/y1 scope basket + UF + year window. ``{ products: [] }`` when no UF is
-    selected or the banco has no geo grain (the view then shows a "selecione uma UF"
-    hint)."""
+    selected or the banco has no reader — and ``available: false`` in the second case,
+    so a banco without a reader never reads as a UF that produces nothing."""
     banco = request.args.get("banco", "")
     conv, err = _conversion_or_400()
     if err:
@@ -966,7 +970,9 @@ def products_by_uf():
     if err:
         return err
     df = seam.products_by_uf(banco, summary, conv)
-    return jsonify(serializers.serialize_products_by_uf(df))
+    return jsonify(
+        serializers.serialize_products_by_uf(df, available=seam.products_by_uf_available(banco))
+    )
 
 
 @api.get("/productivity")
