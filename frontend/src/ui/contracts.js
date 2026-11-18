@@ -133,7 +133,7 @@
 // @property {boolean} preview
 // @property {[number,number]} coverage
 // @property {{y:number,v:number}[]} points
-// @property {(PriceBase|null)} [priceBase]  Only a corrected series has one (today PEVS `prod_value`, in IPCA); the legend and the picker's hint name its month.
+// @property {(PriceBase|null)} [priceBase]  Only a corrected series has one (today the two PEVS value series, `prod_value` and `silv_value`, in IPCA); the legend and the picker's hint name its month.
 //
 // ── Cross analytics (src/data/producers.js) ──────────────────────────────
 //

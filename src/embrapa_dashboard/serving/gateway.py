@@ -1393,8 +1393,13 @@ def fetch_product_timeseries(
     reporters: Sequence[str] = (),
     partners: Sequence[str] = (),
     pin_reporter: str | None = _REPORTER_PIN_DEFAULT,
+    tabela: str | None = None,
 ):
     """Annual per-product series (value + native quantity) for a source (backs productTS).
+
+    ``tabela`` optionally pins one SIDRA table — the cross-source PEVS quantity series
+    read ONE half of the survey (``None`` sums every table, as before). Being an argument,
+    it is part of the memoize key, so a pinned read never collides with an unpinned one.
 
     ``uf_codes`` optionally narrows to the producing/origin UFs (cross-source per-UF
     scoping: PEVS mass/volume + farm-gate price). ``flow`` narrows trade sources to
@@ -1440,6 +1445,7 @@ def fetch_product_timeseries(
         reporters=rep,
         partners=par,
         has_measure_kind=source in _MEASURE_KIND_SOURCES,
+        tabela=tabela,
     )
     return run_query(sql, params)
 

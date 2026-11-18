@@ -402,6 +402,12 @@ magnitude**.
 
 | metric.id | source | formula (per year, in scope) | DISPLAY_UNIT |
 |---|---|---|---|
+| `ibge_pevs:prod_value` | serving_pevs_annual | `SUM(val_real_ipca_brl WHERE tabela='289')` ÷1e9 | `R$ bi` |
+| `ibge_pevs:prod_mass` | serving_pevs_annual | `SUM(qty_native WHERE tabela='289' AND family='massa')` ÷1e3 | `mil t` |
+| `ibge_pevs:prod_volume` | serving_pevs_annual | `SUM(qty_native WHERE tabela='289' AND family='volume')` ÷1e6 | `mi m³` |
+| `ibge_pevs:silv_value` | serving_pevs_annual | `SUM(val_real_ipca_brl WHERE tabela='291')` ÷1e9 | `R$ bi` |
+| `ibge_pevs:silv_mass` | serving_pevs_annual | `SUM(qty_native WHERE tabela='291' AND family='massa')` ÷1e3 | `mil t` |
+| `ibge_pevs:silv_volume` | serving_pevs_annual | `SUM(qty_native WHERE tabela='291' AND family='volume')` ÷1e6 | `mi m³` |
 | `mdic_comex:exp_value` | gold_comex_flows | `SUM(val_yearfx_usd WHERE flow='export')` ÷1e9 | `US$ bi` |
 | `mdic_comex:imp_value` | gold_comex_flows | import ÷1e9 | `US$ bi` |
 | `mdic_comex:exp_weight` | gold_comex_flows | `SUM(net_weight_kg WHERE flow='export')` ÷1e6 | `mil t` |
@@ -420,6 +426,16 @@ GROUP BY reference_year
 ```
 This is the denominator for `cross_market_share` (Brazil ÷ world). `exp_price` is
 derived (value ÷ weight), kept internally consistent with `exp_value`/`exp_weight`.
+
+**Each PEVS metric is ONE half of the survey** (v1.106.0): `prod_*` is native-forest
+extraction (SIDRA 289) and `silv_*` is planted-forest silviculture (SIDRA 291). The
+registry's `tabela` is pinned on EVERY read behind the series, and a PEVS metric that
+declares none is refused by the seam (`seam_cross._pevs_tabela`), never defaulted. A
+default is exactly what failed before: until v1.106.0 the three `prod_*` series summed
+both halves under an extraction label, and `prod_value` served R$ 47.7 bi for 2024,
+7.3× the extraction value. `tests/test_cross_pevs_tabela_guard.py` sweeps every read
+behind every PEVS cross series and checks that the SPA and backend registries agree.
+The two value series carry a `priceBase` (IPCA); the four quantity series carry none.
 
 > `crossSeries.preview` **derives from the source banks' maturity** — true if any
 > source lacks real data (`MATURITY[b.maturity].hasData` is false), not a hardcoded

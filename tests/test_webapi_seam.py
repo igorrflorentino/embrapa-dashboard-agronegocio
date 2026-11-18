@@ -2563,6 +2563,8 @@ def test_cross_metric_refs_lists_only_known_display_unit_metrics():
     keys = {f"{r['banco']}:{r['metric']}" for r in refs}
     assert keys <= set(seam.CROSS_DISPLAY_UNIT)
     assert "ibge_pevs:prod_value" in keys
+    # The planted half is offered on its own (v1.106.0): the prod_* series are extraction.
+    assert {"ibge_pevs:silv_value", "ibge_pevs:silv_mass", "ibge_pevs:silv_volume"} <= keys
     assert "mdic_comex:exp_price" in keys  # derived metric is offered
     assert "un_comtrade:world_exp" in keys
 
@@ -2575,31 +2577,56 @@ def test_cross_series_none_for_unknown_metric():
 
 def test_cross_series_pevs_prod_value_scales_to_bi(monkeypatch):
     seam = _seam()
+    seen = {}
     monkeypatch.setattr(
         seam.gateway,
         "fetch_production_overview",
-        lambda **k: pd.DataFrame([{"reference_year": 2020, "total_value": 5e9}]),
+        lambda **k: seen.update(k) or pd.DataFrame([{"reference_year": 2020, "total_value": 5e9}]),
     )
     out = seam.cross_series("ibge_pevs", "prod_value", 2020, 2020)
     assert out["unit"] == "R$ bi"
     assert out["points"] == [{"y": 2020, "v": 5.0}]
+    # "da extração vegetal" is what the series says, so the read is pinned to t289 —
+    # without it the overview summed silviculture too (7.3× in 2024).
+    assert seen["tabela"] == "289"
+
+
+def test_cross_series_pevs_silv_value_reads_the_planted_half(monkeypatch):
+    seam = _seam()
+    seen = {}
+    monkeypatch.setattr(
+        seam.gateway,
+        "fetch_production_overview",
+        lambda **k: (
+            seen.update(k) or pd.DataFrame([{"reference_year": 2024, "total_value": 41.2e9}])
+        ),
+    )
+    out = seam.cross_series("ibge_pevs", "silv_value", 2024, 2024)
+    assert out["label"] == "Valor da silvicultura"
+    assert out["points"] == [{"y": 2024, "v": 41.2}]
+    assert seen["tabela"] == "291"
 
 
 def test_cross_series_pevs_prod_mass_filters_family_and_scales(monkeypatch):
     seam = _seam()
+    seen = {}
     monkeypatch.setattr(
         seam.gateway,
         "fetch_product_timeseries",
-        lambda *a, **k: pd.DataFrame(
-            [
-                {"reference_year": 2020, "total_qty_native": 4e3, "family": "massa"},
-                {"reference_year": 2020, "total_qty_native": 9e6, "family": "volume"},
-            ]
+        lambda *a, **k: (
+            seen.update(k)
+            or pd.DataFrame(
+                [
+                    {"reference_year": 2020, "total_qty_native": 4e3, "family": "massa"},
+                    {"reference_year": 2020, "total_qty_native": 9e6, "family": "volume"},
+                ]
+            )
         ),
     )
     out = seam.cross_series("ibge_pevs", "prod_mass", 2020, 2020)
     assert out["unit"] == "mil t"
     assert out["points"] == [{"y": 2020, "v": 4.0}]  # 4e3 t / 1e3 — volume excluded
+    assert seen["tabela"] == "289"  # the mass of the extraction, not of both halves
 
 
 def test_cross_series_comex_exp_value_scales_to_bi(monkeypatch):
@@ -3251,7 +3278,7 @@ def test_cross_series_threads_uf_to_uf_capable_readers(monkeypatch):
         seam.gateway,
         "fetch_production_overview",
         lambda **k: (
-            rec.update(pevs=k.get("uf_codes"))
+            rec.update(pevs=k.get("uf_codes"), tabela=k.get("tabela"))
             or pd.DataFrame([{"reference_year": 2020, "total_value": 1e9}])
         ),
     )
@@ -3265,6 +3292,7 @@ def test_cross_series_threads_uf_to_uf_capable_readers(monkeypatch):
     )
     seam.cross_series("ibge_pevs", "prod_value", 2019, 2021, ("AC",))
     assert rec["pevs"] == ("AC",)
+    assert rec["tabela"] == "289"  # the UF scope narrows the half, it does not replace it
     seam.cross_series("mdic_comex", "exp_value", 2019, 2021, ("AC",))
     assert rec["comex"] == ("AC",)
 

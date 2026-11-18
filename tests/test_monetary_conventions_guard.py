@@ -60,9 +60,9 @@ _LITERAL_POR_DESENHO = {
         "inflação se cancela, e o outro lado (aduana) só existe em US$ declarado."
     ),
     ("seam_cross.py", "_pevs_cross_points", "fetch_production_overview"): (
-        "Cruzamento entre fontes: a métrica `prod_value` declara a sua convenção na tela — "
-        "'Valor real (IPCA) da extração vegetal' (bancos.js) — e o Multi-fonte não tem "
-        "faixa de convenções para contradizê-la."
+        "Cruzamento entre fontes: as métricas de valor do PEVS declaram a sua convenção na "
+        "tela — 'Valor real (IPCA) da extração vegetal…' / '…da silvicultura…' (bancos.js) "
+        "— e o Multi-fonte não tem faixa de convenções para contradizê-la."
     ),
     ("seam_cross.py", "_pevs_cross_points", "fetch_product_timeseries"): (
         "Ramo de QUANTIDADE (massa/volume): só `total_qty_native` é lido; o leitor exige "

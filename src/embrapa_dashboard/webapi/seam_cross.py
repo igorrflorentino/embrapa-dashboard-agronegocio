@@ -23,9 +23,14 @@ from .registries import Banco, banco_by_id
 from .seam_base import _LIVE_SOURCES
 
 CROSS_DISPLAY_UNIT = {
+    # PEVS: one half of the survey each — extraction (prod_*, t289) and silviculture
+    # (silv_*, t291). The half is the metric's `tabela` in registries._PEVS_METRICS.
     "ibge_pevs:prod_value": "R$ bi",
     "ibge_pevs:prod_mass": "mil t",
     "ibge_pevs:prod_volume": "mi m³",
+    "ibge_pevs:silv_value": "R$ bi",
+    "ibge_pevs:silv_mass": "mil t",
+    "ibge_pevs:silv_volume": "mi m³",
     "mdic_comex:exp_value": "US$ bi",
     "mdic_comex:imp_value": "US$ bi",
     "mdic_comex:exp_weight": "mil t",
@@ -93,9 +98,10 @@ def cross_series(
         "family": metric["family"],
         "coverage": cov,
         "points": points,
-        # The month the corrected series is at (only PEVS `prod_value` is corrected — every
-        # other cross metric is a quantity or the declared US$). The metric's own text says
-        # "Valor real (IPCA)", and the screen completes it with this month (v1.105.0).
+        # The month the corrected series is at (only the PEVS value series, `prod_value` and
+        # `silv_value`, are corrected — every other cross metric is a quantity or the
+        # declared US$). The metric's own text says "Valor real (IPCA)", and the screen
+        # completes it with this month (v1.105.0).
         "priceBase": base,
     }
 
@@ -119,17 +125,45 @@ def _cross_points(
     ], None
 
 
+# Registry family → (the mart's pt-BR ``family``, the divisor to the display unit).
+_PEVS_QTY_FAMILY = {"mass": ("massa", 1e3), "volume": ("volume", 1e6)}
+
+
+def _pevs_tabela(metric: dict) -> str:
+    """The SIDRA table a PEVS cross metric reads — required, never defaulted.
+
+    PEVS is two disjoint halves, extraction from native forest (t289) and silviculture
+    from planted forest (t291), and every reader sums BOTH when given no table. A series
+    with no pin is therefore the survey's total under whatever its label says: until
+    v1.106.0 ``prod_value`` said "da extração vegetal" and served R$ 47.7 bi for 2024,
+    when the extraction was R$ 6.5 bi. Refusing here (rather than falling back to the
+    total) turns a forgotten pin into a failure at the first request instead of a number
+    that looks right.
+    """
+    tabela = metric.get("tabela")
+    if not tabela:
+        raise ValueError(
+            f"PEVS cross metric {metric.get('id')!r} declares no `tabela`: it would sum "
+            "extraction (289) and silviculture (291) under a one-half label."
+        )
+    return tabela
+
+
 def _pevs_cross_points(
     metric_id: str, y0: int, y1: int, uf_codes: tuple = ()
 ) -> tuple[list[dict], dict | None]:
-    """PEVS cross points: value (÷1e9) or per-family native quantity (÷1e3 / ÷1e6) — and,
-    for the value, its price base."""
-    if metric_id == "prod_value":
+    """PEVS cross points for ONE half of the survey: value (÷1e9) or per-family native
+    quantity (÷1e3 / ÷1e6), every read pinned to the metric's SIDRA table — and, for the
+    value, its price base."""
+    metric = _metric_meta(banco_by_id("ibge_pevs"), metric_id) or {"id": metric_id}
+    tabela = _pevs_tabela(metric)
+    if metric["family"] == "currency":
         df = gateway.fetch_production_overview(
             year_start=y0,
             year_end=y1,
             value_column="val_real_ipca_brl",
             uf_codes=uf_codes,
+            tabela=tabela,
             with_price_base=True,
         )
         df, base = price_base.take(df)
@@ -137,10 +171,14 @@ def _pevs_cross_points(
             {"y": int(r.reference_year), "v": measures.scale_present(r.total_value, 1e9)}
             for r in df.itertuples()
         ], price_base.payload("val_real_ipca_brl", base)
-    fam = "massa" if metric_id == "prod_mass" else "volume"
-    scale = 1e3 if metric_id == "prod_mass" else 1e6
+    fam, scale = _PEVS_QTY_FAMILY[metric["family"]]
     pts = gateway.fetch_product_timeseries(
-        "ibge_pevs", year_start=y0, year_end=y1, value_column="val_real_ipca_brl", uf_codes=uf_codes
+        "ibge_pevs",
+        year_start=y0,
+        year_end=y1,
+        value_column="val_real_ipca_brl",
+        uf_codes=uf_codes,
+        tabela=tabela,
     )
     sub = pts[pts["family"] == fam].groupby("reference_year")["total_qty_native"].sum()
     return [{"y": int(y), "v": float(v) / scale} for y, v in sub.items()], None

@@ -6,7 +6,9 @@
 // travels in the shared URL / citation (see src/main.jsx + AppShell).
 
 // Default landing selection — the flagship cross-source question:
-// IBGE annual production value × MDIC annual export value.
+// IBGE annual production value × MDIC annual export value. The PEVS side is the
+// native-extraction half only (SIDRA 289); until v1.106.0 it silently summed the
+// planted half too, 7.3× the extraction value in 2024. Silviculture is `silv_value`.
 window.DEFAULT_CROSS_STATE = {
   series: [
     { b: 'ibge_pevs', m: 'prod_value' },

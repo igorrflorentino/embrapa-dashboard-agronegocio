@@ -1830,6 +1830,7 @@ def product_timeseries(
     reporters: Sequence[str] = (),
     partners: Sequence[str] = (),
     has_measure_kind: bool = False,
+    tabela: str | None = None,
 ) -> tuple[str, list]:
     """Annual per-product series — value + quantities (backs productTS).
 
@@ -1844,7 +1845,8 @@ def product_timeseries(
 
     ``uf_codes`` optionally narrows to the producing/origin UFs (``state_acronym``)
     — the PEVS/COMEX marts carry it; empty/absent = national. Used by the
-    cross-source views' per-UF scoping (PEVS prod_mass/volume + farm-gate price).
+    cross-source views' per-UF scoping (the PEVS mass/volume series of each half +
+    farm-gate price).
 
     ``flow`` optionally narrows to one trade direction (export/import) — only the
     trade marts carry a ``flow`` column, so callers pass it ONLY for trade sources
@@ -1865,12 +1867,19 @@ def product_timeseries(
     Brazil's view rather than a sum over every reporter (which would conflate the
     whole world's trade in the all-reporters years). Production/COMEX marts have no
     reporter dimension, so their callers leave these ``None``.
+
+    ``tabela`` optionally pins ONE SIDRA table (see :func:`_tabela`). The cross-source
+    PEVS quantity series pass it: each is one half of the survey, and without the pin
+    the family sum mixed native extraction (t289) with planted silviculture (t291) —
+    9.5× the extraction mass and 8.4× its volume in 2024 (v1.106.0). ``None`` keeps the
+    query byte-identical to before the parameter existed.
     """
     code_column = _validate_column(code_column, ALLOWED_PRODUCT_COLUMNS, "product column")
     value_column = _validate_column(value_column, ALLOWED_VALUE_COLUMNS, "value_column")
     conditions: list[str] = []
     params: list = []
     _year_bounds(conditions, params, year_start, year_end)
+    _tabela(conditions, params, tabela)
     _in_array(conditions, params, code_column, "codes", codes)
     _in_array(conditions, params, "state_acronym", "uf_codes", uf_codes)
     _flow(conditions, params, flow, sum_flows=sum_flows)
