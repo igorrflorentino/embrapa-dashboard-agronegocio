@@ -196,6 +196,18 @@ município passes the cascade iff it clears every active facet (intersection).
   (COMEX/COMTRADE) or a not-built table. `priceBase` (§3.8) is the cube's OWN: it reads
   Gold, not the snapshot's mart, so a build landing between the two requests can date them
   differently — the screen names both rather than borrowing one.
+- **`GET /api/products-by-uf`** (`states` required) and **`POST /api/products-by-municipio`**
+  (body `{ cityCodes }`) → `{ products: [{ code, name, tabela, measure_kind, value, q_mass,
+  q_vol, q_count }], priceBase, available }` — what a place produces, one row per product, value
+  in currency mi and quantities at the §3.4 magnitudes. The by-UF reader serves PEVS, PAM and
+  PPM from their serving marts and COMEX from its export side (PAM and PPM since v1.107.0).
+  `measure_kind` is `'stock' | 'flow'` on PPM rows and `null` elsewhere: a herd arrives with
+  `value: null` BY NATURE, a flow the convention does not reach with `value: null` too, and only
+  this field tells the two apart. **`available` is whether the banco has a reader at that grain
+  at all** — an empty `products` with `available: false` was never measured (COMTRADE; COMEX by
+  município); with `available: true` it is a measured "nothing registered". The producers
+  (`productsByUf`, `productsByMunicipio`) add `loading` and `loadError` on top, so a screen never
+  reads a pending or failed request as an empty place.
 
 ### 3.7 `valueGap` — the periods the active convention cannot value (every banco)
 `{ years, partial, months, valuedRange, share: null }` or `null`.

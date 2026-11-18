@@ -2112,8 +2112,8 @@ def test_products_by_municipio_passes_scope_through_and_serializes(monkeypatch):
 
 def test_products_by_municipio_empty_when_banco_has_no_municipio_grain(monkeypatch):
     """COMEX is UF-origin and COMTRADE international: the seam returns None and the
-    route must answer an explicit empty list, not 500. The view then says the grain
-    is absent instead of implying the place produces nothing."""
+    route must answer an explicit empty list, not 500 — and say the grain is absent
+    (``available: false``), so the view does not imply the place produces nothing."""
     from embrapa_dashboard.webapi import seam
 
     client = _client(monkeypatch)
@@ -2124,7 +2124,39 @@ def test_products_by_municipio_empty_when_banco_has_no_municipio_grain(monkeypat
     )
     assert resp.status_code == 200
     # No rows → no price base to name (v1.105.0): the key is there, and null.
-    assert resp.get_json() == {"products": [], "priceBase": None}
+    assert resp.get_json() == {"products": [], "priceBase": None, "available": False}
+
+
+@pytest.mark.parametrize(
+    "banco, esperado",
+    [("ibge_pam", True), ("ibge_ppm", True), ("mdic_comex", True), ("un_comtrade", False)],
+)
+def test_products_by_uf_says_whether_the_banco_has_a_reader(monkeypatch, banco, esperado):
+    """The empty list of a banco with no reader must not look like a UF that produced
+    nothing: ``available`` comes from the seam's registry, not from the rows. Here the seam
+    answers None for all four (no UF reaches it), and only the flag tells them apart."""
+    from embrapa_dashboard.webapi import seam
+
+    client = _client(monkeypatch)
+    monkeypatch.setattr(seam, "products_by_uf", lambda *a, **k: None)
+    resp = client.get(f"/api/products-by-uf?banco={banco}&states=MT&currency=BRL&correction=IPCA")
+    assert resp.status_code == 200
+    assert resp.get_json() == {"products": [], "priceBase": None, "available": esperado}
+
+
+def test_products_by_municipio_says_a_municipio_banco_has_a_reader(monkeypatch):
+    """The converse of the COMEX case above: an empty answer for a município banco IS a
+    measurement ("nada registrado"), and the flag says so."""
+    from embrapa_dashboard.webapi import seam
+
+    client = _client(monkeypatch)
+    monkeypatch.setattr(seam, "products_by_municipio", lambda *a, **k: None)
+    resp = client.post(
+        "/api/products-by-municipio?banco=ibge_ppm&currency=BRL&correction=IPCA",
+        json={"cityCodes": ["5107602"]},
+    )
+    assert resp.status_code == 200
+    assert resp.get_json() == {"products": [], "priceBase": None, "available": True}
 
 
 # ── tabela: every route reaching a PEVS reader must parse it ─────────────

@@ -2497,6 +2497,78 @@ def test_products_by_uf_none_without_geo_capability():
     assert seam.products_by_uf("un_comtrade", {"states": ["AC"]}) is None
 
 
+@pytest.mark.parametrize(
+    "banco, mart", [("ibge_pam", "serving_pam_annual"), ("ibge_ppm", "serving_ppm_annual")]
+)
+def test_products_by_uf_answers_pam_and_ppm_from_their_own_marts(monkeypatch, banco, mart):
+    """Until v1.107.0 PAM and PPM fell through to ``return None``: the território profile
+    said "sem produtos" for every UF of both, while the município level (Gold) named them.
+
+    Each reads the pre-aggregated table its snapshot reads — so the composition and the
+    map beside it agree — with the PEVS column shape the three share, the SIDRA table
+    travelling with each row (PPM has two: herd and animal production) and the table axis
+    threaded, never a trade ``flow``."""
+    seam = _seam()
+    recorded = {}
+    monkeypatch.setattr(
+        seam.gateway,
+        "fetch_products_by_uf",
+        lambda **k: recorded.update(k) or pd.DataFrame([{"product_code": "1"}]),
+    )
+    out = seam.products_by_uf(
+        banco,
+        {"states": ["MT", "GO"], "basket": ["2670"], "startDate": "2010", "endDate": "2020"},
+        {"currency": "BRL", "correction": "IPCA"},
+    )
+    assert out is not None
+    assert recorded["table_key"] == mart
+    assert recorded["code_column"] == "product_code"
+    assert recorded["name_column"] == "product_description"
+    assert recorded["uf_codes"] == ("MT", "GO") and recorded["codes"] == ("2670",)
+    assert (recorded["year_start"], recorded["year_end"]) == (2010, 2020)
+    assert recorded["value_column"] == "val_real_ipca_brl"
+    assert recorded["include_tabela"] is True
+    assert recorded.get("flow") is None
+    assert "tabela" in recorded  # the axis is threaded (None = every table)
+    assert seam.products_by_uf_available(banco) is True
+
+
+def test_every_live_geo_banco_has_a_composition_reader_by_uf():
+    """The território profile asks every geo banco "o que esta UF produz". A banco left
+    without a reader is how PAM and PPM answered "sem produtos" for every UF until
+    v1.107.0 — so the registry must cover every live geo banco, and adding one without a
+    reader fails HERE instead of on the researcher's screen. (The screen still degrades
+    honestly — ``available: false`` — but that is the fallback, not the plan.)"""
+    seam = _seam()
+    from embrapa_dashboard.webapi.registries import BANCOS
+
+    geo_vivos = {b.id for b in BANCOS if b.id in seam._LIVE_SOURCES and "geo" in b.provides}
+    assert geo_vivos, "o varredor não achou banco geográfico — o teste ficou obsoleto"
+    sem_leitor = sorted(b for b in geo_vivos if not seam.products_by_uf_available(b))
+    assert not sem_leitor, f"banco geográfico sem leitor de composição por UF: {sem_leitor}"
+    # And the converse: no reader is claimed for a banco that cannot answer by UF.
+    assert seam.products_by_uf_available("un_comtrade") is False
+    assert seam.products_by_uf_available("sefaz_nf") is False  # geo, but not live
+    assert seam.products_by_uf_available("nao_existe") is False
+
+
+@pytest.mark.parametrize(
+    "banco, esperado",
+    [
+        ("ibge_pevs", True),
+        ("ibge_pam", True),
+        ("ibge_ppm", True),
+        ("mdic_comex", False),  # origin is a UF, not a município
+        ("un_comtrade", False),  # no national geography
+        ("sefaz_nf", False),  # município grain declared, but not live
+        ("nao_existe", False),  # banco_by_id would silently map it to PEVS
+    ],
+)
+def test_products_by_municipio_available_follows_the_municipio_grain(banco, esperado):
+    seam = _seam()
+    assert seam.products_by_municipio_available(banco) is esperado
+
+
 # The monthly mart's monetary columns once dbt has rebuilt it with the v1.77.0 matrix.
 _SEAS_COLS = frozenset(
     {"val_yearfx_usd", "val_yearfx_brl", "val_real_ipca_brl", "val_real_ipca_usd"}

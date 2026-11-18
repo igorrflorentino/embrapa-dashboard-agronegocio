@@ -721,6 +721,7 @@ def products_by_municipio(
     tabela: str | None = None,
     include_tabela: bool = False,
     price_base: bool = False,
+    has_measure_kind: bool = False,
 ) -> tuple[str, list]:
     """Per-PRODUCT ranking WITHIN a município selection — what the território profile
     needs to answer "o que este município produz".
@@ -741,6 +742,9 @@ def products_by_municipio(
     funde as duas — foi o que aconteceu no gráfico "O que <lugar> produz", que desenhava
     uma barra só e dois rótulos sobrepostos. Fora do PEVS a coluna não existe (COMEX não
     tem metades), daí o sinalizador em vez de sempre selecionar.
+
+    ``has_measure_kind`` (PPM only, see :func:`products_by_uf`) carries the stock|flow
+    discriminator on each row and makes the value flow-only.
     """
     code_column = _validate_column(code_column, ALLOWED_PRODUCT_COLUMNS, "product column")
     name_column = _validate_column(name_column, ALLOWED_PRODUCT_COLUMNS, "product column")
@@ -757,13 +761,15 @@ def products_by_municipio(
     if visibility_predicate:
         conditions.append(visibility_predicate)
     tabela_select = "any_value(tabela) as tabela," if include_tabela else ""
+    kind_select = "any_value(measure_kind) as measure_kind," if has_measure_kind else ""
     base = _price_base_select(value_column, price_base)
     sql = f"""
         select
             {code_column}                                        as product_code,
             any_value({name_column})                             as product_name,
             {tabela_select}
-            sum({value_column})                                  as total_value,
+            {kind_select}
+            {_value_sum(value_column, has_measure_kind)}         as total_value,
             sum(case when family = 'massa'    then qty_base end) as q_mass,
             sum(case when family = 'volume'   then qty_base end) as q_vol,
             sum(case when family = 'contagem' then qty_base end) as q_count{base}
@@ -858,16 +864,26 @@ def products_by_uf(
     tabela: str | None = None,
     include_tabela: bool = False,
     price_base: bool = False,
+    has_measure_kind: bool = False,
 ) -> tuple[str, list]:
     """Per-PRODUCT ranking WITHIN a UF selection (backs the "Base de dados" per-UF
     product breakdown). This is the INVERSE of production_by_uf / comex_by_uf (which
     GROUP BY state and sum products away): here we GROUP BY the product and constrain
     ``state_acronym`` to the selected UFs (``uf_codes``).
 
-    Works for PEVS production (``flow`` None, code_column=product_code) and COMEX
-    export (``flow='export'``, code_column=ncm_code). Each row carries value plus the
+    Works for the three IBGE production marts (``flow`` None, code_column=product_code
+    — PEVS, PAM and PPM share the column shape) and COMEX export (``flow='export'``,
+    code_column=ncm_code). Each row carries value plus the
     family-split ``q_mass`` (t) / ``q_vol`` (m³) so the view can rank by Capital,
     Volume(massa) or Volume(volume) — quantities only ever sum WITHIN a family.
+
+    ``has_measure_kind`` is for the one mart that carries the stock|flow discriminator
+    (``serving_ppm_annual``). Each row then says which it is, because a herd (stock, a
+    headcount) has no value BY NATURE, and a screen that ranks by value must tell that
+    apart from a flow whose value the chosen convention does not reach — both arrive as
+    a null value. The value sum is flow-only (:func:`_value_sum`), as in the other PPM
+    readers. ``any_value`` is exact: the discriminator derives from the SIDRA table, which
+    is constant per code.
 
     ``include_tabela`` faz a TABELA viajar junto com cada linha. Ela é constante
     por ``product_code`` (um código pertence a uma tabela SIDRA só), então o ``any_value``
@@ -893,13 +909,15 @@ def products_by_uf(
     # and this one silently did not.
     _tabela(conditions, params, tabela)
     tabela_select = "any_value(tabela) as tabela," if include_tabela else ""
+    kind_select = "any_value(measure_kind) as measure_kind," if has_measure_kind else ""
     base = _price_base_select(value_column, price_base)
     sql = f"""
         select
             {code_column}                                      as product_code,
             any_value({name_column})                           as product_name,
             {tabela_select}
-            sum({value_column})                                as total_value,
+            {kind_select}
+            {_value_sum(value_column, has_measure_kind)}       as total_value,
             sum(case when family = 'massa'  then qty_base end) as q_mass,
             sum(case when family = 'volume' then qty_base end) as q_vol,
             sum(case when family = 'contagem' then qty_base end) as q_count{base}

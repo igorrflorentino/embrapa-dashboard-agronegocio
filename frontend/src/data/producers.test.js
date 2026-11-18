@@ -444,3 +444,77 @@ describe('the cubes and their price base read one response', () => {
     expect(f).not.toHaveBeenCalled();
   });
 });
+
+// ── Composição por produto: quatro estados, um só é medição ──────────────────
+// Até a v1.107.0, carregando, falhado e "sem leitor" voltavam todos como `{ products: [] }`
+// — o mesmo formato de "medi e não há nada" — e Perfil do território dizia "Sem produtos
+// registrados" nos três.
+describe('productsByUf / productsByMunicipio distinguem carregando, erro, indisponível e vazio', () => {
+  const CONV = { currency: 'BRL', correction: 'Nominal' };
+  const PA = { states: ['PA'] };
+
+  it('com o pedido a caminho, está carregando — não vazio', async () => {
+    const w = await loadAll(vi.fn(() => jsonRes({ products: [], available: true })));
+    expect(w.productsByUf('ibge_pam', PA, CONV))
+      .toEqual({ products: [], loading: true, unavailable: false, loadError: null });
+  });
+
+  it('respondido e vazio é a única resposta medida sem produtos', async () => {
+    const w = await loadAll(vi.fn(() => jsonRes({ products: [], available: true })));
+    w.productsByUf('ibge_pam', PA, CONV);
+    await tick();
+    expect(w.productsByUf('ibge_pam', PA, CONV)).toEqual({
+      products: [], available: true, loading: false, unavailable: false, loadError: null,
+    });
+  });
+
+  it('o servidor dizendo que não há leitor vira "indisponível", não vazio', async () => {
+    const w = await loadAll(vi.fn(() => jsonRes({ products: [], available: false })));
+    w.productsByUf('un_comtrade', PA, CONV);
+    await tick();
+    expect(w.productsByUf('un_comtrade', PA, CONV)).toMatchObject({
+      products: [], loading: false, unavailable: true, loadError: null,
+    });
+  });
+
+  it('os produtos chegam com os campos que o servidor mandou', async () => {
+    // `...data` é espalhado: um campo novo do payload chega à tela sem tocar o produtor.
+    const linha = { code: '2670', name: 'Bovino', tabela: '3939', measure_kind: 'stock', value: null };
+    const w = await loadAll(vi.fn(() => jsonRes({ products: [linha], available: true, extra: 1 })));
+    w.productsByUf('ibge_ppm', PA, CONV);
+    await tick();
+    const r = w.productsByUf('ibge_ppm', PA, CONV);
+    expect(r.products).toEqual([linha]);
+    expect(r.extra).toBe(1);
+    expect(r.loading).toBe(false);
+  });
+
+  it('enquanto tenta de novo está carregando; esgotadas as tentativas, é erro', async () => {
+    const f = vi.fn(() => Promise.resolve({ ok: false, status: 500 }));
+    const w = await loadAll(f);
+    const pedir = () => w.productsByUf('ibge_pam', PA, CONV);
+    // A falha transitória não é anunciada: errorOf só responde depois de MAX_ATTEMPTS.
+    for (let i = 0; i < 3; i++) {
+      expect(pedir()).toMatchObject({ loading: true, loadError: null });
+      await tick();
+    }
+    expect(pedir()).toEqual({ products: [], loading: false, unavailable: false, loadError: 'HTTP 500' });
+    expect(f).toHaveBeenCalledTimes(3);
+  });
+
+  it('por município: mesmo formato, e um conjunto vazio de cidades não vai ao servidor', async () => {
+    const f = vi.fn(() => jsonRes({ products: [{ code: '1', name: 'Leite', value: 2 }], available: true }));
+    const w = await loadAll(f);
+    expect(w.productsByMunicipio('ibge_ppm', {}, CONV, []))
+      .toEqual({ products: [], loading: false, unavailable: false, loadError: null });
+    expect(f).not.toHaveBeenCalled();
+
+    expect(w.productsByMunicipio('ibge_ppm', {}, CONV, ['1500107']))
+      .toMatchObject({ products: [], loading: true, loadError: null });
+    await tick();
+    expect(w.productsByMunicipio('ibge_ppm', {}, CONV, ['1500107'])).toMatchObject({
+      products: [{ code: '1', name: 'Leite', value: 2 }], loading: false, unavailable: false,
+    });
+    expect(f.mock.calls[0][1].method).toBe('POST');
+  });
+});

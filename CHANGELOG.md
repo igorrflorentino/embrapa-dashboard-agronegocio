@@ -7,6 +7,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.107.0] - 2026-11-17
+
+**"O que <lugar> produz", em Perfil do território, só diz "Sem produtos registrados" quando mediu,
+e passa a responder para o PAM e a PPM por UF.** O card afirmava a ausência em três situações em que
+nada tinha sido medido: com o pedido ainda a caminho (a cada troca de território), com o pedido
+falhado e, no PAM e na PPM, para toda UF. O servidor não tinha leitor de produtos por UF para esses
+dois bancos, enquanto o nível município, que lê a base analítica, os nomeava.
+
+### Adicionado
+- **Composição por UF no PAM e na PPM.** `seam.products_by_uf` passa a ler `serving_pam_annual` e
+  `serving_ppm_annual` pela mesma chamada de `gateway.fetch_products_by_uf` que já servia o PEVS: as
+  três tabelas pré-agregadas têm o mesmo grão (ano × UF × produto × tabela × família) e as mesmas
+  colunas de valor.
+  - Medido em 17/11, numa prévia local contra a produção (só leitura), soma de 1974 a 2025 em R$
+    sem correção: Mato Grosso no PAM abre com Soja (em grão), R$ 778,8 bi, e Milho (em grão),
+    R$ 266,4 bi; na PPM, com Leite e Ovos de galinha (R$ 15 bi e R$ 14 bi, arredondados).
+  - O card "Base de dados" da Geografia lê o mesmo produtor e passa a aparecer também para PAM e
+    PPM quando há UF selecionada.
+- **O rebanho da PPM fica fora das barras, nomeado e com o motivo**: é estoque (nº de cabeças), não
+  produção, e não tem valor monetário. Cada linha da resposta diz o que é (`measure_kind`), porque um
+  rebanho e um fluxo que a convenção não alcança chegam os dois com valor nulo, e são ausências
+  diferentes. A tela pergunta pelo sinalizador da linha, nunca pelo número da tabela.
+- **Um produto sem valor na convenção em toda a janela é nomeado** em "Sem valor nesta convenção", em
+  vez de virar uma barra vazia. Medido: Mato Grosso, PAM, IPCA, 1974–1979 — os 12 produtos, nenhum
+  com valor; o card diz que não há o que desenhar e lista os 12.
+- **Contrato da API.** `/api/products-by-uf` e `/api/products-by-municipio` devolvem `available` (se o
+  banco tem leitor de produtos naquele grão) e, em cada produto, `measure_kind`. Uma lista vazia com
+  `available: false` quer dizer "ninguém mediu"; com `available: true`, "medido, nada registrado". O
+  COMTRADE, sem geografia nacional, responde `available: false`.
+
+### Corrigido
+- **"Sem produtos registrados" enquanto carregava.** `productsByUf` e `productsByMunicipio` devolviam
+  `{ products: [] }` com o pedido a caminho, falhado ou sem leitor — o mesmo formato de "medi e não há
+  nada". Agora devolvem estados distintos (`loading`, `loadError`, `unavailable` ou a lista medida),
+  e o card diz "Carregando a composição…", mostra a falha dentro dele ou diz que a composição ainda
+  não está disponível para aquele banco naquele nível.
+  - Visto na prévia: ao trocar de UF, o card fica de 1 a 3 s em "Carregando a composição…", o
+    intervalo em que antes afirmava a ausência.
+  - No nível município, enquanto a malha do IBGE não chega, não há cidade a perguntar: o card também
+    diz que está carregando (o seletor de município já dizia "carregando municípios…").
+  - O aviso de falha saiu do topo da tela para dentro do card que ele explica.
+- **O aviso "Este banco tem grão geográfico apenas por UF" nunca apareceu.** A tela passava o texto
+  como filho de `NotApplicableNote`, que lê um objeto `note`: o componente não desenhava nada, e o
+  COMEX não dizia por que não tem nível município. O teste não pegava porque dublava o componente com
+  a assinatura errada; agora usa o real.
+
+### Testes
+- vitest: os estados dos produtores (inclusive as três tentativas antes do erro) e os do card;
+  rebanho e produto sem valor nomeados, em ordem alfabética; o nível município com a malha a caminho.
+  O teste da tela passa a usar `NotApplicableNote` e `CollapsingNameList` reais.
+- pytest: o leitor por UF do PAM e da PPM nas próprias tabelas pré-agregadas; `measure_kind` pedido
+  só onde a coluna existe; `available` por banco e por grão; e um teste que exige leitor de
+  composição por UF para todo banco geográfico ativo.
+
+### Notas
+- **Pendências achadas no caminho, fora do escopo desta versão:**
+  - No nível município, a trajetória e os indicadores dizem "Sem série"/"sem dados" enquanto o cubo
+    carrega, e `municipioYearly` não tem canal de erro. `geoMesh` também não: uma malha que falhe
+    deixa o seletor em "carregando municípios…" para sempre.
+  - Na Geografia, a métrica "Quantidade (cabeças)" da PPM soma ovos (unidades) com rebanho
+    (cabeças) no mapa. Em Mato Grosso, 2025: 3,74 bi de ovos de galinha contra 31,6 mi de bovinos. O
+    card "Base de dados", que esta versão abre para a PPM, ranqueia ovos entre as espécies sob o
+    mesmo rótulo.
+
+---
+
 ## [1.106.0] - 2026-11-17
 
 **No Cruzamento entre fontes, cada série da PEVS passa a mostrar só a metade da pesquisa que o

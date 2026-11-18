@@ -157,6 +157,12 @@ def _empty(df: pd.DataFrame | None) -> bool:
     return df is None or getattr(df, "empty", True)
 
 
+def _str_or_none(value: Any) -> str | None:
+    """A text column as a non-empty ``str``, else ``None`` — pandas hands a missing text
+    back as ``None`` or ``NaN`` depending on the dtype, and NaN is not valid JSON."""
+    return value if isinstance(value, str) and value else None
+
+
 # ── snapshot ──────────────────────────────────────────────────────────────────
 
 
@@ -1202,8 +1208,11 @@ def serialize_partner(
     }
 
 
-def serialize_products_by_uf(df: pd.DataFrame | None, max_rows: int = 100) -> dict:
-    """seam.products_by_uf() → { products: [{code,name,value,q_mass,q_vol,q_count}] }.
+def serialize_products_by_uf(
+    df: pd.DataFrame | None, max_rows: int = 100, *, available: bool = True
+) -> dict:
+    """seam.products_by_uf() → { products: [{code,name,tabela,measure_kind,value,q_mass,
+    q_vol,q_count}], priceBase, available }.
 
     value in currency mi (the deflated column the conventions resolved), q_mass in
     mil t, q_vol in mi m³, q_count in mi un (livestock head/eggs) — the SAME magnitudes
@@ -1215,10 +1224,15 @@ def serialize_products_by_uf(df: pd.DataFrame | None, max_rows: int = 100) -> di
 
     ``priceBase`` dates the values, read off the frame itself: this reader returns a bare
     frame, and the município one reads Gold, which a build that stops midway leaves at a
-    different base than the marts."""
+    different base than the marts.
+
+    ``available`` says whether the banco HAS a reader at this grain (the route asks the
+    seam). It is what separates an empty list that was measured ("nada registrado") from
+    one that was never asked; always present, so the contract does not change shape by
+    banco."""
     df, base = pbase.take(df)
     if _empty(df):
-        return {"products": [], "priceBase": None}
+        return {"products": [], "priceBase": None, "available": available}
     products = [
         {
             "code": str(r.product_code),
@@ -1231,6 +1245,12 @@ def serialize_products_by_uf(df: pd.DataFrame | None, max_rows: int = 100) -> di
             # de tabela única, o que mantém a chave presente e o contrato estável em vez de
             # aparecer e sumir por banco.
             "tabela": getattr(r, "tabela", None),
+            # 'stock' (rebanho, contado em cabeças) | 'flow' — só a PPM tem a coluna; `None`
+            # nos demais bancos, pelo mesmo motivo da `tabela` acima. Um rebanho chega com
+            # `value: None` POR NATUREZA (estoque não tem valor de produção), e um fluxo pode
+            # chegar com `value: None` porque a convenção não alcança a janela. São duas
+            # ausências com motivos diferentes, e a tela precisa dizer o motivo certo.
+            "measure_kind": _str_or_none(getattr(r, "measure_kind", None)),
             # Idem: valor deflacionado preserva a ausência (ver serialize_product_uf).
             # Medido no mesmo teste: "O que o Pará produz" trazia os 10 produtos com
             # `value: 0.0` numa janela que o euro não alcança.
@@ -1241,7 +1261,7 @@ def serialize_products_by_uf(df: pd.DataFrame | None, max_rows: int = 100) -> di
         }
         for r in df.head(max_rows).itertuples()
     ]
-    return {"products": products, "priceBase": pbase.payload(None, base)}
+    return {"products": products, "priceBase": pbase.payload(None, base), "available": available}
 
 
 def _monthly_avg(matrix: dict[int, list[float | None]], years: list[int]) -> list[float]:

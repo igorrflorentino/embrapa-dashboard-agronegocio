@@ -542,6 +542,36 @@ window.partnerData = function partnerData(bancoId, summary, metric) {
     ? { ...data, flowLabel, notApplicable }
     : { preview: false, flowLabel, unit, notApplicable, partners: [], loadError: errorOf(key) };
 };
+
+// The shell both per-product breakdowns return. FOUR states, kept apart because only one
+// of them is a measurement (ausência não é zero):
+//   loading     — the request is in flight, or a transient failure is being retried
+//                 (errorOf stays null until MAX_ATTEMPTS, on purpose);
+//   loadError   — every retry failed;
+//   unavailable — the API answered that this banco has no per-product reader at this grain
+//                 (`available: false`): nothing was measured;
+//   none of them — `products` IS the answer, and an empty list means "measured, nothing".
+// Until v1.107.0 the first three all came back as `{ products: [] }`, and Perfil do
+// território printed "Sem produtos registrados" while the request was still on its way —
+// and, for PAM and PPM at UF level, for a reader that did not exist.
+//
+// `...data` is spread, not picked: the payload may carry fields this shell does not name
+// (and a screen reads them straight off the breakdown).
+function productBreakdownOf(key) {
+  const data = get(key);
+  if (data) {
+    return {
+      ...data,
+      products: Array.isArray(data.products) ? data.products : [],
+      loading: false,
+      unavailable: data.available === false,
+      loadError: null,
+    };
+  }
+  const loadError = errorOf(key);
+  return { products: [], loading: !loadError, unavailable: false, loadError };
+}
+
 // Per-product ranking WITHIN the selected UF(s) — the "Base de dados" per-UF
 // product breakdown (inverse of ViewProductProfile's "onde X é produzido"). The
 // backend returns [] unless a UF is selected; currency/correction pick the
@@ -557,7 +587,7 @@ window.productsByUf = function productsByUf(bancoId, summary, conv) {
   const ax = activeAxisParams();
   const key = `pbu:${bancoId}:${filterSig(summary)}:${currency || ''}:${correction || ''}:${axisKey(ax)}`;
   ensure(key, () => `${API}/products-by-uf?${qs({ banco: bancoId, codes, states, y0, y1, currency, correction, ...ax })}`);
-  return get(key) || { products: [], loadError: errorOf(key) };
+  return productBreakdownOf(key);
 };
 // Per-product breakdown WITHIN a município selection — the território profile's
 // município counterpart to productsByUf. The município cube groups by city and sums
@@ -568,9 +598,14 @@ window.productsByUf = function productsByUf(bancoId, summary, conv) {
 // codes and would overflow gunicorn's ~4 KB request line (HTTP 414). The cache key
 // still carries the full list (a Map key, no length limit), so selections never
 // collide. Always city-scoped — with no city set there is nothing to fetch (and the
-// backend would refuse anyway, since this reads Gold directly).
+// backend would refuse anyway, since this reads Gold directly). An empty set of
+// municípios produces nothing, and that is the answer returned; a caller whose set is
+// empty only because the IBGE mesh has not arrived yet must say "loading" itself —
+// Perfil do território does, since only it knows why its set is empty.
 window.productsByMunicipio = function productsByMunicipio(bancoId, summary, conv, cityCodes) {
-  if (!cityCodes || !cityCodes.length) return { products: [], loadError: null };
+  if (!cityCodes || !cityCodes.length) {
+    return { products: [], loading: false, unavailable: false, loadError: null };
+  }
   const codes = filterCodes(summary);
   const y0 = filterYear(summary && summary.startDate);
   const y1 = filterYear(summary && summary.endDate);
@@ -582,7 +617,7 @@ window.productsByMunicipio = function productsByMunicipio(bancoId, summary, conv
     `${API}/products-by-municipio?${qs({ banco: bancoId, codes, currency, correction, y0, y1, ...ax })}`,
     { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cityCodes }) },
   ]);
-  return get(key) || { products: [], loadError: errorOf(key) };
+  return productBreakdownOf(key);
 };
 
 window.monthlyData = function monthlyData(bancoId, summary) {
