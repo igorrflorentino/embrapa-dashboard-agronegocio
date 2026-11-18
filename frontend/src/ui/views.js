@@ -205,7 +205,8 @@ window.VIEW_COMPONENTS = {
   // Análises curadas (Engenharia de Atributos): só "Valor agregado" está live. "Finalidade
   // econômica" (curated_market_nature) está CONGELADA/removida do menu — deliberadamente NÃO
   // mapeada aqui para que um deep link obsoleto (?v=curated_market_nature) não roteie para o
-  // ViewMarketNature congelado (main.jsx também valida o ?v contra o menu e cai em overview).
+  // ViewMarketNature congelado (urlState.readStateFromURL também valida o ?v contra o menu e cai
+  // em overview).
   curated_value_added:   'ViewValueAdded',
 };
 

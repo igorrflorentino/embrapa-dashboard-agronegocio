@@ -308,8 +308,9 @@ window.DEFAULT_CONVENTIONS = {
 };
 
 // A fonte única das combinações oferecidas é window.correctionsFor (no topo). A faixa só
-// mostra essas, e o decodificador de deep link (main.jsx) e a troca de banco passam por
-// aqui — um ?cur=USD&corr=IPCA guardado nos favoritos não pode passar por baixo da tela.
+// mostra essas, e o decodificador de deep link (urlState.readStateFromURL) e a troca de
+// banco passam por aqui — um ?cur=USD&corr=IPCA guardado nos favoritos não pode passar por
+// baixo da tela.
 // Devolve SEMPRE uma convenção oferecida, e a MESMA REFERÊNCIA quando nada muda (main.jsx
 // conta com isso para não re-renderizar as convenções à toa).
 //

@@ -1,11 +1,11 @@
 // urlState.js — the shared deep-link codec contract.
 //
-// The app state travels in the share URL. The ENCODER lives in
-// AppShell.onShare and the DECODER in Dashboard.readStateFromURL — two halves
-// of the same wire format. The param-key list and the array sentinel rules
-// were duplicated as literals on both sides; a typo on one half silently
-// breaks shared links. This module is the single source of truth for the keys
-// and the array encode/decode, so the two halves can't drift.
+// The app state travels in the share URL. The ENCODER (buildUrlState) and the
+// DECODER (readStateFromURL) are two halves of the same wire format, and both
+// live here. The param-key list and the array sentinel rules were duplicated as
+// literals on both sides; a typo on one half silently breaks shared links. This
+// module is the single source of truth for the keys and the array
+// encode/decode, so the two halves can't drift.
 
 // Every query param the dashboard owns. Used by the encoder (to know what to
 // emit) and by the decoder (to detect whether a URL carries OUR state at all,
@@ -118,8 +118,8 @@ window.buildUrlState = ({ view, database, infoPage, conventions, summary, crossS
     // 'all'/absent, so a permalink to an unfiltered panel keeps meaning "every table" —
     // the survey's own total — rather than freezing today's default into the link.
     // Escreve `tb` desde v1.46.0. O `or=extrativa|silvicultura` dos links antigos deixou de
-    // ser lido na v1.47.0, de propósito (ver main.jsx): um link desses abre com as duas
-    // metades.
+    // ser lido na v1.47.0, de propósito (ver readStateFromURL, abaixo): um link desses abre
+    // com as duas metades.
     tb: s.tabela && s.tabela !== 'all' ? s.tabela : '',
     // Níveis de industrialização; omitido quando nada está selecionado.
     ni: window.urlEncodeArr(s.niveis),
@@ -152,5 +152,131 @@ window.buildUrlState = ({ view, database, infoPage, conventions, summary, crossS
         tx: territoryCompare.mode === 'index' ? 'index' : '',
       };
     })(),
+  };
+};
+
+// ── SINGLE decoder: the URL → app state, read once by main.jsx at startup ──────
+// The inverse of buildUrlState above. It lived inside main.jsx until v1.107.1, and main.jsx
+// mounts the app when imported, so no test could reach it: the function that turns a shared
+// link into a screen had no test of its own. `search` defaults to the page's own query
+// string; a test passes one in. Returns null when the URL carries none of OUR keys.
+window.readStateFromURL = (search = location.search) => {
+  const q = new URLSearchParams(search);
+  if (!window.urlHasOwnState || !window.urlHasOwnState(q)) return null;
+  const conv = { ...window.DEFAULT_CONVENTIONS };
+  // Clamp the hydrated currency to the offered set (the CURRENCY_FX keys). A stale
+  // shared/bookmarked URL may still carry a currency that is no longer offered;
+  // an unknown currency would later
+  // deref CURRENCY_FX[cur].symbol (undefined) and white-screen the view, so keep
+  // the default instead.
+  const cur = q.get('cur');
+  if (cur && window.CURRENCY_FX && window.CURRENCY_FX[cur]) conv.currency = cur;
+  // Same guard as the currency above, and for the same reason: an unknown correction
+  // would travel to the BFF, which answers 400 for anything outside its vocabulary, so
+  // a hand-edited or stale link would blank the screen instead of degrading.
+  const corr = q.get('corr');
+  if (corr && window.CORRECTION_ECONOMY && (corr === 'Nominal' || window.CORRECTION_ECONOMY[corr])) {
+    conv.correction = corr;
+  }
+  // Clamp a currency × correction combo the strip does not offer. Since v1.88.0 an index
+  // is offered only for the currency of the economy it measures (R$ → IPCA/IGP-M/IGP-DI,
+  // US$ → CPI, € → HICP), so an old bookmarked ?cur=USD&corr=IPCA lands on US$ · CPI (a
+  // correction was asked for, and it stays one) — and a link WITHOUT `corr` keeps the
+  // default, Nominal. A deep link must not bypass the gate the strip enforces.
+  if (window.clampConvention) Object.assign(conv, window.clampConvention(conv));
+  if (q.get('mu') || q.get('vu')) {
+    conv.units = { ...conv.units, mass: q.get('mu') || conv.units?.mass, volume: q.get('vu') || conv.units?.volume };
+  }
+  if (q.get('as') != null) conv.autoScale = q.get('as') === '1';
+  const summary = {
+    basket: window.urlDecodeArr(q, 'pb'),
+    flags: window.urlDecodeArr(q, 'fl'),
+    states: window.urlDecodeArr(q, 'st'),
+    // A região viaja desde a v1.93.7 (ver urlState.buildUrlState); ausente = sem recorte.
+    regions: window.urlDecodeArr(q, 'rg'),
+    // Sub-UF / município geography (v1.5.2); absent → null = "all" (no narrowing).
+    mesos: window.urlDecodeArr(q, 'me'),
+    micros: window.urlDecodeArr(q, 'mc'),
+    inters: window.urlDecodeArr(q, 'it'),
+    imediatas: window.urlDecodeArr(q, 'im'),
+    munis: window.urlDecodeArr(q, 'mn'),
+    startDate: q.get('sd') || null,
+    endDate: q.get('ed') || null,
+    // Server-side flow filter (export/import); absent → all flows.
+    flow: q.get('fx') || null,
+    // Qual TABELA SIDRA (t289 extração | t291 silvicultura); ausente = todas.
+    // O `or=extrativa|silvicultura` dos links anteriores à v1.46.0 deixou de ser traduzido
+    // na v1.47.0, de propósito (registrado no CHANGELOG): um link desses abre com as duas
+    // metades.
+    tabela: q.get('tb') || null,
+    // Níveis de industrialização selecionados (CSV); ausente = todos.
+    niveis: window.urlDecodeArr(q, 'ni'),
+    // Server-side customs-procedure filter (regime aduaneiro, COMTRADE); absent → all regimes.
+    customs: q.get('cx') || null,
+    // Server-side tipo-de-mercado filter (COMTRADE); absent → all purposes.
+    market: q.get('mk') || null,
+    // COMTRADE país reporter (3-state): 'ALL' → world sentinel, CSV → ISO array, absent → null
+    // (Brazil default). País parceiro: standard array (null = all).
+    reporters: q.get('rp') === 'ALL' ? '__all__' : window.urlDecodeArr(q, 'rp'),
+    partners: window.urlDecodeArr(q, 'pt'),
+  };
+  let crossState = window.DEFAULT_CROSS_STATE;
+  const xs = q.get('xs');
+  if (xs) {
+    crossState = {
+      series: xs.split('|').filter(Boolean).map((s) => { const [b, m] = s.split(':'); return { b, m }; }),
+      mode: q.get('xm') || 'base100',
+      y0: window.urlDecodeNum(q, 'xy0'),
+      y1: window.urlDecodeNum(q, 'xy1'),
+    };
+  }
+  // Comparativo entre territórios: the places, the metric and the scale travel in the URL
+  // (tc / tm / tx), so a reload or a shared link reopens the same comparison. Absent `tc`
+  // = no choice yet (the view shows its default); `tc=-` = emptied on purpose, which
+  // decode() reads as [] (the '-' is no valid entry), so the screen stays empty.
+  const territoryCompare = {
+    items: q.get('tc') != null && window.territoryCompare
+      ? window.territoryCompare.decode(q.get('tc')) : null,
+    metric: q.get('tm') || null,
+    mode: q.get('tx') || null,
+  };
+  // Validate the deep-linked view id against the LIVE menu. An unknown / stale id (e.g.
+  // ?v=curated_market_nature — a frozen, de-listed view — or a typo) must NOT resolve a
+  // component: it would render with an empty title and the wrong banco's filter bar. Fall
+  // back to the universal default instead.
+  let view = q.get('v') || 'overview';
+  if (window.viewById && !window.viewById(view)) view = 'overview';
+  const isCross = !!(window.viewById && window.viewById(view)?.crossBanco);
+  // Validate ?b (banco) like ?v: an unknown/stale id would silently resolve to a wrong banco
+  // (bancoById falls back internally), so pin it to the default when it isn't a real banco.
+  let database = q.get('b') || 'ibge_pevs';
+  if (window.bancoById && !window.bancoById(database)) database = 'ibge_pevs';
+  // Clamp the server-side trade filters (flow/customs/market) to the banco's OFFERED options,
+  // mirroring the ?cur/?v/?b clamps: a stale/hand-edited URL carrying a value this banco doesn't
+  // offer must not be sent to the API (a 400) nor paint a phantom filter chip. absent (null) =
+  // all. (reporters/partners are country codes validated server-side against a universe that
+  // loads asynchronously, so they can't be whitelisted here at parse time.)
+  const _clampToOpts = (val, helper) => {
+    if (val == null || !helper) return val; // absent, or helper not loaded → leave as-is
+    const opts = helper(database);
+    return opts && opts.some((o) => o.value === val) ? val : null;
+  };
+  summary.flow = _clampToOpts(summary.flow, window.flowOptionsFor);
+  summary.customs = _clampToOpts(summary.customs, window.customsOptionsFor);
+  summary.market = _clampToOpts(summary.market, window.marketOptionsFor);
+  // Validate ?ip (info page): an unknown value renders the generic "Saúde do sistema" header
+  // over an "em preparação" body. Only the known info pages are routable; else no info page.
+  const _INFO_PAGES = new Set(['about', 'referencias', 'cadastro_produtos', 'health']);
+  const ip = q.get('ip');
+  const infoPage = ip && _INFO_PAGES.has(ip) ? ip : null;
+  return {
+    view,
+    database,
+    infoPage,
+    conventions: conv,
+    summary,
+    crossState,
+    territoryCompare,
+    mode: isCross ? 'multi' : 'single',
   };
 };
