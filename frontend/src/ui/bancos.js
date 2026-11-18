@@ -32,7 +32,8 @@
 //     lists, URL restore). Default is visible. Use it to declutter the UI on
 //     demand — independent of maturity (an estavel banco can be hidden; a
 //     hidden banco keeps its maturity, it just isn't shown). Enumerate the shown
-//     set with window.visibleBancos(); bancoById() still resolves any id.
+//     set with window.visibleBancos(); bancoById() still resolves any id, so an id
+//     from OUTSIDE the app (a link's ?b=) is checked with isSelectableBanco().
 //
 // The legacy `status: 'live'|'soon'` is now DERIVED from maturity.hasData
 // (defined via Object.defineProperty after the array) so existing routing,
@@ -463,6 +464,14 @@ window.isBancoVisible = (b) => {
   return !!banco && banco.visible !== false;
 };
 window.visibleBancos = () => (window.BANCOS || []).filter(b => b.visible !== false);
+// May an id that came from OUTSIDE the app (a deep link's `?b=`) select a banco? Only when it
+// names one the banco picker offers: strict membership in visibleBancos(), no fallback.
+// bancoById is the wrong tool for this. It resolves ANY id, an unknown one to BANCOS[0], so
+// `!bancoById(x)` is never true and a guard built on it is dead code. That is how `?b=comex`
+// (the catalog's token for MDIC COMEX; the banco id is `mdic_comex`) got through the deep-link
+// decoder until v1.107.1: the API answered banco "comex" with an empty payload, and the Visão
+// geral broke on the provenance MainScreen looks up by banco id.
+window.isSelectableBanco = (id) => window.visibleBancos().some(b => b.id === id);
 
 // Gold table name to DISPLAY: prefer the backend-reported name (dataStore),
 // fall back to the registry literal (declared/planned, e.g. for not-connected

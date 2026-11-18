@@ -7,6 +7,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.107.1] - 2026-11-18
+
+**Um link cujo `?b=` não nomeia um banco do painel abre o banco padrão (IBGE PEVS), em vez de
+quebrar a Visão geral.** `/?v=overview&b=comex` derrubava a perspectiva em "Erro ao renderizar a
+perspectiva" (`Cannot read properties of undefined (reading 'totalRows')`). `comex` é o código do
+MDIC COMEX no catálogo de produtos; o id do banco é `mdic_comex`. Achado de passagem, ao testar o
+build do `main` contra a produção com o id digitado errado.
+
+### Corrigido
+- **A conferência do `?b=` existia e nunca disparava.** O decodificador do link perguntava
+  `!bancoById(id)`, e `bancoById` não falha: para um id que não conhece, devolve o primeiro banco da
+  lista. Assim `comex` passava, o painel pedia `/api/source-meta` e `/api/snapshot` do banco "comex"
+  (as duas respondem 200, vazias) e a Visão geral quebrava ao procurar a proveniência pelo id. O
+  `?v=` logo ao lado, escrito do mesmo jeito, sempre funcionou, porque `viewById` devolve `null` para
+  o que não conhece.
+  - Agora o `?b=` é conferido por **pertença** (`isSelectableBanco`, em `bancos.js`): passa só um
+    banco que o seletor de bancos oferece, e qualquer outro valor abre o PEVS. `bancoById` continua
+    devolvendo o primeiro banco, porque as telas dependem disso para desenhar um banco já escolhido
+    dentro do painel.
+  - Um banco escondido pelo eixo de visibilidade também não entra pelo link, como `bancos.js` já
+    prometia.
+  - **Conferido no painel com dados de produção** (servidor local, só leitura):
+    - `/?v=overview&b=comex` abre a Visão geral do IBGE PEVS (1,4 mi de linhas, 10 produtos, 27 UFs,
+      40 anos), e a barra de endereço passa a dizer `b=ibge_pevs`.
+    - Nenhuma chamada a `banco=comex` sai do navegador, e o console não tem erro.
+    - `b=comtrade` também abre o PEVS, e `b=mdic_comex` continua abrindo o MDIC COMEX.
+- **Nenhuma tela gera esse link.** Todo `?b=` que o painel escreve (barra de endereço, Compartilhar,
+  Citar painel) sai do estado, e o estado só recebe ids do seletor de bancos. Os códigos `pevs`,
+  `pam`, `ppm`, `comex` e `comtrade` existem só no catálogo (Cadastro de produtos), que não monta
+  link. O caminho até o defeito era um link escrito à mão.
+
+### Alterado
+- **O decodificador de link saiu do `main.jsx` e foi para o `urlState.js`** (`readStateFromURL`), ao
+  lado do codificador (`buildUrlState`). O `main.jsx` monta o painel quando é importado, então nada
+  nele podia ser testado: a função que transforma um link compartilhado em tela não tinha teste
+  próprio. Muda só o lugar: as 117 linhas do corpo são idênticas às de antes.
+
+### Testes
+- `deepLinkBanco.test.jsx`, 12 testes, com o registro de bancos, o menu, o decodificador e o
+  `MainScreen` reais:
+  - os cinco códigos do catálogo, um erro de digitação e um id em maiúsculas abrem o PEVS;
+  - os seis bancos do seletor passam como estão, e um `?b=` ausente ou vazio abre o PEVS;
+  - um banco escondido não passa;
+  - a Visão geral do PEVS é desenhada a partir de `/?v=overview&b=comex`.
+  - **Contraprova:** com o decodificador antigo, 10 dos 12 falham, e o de desenho falha com o mesmo
+    `TypeError` de produção, na mesma linha (`MainScreen.jsx:423`).
+
+### Avaliado, sem mudança
+- **`/api/snapshot` e `/api/source-meta` seguem respondendo 200 vazio a um banco desconhecido.** O
+  `docs/frontend_data_contract.md` não trata desse caso, e a resposta atual é contrato testado
+  (`test_source_meta_unknown_banco_returns_empty_object`). Passar a 400 mudaria a API sem ganho para
+  o painel, que depois desta correção não pede mais banco inexistente.
+
+### Notas
+- **Mesmo tipo de falha, em outro parâmetro (não corrigido aqui):** as séries do `?xs=` (Cruzamento
+  entre fontes) não são conferidas. `?v=cross_source&xs=comex:exp_value|ibge_pevs:prod_value` pede
+  `/api/cross/series?banco=comex` (200, `null`) e desenha uma série sem nome atribuída ao IBGE PEVS.
+  Ela não tem medida em ano nenhum, e por isso a base 100 da série verdadeira some ("Não há ano em
+  que todas as séries tenham medida…").
+
+---
+
 ## [1.107.0] - 2026-11-17
 
 **"O que <lugar> produz", em Perfil do território, só diz "Sem produtos registrados" quando mediu,
