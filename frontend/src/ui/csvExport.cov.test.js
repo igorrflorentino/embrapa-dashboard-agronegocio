@@ -822,6 +822,53 @@ describe('exportActiveTableCSV — a sub-UF narrowing still loading or failed re
   });
 });
 
+// ── As séries por produto sob um recorte sub-UF, e o cruzamento cesta × UF (v1.108.2) ──
+// The per-product series are NATIONAL: under a sub-UF recorte the file carried the whole
+// country's numbers in rows its recorte_geografico column labelled with the mesorregião. No
+// state of the recorte changes that, so the file is refused in all three — waiting would not
+// help, and "carregando-recorte" would promise a file that never comes. The aggregate series,
+// meanwhile, needs the basket's UF cube beside a UF subset, and had no reason of its own while
+// that cube loaded or after it failed.
+describe('exportActiveTableCSV — per-product series under a sub-UF recorte, and the basket × UF cross', () => {
+  const filtered = (extra) => ({
+    products: PRODUCTS,
+    productTS: { P1: [{ y: 2020, v: 1.0, q: 2.0 }] },
+    ts: [{ y: 2020, v: 1, q_mass: 1, q_vol: 0, q_count: 0 }],
+    ufData: [], ufLatestYear: 2020, ufYearPartial: false, notFilteredByBasket: false,
+    subUfLoading: false, subUfLoadError: null, geoComboPending: false, geoComboLoadError: null,
+    ...extra,
+  });
+  const pedir = (view, summary = {}) => window.prepareTableCSV({ view, summary, database: 'ibge_ppm' });
+
+  it.each(['product_profile', 'product_compare'])(
+    '%s: a sub-UF recorte refuses in every state — the series exist only nationally', (view) => {
+      for (const estado of [{ subUfLoading: true }, { subUfLoadError: 'HTTP 503' }, { subUfLoaded: true }]) {
+        stubRegistry(filtered({ subUfRequested: true, ...estado }));
+        expect(pedir(view, { munis: ['1505809'] }), JSON.stringify(estado))
+          .toMatchObject({ erro: true, motivo: 'recorte-nao-se-aplica' });
+      }
+    });
+
+  it.each(['product_profile', 'product_compare'])('%s: counter-proof — no recorte, the series export', (view) => {
+    stubRegistry(filtered({ subUfRequested: false }));
+    expect(pedir(view).erro).toBe(false);
+  });
+
+  it.each(['overview', 'value'])('%s: the basket × UF cross on its way, or failed, has its own reason', (view) => {
+    stubRegistry(filtered({ geoComboPending: true }));
+    expect(pedir(view, { basket: ['P1'], states: ['PA'] })).toMatchObject({ erro: true, motivo: 'carregando-cesta-uf' });
+    stubRegistry(filtered({ geoComboLoadError: 'HTTP 503' }));
+    expect(pedir(view, { basket: ['P1'], states: ['PA'] })).toMatchObject({ erro: true, motivo: 'falha-cesta-uf' });
+    stubRegistry(filtered());
+    expect(pedir(view, { basket: ['P1'], states: ['PA'] }).erro).toBe(false); // counter-proof
+  });
+
+  it('a sub-UF reason comes first: the recorte is what the file waits for', () => {
+    stubRegistry(filtered({ subUfLoading: true, geoComboPending: true }));
+    expect(pedir('overview', { mesos: ['1502'], basket: ['P1'] })).toMatchObject({ motivo: 'carregando-recorte' });
+  });
+});
+
 // ── Counts (v1.108.0): one column per thing counted ──────────────────────────
 // Until v1.108.0 every file had ONE qtd_contagem_un column, and for the PPM it carried the
 // herd's heads plus a year's eggs: Mato Grosso 2025 would read 3.883.600.000 "unidades".

@@ -63,15 +63,21 @@
 // @property {(string|null)} column   The value column it dates ('val_real_ipca_brl'). Null on the bare-frame readers (the UF and município cubes, products by UF/município), whose callers already know which convention they asked for.
 // @property {string}        month    'AAAA-MM': the latest month of the index when the analytical base was built — val_real = val × I(month) ÷ mean of I over the year. It FLOATS with every build: the next index release moves it one month on, and every corrected value with it.
 // @property {(string|null)} fxDate   'AAAA-MM-DD': the PTAX day a CROSS column (a Brazilian index under US$ or €) converts at; null for a column deflated in its own currency.
-// Every payload that sums a corrected column carries one, read off the same select that sums it. Two reads on one screen can come back at different months across a build (each is cached 10 min server-side): window.PriceBaseSkewNote says so instead of naming one. The UF cube (window.geoYearlyPriceBase) and the município cube (the `priceBase` field of window.municipioYearly's MunicipioCubeState) expose theirs from the same response as the rows.
+// Every payload that sums a corrected column carries one, read off the same select that sums it. Two reads on one screen can come back at different months across a build (each is cached 10 min server-side): window.PriceBaseSkewNote says so instead of naming one. The UF cube (the `priceBase` field of window.geoYearly's GeoYearlyState) and the município cube (the same field of window.municipioYearly's MunicipioCubeState) expose theirs from the same response as the rows.
 //
-// ── Município-level loaders (src/data/producers.js) ──────────────────────
-// Both report their read's state in the shape productsByUf/productsByMunicipio use (v1.107.0). Only the last state is a measurement: loading and loadError are reasons nothing is shown, never "sem dados".
+// ── Territorial loaders (src/data/producers.js) ──────────────────────────
+// All three report their read's state in the shape productsByUf/productsByMunicipio use (v1.107.0). Only the last state is a measurement: loading and loadError are reasons nothing is shown, never "sem dados".
 //
 // @typedef {Object} GeoMeshState        window.geoMeshState()  (window.geoMesh() returns just `municipios`, as a name lookup)
 // @property {(Object[]|null)} municipios  Every município with its UF and both sub-UF divisions; null until the response lands (loading or failed), [] only when it landed empty.
 // @property {boolean}        loading      In flight, or a transient failure still being retried.
 // @property {(string|null)}  loadError    Set once every retry failed.
+//
+// @typedef {Object} GeoYearlyState      window.geoYearly(bancoId, summary)  — the basket's (UF × year) cube (v1.108.2; it returned the bare rows before, null for loading AND for failed, so a failure pended forever)
+// @property {(Object[]|null)}   rows       The (UF × year) cube of the selected products; null until it lands (loading or failed), [] when the basket records nothing in any UF — a measurement, so applyFilters treats it as loaded.
+// @property {(PriceBase|null)}  priceBase  The month its corrected values are at — same response as the rows; null until it lands and under a nominal convention.
+// @property {boolean}          loading
+// @property {(string|null)}    loadError  applyFilters turns it into `geoComboLoadError` (the screens say the cross failed) instead of `geoComboPending`.
 //
 // @typedef {Object} MunicipioCubeState  window.municipioYearly(bancoId, summary, cityCodes, years?)
 // @property {(Object[]|null)}   rows       The (município × year) cube; null until it lands, [] when the selected municípios record nothing in the window.

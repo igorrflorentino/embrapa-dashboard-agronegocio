@@ -5,6 +5,9 @@
 // The count notes: a group refused for counting different things, and the count a
 // value-less map leaves to another reading (countUnits.js).
 import './CountUnitNotes.jsx';
+// window.cestaPorUfMotivo, and the recorte's own composition (window.recorteProducts).
+import './RecorteNote.jsx';
+import './recorteProducts.js';
 
 function ViewOverview({ families, summary, database, conventions }) {
   const conv      = conventions || window.DEFAULT_CONVENTIONS;
@@ -69,17 +72,25 @@ function ViewOverview({ families, summary, database, conventions }) {
   // basket × UF can't be combined until the product×UF cube loads (dataFilters.js):
   // the value would silently drop the basket, so hold it at a loading state instead.
   const comboPending = !!filtered.geoComboPending;
-  // A sub-UF narrowing whose mesh or município cube FAILED (v1.108.1). Not pending — nothing
-  // is coming — and no number here can honour the selection: the un-narrowed ones would be
-  // data the filter excludes. Held like the pending state, with a dash instead of an
-  // ellipsis, and the series card says why. (Until v1.108.1 a failure read as pending, and
-  // the strip said "cruzando produto × UF…" for good.)
+  // A sub-UF narrowing whose mesh or município cube FAILED (v1.108.1), or the basket's UF cube
+  // failing beside a UF subset (v1.108.2). Not pending — nothing is coming — and no number
+  // here can honour the selection: the un-narrowed ones would be data the filter excludes.
+  // Held like the pending state, with a dash instead of an ellipsis, and the series card says
+  // why. (Until then a failure read as pending, and the strip said "cruzando produto × UF…"
+  // for good.)
   const recorteFalhou = filtered.subUfLoadError || null;
-  const segura = comboPending || !!recorteFalhou;
-  const kpiVal = (fmt) => (recorteFalhou ? '—' : comboPending ? '…' : fmt);
+  const falha = recorteFalhou || filtered.geoComboLoadError || null;
+  const segura = comboPending || !!falha;
+  const kpiVal = (fmt) => (falha ? '—' : comboPending ? '…' : fmt);
   const kpiSub = (fmt) => (recorteFalhou
     ? 'recorte sub-UF não carregado'
+    : falha ? 'produto × UF não carregado'
+    : comboPending && filtered.subUfRequested ? 'carregando o recorte sub-UF…'
     : comboPending ? 'cruzando produto × UF…' : fmt);
+  // Under a sub-UF recorte the composition is the RECORTE's (one year of the município
+  // reader), never the national per-product series (v1.108.2). Null without a recorte.
+  const recorteProds = window.recorteProducts
+    ? window.recorteProducts(filtered, summary || {}, database, conv) : null;
 
   // Quality digest. Lê a lista COMPLETA, não a recortada pelas chips de flag: este card
   // se declara "acervo do banco" no próprio subtítulo, e um número do acervo não muda
@@ -278,17 +289,19 @@ function ViewOverview({ families, summary, database, conventions }) {
               <>
                 <window.SectionHeader
                   overline={`Série histórica · ${filtered.yearStart}–${yTag(filtered.yearEnd)} · ${monLabel}`}
-                  title={recorteFalhou ? 'Variação acumulada: —'
+                  title={falha ? 'Variação acumulada: —'
                     : comboPending ? 'Variação acumulada: …' : window.deltaTitle('Variação acumulada', first, last, {
                     breaks: eraBreaks,
                     motivo: window.valueGapMotivo && window.valueGapMotivo(window.valueGapFor(database), conv),
                   })}
                 />
-                {recorteFalhou ? (
-                  <window.LoadErrorNote error={recorteFalhou} />
+                {falha ? (
+                  <window.LoadErrorNote error={falha} />
                 ) : comboPending ? (
                   <p className="caption" style={{ padding: '24px 4px', textAlign: 'center' }}>
-                    Cruzando o filtro de <strong>produtos</strong> com o de <strong>UFs</strong>…
+                    {filtered.subUfRequested
+                      ? <>Carregando o <strong>recorte territorial</strong>…</>
+                      : <>Cruzando o filtro de <strong>produtos</strong> com o de <strong>UFs</strong>…</>}
                   </p>
                 ) : (
                   <window.LineChart data={data} label={label} valueKey="v" color="var(--viz-1)" height={240} />
@@ -307,23 +320,62 @@ function ViewOverview({ families, summary, database, conventions }) {
         </div>
 
         <div className="card">
-          <window.SectionHeader
-            overline={`Composição · ${compYearTag}`}
-            title="Participação por produto"
-            action={<span className="caption">{filtered.selectedProducts.length} de {filtered.productsTotal} produtos</span>}
-          />
-          {filtered.topProducts.length === 0 ? (
-            <p className="caption" style={{ padding: '24px 4px', textAlign: 'center' }}>
-              Nenhum produto selecionado nos filtros.
-            </p>
-          ) : (
+          {(() => {
+            const action = (
+              <span className="caption">{filtered.selectedProducts.length} de {filtered.productsTotal} produtos</span>
+            );
+            const aviso = (texto) => (
+              <p className="caption" style={{ padding: '24px 4px', textAlign: 'center' }}>{texto}</p>
+            );
             // O Donut rotula cada fatia por `name`. Sem desambiguar, duas metades do
             // PEVS que dividem o nome viram duas fatias com o MESMO rótulo — "Madeira em
             // tora 57%" e "Madeira em tora 7%" — e o leitor não sabe qual é qual. Não
             // funde nada (a chave é o índice), mas informa igualmente mal.
-            <window.Donut data={window.labelProductRows(filtered.topProducts, database)}
-                          size={180} valueKey="share" />
-          )}
+            const donut = (fatias) => (
+              <window.Donut data={window.labelProductRows(fatias, database)} size={180} valueKey="share" />
+            );
+            if (!recorteProds) {
+              return (
+                <>
+                  <window.SectionHeader overline={`Composição · ${compYearTag}`}
+                                        title="Participação por produto" action={action} />
+                  {filtered.topProducts.length === 0
+                    ? aviso('Nenhum produto selecionado nos filtros.')
+                    : donut(filtered.topProducts)}
+                </>
+              );
+            }
+            // Under a sub-UF recorte: the recorte's own products in ONE year (the latest in
+            // which its municípios have a row), never the national series (v1.108.2). The
+            // herd is a stock with no value, so it is no slice of a value composition.
+            const r = recorteProds;
+            const fluxos = (r.products || []).filter((p) => p.measure_kind !== 'stock');
+            const fatias = window.compositionSlices(fluxos.map((p) => ({
+              code: p.code, name: p.name, tabela: p.tabela, value: p.value,
+            })));
+            return (
+              <>
+                <window.SectionHeader
+                  overline={r.year != null
+                    ? `Composição · ${r.year} · municípios do recorte`
+                    : 'Composição · municípios do recorte'}
+                  title="Participação por produto" action={action} />
+                {/* The recorte's own failure is already announced on the series card; this
+                    card names it in a line. A failure of THIS read gets the full note. */}
+                {recorteFalhou ? aviso('Não foi possível carregar o recorte territorial.')
+                  : r.loadError ? <window.LoadErrorNote error={r.loadError} />
+                  : r.loading ? aviso('Carregando a composição dos municípios do recorte…')
+                  : r.unavailable ? aviso('Este banco não tem a composição por produto abaixo da UF.')
+                  : r.products.length === 0
+                    ? aviso('Os municípios do recorte não registram nenhum produto da cesta no período.')
+                  : fatias.length === 0
+                    ? aviso(fluxos.length === 0
+                      ? 'A cesta só tem efetivo de rebanho, que não tem valor monetário.'
+                      : `Nenhum produto da cesta tem valor em ${r.year} na convenção escolhida.`)
+                  : donut(fatias)}
+              </>
+            );
+          })()}
         </div>
       </div>
 
@@ -345,6 +397,25 @@ function ViewOverview({ families, summary, database, conventions }) {
               ...u,
               value: geoVal(u) * geoMul,
             }));
+            // A sub-UF recorte on its way, or failed, has no grid to draw: the tiles came out
+            // blank while it loaded and with an "R$ 0 – 0" legend after it failed, both of
+            // which read as a measured empty map (v1.108.2). The map waits, or says it failed.
+            const mapaEspera = !!filtered.subUfLoading;
+            const mapaFalhou = !!filtered.subUfLoadError;
+            if (mapaEspera || mapaFalhou) {
+              return (
+                <>
+                  <window.SectionHeader overline="Distribuição geográfica"
+                                        title={`${geoWhat} por UF · ${geoUnit}`}
+                                        action={<span className="caption">{mapaFalhou ? '—' : '…'}</span>} />
+                  <p className="caption" style={{ padding: '24px 4px', textAlign: 'center' }}>
+                    {mapaFalhou
+                      ? 'Não foi possível carregar o recorte territorial.'
+                      : 'Carregando o recorte territorial…'}
+                  </p>
+                </>
+              );
+            }
             return (
               <>
                 <window.SectionHeader
@@ -381,8 +452,8 @@ function ViewOverview({ families, summary, database, conventions }) {
                 )}
                 {filtered.notFilteredByBasket && (
                   <p className="caption" style={{ padding: '8px 4px 0' }}>
-                    O mapa reflete <strong>todos os produtos</strong> — a cesta selecionada não
-                    recorta a distribuição por UF (sem grão produto × UF nesta agregação).
+                    O mapa reflete <strong>todos os produtos</strong> —{' '}
+                    {window.cestaPorUfMotivo(filtered)}.
                   </p>
                 )}
               </>

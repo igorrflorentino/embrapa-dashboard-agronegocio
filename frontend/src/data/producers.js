@@ -112,8 +112,8 @@ window.snapshotFor = function snapshotFor() {
 // Keyed by banco + convention + basket ONLY (state/year are client-side slices), so
 // panning the period or toggling a UF reuses the cached cube instead of refetching.
 // The convention is read from the dataStore so the cube's value column matches the
-// snapshot's byte-for-byte. Returns null until loaded (applyFilters falls back to the
-// all-products ufYearly) or for a banco with no geo grain (COMTRADE).
+// snapshot's byte-for-byte. Until the rows land applyFilters shows the all-products
+// ufYearly under an honest note, or holds the number when the basket meets a UF subset.
 
 // The optional filter axes a data producer must forward, read from the store exactly as
 // `flow` is: `origem` (which half of PEVS) and `niveis` (nível de industrialização).
@@ -154,21 +154,41 @@ function axisKey(ax) {
   return Object.keys(ax).sort().map((k) => `${k}=${ax[k] ?? '*'}`).join('|');
 }
 
+// Returns the cube's STATE, in the shape window.municipioYearly took in v1.108.1:
+//   { rows, priceBase, loading, loadError }
+//   loading   — in flight, or a transient failure being retried (errorOf stays null until
+//               MAX_ATTEMPTS, on purpose);
+//   loadError — every retry failed;
+//   neither   — `rows` IS the answer, and [] means "measured, nothing": the basket has no
+//               row in any UF under the active axes.
+// `rows` and `priceBase` are null until the response lands: unknown, never empty. A banco
+// with no geo grain asks nothing and answers "nothing" (rows []), as municipioYearly does.
+//
+// Until v1.108.2 this returned the bare rows — null in flight AND after every retry failed —
+// and applyFilters read null as "still coming": a basket narrowed together with a UF subset
+// held VALOR TOTAL at "…" for good when the cube failed, and an EMPTY cube read the same way
+// (its `length` was the "loaded" test), so a measured "nothing" never stopped loading either.
+//
+// `priceBase` is the month the cube's corrected values are at (v1.105.0; null for a nominal
+// convention). It had its own accessor, window.geoYearlyPriceBase, reading the same key; it
+// now travels in this object, so the rows on screen, the month they are at and whether they
+// arrived at all are read off ONE response by construction. The cube reads the same
+// pre-aggregated tables as the snapshot, but in a request cached on its own: across a build
+// the two can come back at different months, and window.PriceBaseSkewNote says so.
 window.geoYearly = function geoYearly(bancoId, summary) {
   const key = geoYearlyRequest(bancoId, summary);
-  const data = key ? get(key) : null;
-  return data && Array.isArray(data.ufYearly) ? data.ufYearly : null;
-};
-
-// The month the basket cube's corrected values are at (`priceBase`, v1.105.0), or null until
-// it lands (and for a nominal convention). Same key as window.geoYearly, so it reads the SAME
-// response, never a second fetch. The cube reads the same pre-aggregated tables as the
-// snapshot, but in a request cached on its own: across a build the two can come back at
-// different months, and window.PriceBaseSkewNote is how the screen says so.
-window.geoYearlyPriceBase = function geoYearlyPriceBase(bancoId, summary) {
-  const key = geoYearlyRequest(bancoId, summary);
-  const data = key ? get(key) : null;
-  return (data && data.priceBase) || null;
+  if (!key) return { rows: [], priceBase: null, loading: false, loadError: null };
+  const data = get(key);
+  if (data) {
+    return {
+      rows: Array.isArray(data.ufYearly) ? data.ufYearly : [],
+      priceBase: data.priceBase || null,
+      loading: false,
+      loadError: null,
+    };
+  }
+  const loadError = errorOf(key);
+  return { rows: null, priceBase: null, loading: !loadError, loadError };
 };
 
 // The basket cube's cache key, with its fetch ensured — null for a banco with no geo grain.

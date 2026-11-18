@@ -34,6 +34,7 @@ import './ui/countUnits.js'; // window.countGroups — what each count counts, a
 import './ui/geoDimensions.js'; // the Geografia metrics: one per count group, never one for all
 import './ui/territoryCompare.js'; // data layer of "Comparativo entre territórios"
 import './ui/dataFilters.js';
+import './ui/recorteProducts.js'; // window.recorteProducts — the basket's products inside a sub-UF recorte
 import './ui/csvExport.js';
 import './ui/MetricConventions.jsx';
 

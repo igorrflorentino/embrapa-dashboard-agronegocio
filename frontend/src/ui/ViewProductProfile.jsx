@@ -3,6 +3,10 @@
 // Honours active filters: the product selector is limited to the
 // basket (filtered.selectedProducts); value/qty respect conventions.
 
+// window.recorteNaoSeAplica — a real dependency, not one main.jsx's import order happens
+// to satisfy: the view's tests load it on its own.
+import './RecorteNote.jsx';
+
 const { useState: usePPState } = React;
 
 function ViewProductProfile({ families, summary, database, conventions }) {
@@ -182,6 +186,13 @@ function ViewProductProfile({ families, summary, database, conventions }) {
 
   return (
     <>
+      {/* The product's series is national and its distribution is by whole UF: neither can
+          apply a sub-UF recorte, and the screen says so in every state of it (v1.108.2). */}
+      <window.NotApplicableNote note={{
+        recorte: window.recorteNaoSeAplica(filtered,
+          'a série de cada produto existe só para o Brasil inteiro, e a distribuição, só por UF inteira.'),
+      }} />
+
       {/* Product selector */}
       <div className="pp-selector">
         <span className="pp-selector-label">Produto em análise</span>

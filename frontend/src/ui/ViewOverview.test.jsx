@@ -6,8 +6,11 @@
 // stub the composed window.* widgets/formatters (distinctive prefixes so the KPI
 // values are unambiguous in the DOM).
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render } from '@testing-library/react';
+// The REAL slicing rule (window.compositionSlices): the recorte's donut must slice a basket
+// exactly as the national one does. Loaded once; each test still stubs applyFilters.
+import './dataFilters.js';
 // The REAL RecorteNote, registered on window exactly as main.jsx loads it: it is a pure
 // four-line component, and stubbing it away would hide the very disclosure these views
 // exist to carry.
@@ -343,5 +346,160 @@ describe('ViewOverview — a sub-UF narrowing on its way or failed holds the num
     expect(quantityCards(c)[0].querySelector('.kpi-value').textContent).toBe('val:2000000000');
     expect(c.textContent).toContain('Cobertura geográfica: 1 /');
     expect(c.querySelector('.load-err')).toBeNull();
+  });
+});
+
+// ── Sob um recorte sub-UF, a composição e o mapa são os do recorte (v1.108.2) ─────────────
+// Portel + Breves (PA) on PPM, as measured in production: the donut showed the COUNTRY's
+// Leite 70% / Ovos de galinha 28% while the recorte loaded, after it failed and once it had
+// loaded; the tile map was blank while it loaded and drew an "R$ 0 – 0" legend after it
+// failed. The composition now reads the recorte's own products (recorteProducts.js) for ONE
+// year, and every state of that read says what it is.
+describe('ViewOverview — under a sub-UF recorte the composition and the map are the recorte’s', () => {
+  const NACIONAL = [
+    { code: 'L', name: 'Leite', share: 0.7 }, { code: 'O', name: 'Ovos de galinha', share: 0.28 },
+  ];
+  const RECORTE = {
+    ...FIXTURE,
+    topProducts: NACIONAL,   // the national composition, which must NOT reach the donut
+    subUfRequested: true, subUfLoaded: true, subUfLoading: false, subUfLoadError: null,
+    muniYearlySeries: [
+      { year: 2019, cityCode: 1505809, uf: 'PA', value: 1 },
+      { year: 2020, cityCode: 1505809, uf: 'PA', value: 1 },
+    ],
+  };
+  const LIDO = (products) => ({ products, loading: false, unavailable: false, loadError: null });
+  const donut = (c) => c.querySelector('.donut');
+  const rotulos = (c) => donut(c).getAttribute('data-rotulos').split('|');
+  const fatias = (c) => donut(c).getAttribute('data-fatias').split('|').map(Number);
+  const cartao = (c, overline) => [...c.querySelectorAll('.card')]
+    .find((k) => (k.querySelector('.sh-ov') || {}).textContent?.startsWith(overline));
+  let pbm;
+  const renderWith = (extra, read = LIDO([])) => {
+    stubGlobals({ ...RECORTE, ...extra });
+    window.LoadErrorNote = ({ error }) => (error ? <div className="load-err" role="alert">{String(error)}</div> : null);
+    window.SectionHeader = ({ overline, title, action }) => (
+      <div className="sh">
+        <span className="sh-ov">{overline}</span>
+        <span className="sh-title">{title}</span>
+        <span className="sh-action">{action}</span>
+      </div>
+    );
+    window.Donut = (props) => (
+      <div className="donut" data-rotulos={(props.data || []).map((d) => d.name).join('|')}
+           data-fatias={(props.data || []).map((d) => d.share).join('|')} />
+    );
+    window.BrazilTileMap = () => <div className="tilemap" />;
+    pbm = vi.fn(() => read);
+    window.productsByMunicipio = pbm;
+    return render(
+      <ViewOverview families={['mass']} summary={{ munis: ['1505809'] }} database="ibge_ppm" conventions={{}} />,
+    ).container;
+  };
+  afterEach(() => { delete window.LoadErrorNote; delete window.productsByMunicipio; });
+
+  it('loaded: the slices are the recorte’s products in its year — never the national shares', () => {
+    const c = renderWith({}, LIDO([
+      { code: 'L', name: 'Leite', measure_kind: 'flow', value: 1 },
+      { code: 'M', name: 'Mel de abelha', measure_kind: 'flow', value: 3 },
+      { code: 'B', name: 'Bovino', measure_kind: 'stock', value: null }, // a herd is no slice
+    ]));
+    expect(rotulos(c)).toEqual(['Mel de abelha', 'Leite']);
+    expect(fatias(c)).toEqual([0.75, 0.25]);
+    expect(cartao(c, 'Composição')).toBeTruthy();
+    expect(c.textContent).toContain('Composição · 2020 · municípios do recorte');
+    // One read, for the recorte's year and the cities that recorded the basket in it.
+    expect(pbm.mock.calls[0][1]).toMatchObject({ startDate: '2020-01-01', endDate: '2020-12-01' });
+    expect(pbm.mock.calls[0][3]).toEqual(['1505809']);
+  });
+
+  it('the recorte on its way: the composition waits, and nothing national stands in', () => {
+    const c = renderWith({ subUfLoaded: false, subUfLoading: true, geoComboPending: true, muniYearlySeries: [] });
+    expect(donut(c)).toBeNull();
+    expect(cartao(c, 'Composição').textContent).toContain('Carregando a composição dos municípios do recorte…');
+    expect(pbm).not.toHaveBeenCalled();
+    // The strip and the series card name the recorte, not a product × UF cross.
+    expect(c.querySelector('.kpi-sub').textContent).toBe('carregando o recorte sub-UF…');
+    expect(c.textContent).toContain('Carregando o recorte territorial…');
+  });
+
+  it('the recorte failed: the composition says so, and no donut is drawn', () => {
+    const c = renderWith({ subUfLoaded: false, subUfLoadError: 'HTTP 503', muniYearlySeries: [] });
+    expect(donut(c)).toBeNull();
+    expect(cartao(c, 'Composição').textContent).toContain('Não foi possível carregar o recorte territorial.');
+    expect(pbm).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['on its way', { products: [], loading: true, unavailable: false, loadError: null },
+      'Carregando a composição dos municípios do recorte…'],
+    ['refused by the banco', { products: [], loading: false, unavailable: true, loadError: null },
+      'Este banco não tem a composição por produto abaixo da UF.'],
+    ['measured empty', LIDO([]),
+      'Os municípios do recorte não registram nenhum produto da cesta no período.'],
+    ['only a herd', LIDO([{ code: 'B', name: 'Bovino', measure_kind: 'stock', value: null }]),
+      'A cesta só tem efetivo de rebanho, que não tem valor monetário.'],
+    ['flows with no value in the convention', LIDO([{ code: 'O', name: 'Ovos', measure_kind: 'flow', value: null }]),
+      'Nenhum produto da cesta tem valor em 2020 na convenção escolhida.'],
+  ])('the products read %s says what it is, with no donut', (_estado, read, texto) => {
+    const c = renderWith({}, read);
+    expect(donut(c)).toBeNull();
+    expect(cartao(c, 'Composição').textContent).toContain(texto);
+  });
+
+  it('the products read failed: its own error note, inside the composition card', () => {
+    const c = renderWith({}, { products: [], loading: false, unavailable: false, loadError: 'HTTP 500' });
+    expect(donut(c)).toBeNull();
+    expect(cartao(c, 'Composição').querySelector('.load-err').textContent).toBe('HTTP 500');
+  });
+
+  it('no recorte: the national composition, unchanged', () => {
+    const c = renderWith({ subUfRequested: false });
+    expect(rotulos(c)).toEqual(['Leite', 'Ovos de galinha']);
+    expect(pbm).not.toHaveBeenCalled();
+  });
+
+  it('the map waits while the recorte loads, and says it failed after — never a blank or "R$ 0 – 0" map', () => {
+    let c = renderWith({ subUfLoaded: false, subUfLoading: true, geoComboPending: true, muniYearlySeries: [], ufData: [] });
+    let mapa = cartao(c, 'Distribuição geográfica');
+    expect(mapa.querySelector('.tilemap')).toBeNull();
+    expect(mapa.textContent).toContain('Carregando o recorte territorial…');
+    expect(mapa.querySelector('.sh-action').textContent).toBe('…');
+    cleanup();
+    c = renderWith({ subUfLoaded: false, subUfLoadError: 'HTTP 503', muniYearlySeries: [], ufData: [] });
+    mapa = cartao(c, 'Distribuição geográfica');
+    expect(mapa.querySelector('.tilemap')).toBeNull();
+    expect(mapa.textContent).toContain('Não foi possível carregar o recorte territorial.');
+    expect(mapa.querySelector('.sh-action').textContent).toBe('—');
+  });
+});
+
+// ── O cubo produto × UF da cesta: a caminho, falhou (v1.108.2) ───────────────────────────
+describe('ViewOverview — the basket’s product × UF cube on its way or failed', () => {
+  const renderWith = (extra) => {
+    stubGlobals({ ...FIXTURE, ...extra });
+    window.LoadErrorNote = ({ error }) => (error ? <div className="load-err" role="alert">{String(error)}</div> : null);
+    return render(
+      <ViewOverview families={['mass']} summary={{}} database="ibge_pevs" conventions={{}} />,
+    ).container;
+  };
+  afterEach(() => { delete window.LoadErrorNote; });
+
+  it('failed beside a UF subset: the value is "—" with the reason, never "…" for good', () => {
+    const c = renderWith({ geoComboPending: false, geoComboLoadError: 'HTTP 503' });
+    const valor = [...c.querySelectorAll('.kpi')].find((k) => /Valor total/.test(k.textContent));
+    expect(valor.querySelector('.kpi-value').textContent).toBe('—');
+    expect(valor.querySelector('.kpi-sub').textContent).toBe('produto × UF não carregado');
+    expect(c.querySelector('.load-err').textContent).toBe('HTTP 503');
+    expect(c.textContent).not.toMatch(/[Cc]ruzando/);
+  });
+
+  it('the map note says whether the basket’s UF split is on its way or failed', () => {
+    let c = renderWith({ notFilteredByBasket: true, basketGeoLoadError: null });
+    expect(c.textContent).toContain('a distribuição por UF da cesta selecionada ainda está carregando');
+    cleanup();
+    c = renderWith({ notFilteredByBasket: true, basketGeoLoadError: 'HTTP 503' });
+    expect(c.textContent).toContain('não foi possível carregar a distribuição por UF da cesta selecionada');
+    expect(c.textContent).not.toContain('ainda está carregando');
   });
 });

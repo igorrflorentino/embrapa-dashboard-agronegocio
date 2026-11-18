@@ -43,6 +43,12 @@ function stubGlobals(filtered) {
   };
   // Widgets → readable DOM.
   window.EmptyCard = ({ children }) => <div className="empty-card">{children}</div>;
+  // NotApplicableNote with the real atom's rule (Atoms.jsx): one line per message, nothing
+  // when every message is empty — a stub that renders an empty box hides a real "nothing".
+  window.NotApplicableNote = ({ note }) => {
+    const msgs = note ? Object.values(note).filter(Boolean) : [];
+    return msgs.length ? <div className="na-note">{msgs.join(' ')}</div> : null;
+  };
   window.KpiCardSpark = ({ label, value }) => (
     <div className="kpi">
       <span className="kpi-label">{label}</span>
@@ -357,5 +363,37 @@ describe('ViewProductProfile — variação anual e a era da moeda', () => {
     const kpi = renderWithBreaks([2019]);    // 2019 já é a moeda nova: o par não atravessa
     expect(kpi.querySelector('.kpi-delta').textContent).toBe('60%');   // 5 → 8
     expect(kpi.querySelector('.kpi-sub').textContent).toBe('2020 vs. 2019');
+  });
+});
+
+// ── Um recorte sub-UF não se aplica aqui — e a tela diz, em todo estado (v1.108.2) ──────
+// This perspective's series exist only for the whole country (or whole UFs): it can apply a
+// sub-UF recorte in no state of it. Until v1.108.2 it showed those numbers under the
+// recorte's chip without a word — while the recorte loaded, after it failed, and once it had
+// loaded alike.
+describe('ViewProductProfile — a sub-UF recorte does not apply, and the screen says so', () => {
+  const ESTADOS = [
+    ['on its way', { subUfLoading: true }],
+    ['failed', { subUfLoadError: 'HTTP 503' }],
+    ['resolved', { subUfLoaded: true }],
+  ];
+  it.each(ESTADOS)('recorte %s → the note', (_estado, extra) => {
+    stubGlobals({ ...FLOW_FIXTURE, subUfRequested: true, ...extra });
+    stubFetch([{ uf: 'PA', value: 8, q_count: 0 }]);
+    const { container } = render(
+      <ViewProductProfile families={['mass']} summary={{}} database="ibge_pevs" conventions={CONV} />,
+    );
+    const nota = container.querySelector('.na-note').textContent;
+    expect(nota).toContain('O recorte territorial abaixo da UF não se aplica a esta perspectiva: a série de cada produto existe só para o Brasil inteiro');
+    expect(nota).toContain('Os números abaixo não se limitam aos municípios escolhidos.');
+  });
+
+  it('no recorte → no note', () => {
+    stubGlobals(FLOW_FIXTURE);
+    stubFetch([{ uf: 'PA', value: 8, q_count: 0 }]);
+    const { container } = render(
+      <ViewProductProfile families={['mass']} summary={{}} database="ibge_pevs" conventions={CONV} />,
+    );
+    expect(container.querySelector('.na-note')).toBeNull();
   });
 });

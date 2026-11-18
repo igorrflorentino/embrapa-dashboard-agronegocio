@@ -8,6 +8,9 @@
 // ~⅔ of PPM's Gold rows yet was invisible until the `q_count` quantity track landed;
 // this is its home.
 
+// window.recorteNaoSeAplica — imported for real, so the view's tests load it on their own.
+import './RecorteNote.jsx';
+
 const { useState: useRbState, useEffect: useRbEffect } = React;
 
 function ViewRebanho({ summary, conventions, database }) {
@@ -143,6 +146,13 @@ function ViewRebanho({ summary, conventions, database }) {
 
   return (
     <>
+      {/* The species series are national and the map is by whole UF: neither can apply a
+          sub-UF recorte, and the screen says so in every state of it (v1.108.2). */}
+      <window.NotApplicableNote note={{
+        recorte: window.recorteNaoSeAplica(filtered,
+          'o efetivo de cada espécie existe aqui só para o Brasil inteiro e por UF inteira.'),
+      }} />
+
       {/* Intro + caveat */}
       <div className="card subtle">
         <window.SectionHeader

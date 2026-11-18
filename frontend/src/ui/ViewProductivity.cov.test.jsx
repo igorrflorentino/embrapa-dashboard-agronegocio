@@ -30,8 +30,12 @@ function stubGlobals(prodData) {
   window.fmtSigned = (v) => `${v >= 0 ? '+' : ''}${v}%`;
   // Widgets → readable DOM.
   window.EmptyCard = ({ children }) => <div className="empty-card">{children}</div>;
-  window.NotApplicableNote = ({ note }) =>
-    note ? <div className="na-note">{note.basket || note.states || ''}</div> : null;
+  // NotApplicableNote with the real atom's rule (Atoms.jsx): one line per message, nothing
+  // when every message is empty — a stub that renders an empty box hides a real "nothing".
+  window.NotApplicableNote = ({ note }) => {
+    const msgs = note ? Object.values(note).filter(Boolean) : [];
+    return msgs.length ? <div className="na-note">{msgs.join(' ')}</div> : null;
+  };
   window.LoadErrorNote = ({ error }) => (error ? <div className="load-err">{error}</div> : null);
   window.KpiCardSpark = ({ label, value }) => (
     <div className="kpi">
@@ -324,5 +328,44 @@ describe('ViewProductivity — piso de área no ranking e no mapa', () => {
     const { container } = render(<ViewProductivity summary={{}} conventions={{}} database="ibge_pam" />);
     expect(container.querySelector('.bar-chart').getAttribute('data-ufs')).toBe('MT,PR');
     expect(container.textContent).not.toContain('Fora da comparação por área');
+  });
+});
+
+// ── Um recorte sub-UF não se aplica aqui — e a tela diz, em todo estado (v1.108.2) ──────
+// This perspective's series exist only for the whole country (or whole UFs): it can apply a
+// sub-UF recorte in no state of it. Until v1.108.2 it showed those numbers under the
+// recorte's chip without a word — while the recorte loaded, after it failed, and once it had
+// loaded alike.
+describe('ViewProductivity — a sub-UF recorte does not apply, and the screen says so', () => {
+  // The view reads its own producer; applyFilters is asked only whether a recorte is set.
+  afterEach(() => { delete window.applyFilters; });
+
+  it.each([
+    ['on its way', { subUfLoading: true }],
+    ['failed', { subUfLoadError: 'HTTP 503' }],
+    ['resolved', { subUfLoaded: true }],
+  ])('recorte %s → the note', (_estado, extra) => {
+    stubGlobals(makeData());
+    window.applyFilters = () => ({ subUfRequested: true, ...extra });
+    const { container } = render(<ViewProductivity summary={{}} conventions={{}} database="ibge_pam" />);
+    const nota = container.querySelector('.na-note').textContent;
+    expect(nota).toContain('O recorte territorial abaixo da UF não se aplica a esta perspectiva: a área e o rendimento existem aqui só por UF inteira.');
+    expect(nota).toContain('Os números abaixo não se limitam aos municípios escolhidos.');
+  });
+
+  it('beside the basket note, both are said', () => {
+    stubGlobals(makeData({ notApplicable: { basket: 'A cesta de produtos não se aplica aqui.' } }));
+    window.applyFilters = () => ({ subUfRequested: true });
+    const { container } = render(<ViewProductivity summary={{}} conventions={{}} database="ibge_pam" />);
+    const nota = container.querySelector('.na-note').textContent;
+    expect(nota).toContain('A cesta de produtos não se aplica aqui.');
+    expect(nota).toContain('O recorte territorial abaixo da UF não se aplica a esta perspectiva');
+  });
+
+  it('no recorte → no note', () => {
+    stubGlobals(makeData());
+    window.applyFilters = () => ({ subUfRequested: false });
+    const { container } = render(<ViewProductivity summary={{}} conventions={{}} database="ibge_pam" />);
+    expect(container.querySelector('.na-note')).toBeNull();
   });
 });

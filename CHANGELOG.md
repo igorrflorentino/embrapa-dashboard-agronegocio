@@ -7,6 +7,88 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.108.2] - 2026-11-18
+
+**Um recorte abaixo da UF deixa de exibir números do Brasil ou da UF inteira sob o seu chip, com
+ele carregando, falhado ou carregado.** Fecha as pendências das Notas da v1.108.1. O caso que as
+abriu: na Visão geral do IBGE PPM com Portel e Breves (PA), "Composição · Participação por produto"
+mostrava a participação NACIONAL (Leite 70%, Ovos de galinha 28%) nos três estados do recorte, e
+"Linhas" mostrava 134 mil, a fração do Pará inteiro, também nos três. Carregado, o recorte agora
+mostra os dois municípios: Leite 99% e Ovos de galinha 1% em 2025, e 1 mil linhas. Uma tela cuja
+série não existe abaixo da UF passa a dizê-lo, em vez de se calar.
+
+### Corrigido
+- **Visão geral sob recorte sub-UF.**
+  - "Composição" lê o que os municípios do recorte produzem (`POST /api/products-by-municipio`,
+    no último ano do período com registro no recorte) e diz isso no título: "Composição · 2025 ·
+    municípios do recorte". A caminho: "Carregando a composição dos municípios do recorte…"; com
+    falha, o aviso de falha.
+  - "Linhas" (Seleção ativa) dimensiona o recorte pela fração dos municípios. Com o recorte a
+    caminho, "…"; falhado, "—", com o título que "UFs cobertas" já usava.
+  - O mosaico de UFs não fica com as peças vazias enquanto o recorte carrega ("Carregando o
+    recorte territorial…"), nem com a legenda "R$ 0 – 0" depois de uma falha ("Não foi possível
+    carregar o recorte territorial.").
+- **Concentração sob recorte sub-UF.** A metade por produto (curva de Lorenz e "Concentração nos
+  3 maiores produtos") lia a série nacional. Agora lê os produtos dos municípios do recorte (Portel
+  e Breves: 100% em 2 produtos, Gini 0,49). A caminho ou falhado, os indicadores ficam em "…" ou
+  "—" e os cards dizem o motivo.
+- **Valor × Volume sob recorte sub-UF.** As composições históricas por produto são nacionais e
+  deixam de aparecer sob o recorte, em qualquer estado dele, com um aviso que diz por quê. Os
+  totais esperam os municípios: "Carregando o recorte territorial…".
+- **Perfil do produto, Comparativo entre produtos, Rebanho e Produtividade.** As séries destas
+  perspectivas existem só para o Brasil inteiro ou por UF inteira, e o recorte sub-UF não se aplica
+  a elas. Agora dizem isso em qualquer estado do recorte: "O recorte territorial abaixo da UF não
+  se aplica a esta perspectiva: … Os números abaixo não se limitam aos municípios escolhidos."
+- **Cubo UF × ano da cesta (`geoYearly`) falhado.** Com uma cesta de produtos e um filtro de UF,
+  Visão geral e Valor × Volume diziam "cruzando produto × UF…" para sempre. Agora os números ficam
+  em "—" com "produto × UF não carregado" e o aviso de falha. O Comparativo entre territórios diz
+  que os estados não carregaram, em vez de esperar.
+- **Aviso do mapa sob uma cesta (Visão geral e Geografia).** Dizia que não havia grão produto × UF
+  para recortar o mapa, o que era falso: o cruzamento existe e estava a caminho ou tinha falhado.
+  Agora diz qual dos dois.
+- **Exportar CSV.**
+  - Perfil do produto e Comparativo entre produtos recusam o arquivo sob recorte sub-UF
+    (`recorte-nao-se-aplica`). Ele trazia a série nacional em linhas rotuladas com o recorte, e
+    esperar não adiantaria.
+  - Visão geral e Valor × Volume ganham motivo próprio para o cruzamento cesta × UF a caminho ou
+    falhado (`carregando-cesta-uf`, `falha-cesta-uf`).
+- **Perfil do território.** "O que 2 municípios selecionados produzem" (era "produz").
+
+### Alterado
+- `window.geoYearly(...)` devolve `{ rows, priceBase, loading, loadError }`, como as leituras por
+  município da v1.108.1; `window.geoYearlyPriceBase` saiu.
+- `applyFilters` ganha `geoComboLoadError`, `basketGeoLoadError`, `subUfRequested` (um recorte
+  sub-UF foi pedido, em qualquer estado) e `_shares.muniShare`.
+- `window.recorteProducts(...)` (novo, `frontend/src/ui/recorteProducts.js`): o que os municípios
+  do recorte produzem, nos mesmos três estados.
+- `window.recorteNaoSeAplica(...)` e `window.cestaPorUfMotivo(...)` (novos, em `RecorteNote.jsx`):
+  o texto dos avisos, escrito num lugar só.
+- O contrato está em `docs/frontend_data_contract.md` §3.6.
+
+### Testes
+- vitest: 1825 passando em 102 arquivos (eram 1735 em 101), com cada estado de cada tela.
+- Contraprova: com as fontes desta versão trocadas pelas do `main`, 81 testes falham em 19
+  arquivos (passam 1734), e o arquivo de `recorteProducts` nem carrega. Os que continuam passando
+  são as contraprovas deliberadas ("sem recorte", "um lugar só").
+- Verificado numa prévia local contra a produção (só leitura), com 503 e atraso injetados em
+  `/api/municipio-yearly`, `/api/products-by-municipio` e `/api/geo-yearly`:
+  - Visão geral do IBGE PPM com Portel e Breves a caminho, falhada, carregada e com só a
+    composição falhada;
+  - Visão geral e Valor × Volume com uma cesta e um filtro de UF, o cruzamento falhado;
+  - Concentração falhada e carregada; Valor × Volume falhado;
+  - os avisos de Perfil do produto, Comparativo entre produtos, Rebanho e Produtividade (IBGE PAM);
+  - a recusa do CSV e o plural do Perfil do território.
+
+### Notas
+- **Pendência achada no caminho, fora do escopo desta versão:** com um filtro de UF inteira, sem
+  recorte sub-UF, as séries por produto continuam nacionais sob o chip da UF. Isso vale para a
+  composição da Visão geral, as composições históricas de Valor × Volume (o Leite do Pará aparece
+  com o valor do Brasil, até R$ 90 bi), Perfil do produto e Comparativo entre produtos. É a mesma
+  regra com outro gatilho; nenhuma delas mudou nesta versão.
+- O card "Qualidade dos dados · agregado" da Visão geral conta o acervo do banco inteiro sob
+  qualquer filtro de geografia. O indicador ao lado diz "acervo do banco"; o card não diz.
+- O mapa de calor da Geografia com 2 municípios em 40 anos segue sem desenhar (Notas da v1.108.1).
+
 ## [1.108.1] - 2026-11-18
 
 **As leituras por município passam a responder "carregando", "falhou" ou "vazio", e nenhuma tela

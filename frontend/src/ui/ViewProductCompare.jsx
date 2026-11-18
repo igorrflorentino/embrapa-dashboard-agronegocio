@@ -3,6 +3,9 @@
 // correlation. Honours active filters (selectable products limited to
 // the basket) and conventions (currency for the absolute table column).
 
+// window.recorteNaoSeAplica — imported for real, so the view's tests load it on their own.
+import './RecorteNote.jsx';
+
 const { useState: usePCState } = React;
 
 function ViewProductCompare({ summary, conventions, database }) {
@@ -131,6 +134,13 @@ function ViewProductCompare({ summary, conventions, database }) {
 
   return (
     <>
+      {/* The per-product series are national: they cannot apply a sub-UF recorte, and the
+          screen says so in every state of it (v1.108.2). */}
+      <window.NotApplicableNote note={{
+        recorte: window.recorteNaoSeAplica(filtered,
+          'as séries por produto existem só para o Brasil inteiro.'),
+      }} />
+
       {/* Selector */}
       <div className="pp-selector">
         <span className="pp-selector-label">Comparar produtos <small className="pc-cap">(até {MAX})</small></span>

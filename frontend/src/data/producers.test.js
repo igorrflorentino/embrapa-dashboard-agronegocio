@@ -396,18 +396,21 @@ describe('produtores data-blocked devolvem AUSÊNCIA nas medidas', () => {
 describe('the cubes and their price base read one response', () => {
   const OUTUBRO = { column: null, month: '2026-10', fxDate: null };
 
-  it('geoYearly and geoYearlyPriceBase: one fetch, the rows and the month', async () => {
+  it('geoYearly carries its base in the same state object, from one fetch', async () => {
     const f = vi.fn(() => jsonRes({ ufYearly: [{ year: 2024, uf: 'PA', value: 1 }], priceBase: OUTUBRO }));
     const w = await loadAll(f);
     w.bancoById = () => ({ provides: ['geo'] });
-    expect(w.geoYearly('ibge_pevs', {})).toBeNull();            // cold
-    expect(w.geoYearlyPriceBase('ibge_pevs', {})).toBeNull();   // same key: no second fetch
+    expect(w.geoYearly('ibge_pevs', {}))                         // cold
+      .toEqual({ rows: null, priceBase: null, loading: true, loadError: null });
     expect(f).toHaveBeenCalledTimes(1);
     expect(urlOf(f)).toContain('/api/geo-yearly');
     await tick();
-    expect(w.geoYearly('ibge_pevs', {})).toEqual([{ year: 2024, uf: 'PA', value: 1 }]);
-    expect(w.geoYearlyPriceBase('ibge_pevs', {})).toEqual(OUTUBRO);
+    expect(w.geoYearly('ibge_pevs', {})).toEqual({
+      rows: [{ year: 2024, uf: 'PA', value: 1 }], priceBase: OUTUBRO, loading: false, loadError: null,
+    });
     expect(f).toHaveBeenCalledTimes(1);
+    // The separate accessor is gone (v1.108.2), like municipioYearly's in v1.108.1.
+    expect(w.geoYearlyPriceBase).toBeUndefined();
   });
 
   it('a payload without the base (an app ahead of the build) reads as unknown', async () => {
@@ -416,7 +419,7 @@ describe('the cubes and their price base read one response', () => {
     w.bancoById = () => ({ provides: ['geo'] });
     w.geoYearly('ibge_pevs', {});
     await tick();
-    expect(w.geoYearlyPriceBase('ibge_pevs', {})).toBeNull();
+    expect(w.geoYearly('ibge_pevs', {}).priceBase).toBeNull();
   });
 
   it('municipioYearly carries its base in the same state object, from one POST', async () => {
@@ -443,7 +446,8 @@ describe('the cubes and their price base read one response', () => {
     const f = vi.fn(() => jsonRes({}));
     const w = await loadAll(f);
     w.bancoById = () => ({ provides: [] });
-    expect(w.geoYearlyPriceBase('un_comtrade', {})).toBeNull();
+    expect(w.geoYearly('un_comtrade', {}))
+      .toEqual({ rows: [], priceBase: null, loading: false, loadError: null });
     expect(w.municipioYearly('un_comtrade', {}, ['1500107']))
       .toEqual({ rows: [], priceBase: null, loading: false, loadError: null });
     expect(f).not.toHaveBeenCalled();
@@ -502,6 +506,30 @@ describe('geoMeshState / municipioYearly tell loading, failed and empty apart', 
     }
     expect(read()).toEqual({ rows: null, priceBase: null, loading: false, loadError: 'HTTP 503' });
     expect(f).toHaveBeenCalledTimes(3);
+  });
+
+  // The basket's (UF × year) cube had the same defect one grain up (v1.108.2): a failed
+  // read pended forever, and beside a UF subset VALOR TOTAL said "…" until a reload.
+  it('the basket UF cube is loading while retrying and failed once the retries run out', async () => {
+    const f = failing();
+    const w = await loadAll(f);
+    w.bancoById = () => ({ provides: ['geo'] });
+    const read = () => w.geoYearly('ibge_pam', { basket: ['40124'] });
+    for (let i = 0; i < 3; i++) {
+      expect(read()).toEqual({ rows: null, priceBase: null, loading: true, loadError: null });
+      await tick();
+    }
+    expect(read()).toEqual({ rows: null, priceBase: null, loading: false, loadError: 'HTTP 503' });
+    expect(f).toHaveBeenCalledTimes(3);
+  });
+
+  it('a measured empty basket UF cube is rows [] with no error', async () => {
+    const w = await loadAll(vi.fn(() => jsonRes({ ufYearly: [], priceBase: null })));
+    w.bancoById = () => ({ provides: ['geo'] });
+    w.geoYearly('ibge_pam', { basket: ['40124'] });
+    await tick();
+    expect(w.geoYearly('ibge_pam', { basket: ['40124'] }))
+      .toEqual({ rows: [], priceBase: null, loading: false, loadError: null });
   });
 
   it('a measured empty cube is rows [] with no error', async () => {

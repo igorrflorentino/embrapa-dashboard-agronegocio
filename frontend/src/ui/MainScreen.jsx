@@ -446,11 +446,17 @@ function MainScreen({ filters, view = 'overview', database = 'ibge_pevs', infoPa
     // existe. Mesmo motivo pelo qual `valueShareForRange` saiu daqui na v1.45.0.
     // `_shares.flagShare` continua exposto: como NÚMERO ele é honesto ("esta fração
     // das linhas do Gold carrega as flags marcadas"), só não é um recorte da tela.
-    (_shares.stateShare   ?? 1)
+    // Under a sub-UF recorte the selection is a set of MUNICÍPIOS (muniShare): the
+    // whole-state fraction counted Portel and Breves as all of Pará (v1.108.2).
+    (_shares.muniShare ?? _shares.stateShare ?? 1)
   )) : null;
   const fmtRows = window.fmtRows;  // shared compact mi/mil counter (data.js)
   const rowsTotalLabel = totalRows ? fmtRows(totalRows) : '—';
-  const rowsAfterLabel = rowsAfter != null ? fmtRows(rowsAfter) : '—';
+  // A sub-UF recorte on its way, or failed, has no selection to size yet: same marks and
+  // tooltip as "UFs cobertas" below, never the whole-state estimate in the meantime.
+  const rowsAfterLabel = (_f && _f.subUfLoadError) ? '—'
+    : (_f && _f.subUfLoading) ? '…'
+    : rowsAfter != null ? fmtRows(rowsAfter) : '—';
 
   // ---- Data views ----
   const ViewComponent = window.viewComponent(view) || window.ViewOverview;
@@ -499,7 +505,7 @@ function MainScreen({ filters, view = 'overview', database = 'ibge_pevs', infoPa
             <div className="meta-group-head">Seleção ativa</div>
             <div className="meta-row">
               <span className="meta-label">Linhas</span>
-              <span className="meta-val tnum">
+              <span className="meta-val tnum" title={ufsCoveredTitle}>
                 <strong>{rowsAfterLabel}</strong> <small>de {rowsTotalLabel}</small>
               </span>
             </div>

@@ -8,10 +8,43 @@
 
 // A count fallback names what it leaves out (countUnits.js).
 import './CountUnitNotes.jsx';
+// window.cestaPorUfMotivo, and the recorte's own products (window.recorteProducts).
+import './RecorteNote.jsx';
+import './recorteProducts.js';
 
 function ViewConcentration({ summary, conventions, database }) {
   const filtered = window.applyFilters(summary || {}, database);
   const hasGeo = filtered.ufDataFull.length > 0;
+  const conv = conventions || window.DEFAULT_CONVENTIONS;
+
+  // A sub-UF recorte on its way, or failed, leaves the UF grid EMPTY for want of data, not of
+  // production: "sem dados", "n/d" and "de 0 UFs" read as measurements of an empty recorte
+  // (until v1.108.2). The geographic half waits, or says it failed.
+  const geoEspera = !!filtered.subUfLoading;
+  const geoFalhou = filtered.subUfLoadError || null;
+  // Under a sub-UF recorte the product cross-section is the recorte's own — one year of the
+  // município reader (recorteProducts.js) — never the national per-product series, which
+  // answered for the whole country beneath the recorte's chip. Null without a recorte.
+  const recorteProds = window.recorteProducts
+    ? window.recorteProducts(filtered, summary || {}, database, conv) : null;
+  const prodEspera = !!(recorteProds && recorteProds.loading);
+  const prodFalhou = (recorteProds && recorteProds.loadError) || null;
+  const prodIndisponivel = !!(recorteProds && recorteProds.unavailable);
+  const prodSegura = prodEspera || !!prodFalhou || prodIndisponivel;
+  // The point each product enters the cross-section with: { code, name, v, q }. Nationally,
+  // its latest in-window point; under a recorte, the recorte's year (q there is the count —
+  // the only quantity this view reads, for a value-less basket).
+  const prodPoints = recorteProds
+    ? (recorteProds.products || []).map((p) => ({ code: p.code, name: p.name, v: p.value, q: p.q_count }))
+    : Object.entries(filtered.productTS).map(([code, s]) => {
+        const last = s[s.length - 1];
+        return {
+          code,
+          name: (filtered.products.find(p => p.code === code) || {}).name || code,
+          v: last ? last.v : null,
+          q: last ? last.q : null,
+        };
+      });
 
   // Concentration is a point-in-time cross-section. Label each panel with the year
   // it is ACTUALLY computed over (never a different year): the geo distribution uses
@@ -35,9 +68,12 @@ function ViewConcentration({ summary, conventions, database }) {
     .map((s) => s[s.length - 1]?.y)
     .filter((y) => y != null);
   const prodRagged = prodTerminalYears.some((y) => y !== filtered.yearEnd);
-  const prodYearTag = prodRagged
-    ? `mais recente disponível · ≤ ${filtered.yearEnd}`
-    : `${filtered.yearEnd}${yearPartialCal ? ' (parcial)' : ''}`;
+  // Under a recorte the cross-section is ONE year, the recorte's, and the tag says whose.
+  const prodYearTag = recorteProds
+    ? (recorteProds.year != null ? `${recorteProds.year} · municípios do recorte` : 'municípios do recorte')
+    : prodRagged
+      ? `mais recente disponível · ≤ ${filtered.yearEnd}`
+      : `${filtered.yearEnd}${yearPartialCal ? ' (parcial)' : ''}`;
   const geoYear = filtered.ufLatestYear;
   const geoPartial = filtered.ufYearPartial || (yearPartialCal && geoYear === filtered.yearEnd);
   const geoYearTag = `${geoYear}${geoPartial ? ' (parcial)' : ''}`;
@@ -56,13 +92,11 @@ function ViewConcentration({ summary, conventions, database }) {
   // instead of all-zero. The metric formulas are measure-agnostic; we feed them ONE count
   // group (countUnits.js) — the herd's heads, else the counted production — and relabel
   // "valor" with what it counts. Never the whole family: heads plus eggs is not a measure.
+  // `> 0` already answers false for an absent value (null > 0, undefined > 0): no `|| 0`.
   const anyValue = realUf.some(u => u.value > 0)
-    || Object.values(filtered.productTS).some(s => (s[s.length - 1]?.v || 0) > 0);
+    || prodPoints.some(p => p.v > 0);
   const countGroups = filtered.countGroups || [];
-  const lastQ = (code) => {
-    const s = filtered.productTS[code];
-    return (s && s.length && s[s.length - 1].q) || 0;
-  };
+  const lastQ = (code) => (prodPoints.find(p => p.code === code) || {}).q || 0;
   const countGroup = anyValue ? null
     : (window.countGroupWithData(countGroups, realUf)
       || countGroups.find(g => !g.mixed && g.products.some(p => lastQ(p.code) > 0))
@@ -76,7 +110,7 @@ function ViewConcentration({ summary, conventions, database }) {
     c => (filtered.products.find(p => p.code === c) || {}).measure_kind === 'stock');
   const measureLabel = onCount ? countGroup.plural : 'valor';
   const ufMeasure   = u => (onCount ? (u[countGroup.key] || 0) : u.value);
-  const prodMeasure = last => (onCount ? (last?.q || 0) : (last ? last.v : 0));
+  const prodMeasure = pt => (onCount ? (pt.q || 0) : pt.v);
 
   const ufValues = realUf.map(ufMeasure).filter(v => v > 0);
   // Override `value` with the active measure so every downstream consumer (bars,
@@ -88,12 +122,9 @@ function ViewConcentration({ summary, conventions, database }) {
   // ── Product distribution (latest year, by product) ──────────────────
   // On a count, only the group's own products enter (each by its own count): the rest of
   // the basket counts something else, and is named on screen (CountLeftOutNote).
-  const prodValues = Object.entries(filtered.productTS)
-    .filter(([code]) => !onCount || inCountGroup.has(code))
-    .map(([code, s]) => {
-      const last = s[s.length - 1];
-      return { code, name: (filtered.products.find(p => p.code === code) || {}).name || code, value: prodMeasure(last) };
-    })
+  const prodValues = prodPoints
+    .filter(p => !onCount || inCountGroup.has(p.code))
+    .map(p => ({ code: p.code, name: p.name, value: prodMeasure(p) }))
     .filter(p => p.value > 0)
     .sort((a, b) => b.value - a.value);
 
@@ -159,9 +190,32 @@ function ViewConcentration({ summary, conventions, database }) {
   const ufG   = giniInfo(ufValues.length, ufGini);
   const prodG = giniInfo(prodValues.length, prodGini);
 
+  // What a held number shows — "…" on its way, "—" failed or unanswerable — and why. Same
+  // marks as the Visão geral strip, so one recorte reads the same on every screen.
+  const geoSegura = geoEspera || !!geoFalhou;
+  const geoKpi = (val) => (geoFalhou ? '—' : geoEspera ? '…' : val);
+  const geoSub = (txt) => (geoFalhou ? 'recorte sub-UF não carregado'
+    : geoEspera ? 'carregando o recorte sub-UF…' : txt);
+  const prodKpi = (val) => ((prodFalhou || prodIndisponivel) ? '—' : prodEspera ? '…' : val);
+  const prodSub = (txt) => (geoFalhou ? 'recorte sub-UF não carregado'
+    : prodFalhou ? 'produtos do recorte não carregados'
+    : prodIndisponivel ? 'sem composição por produto abaixo da UF'
+    : prodEspera ? 'carregando os produtos do recorte…' : txt);
+  const aviso = (texto) => (
+    <p className="caption" style={{ padding: '24px 4px', textAlign: 'center' }}>{texto}</p>
+  );
+  const geoAviso = () => aviso(geoFalhou
+    ? 'Não foi possível carregar o recorte territorial.'
+    : 'Carregando o recorte territorial…');
+  const prodAviso = () => aviso(geoFalhou ? 'Não foi possível carregar o recorte territorial.'
+    : prodFalhou ? 'Não foi possível carregar os produtos dos municípios do recorte.'
+    : prodIndisponivel ? 'Este banco não tem a composição por produto abaixo da UF.'
+    : 'Carregando os produtos dos municípios do recorte…');
+
   return (
     <>
       <window.RecorteNote recorte={filtered.recorte} />
+      <window.LoadErrorNote error={geoFalhou || prodFalhou} />
       {onCount && (
         <div style={{ margin: '0 2px 4px' }}>
           <p className="caption" style={{ margin: 0 }}>
@@ -178,16 +232,15 @@ function ViewConcentration({ summary, conventions, database }) {
       )}
 
       {/* The per-UF concentration reads the all-products UF grid until the product×UF
-          cube lands (or when no basket narrows it), so under a basket chip the geographic
-          Gini/HHI reflect ALL products — surface that honestly instead of letting the
-          number read as basket-specific (mirrors ViewGeography's notFilteredByBasket note). */}
+          cube lands (or when it failed), so under a basket chip the geographic Gini/HHI
+          reflect ALL products — surface that honestly instead of letting the number read
+          as basket-specific (mirrors ViewGeography's notFilteredByBasket note). */}
       {filtered.notFilteredByBasket && (
         <div className="card subtle" style={{ marginBottom: 12 }}>
           <p className="caption" style={{ padding: '10px 12px' }}>
             A concentração <strong>geográfica (UF)</strong> reflete <strong>todos os produtos</strong>
-            do banco — a cesta selecionada não recorta a distribuição territorial (não há grão
-            produto × UF nesta agregação). A concentração <strong>por produto</strong> abaixo já
-            considera a cesta.
+            do banco — {window.cestaPorUfMotivo(filtered)}. A concentração <strong>por
+            produto</strong> abaixo já considera a cesta.
           </p>
         </div>
       )}
@@ -198,23 +251,23 @@ function ViewConcentration({ summary, conventions, database }) {
         <>
         <window.KpiCardSpark
           label="Gini · geográfico (UF)"
-          value={ufG.value}
-          sub={ufG.label}
+          value={geoKpi(ufG.value)}
+          sub={geoSub(ufG.label)}
         />
         <window.KpiCardSpark
           label="HHI · geográfico (UF)"
-          value={hhiValue(ufHHI)}
-          sub={hhiBand(ufHHI).label}
+          value={geoKpi(hhiValue(ufHHI))}
+          sub={geoSub(hhiBand(ufHHI).label)}
         />
         <window.KpiCardSpark
           label="Concentração nas 5 maiores UFs"
-          value={window.fmtPct(top5UF)}
-          sub={`de ${ufSorted.length} ${ufSorted.length === 1 ? 'UF' : 'UFs'} com produção`}
+          value={geoKpi(window.fmtPct(top5UF))}
+          sub={geoSub(`de ${ufSorted.length} ${ufSorted.length === 1 ? 'UF' : 'UFs'} com produção`)}
         />
         <window.KpiCardSpark
           label="Concentração nos 3 maiores produtos"
-          value={window.fmtPct(top3Prod)}
-          sub={`de ${prodValues.length} ${prodValues.length === 1 ? 'produto' : 'produtos'} na cesta`}
+          value={prodKpi(window.fmtPct(top3Prod))}
+          sub={prodSub(`de ${prodValues.length} ${prodValues.length === 1 ? 'produto' : 'produtos'} ${recorteProds ? 'no recorte' : 'na cesta'}`)}
         />
         </>
         ) : (
@@ -243,20 +296,24 @@ function ViewConcentration({ summary, conventions, database }) {
         {hasGeo && (
         <div className="card">
           <window.SectionHeader
-            overline={`Curva de Lorenz · geográfica · ${geoYearTag}`}
-            title={`Desigualdade entre UFs · Gini ${ufG.value}`}
-            action={<span className="caption" style={{ color: ufG.color }}>{ufG.label}</span>}
+            overline={geoSegura ? 'Curva de Lorenz · geográfica' : `Curva de Lorenz · geográfica · ${geoYearTag}`}
+            title={`Desigualdade entre UFs · Gini ${geoKpi(ufG.value)}`}
+            action={geoSegura ? null
+              : <span className="caption" style={{ color: ufG.color }}>{ufG.label}</span>}
           />
-          <window.LorenzCurve values={ufValues} color="var(--viz-2)" xLabel="UFs" yLabel={measureLabel} height={300} />
+          {geoSegura ? geoAviso()
+            : <window.LorenzCurve values={ufValues} color="var(--viz-2)" xLabel="UFs" yLabel={measureLabel} height={300} />}
         </div>
         )}
         <div className="card">
           <window.SectionHeader
             overline={`Curva de Lorenz · por produto · ${prodYearTag}`}
-            title={`Desigualdade entre produtos · Gini ${prodG.value}`}
-            action={<span className="caption" style={{ color: prodG.color }}>{prodG.label}</span>}
+            title={`Desigualdade entre produtos · Gini ${prodKpi(prodG.value)}`}
+            action={prodSegura ? null
+              : <span className="caption" style={{ color: prodG.color }}>{prodG.label}</span>}
           />
-          <window.LorenzCurve values={prodValues.map(p => p.value)} color="var(--viz-5)" xLabel="produtos" yLabel={measureLabel} height={300} />
+          {prodSegura ? prodAviso()
+            : <window.LorenzCurve values={prodValues.map(p => p.value)} color="var(--viz-5)" xLabel="produtos" yLabel={measureLabel} height={300} />}
         </div>
       </div>
 
@@ -265,9 +322,10 @@ function ViewConcentration({ summary, conventions, database }) {
         {hasGeo && (
         <div className="card">
           <window.SectionHeader
-            overline={`Participação acumulada · UFs · ${geoYearTag}`}
+            overline={geoSegura ? 'Participação acumulada · UFs' : `Participação acumulada · UFs · ${geoYearTag}`}
             title="Quem concentra a produção"
           />
+          {geoSegura ? geoAviso() : (
           <div className="conc-list">
             {(() => {
               const total = ufSorted.reduce((s, u) => s + u.value, 0) || 1;
@@ -292,6 +350,7 @@ function ViewConcentration({ summary, conventions, database }) {
               <span className="caption">acum.</span>
             </div>
           </div>
+          )}
         </div>
         )}
 
@@ -305,21 +364,21 @@ function ViewConcentration({ summary, conventions, database }) {
             <div className="conc-hhi-row">
               <span className="conc-hhi-label">Geográfico (UF)</span>
               <div className="conc-hhi-track">
-                <div className="conc-hhi-fill" style={{ width: Math.min(100, ((ufHHI || 0) / 10000) * 100) + '%', background: hhiBand(ufHHI).color }}></div>
+                <div className="conc-hhi-fill" style={{ width: (geoSegura ? 0 : Math.min(100, ((ufHHI || 0) / 10000) * 100)) + '%', background: hhiBand(ufHHI).color }}></div>
                 <span className="conc-hhi-mark" style={{ left: '15%' }} title="1500"></span>
                 <span className="conc-hhi-mark" style={{ left: '25%' }} title="2500"></span>
               </div>
-              <span className="conc-hhi-val tnum">{hhiValue(ufHHI)}</span>
+              <span className="conc-hhi-val tnum">{geoKpi(hhiValue(ufHHI))}</span>
             </div>
             )}
             <div className="conc-hhi-row">
               <span className="conc-hhi-label">Por produto</span>
               <div className="conc-hhi-track">
-                <div className="conc-hhi-fill" style={{ width: Math.min(100, ((prodHHI || 0) / 10000) * 100) + '%', background: hhiBand(prodHHI).color }}></div>
+                <div className="conc-hhi-fill" style={{ width: (prodSegura ? 0 : Math.min(100, ((prodHHI || 0) / 10000) * 100)) + '%', background: hhiBand(prodHHI).color }}></div>
                 <span className="conc-hhi-mark" style={{ left: '15%' }}></span>
                 <span className="conc-hhi-mark" style={{ left: '25%' }}></span>
               </div>
-              <span className="conc-hhi-val tnum">{hhiValue(prodHHI)}</span>
+              <span className="conc-hhi-val tnum">{prodKpi(hhiValue(prodHHI))}</span>
             </div>
             <dl className="conc-scale">
               <dt><span className="conc-dot" style={{ background: 'var(--ok)' }}></span>&lt; 1500</dt><dd>baixa concentração</dd>

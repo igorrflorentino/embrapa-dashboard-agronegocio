@@ -4,7 +4,7 @@
 // rendering. Worked fixture: UF values [75, 25] → HHI = 75² + 25² = 6250, Gini =
 // 0.25; product values [60, 40].
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render } from '@testing-library/react';
 // The REAL RecorteNote, registered on window exactly as main.jsx loads it: it is a pure
 // four-line component, and stubbing it away would hide the very disclosure these views
@@ -29,6 +29,7 @@ function stubGlobals(filtered) {
   );
   window.SectionHeader = () => null;
   window.LorenzCurve = () => null;
+  window.LoadErrorNote = ({ error }) => (error ? <div className="load-err">{String(error)}</div> : null);
 }
 
 let ViewConcentration;
@@ -186,5 +187,102 @@ describe('ViewConcentration — conjunto vazio não é "0% de concentração"', 
     expect(
       container.querySelector('.kpi[data-label="Concentração nas 5 maiores UFs"] .kpi-value')?.textContent,
     ).toBe('100%');
+  });
+});
+
+// ── Sob um recorte sub-UF (v1.108.2) ───────────────────────────────────────────────────
+// While the recorte loaded, or after it failed, the UF grid was EMPTY for want of data, and
+// the strip read "n/d · sem dados" and "de 0 UFs com produção" — a measurement of an empty
+// recorte. The product half, meanwhile, read the NATIONAL per-product series under the
+// recorte's chip. Now the geographic half waits ("…") or says it failed ("—"), and the
+// product half is the recorte's own products in one year (recorteProducts.js).
+describe('ViewConcentration — under a sub-UF recorte', () => {
+  const kpi = (c, l) => c.querySelector(`.kpi[data-label="${l}"]`);
+  const valor = (c, l) => kpi(c, l).querySelector('.kpi-value').textContent;
+  const sub = (c, l) => kpi(c, l).querySelector('.kpi-sub').textContent;
+  const TODOS = ['Gini · geográfico (UF)', 'HHI · geográfico (UF)',
+    'Concentração nas 5 maiores UFs', 'Concentração nos 3 maiores produtos'];
+  const RECORTE = {
+    ...FIXTURE,
+    yearStart: 2019,
+    subUfRequested: true, subUfLoaded: true, subUfLoading: false, subUfLoadError: null,
+    muniYearlySeries: [{ year: 2020, cityCode: 1505809, uf: 'PA', value: 1 }],
+  };
+  const LIDO = (products) => ({ products, loading: false, unavailable: false, loadError: null });
+  let pbm;
+  const renderWith = (extra, read = LIDO([])) => {
+    stubGlobals({ ...RECORTE, ...extra });
+    window.SectionHeader = ({ overline, title }) => (
+      <div className="sh"><span className="sh-ov">{overline}</span><span className="sh-title">{title}</span></div>
+    );
+    pbm = vi.fn(() => read);
+    window.productsByMunicipio = pbm;
+    return render(
+      <ViewConcentration summary={{ munis: ['1505809'] }} conventions={{}} database="ibge_pevs" />,
+    ).container;
+  };
+  afterEach(() => { delete window.productsByMunicipio; });
+
+  it('on its way: every number waits with "…", and nothing reads as an empty recorte', () => {
+    const c = renderWith({ subUfLoaded: false, subUfLoading: true, ufData: [], muniYearlySeries: [] });
+    for (const l of TODOS) expect(valor(c, l)).toBe('…');
+    expect(sub(c, 'HHI · geográfico (UF)')).toBe('carregando o recorte sub-UF…');
+    expect(sub(c, 'Concentração nos 3 maiores produtos')).toBe('carregando os produtos do recorte…');
+    expect(c.textContent).not.toMatch(/sem dados|n\/d|de 0 UFs/);
+    expect(c.textContent).toContain('Carregando o recorte territorial…');
+    expect(c.querySelector('.load-err')).toBeNull();
+    expect(pbm).not.toHaveBeenCalled();
+  });
+
+  it('failed: "—" everywhere, the error noted once, and nothing says it is still coming', () => {
+    const c = renderWith({ subUfLoaded: false, subUfLoadError: 'HTTP 503', ufData: [], muniYearlySeries: [] });
+    for (const l of TODOS) expect(valor(c, l)).toBe('—');
+    expect(sub(c, 'Gini · geográfico (UF)')).toBe('recorte sub-UF não carregado');
+    expect(sub(c, 'Concentração nos 3 maiores produtos')).toBe('recorte sub-UF não carregado');
+    expect(c.querySelectorAll('.load-err')).toHaveLength(1);
+    expect(c.textContent).not.toMatch(/sem dados|n\/d|[Cc]arregando/);
+  });
+
+  it('resolved: the product half is the recorte’s own products, in its year', () => {
+    const c = renderWith({}, LIDO([
+      { code: 'P1', name: 'Açaí', value: 90, q_count: null },
+      { code: 'P2', name: 'Castanha', value: 10, q_count: null },
+    ]));
+    // Gini [10, 90] = 0,40 — the national FIXTURE.productTS [60, 40] would give 0,10.
+    expect(c.textContent).toContain('Desigualdade entre produtos · Gini 0,40');
+    expect(sub(c, 'Concentração nos 3 maiores produtos')).toBe('de 2 produtos no recorte');
+    expect(c.textContent).toContain('Curva de Lorenz · por produto · 2020 · municípios do recorte');
+    // The geographic half is the recorte's grid, shown as measured.
+    expect(valor(c, 'HHI · geográfico (UF)')).toBe('6.250');
+  });
+
+  it.each([
+    ['failed', { products: [], loading: false, unavailable: false, loadError: 'HTTP 500' },
+      '—', 'produtos do recorte não carregados'],
+    ['refused by the banco', { products: [], loading: false, unavailable: true, loadError: null },
+      '—', 'sem composição por produto abaixo da UF'],
+    ['on its way', { products: [], loading: true, unavailable: false, loadError: null },
+      '…', 'carregando os produtos do recorte…'],
+  ])('the products read %s holds the product half only', (_estado, read, marca, motivo) => {
+    const c = renderWith({}, read);
+    expect(valor(c, 'Concentração nos 3 maiores produtos')).toBe(marca);
+    expect(sub(c, 'Concentração nos 3 maiores produtos')).toBe(motivo);
+    expect(c.textContent).toContain(`Desigualdade entre produtos · Gini ${marca}`);
+    expect(valor(c, 'HHI · geográfico (UF)')).toBe('6.250'); // the recorte's grid is in
+  });
+
+  it('measured empty: the recorte has no product of the basket — a real answer', () => {
+    const c = renderWith({}, LIDO([]));
+    expect(valor(c, 'Concentração nos 3 maiores produtos')).toBe('—');
+    expect(sub(c, 'Concentração nos 3 maiores produtos')).toBe('de 0 produtos no recorte');
+    expect(c.querySelector('.load-err')).toBeNull();
+  });
+
+  it('the basket note says whether the UF split is on its way or failed', () => {
+    let c = renderWith({ subUfRequested: false, notFilteredByBasket: true, basketGeoLoadError: null });
+    expect(c.textContent).toContain('a distribuição por UF da cesta selecionada ainda está carregando');
+    cleanup();
+    c = renderWith({ subUfRequested: false, notFilteredByBasket: true, basketGeoLoadError: 'HTTP 503' });
+    expect(c.textContent).toContain('não foi possível carregar a distribuição por UF da cesta selecionada');
   });
 });

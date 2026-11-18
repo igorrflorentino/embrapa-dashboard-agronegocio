@@ -23,6 +23,12 @@ function stubGlobals(filtered) {
     <div className="sh"><span className="sh-ov">{overline}</span><span className="sh-title">{title}</span></div>
   );
   window.EmptyCard = ({ children }) => <div className="card subtle">{children}</div>;
+  // NotApplicableNote with the real atom's rule (Atoms.jsx): one line per message, nothing
+  // when every message is empty — a stub that renders an empty box hides a real "nothing".
+  window.NotApplicableNote = ({ note }) => {
+    const msgs = note ? Object.values(note).filter(Boolean) : [];
+    return msgs.length ? <div className="na-note">{msgs.join(' ')}</div> : null;
+  };
   window.UnitFamilyTag = ({ family }) => <span className="uft">{family}</span>;
   window.KpiCardSpark = ({ label, value, sub }) => (
     <div className="kpi"><span className="kpi-label">{label}</span><span className="kpi-value">{value}</span><span className="kpi-sub">{sub}</span></div>
@@ -132,5 +138,31 @@ describe('ViewRebanho — the herd (efetivo) perspective', () => {
     });
     const { container } = render(<ViewRebanho summary={{}} database="ibge_ppm" conventions={conv()} />);
     expect(container.textContent).toContain('Nenhum rebanho');
+  });
+});
+
+// ── Um recorte sub-UF não se aplica aqui — e a tela diz, em todo estado (v1.108.2) ──────
+// This perspective's series exist only for the whole country (or whole UFs): it can apply a
+// sub-UF recorte in no state of it. Until v1.108.2 it showed those numbers under the
+// recorte's chip without a word — while the recorte loaded, after it failed, and once it had
+// loaded alike.
+describe('ViewRebanho — a sub-UF recorte does not apply, and the screen says so', () => {
+  const conv = () => window.DEFAULT_CONVENTIONS;
+  it.each([
+    ['on its way', { subUfLoading: true }],
+    ['failed', { subUfLoadError: 'HTTP 503' }],
+    ['resolved', { subUfLoaded: true }],
+  ])('recorte %s → the note', (_estado, extra) => {
+    stubGlobals({ ...FIXTURE, subUfRequested: true, ...extra });
+    const { container } = render(<ViewRebanho summary={{}} database="ibge_ppm" conventions={conv()} />);
+    const nota = container.querySelector('.na-note').textContent;
+    expect(nota).toContain('O recorte territorial abaixo da UF não se aplica a esta perspectiva: o efetivo de cada espécie existe aqui só para o Brasil inteiro e por UF inteira.');
+    expect(nota).toContain('Os números abaixo não se limitam aos municípios escolhidos.');
+  });
+
+  it('no recorte → no note', () => {
+    stubGlobals(FIXTURE);
+    const { container } = render(<ViewRebanho summary={{}} database="ibge_ppm" conventions={conv()} />);
+    expect(container.querySelector('.na-note')).toBeNull();
   });
 });

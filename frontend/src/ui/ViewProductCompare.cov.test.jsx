@@ -39,6 +39,12 @@ function stubGlobals(filtered) {
     count: { label: 'Contagem' },
   };
 
+  // NotApplicableNote with the real atom's rule (Atoms.jsx): one line per message, nothing
+  // when every message is empty — a stub that renders an empty box hides a real "nothing".
+  window.NotApplicableNote = ({ note }) => {
+    const msgs = note ? Object.values(note).filter(Boolean) : [];
+    return msgs.length ? <div className="na-note">{msgs.join(' ')}</div> : null;
+  };
   // Composed widgets — capture / render markers.
   window.SectionHeader = ({ overline, title, action }) => (
     <div className="sh">
@@ -353,5 +359,30 @@ describe('ViewProductCompare — ano parcial', () => {
     expect([...container.querySelectorAll('.pc-table th')].map((t) => t.textContent))
       .toContain('Magnitude (2020)');
     expect(container.textContent).not.toContain('(parcial)');
+  });
+});
+
+// ── Um recorte sub-UF não se aplica aqui — e a tela diz, em todo estado (v1.108.2) ──────
+// This perspective's series exist only for the whole country (or whole UFs): it can apply a
+// sub-UF recorte in no state of it. Until v1.108.2 it showed those numbers under the
+// recorte's chip without a word — while the recorte loaded, after it failed, and once it had
+// loaded alike.
+describe('ViewProductCompare — a sub-UF recorte does not apply, and the screen says so', () => {
+  it.each([
+    ['on its way', { subUfLoading: true }],
+    ['failed', { subUfLoadError: 'HTTP 503' }],
+    ['resolved', { subUfLoaded: true }],
+  ])('recorte %s → the note', (_estado, extra) => {
+    stubGlobals({ ...flowFixture(), subUfRequested: true, ...extra });
+    const { container } = render(<ViewProductCompare summary={{}} conventions={{}} database="ibge_pevs" />);
+    const nota = container.querySelector('.na-note').textContent;
+    expect(nota).toContain('O recorte territorial abaixo da UF não se aplica a esta perspectiva: as séries por produto existem só para o Brasil inteiro.');
+    expect(nota).toContain('Os números abaixo não se limitam aos municípios escolhidos.');
+  });
+
+  it('no recorte → no note', () => {
+    stubGlobals(flowFixture());
+    const { container } = render(<ViewProductCompare summary={{}} conventions={{}} database="ibge_pevs" />);
+    expect(container.querySelector('.na-note')).toBeNull();
   });
 });

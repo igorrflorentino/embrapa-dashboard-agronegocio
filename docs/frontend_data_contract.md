@@ -230,6 +230,33 @@ município passes the cascade iff it clears every active facet (intersection).
   município); with `available: true` it is a measured "nothing registered". The producers
   (`productsByUf`, `productsByMunicipio`) add `loading` and `loadError` on top, so a screen never
   reads a pending or failed request as an empty place.
+- **The basket's UF cube on the client (v1.108.2).** `window.geoYearly(banco, summary)` — the
+  `GET /api/geo-yearly` cube `applyFilters` reads when a basket subset meets the UF grid —
+  returns `{ rows, priceBase, loading, loadError }`, in the same three states as the two
+  município reads (`contracts.js` § GeoYearlyState; the separate `geoYearlyPriceBase` accessor
+  is gone). Until then it returned the bare rows, `null` both in flight and after a failure,
+  so a failed cube left `geoComboPending` pending for good ("cruzando produto × UF…" forever).
+  `applyFilters` now reports a failure as `basketGeoLoadError`, and as `geoComboLoadError` when
+  a UF subset needed the cross; `geoComboPending` is pending-only.
+- **What a sub-UF recorte can and cannot narrow (v1.108.2).** `applyFilters.subUfRequested` is
+  true whenever a sub-UF recorte is ASKED for — loading, failed or resolved. Three rules hang
+  on it:
+  - *The recorte's products.* `window.recorteProducts(filtered, summary, banco, conv)`
+    (`frontend/src/ui/recorteProducts.js`) answers what the chosen municípios produce: one
+    `POST /api/products-by-municipio` for the latest year of the selected period with a row in
+    the município cube, over the cities with a row that year. `null` without a recorte; the
+    recorte's own `loading`/`loadError` while it resolves; `products: []` only when measured.
+    Visão geral's composition and Concentração's product half read it instead of the national
+    per-product series.
+  - *Series that exist only nationally, or only by whole UF* (`productTS`, the herd by species,
+    PAM's area and yield): Perfil do produto, Comparativo entre produtos, Rebanho, Produtividade
+    and Valor × Volume's per-product compositions cannot narrow to municípios in ANY state.
+    They keep their numbers and say so (`window.recorteNaoSeAplica`), or withhold the chart
+    (Valor × Volume), and their CSV is refused with `recorte-nao-se-aplica` — waiting would not
+    help, so `carregando-recorte` would promise a file that never comes.
+  - *Row counts.* `_shares.muniShare` (the municípios in scope over the whole mesh) sizes
+    "Linhas" under a recorte; `stateShare` counted whole states, so Portel and Breves read as
+    all of Pará. Null until the recorte resolves: the counter shows "…" or "—" meanwhile.
 
 ### 3.7 `valueGap` — the periods the active convention cannot value (every banco)
 `{ years, partial, months, valuedRange, share: null }` or `null`.

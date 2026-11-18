@@ -9,11 +9,17 @@
 // The beta caveat banner is rendered globally by MainScreen (window.MaturityBanner),
 // so it is intentionally NOT repeated here.
 
+// window.recorteNaoSeAplica — imported for real, so the view's tests load it on their own.
+import './RecorteNote.jsx';
+
 const { useState: useProdState } = React;
 
 function ViewProductivity({ summary, conventions, database }) {
   const [crop, setCrop] = useProdState(null);
   const data = window.productivityData(database, crop, summary);
+  // Only for whether a sub-UF recorte is asked for (window.recorteNaoSeAplica): this view
+  // reads its own producer, never applyFilters' series.
+  const recorteState = window.applyFilters ? window.applyFilters(summary || {}, database) : null;
   // The UF filter now reaches this reader, and yield is a RATIO — so the aggregate
   // becomes the SELECTED states' yield, not a smaller slice of a national one.
   // Labelling it "nacional" would then be a wrong number, so the scope word follows
@@ -80,8 +86,14 @@ function ViewProductivity({ summary, conventions, database }) {
     <>
       {/* Honest note when the FilterMenu product basket is active: this view picks
           its own crop (selector below), so the basket cannot narrow it — the data
-          layer withholds it and surfaces WHY here instead of ignoring it silently. */}
-      <window.NotApplicableNote note={data.notApplicable} />
+          layer withholds it and surfaces WHY here instead of ignoring it silently.
+          Likewise a sub-UF recorte: the area and the yield are read by whole UF
+          (v1.108.2). */}
+      <window.NotApplicableNote note={{
+        ...(data.notApplicable || {}),
+        recorte: window.recorteNaoSeAplica(recorteState,
+          'a área e o rendimento existem aqui só por UF inteira.'),
+      }} />
       {/* Distinct error state when /api/productivity FAILED (not "0% CAGR / sem histórico"). */}
       <window.LoadErrorNote error={data.loadError} />
 
