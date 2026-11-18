@@ -1117,6 +1117,47 @@ describe('ViewGeography — the município read loading, failed or empty', () =>
     expect(container.textContent).not.toContain('Sem histórico anual disponível para o recorte atual.');
   });
 
+  // The two cards under the map draw the narrowed grid, which is EMPTY while the narrowing is
+  // unresolved: they read "0 macrorregiões" over empty bars. And above município level the
+  // heatmap said "Sem histórico anual disponível" while the narrowing was still on its way.
+  const cardOf = (c, overline) => [...c.querySelectorAll('.card')]
+    .find((k) => (k.querySelector('.sh-ov') || {}).textContent?.startsWith(overline));
+  it.each([
+    ['failed', { subUfLoadError: 'HTTP 503' }, 'Sem números: a leitura do recorte falhou (veja o aviso acima).'],
+    ['on its way', { subUfLoading: true }, 'Carregando o recorte geográfico…'],
+  ])('a sub-UF narrowing %s: the cards under the map say so, not "0 macrorregiões"', (_, state, note) => {
+    stubGlobals(fullFixture({ ufData: [], regionData: [], ufYearlySeries: [], topMunis: [], ...state }));
+    const { container } = render(
+      <ViewGeography families={['mass']} summary={AT_UF} database="ibge_pevs" conventions={{ autoScale: true }} />,
+    );
+    const ranking = cardOf(container, '10 maiores');
+    const regions = [...container.querySelectorAll('.card')]
+      .find((k) => k.querySelector('.sh-title')?.textContent === 'Soma por região');
+    for (const card of [ranking, regions]) {
+      expect(card.textContent).toContain(note);
+      expect(card.querySelector('.barchart, .regionbars')).toBeNull();
+    }
+    expect(regions.querySelector('.sh-action').textContent).toBe('');
+  });
+
+  it('above município level, a narrowing on its way: the heatmap says "carregando", not "sem histórico"', () => {
+    stubGlobals(fullFixture({ ufData: [], ufYearlySeries: [], topMunis: [], subUfLoading: true }));
+    const { container } = render(
+      <ViewGeography families={['mass']} summary={AT_UF} database="ibge_pevs" conventions={{ autoScale: true }} />,
+    );
+    expect(container.textContent).toContain('Carregando o histórico do recorte…');
+    expect(container.textContent).not.toContain('Sem histórico anual disponível para o recorte atual.');
+  });
+
+  it('counter-proof: resolved, the cards draw their charts and count the regions', () => {
+    stubGlobals(fullFixture({}));
+    const { container } = render(
+      <ViewGeography families={['mass']} summary={AT_UF} database="ibge_pevs" conventions={{ autoScale: true }} />,
+    );
+    expect(container.textContent).not.toMatch(/Sem números|Carregando o recorte geográfico/);
+    expect(cardOf(container, '10 maiores').querySelector('.barchart')).not.toBeNull();
+  });
+
   it('hands the município read state to the CSV export, so an empty list is not read as "nada"', () => {
     openPA()(() => { window.geoMeshState = meshOk; window.municipioYearly = cube({ loadError: 'HTTP 503' }); });
     expect(window.geoExportMuniRead).toEqual({ loading: false, loadError: 'HTTP 503' });

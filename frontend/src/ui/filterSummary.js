@@ -13,6 +13,21 @@
 // directly (filterSummary.test.js). Behaviour is preserved verbatim from the
 // original inline logic.
 
+// Is the município selection a narrowing? A count of 0 is an emptied/cleared facet, which
+// dataFilters treats as NO constraint (shows all), and a full selection is no constraint
+// either — so 0 and full both read as "no narrowing", and neither renders "0 municípios".
+// Telling "full" apart needs the universe, which is the IBGE mesh. While the mesh loads — and
+// for good when it FAILED — that universe is unknown (`muniUniverseUnknown`), but the
+// selection is not: it travels as a list of codes, and a full one is stored as null, so a
+// non-empty list is a narrowing. Reading it as none described the recorte as WIDER than it
+// is: a deep link to two municípios of the Pará chipped as "1 nação · 1 UF" under a failed
+// mesh, and the ABNT citation quotes the chip (v1.107.3).
+function muniNarrowing({ munisSize, munisTotal, muniSliceable, muniUniverseUnknown }) {
+  if (!(munisSize > 0)) return false;
+  if (muniSliceable) return munisSize < munisTotal;
+  return !!muniUniverseUnknown;
+}
+
 const filterSummary = {
   // Live header line (FilterMenu.summary.geoTxt). Lowercase prose.
   geoHeaderText({
@@ -27,12 +42,10 @@ const filterSummary = {
     munisSize,
     munisTotal,
     muniSliceable,
+    muniUniverseUnknown,
     subUf,
   }) {
-    // A município count of 0 means "no município narrowing" (an emptied/cleared facet),
-    // which dataFilters treats as NO constraint (shows all) — same as a full selection. So
-    // 0 and full both count as muniFull, and neither renders a misleading "0 municípios".
-    const muniNarrowed = muniSliceable && munisSize > 0 && munisSize < munisTotal;
+    const muniNarrowed = muniNarrowing({ munisSize, munisTotal, muniSliceable, muniUniverseUnknown });
     const muniFull = !muniNarrowed;
     if (!hasGeo) return 'sem recorte geográfico';
     // A sub-UF recorte (mesorregião / microrregião / região intermediária / imediata)
@@ -61,7 +74,9 @@ const filterSummary = {
     // that drift. A município count only means something once at least one UF is
     // selected, so it's included only then — same guard the chip already applied.
     const ufLabel = `${statesSize} ${statesSize === 1 ? 'UF' : 'UFs'}`;
-    if (muniSliceable && statesSize > 0) {
+    // `|| muniNarrowed`: with the universe unknown nothing is sliceable yet, but a narrowing
+    // the selection already carries must still be said.
+    if ((muniSliceable || muniNarrowed) && statesSize > 0) {
       const muniLabel = muniNarrowed
         ? `${munisSize} ${munisSize === 1 ? 'município' : 'municípios'}`
         : 'todos os municípios';
@@ -83,12 +98,13 @@ const filterSummary = {
     munisSize,
     munisTotal,
     muniSliceable,
+    muniUniverseUnknown,
     subUf,
   }) {
     // 0 municípios = an emptied/cleared facet = NO município narrowing (dataFilters shows
     // all), same as a full selection — so it counts as muniFull and never prints
-    // "0 municípios" while the data shows every município.
-    const muniNarrowed = muniSliceable && munisSize > 0 && munisSize < munisTotal;
+    // "0 municípios" while the data shows every município. (muniNarrowing, above.)
+    const muniNarrowed = muniNarrowing({ munisSize, munisTotal, muniSliceable, muniUniverseUnknown });
     const muniFull = !muniNarrowed;
     if (!hasGeo) return 'Não se aplica';
     // A sub-UF recorte (mesorregião / microrregião / região intermediária / imediata)

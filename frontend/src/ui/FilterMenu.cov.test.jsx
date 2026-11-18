@@ -734,4 +734,24 @@ describe('FilterMenu — the IBGE mesh loading, failed or empty', () => {
     fireEvent.click(container.querySelector('.btn-primary'));
     expect(onApply.mock.calls[0][0].mesos).toEqual(['1506']);
   });
+
+  // The data keeps a deep-linked município list through "Aplicar" (above); the chip and the
+  // menu's own line must keep saying it. Without the mesh the local Set is never seeded, and
+  // until v1.107.3 both read it as no narrowing: "1 nação · 1 UF" over two municípios.
+  it.each([
+    ['failed', { meshError: 'HTTP 503' }],
+    ['on its way', { mesh: null }],
+  ])('a deep-linked município list is still named while the mesh is %s', (_, mesh) => {
+    stubRegistry(mesh);
+    const onApply = vi.fn();
+    const { container } = render(
+      <FilterMenu open banco="ibge_pevs" value={{ states: ['PA'], munis: ['1505809', '1501808'] }}
+                  onClose={() => {}} onApply={onApply} />,
+    );
+    expect(container.querySelector('.fm-summary').textContent).toContain('1 UF, 2 municípios');
+    fireEvent.click(container.querySelector('.btn-primary'));
+    const payload = onApply.mock.calls[0][0];
+    expect(payload.munis).toEqual(['1505809', '1501808']);
+    expect(payload.geo).toBe('1 UF · 2 municípios');
+  });
 });

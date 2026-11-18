@@ -395,7 +395,9 @@ function ViewOverview({ families, summary, database, conventions }) {
           <window.SectionHeader
             overline="Qualidade dos dados · agregado"
             title={hasGeo
-              ? ('Cobertura geográfica: ' + ufCovered + ' / ' + ufTotalReal + ' UFs')
+              // kpiVal: an unresolved recorte has no grid to count, and its 0 would read
+              // "covers no UF" (v1.107.3).
+              ? ('Cobertura geográfica: ' + kpiVal(ufCovered) + ' / ' + ufTotalReal + ' UFs')
               : 'Distribuição das marcas de qualidade'}
             action={<span className="caption">{filtered.qualityFlags.length} de {window.QUALITY_FLAGS.length} flags</span>}
           />

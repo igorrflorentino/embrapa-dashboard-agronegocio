@@ -645,6 +645,17 @@ function ViewGeography({ families, conventions, summary, database, territoryComp
   // UF/município narrowing), so it's suppressed ONLY when scope IS região itself.
   const showRankingCard = scope === 'uf';
   const showRegionSumCard = scope !== 'region';
+  // A sub-UF narrowing still on its way, or one that failed, owns an EMPTY grid: the two cards
+  // below drew it as "0 macrorregiões" over empty bars — "no data" for a read that never
+  // answered (v1.107.3). They say which of the two it is instead.
+  const gridUnresolved = !!(filtered.subUfLoadError || filtered.subUfLoading);
+  const gridUnresolvedNote = (
+    <p className="caption" style={{ padding: '12px' }}>
+      {filtered.subUfLoadError
+        ? 'Sem números: a leitura do recorte falhou (veja o aviso acima).'
+        : 'Carregando o recorte geográfico…'}
+    </p>
+  );
   const ufRankTitle = `${pl(top10ufs.length, 'Estado produtor', 'Maiores estados produtores')} · ${mapYearTag}`;
 
   return (
@@ -983,7 +994,9 @@ function ViewGeography({ families, conventions, summary, database, territoryComp
               {scope !== 'municipio'
                 ? (filtered.subUfLoadError
                     ? 'Sem histórico: a leitura do recorte falhou (veja o aviso acima).'
-                    : 'Sem histórico anual disponível para o recorte atual.')
+                    : filtered.subUfLoading
+                      ? 'Carregando o histórico do recorte…'
+                      : 'Sem histórico anual disponível para o recorte atual.')
                 : muniFetchError
                   ? 'Sem histórico por município: a leitura falhou (veja o aviso acima).'
                   : localMuniLoading
@@ -1003,9 +1016,11 @@ function ViewGeography({ families, conventions, summary, database, territoryComp
               <window.SectionHeader
                 overline={`10 maiores · ${activeDim.label}`}
                 title={ufRankTitle}
-                action={<span className="caption">{activeDim.label} ({top10Scaled.label})</span>}
+                action={gridUnresolved ? null
+                  : <span className="caption">{activeDim.label} ({top10Scaled.label})</span>}
               />
-              <window.BarChart data={top10Scaled.data} valueKey={valueKey} color="var(--viz-2)" height={320} />
+              {gridUnresolved ? gridUnresolvedNote
+                : <window.BarChart data={top10Scaled.data} valueKey={valueKey} color="var(--viz-2)" height={320} />}
             </div>
           )}
           {showRegionSumCard && (
@@ -1013,12 +1028,12 @@ function ViewGeography({ families, conventions, summary, database, territoryComp
               <window.SectionHeader
                 overline={`${activeDim.label} · ${mapYearTag}`}
                 title="Soma por região"
-                action={<span className="caption">
+                action={gridUnresolved ? null : <span className="caption">
                   {regScaled.data.length} {pl(regScaled.data.length, 'macrorregião', 'macrorregiões')}
                   {regScaled.data.length === 1 ? '' : ` · ${regScaled.label}`}
                 </span>}
               />
-              {regScaled.data.length === 1 ? (
+              {gridUnresolved ? gridUnresolvedNote : regScaled.data.length === 1 ? (
                 <div style={{ padding: '6px 2px 2px' }}>
                   <div className="kpi-ov">{regScaled.data[0].label}</div>
                   <div className="kpi-val tnum">{regionStatValue}</div>

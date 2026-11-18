@@ -710,6 +710,9 @@ describe('ViewTerritoryProfile — the município read loading, failed or empty'
     expect(c.querySelector('.load-err')).not.toBeNull();
     expect(sub(c, 'Valor')).toBe('não foi possível carregar a série');
     expect(c.textContent).not.toMatch(/carregando municípios|Carregando a série/);
+    // No município resolved: the place is "—", not "— ·" dangling from a name that never came.
+    expect(c.textContent).toContain('Evolução de —');
+    expect(c.textContent).not.toContain('— ·');
   });
 
   it('a mesh on its way: the picker and the trajectory say "carregando"', () => {
@@ -717,6 +720,12 @@ describe('ViewTerritoryProfile — the município read loading, failed or empty'
     expect(picker(c).textContent).toContain('carregando municípios…');
     expect(c.textContent).toContain('Carregando a série…');
     expect(c.querySelector('.load-err')).toBeNull();
+    expect(c.textContent).not.toContain('— ·');
+  });
+
+  it('counter-proof: a resolved município keeps its "nome · UF" label', () => {
+    const c = open({ mesh: MESH, municipioYearly: () => [] });
+    expect(c.textContent).toContain('Evolução de Abaetetuba · PA');
   });
 
   it('a measured empty selection: the picker says there is none', () => {

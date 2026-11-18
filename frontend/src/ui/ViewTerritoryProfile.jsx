@@ -191,11 +191,15 @@ function ViewTerritoryProfile({ summary, database, conventions }) {
   );
 
   const cityName = (cityOptions.find((c) => c.code === city) || {}).name || city;
+  const cityUf = (cityOptions.find((c) => c.code === city) || {}).uf;
   const ufName = combined
     ? `${ufOptions.length} UFs selecionadas`
     : ((ufOptions.find((u) => u.uf === uf) || {}).name || uf || '—');
+  // No município resolved (the mesh on its way, failed or empty) is "—", like an unresolved UF
+  // above — not "— ·", the separator dangling from a name that never came (v1.107.3).
   const placeLabel = activeLevel === 'municipio'
-    ? (cityCombined ? `${cityOptions.length} municípios selecionados` : `${cityName || '—'} · ${(cityOptions.find((c) => c.code === city) || {}).uf || ''}`)
+    ? (cityCombined ? `${cityOptions.length} municípios selecionados`
+      : !cityName ? '—' : cityUf ? `${cityName} · ${cityUf}` : cityName)
     : ufName;
 
   // ── The território's trajectory ───────────────────────────────────────────

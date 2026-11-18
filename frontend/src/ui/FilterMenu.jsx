@@ -890,6 +890,14 @@ function FilterMenu({ open = false, banco = 'ibge_pevs', value, onClose, onApply
     setQuickRange(null);
   };
 
+  // The mesh only SIZES the município universe. While it is not live — on its way, or failed
+  // for good — the local Set was never seeded (see the GEO seed) and Apply hands back the
+  // incoming selection verbatim, so both summaries count THAT one and are told the universe
+  // is unknown: a deep-linked "2 municípios" no longer reads "1 nação · 1 UF"
+  // (filterSummary.muniNarrowing, v1.107.3).
+  const muniUniverseUnknown = showMunis && !muniUniverseLive;
+  const munisCounted = muniUniverseUnknown ? ((value && value.munis) || []).length : munis.size;
+
   // summary
   const summary = useMemo(() => {
     const prodTxt = products.size === PRODS.length
@@ -905,13 +913,14 @@ function FilterMenu({ open = false, banco = 'ibge_pevs', value, onClose, onApply
       regionsTotal: FM_REGIONS.length,
       statesSize: states.size,
       statesTotal: STATES.length,
-      munisSize: munis.size,
+      munisSize: munisCounted,
       munisTotal: MUNIS.length,
       muniSliceable,
+      muniUniverseUnknown,
       subUf: subUfText,
     });
     return { prodTxt, period, geoTxt };
-  }, [products, startDate, endDate, nations, regions, states, munis, hasGeo, muniSliceable, MUNIS, PRODS.length, subUfText]);
+  }, [products, startDate, endDate, nations, regions, states, munisCounted, muniUniverseUnknown, hasGeo, muniSliceable, MUNIS, PRODS.length, subUfText]);
 
   // chip-bar summary published on apply (display strings only)
   const buildChipSummary = () => {
@@ -930,9 +939,10 @@ function FilterMenu({ open = false, banco = 'ibge_pevs', value, onClose, onApply
       regionsTotal: FM_REGIONS.length,
       statesSize: states.size,
       statesTotal: STATES.length,
-      munisSize: munis.size,
+      munisSize: munisCounted,
       munisTotal: MUNIS.length,
       muniSliceable,
+      muniUniverseUnknown,
       subUf: subUfText,
     });
     // Published beside the chip on this path too — see main.jsx. (The two paths derive

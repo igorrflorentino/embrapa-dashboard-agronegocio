@@ -320,6 +320,7 @@ describe('ViewOverview — a sub-UF narrowing on its way or failed holds the num
       expect(k.querySelector('.kpi-sub').textContent).toBe('cruzando produto × UF…');
     }
     expect(c.textContent).toContain('Variação acumulada: …');
+    expect(c.textContent).toContain('Cobertura geográfica: … /');
     expect(c.querySelector('.load-err')).toBeNull();
   });
 
@@ -330,6 +331,8 @@ describe('ViewOverview — a sub-UF narrowing on its way or failed holds the num
       expect(k.querySelector('.kpi-sub').textContent).toBe('recorte sub-UF não carregado');
     }
     expect(c.textContent).toContain('Variação acumulada: —');
+    // The empty grid of an unresolved recorte would count "0" UFs: a claim about the data.
+    expect(c.textContent).toContain('Cobertura geográfica: — /');
     expect(c.querySelector('.load-err')).not.toBeNull();
     expect(c.textContent).not.toMatch(/[Cc]ruzando/);
   });
@@ -338,6 +341,7 @@ describe('ViewOverview — a sub-UF narrowing on its way or failed holds the num
     const c = renderWith({});
     // The latest value through formatValue (bi → absolute reais), not a hold mark.
     expect(quantityCards(c)[0].querySelector('.kpi-value').textContent).toBe('val:2000000000');
+    expect(c.textContent).toContain('Cobertura geográfica: 1 /');
     expect(c.querySelector('.load-err')).toBeNull();
   });
 });
