@@ -293,3 +293,51 @@ describe('ViewOverview — KPI strip + quality digest (H3 + P0 lock-in)', () => 
     expect(values).not.toContain('vol:20');
   });
 });
+
+// ── Um recorte sub-UF a caminho ou que falhou segura os números (v1.107.3) ───────────────
+// While the narrowing loads, or after it failed, applyFilters' series is the NATIONAL one:
+// shown under the sub-UF chip, it would be data the filter excludes. Pending holds with
+// "…"; a failure holds with "—" and says why. Until v1.107.3 a failure read as pending,
+// and the strip said "cruzando produto × UF…" for good.
+describe('ViewOverview — a sub-UF narrowing on its way or failed holds the numbers', () => {
+  const quantityCards = (c) => [...c.querySelectorAll('.kpi')]
+    .filter((k) => /Valor total|Quantidade/.test(k.querySelector('.kpi-label').textContent));
+  const renderWith = (extra) => {
+    stubGlobals({ ...FIXTURE, ...extra });
+    window.LoadErrorNote = ({ error }) => (error ? <div className="load-err" role="alert">{String(error)}</div> : null);
+    return render(
+      <ViewOverview families={['mass', 'volume']} summary={{}} database="ibge_pevs" conventions={{}} />,
+    ).container;
+  };
+  afterEach(() => { delete window.LoadErrorNote; });
+
+  it('pending: every number is "…", and the series card says it is crossing the filters', () => {
+    const c = renderWith({ geoComboPending: true, subUfLoading: true });
+    const cards = quantityCards(c);
+    expect(cards).toHaveLength(3);
+    for (const k of cards) {
+      expect(k.querySelector('.kpi-value').textContent).toBe('…');
+      expect(k.querySelector('.kpi-sub').textContent).toBe('cruzando produto × UF…');
+    }
+    expect(c.textContent).toContain('Variação acumulada: …');
+    expect(c.querySelector('.load-err')).toBeNull();
+  });
+
+  it('failed: every number is "—", the series card alerts, and nothing says it is still coming', () => {
+    const c = renderWith({ geoComboPending: false, subUfLoadError: 'HTTP 503' });
+    for (const k of quantityCards(c)) {
+      expect(k.querySelector('.kpi-value').textContent).toBe('—');
+      expect(k.querySelector('.kpi-sub').textContent).toBe('recorte sub-UF não carregado');
+    }
+    expect(c.textContent).toContain('Variação acumulada: —');
+    expect(c.querySelector('.load-err')).not.toBeNull();
+    expect(c.textContent).not.toMatch(/[Cc]ruzando/);
+  });
+
+  it('counter-proof: resolved, the same fixture shows its numbers', () => {
+    const c = renderWith({});
+    // The latest value through formatValue (bi → absolute reais), not a hold mark.
+    expect(quantityCards(c)[0].querySelector('.kpi-value').textContent).toBe('val:2000000000');
+    expect(c.querySelector('.load-err')).toBeNull();
+  });
+});

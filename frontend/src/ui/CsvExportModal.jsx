@@ -27,6 +27,9 @@ function CsvExportModal({ preview, chips, conventions, onClose }) {
       'sem-linhas': 'O recorte atual não deixou nenhuma linha. Amplie o período, os produtos ou a geografia e tente de novo.',
       'sem-territorios': 'Nenhum território foi escolhido para comparar. Adicione ao menos um e tente de novo.',
       'carregando': 'Parte dos territórios ainda está carregando. Espere o gráfico terminar e tente de novo, para o arquivo sair completo.',
+      'falha-territorios': 'Não foi possível carregar os dados de parte dos territórios (falha de rede ou do servidor). Recarregue a página e tente de novo, para o arquivo sair completo.',
+      'falha-recorte': 'Não foi possível carregar os dados do recorte geográfico escolhido (falha de rede ou do servidor). Recarregue a página e tente de novo.',
+      'carregando-recorte': 'Os dados do recorte geográfico escolhido ainda estão carregando. Espere a tela terminar e tente de novo, para o arquivo sair com o recorte aplicado.',
     };
     const msg = MSG[preview.motivo]
       || `O banco ${preview.banco} ainda não está liberado, então não há dados para baixar.`;

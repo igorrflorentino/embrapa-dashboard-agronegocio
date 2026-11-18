@@ -62,7 +62,9 @@ function ViewTerritoryCompare({ summary, conventions, database, territoryCompare
 
   const data = tc.build({ database, summary, selection, metric });
   const items = data.items.map((it, i) => ({ ...it, color: TC_COLORS[i % TC_COLORS.length] }));
-  const ready = items.filter((it) => !it.loading && !it.unavailable);
+  // Only a measured item is drawn. A failed one (loadError) is named in the legend and the
+  // chart card says why — it used to read "carregando…" for good (until v1.107.3).
+  const ready = items.filter((it) => !it.loading && !it.loadError && !it.unavailable);
 
   // ── Series, index base and metrics (same primitives as the product comparison) ──────
   const firstYear = data.years.length ? data.years[0] : null;
@@ -105,7 +107,12 @@ function ViewTerritoryCompare({ summary, conventions, database, territoryCompare
 
   // ── Pickers ─────────────────────────────────────────────────────────────────────────
   const [muniQuery, setMuniQuery] = useTCState('');
-  const mesh = data.muniCapable && window.geoMesh ? window.geoMesh() : null;
+  // The IBGE mesh is the search list. Three states, each with its own words: a failed read
+  // (the search cannot work, so it is disabled and says why), a pending one, and a list
+  // that has no match for what was typed.
+  const meshState = data.muniCapable && window.geoMeshState ? window.geoMeshState() : null;
+  const mesh = meshState ? meshState.municipios : null;
+  const meshError = (meshState && meshState.loadError) || null;
   const muniMatches = useTCMemo(() => {
     const q = muniQuery.trim().toLowerCase();
     if (!mesh || q.length < 3) return [];
@@ -201,8 +208,19 @@ function ViewTerritoryCompare({ summary, conventions, database, territoryCompare
             {data.muniCapable ? (
               <>
                 <input id="tc-muni" className="tc-input" type="search" value={muniQuery}
-                       placeholder={atCap ? `Máximo de ${MAX}` : 'Buscar município (3 letras ou mais)…'}
-                       disabled={atCap} onChange={(e) => setMuniQuery(e.target.value)} />
+                       placeholder={atCap ? `Máximo de ${MAX}`
+                         : meshError ? 'Lista de municípios indisponível'
+                           : 'Buscar município (3 letras ou mais)…'}
+                       disabled={atCap || !!meshError} onChange={(e) => setMuniQuery(e.target.value)} />
+                {meshError && (
+                  <span className="caption" role="alert">
+                    Não foi possível carregar a lista de municípios do IBGE (falha de rede ou do
+                    servidor). Recarregue a página para tentar de novo.
+                  </span>
+                )}
+                {!meshError && !mesh && muniQuery.trim().length >= 3 && (
+                  <span className="caption">Carregando a lista de municípios…</span>
+                )}
                 {muniMatches.length > 0 && (
                   <div className="tc-matches">
                     {muniMatches.map((m) => {
@@ -253,6 +271,7 @@ function ViewTerritoryCompare({ summary, conventions, database, territoryCompare
                 </div>
               )}
             />
+            <window.LoadErrorNote error={data.loadError} />
             {ready.length > 0 && (
               <window.MultiLineChart series={series} valueKey="v" height={320} showLegend={false}
                                      label={mode === 'index' ? `índice (${baseYear ?? '—'}=100)` : tcUnit(metricMeta, conv)} />
@@ -263,6 +282,7 @@ function ViewTerritoryCompare({ summary, conventions, database, territoryCompare
                   <span className="pc-legend-dot" style={{ background: it.color }}></span>
                   {it.label}
                   {it.loading && <small className="caption"> · carregando…</small>}
+                  {it.loadError && <small className="caption"> · não foi possível carregar</small>}
                   {it.unavailable && <small className="caption"> · sem dado por município neste banco</small>}
                 </span>
               ))}

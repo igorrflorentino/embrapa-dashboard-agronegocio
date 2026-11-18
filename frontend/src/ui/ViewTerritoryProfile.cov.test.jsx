@@ -42,13 +42,26 @@ function stubGlobals(filtered, opts = {}) {
   window.fmtPct = (x) => `${((x || 0) * 100).toFixed(1)}%`;
   window.geoLevelFor = () => opts.geoLevel || 'municipio';
   window.selectedSingleUf = (s) => (s && s.states && s.states.length === 1 ? s.states[0] : null);
-  // `mesh: null` is the IBGE mesh still on its way (the real geoMesh returns null until
-  // the fetch lands); omitted, it is an empty mesh.
-  window.geoMesh = () => ('mesh' in opts ? opts.mesh : []);
-  window.municipioYearly = opts.municipioYearly || (() => []);
+  // The município loaders return their read's STATE (v1.107.3). `mesh: null` is the IBGE
+  // mesh still on its way, `meshError` one that failed; omitted, it is an empty mesh.
+  // `municipioYearly` gives the cube's rows (null = still on its way), `muniError` a cube
+  // that failed, and `muniBase` its price base — from the same response, as in production.
+  const meshList = 'mesh' in opts ? opts.mesh : [];
+  window.geoMeshState = () => (opts.meshError
+    ? { municipios: null, loading: false, loadError: opts.meshError }
+    : { municipios: meshList, loading: meshList == null, loadError: null });
+  window.geoMesh = () => window.geoMeshState().municipios;
+  const rowsOf = opts.municipioYearly || (() => []);
+  window.municipioYearly = (...args) => {
+    if (opts.muniError) return { rows: null, priceBase: null, loading: false, loadError: opts.muniError };
+    const rows = rowsOf(...args);
+    return {
+      rows, priceBase: rows && opts.muniBase ? opts.muniBase(...args) : null,
+      loading: rows == null, loadError: null,
+    };
+  };
   window.productsByUf = opts.productsByUf || (() => MEDIDO([]));
   window.productsByMunicipio = opts.productsByMunicipio || (() => MEDIDO([]));
-  window.municipioYearlyPriceBase = opts.municipioYearlyPriceBase || (() => null);
 
   window.Icon = () => null;   // the real NotApplicableNote draws one
   window.EmptyCard = ({ children }) => <div className="empty-card">{children}</div>;
@@ -105,7 +118,7 @@ afterEach(() => {
   delete window.productsByMunicipio;
   delete window.productsByUf;
   delete window.geoMesh;
-  delete window.municipioYearlyPriceBase;
+  delete window.geoMeshState;
   delete window.dataStore;
 });
 
@@ -607,7 +620,7 @@ describe('ViewTerritoryProfile — os anos de cada soma e o mês de cada leitura
     snapshotEm(OUTUBRO);
     stubGlobals(BASE, {
       mesh: MESH,
-      municipioYearlyPriceBase: () => ({ column: null, month: '2026-11', fxDate: null }),
+      muniBase: () => ({ column: null, month: '2026-11', fxDate: null }),
       productsByMunicipio: () => ({
         products: [{ code: '4403', name: 'Madeira em tora', value: 6 }],
         loadError: null,
@@ -624,7 +637,7 @@ describe('ViewTerritoryProfile — os anos de cada soma e o mês de cada leitura
     snapshotEm(OUTUBRO);
     stubGlobals(BASE, {
       mesh: MESH,
-      municipioYearlyPriceBase: () => ({ column: null, month: '2026-10', fxDate: null }),
+      muniBase: () => ({ column: null, month: '2026-10', fxDate: null }),
     });
     const { container } = render(<View summary={{}} database="ibge_pevs" conventions={CONV} />);
     municipio(container);
@@ -637,10 +650,106 @@ describe('ViewTerritoryProfile — os anos de cada soma e o mês de cada leitura
     snapshotEm(OUTUBRO);
     stubGlobals({ ...BASE, muniPriceBase: { column: null, month: '2026-09', fxDate: null } }, {
       mesh: MESH,
-      municipioYearlyPriceBase: () => ({ column: null, month: '2026-11', fxDate: null }),
+      muniBase: () => ({ column: null, month: '2026-11', fxDate: null }),
     });
     const { container } = render(<View summary={{}} database="ibge_pevs" conventions={CONV} />);
     municipio(container);
     expect(container.querySelector('.price-base-skew-note')).toBeNull();
+  });
+});
+
+// ── Carregando, falhou ou vazio: três respostas diferentes (v1.107.3) ────────────────────
+// Until v1.107.3 the município cube and the IBGE mesh came back null both in flight and
+// after a failure: the trajectory said "Sem série" and the indicators "sem dados" for the
+// 1–3 s the cube takes on every change of município, and for good when it failed.
+describe('ViewTerritoryProfile — the município read loading, failed or empty', () => {
+  const MESH = [
+    { cityCode: '1500107', cityName: 'Abaetetuba', uf: 'PA' },
+    { cityCode: '1500206', cityName: 'Acará', uf: 'PA' },
+  ];
+  const open = (opts) => {
+    stubGlobals(BASE, opts);
+    const { container } = render(<View summary={{}} database="ibge_pevs" conventions={CONV} />);
+    fireEvent.click([...container.querySelectorAll('.seg-opt')].find((b) => b.textContent === 'Município'));
+    return container;
+  };
+  const val = (c, label) => kpi(c, label).querySelector('.kpi-value').textContent;
+  const sub = (c, label) => kpi(c, label).querySelector('.kpi-sub').textContent;
+  const picker = (c) => c.querySelector('select[aria-label="Município do território"]');
+
+  it('while the cube is on its way, the trajectory and its two indicators say "carregando"', () => {
+    const c = open({ mesh: MESH, municipioYearly: () => null });
+    expect(c.textContent).toContain('Carregando a série…');
+    expect(val(c, 'Valor')).toBe('…');
+    expect(sub(c, 'Valor')).toBe('carregando a série…');
+    expect(sub(c, 'Pico')).toBe('carregando a série…');
+    expect(c.textContent).not.toMatch(/Sem série|sem dados/);
+    expect(c.querySelector('.load-err')).toBeNull();
+  });
+
+  it('a failed cube is named as failed — never "Sem série", never "carregando" for good', () => {
+    const c = open({ mesh: MESH, muniError: 'HTTP 503' });
+    expect(c.querySelector('.load-err')).not.toBeNull();
+    expect(c.querySelector('.line-chart')).toBeNull();
+    expect(val(c, 'Valor')).toBe('—');
+    expect(sub(c, 'Valor')).toBe('não foi possível carregar a série');
+    expect(sub(c, 'Pico')).toBe('não foi possível carregar a série');
+    expect(c.textContent).not.toMatch(/Sem série|sem dados|Carregando a série/);
+  });
+
+  it('only a cube that answered empty says there is no series', () => {
+    const c = open({ mesh: MESH, municipioYearly: () => [] });
+    expect(c.textContent).toContain('Sem série para este território na janela selecionada.');
+    expect(sub(c, 'Pico')).toBe('sem dados na janela');
+    expect(c.textContent).not.toMatch(/Carregando a série|não foi possível/);
+  });
+
+  it('a failed IBGE mesh: the picker and the trajectory say it failed', () => {
+    const c = open({ meshError: 'HTTP 503' });
+    expect(picker(c).textContent).toContain('não foi possível carregar os municípios');
+    expect(c.querySelector('.load-err')).not.toBeNull();
+    expect(sub(c, 'Valor')).toBe('não foi possível carregar a série');
+    expect(c.textContent).not.toMatch(/carregando municípios|Carregando a série/);
+  });
+
+  it('a mesh on its way: the picker and the trajectory say "carregando"', () => {
+    const c = open({ mesh: null });
+    expect(picker(c).textContent).toContain('carregando municípios…');
+    expect(c.textContent).toContain('Carregando a série…');
+    expect(c.querySelector('.load-err')).toBeNull();
+  });
+
+  it('a measured empty selection: the picker says there is none', () => {
+    const c = open({ mesh: [] });
+    expect(picker(c).textContent).toContain('nenhum município na seleção');
+    expect(c.textContent).not.toMatch(/carregando municípios|não foi possível carregar os municípios/);
+  });
+});
+
+describe('ViewTerritoryProfile — at UF level under a sub-UF narrowing', () => {
+  const val = (c, label) => kpi(c, label).querySelector('.kpi-value').textContent;
+  const sub = (c, label) => kpi(c, label).querySelector('.kpi-sub').textContent;
+  const open = (filtered) => {
+    stubGlobals(filtered);
+    return render(<View summary={{}} database="ibge_pevs" conventions={CONV} />).container;
+  };
+
+  it('a narrowing on its way holds every indicator as loading', () => {
+    const c = open({ ...BASE, subUfLoading: true, subUfLoadError: null });
+    expect(val(c, 'Participação')).toBe('…');
+    expect(sub(c, 'Participação')).toBe('carregando o recorte sub-UF…');
+    expect(sub(c, 'Posição')).toBe('carregando o recorte sub-UF…');
+    expect(sub(c, 'Valor')).toBe('carregando a série…');
+    expect(c.textContent).toContain('Carregando a série…');
+  });
+
+  it('a failed narrowing says so in every indicator and in the trajectory', () => {
+    const c = open({ ...BASE, subUfLoading: false, subUfLoadError: 'HTTP 503' });
+    expect(val(c, 'Participação')).toBe('—');
+    expect(sub(c, 'Participação')).toBe('indisponível: o recorte sub-UF não carregou');
+    expect(sub(c, 'Posição')).toBe('indisponível: o recorte sub-UF não carregou');
+    expect(sub(c, 'Valor')).toBe('não foi possível carregar a série');
+    expect(c.querySelector('.load-err')).not.toBeNull();
+    expect(c.textContent).not.toMatch(/[Cc]arregando/);
   });
 });

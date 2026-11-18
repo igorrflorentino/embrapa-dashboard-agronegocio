@@ -70,6 +70,8 @@ function stubGlobals(filtered, opts = {}) {
     stackedCalls.push(props);
     return <div className="stacked" />;
   };
+  // Every view places it unconditionally; it renders nothing without an error.
+  window.LoadErrorNote = ({ error }) => (error ? <div className="load-err" role="alert">{String(error)}</div> : null);
 }
 
 let ViewValueVolume;
@@ -317,6 +319,25 @@ describe('ViewValueVolume — value-less herd + combo-pending branches', () => {
     expect(yoyProps).toBeUndefined();
     // Per-product composition stacks (productTS-derived) stay → still rendered.
     expect(stackedCalls.length).toBeGreaterThanOrEqual(1);
+    expect(container.querySelector('.load-err')).toBeNull();
+  });
+
+  // v1.107.3: a failed sub-UF narrowing is held the same way — the series would be the
+  // national one under a sub-UF chip — but it says it FAILED instead of "Cruzando…" forever.
+  it('holds the same series behind a failure note when the sub-UF narrowing failed', () => {
+    stubGlobals(valueFixture({ geoComboPending: false, subUfLoadError: 'HTTP 503' }));
+    const { container } = render(
+      <ViewValueVolume
+        families={['mass', 'volume']}
+        summary={{}}
+        database="ibge_pevs"
+        conventions={{ currency: 'BRL', correction: 'IPCA', autoScale: false }}
+      />
+    );
+    expect(container.querySelector('.load-err')).not.toBeNull();
+    expect(container.textContent).not.toContain('Cruzando');
+    expect(yoyProps).toBeUndefined();
+    expect(lineChartCalls).toHaveLength(0); // value, mass and volume series all held
   });
 });
 

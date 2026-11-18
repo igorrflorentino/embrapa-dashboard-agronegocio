@@ -131,12 +131,19 @@ function ViewValueVolume({ families, conventions, summary, database }) {
   // number that disregards the basket (mirrors ViewOverview's comboPending guard). The
   // per-product composition charts below read productTS and stay basket-correct.
   const comboPending = !!filtered.geoComboPending;
+  // A sub-UF narrowing whose mesh or município cube FAILED (v1.107.3): nothing is coming, and
+  // the ts-derived series would be the un-narrowed ones — data the filter excludes. Held like
+  // the pending state; the note says it failed instead of "cruzando…" forever.
+  const recorteFalhou = filtered.subUfLoadError || null;
+  const segura = comboPending || !!recorteFalhou;
 
   return (
     <>
       <window.UnitFamilyBanner families={families} />
 
-      {comboPending && (
+      <window.LoadErrorNote error={recorteFalhou} />
+
+      {comboPending && !recorteFalhou && (
         <div className="card subtle" style={{ marginBottom: 12 }}>
           <p className="caption" style={{ padding: '10px 12px' }}>
             Cruzando <strong>produto × UF</strong>… os totais de valor e quantidade aparecem
@@ -169,7 +176,7 @@ function ViewValueVolume({ families, conventions, summary, database }) {
       )}
 
       {/* Value historic series — ts-derived; held during the basket×UF cube load. */}
-      {hasValue && !comboPending && (
+      {hasValue && !segura && (
       <div className="card">
         <window.SectionHeader
           overline={`Série histórica · ${ccyLabel}`}
@@ -199,7 +206,7 @@ function ViewValueVolume({ families, conventions, summary, database }) {
 
       {/* Quantity historic series — one per family. ts-derived → held during cube load. */}
       <div className={'grid-' + (families.length === 2 ? '2' : '1')}>
-        {massFamily && !comboPending && (
+        {massFamily && !segura && (
           <div className="card">
             <window.SectionHeader
               overline={<>Série histórica · <window.UnitFamilyTag family="mass" conv={conv}/></>}
@@ -208,7 +215,7 @@ function ViewValueVolume({ families, conventions, summary, database }) {
             <window.LineChart data={massScaled.data} label={massScaled.label} valueKey="q_mass" color="var(--viz-2)" height={220} />
           </div>
         )}
-        {volFamily && !comboPending && (
+        {volFamily && !segura && (
           <div className="card">
             <window.SectionHeader
               overline={<>Série histórica · <window.UnitFamilyTag family="volume" conv={conv}/></>}
@@ -220,7 +227,7 @@ function ViewValueVolume({ families, conventions, summary, database }) {
       </div>
 
       {/* YoY variation — ts-derived; held during the basket×UF cube load. */}
-      {hasValue && !comboPending && (
+      {hasValue && !segura && (
       <div className="card">
         <window.SectionHeader
           overline={`Variação interanual · valor (${ccyLabel})`}

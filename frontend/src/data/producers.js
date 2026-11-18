@@ -203,13 +203,38 @@ function geoYearlyRequest(bancoId, summary) {
 // (classic meso/micro, 2017 intermediária/imediata). Banco-agnostic + static, so it
 // has no convention/basket in its key — fetched once and cached. Backs the geo
 // cascade's sub-UF + município option lists AND the cityCode→ancestry map that
-// dataFilters uses to roll the município cube up to the selected level. Returns the
-// municipios array (or null until the fetch lands).
-window.geoMesh = function geoMesh() {
+// dataFilters uses to roll the município cube up to the selected level.
+//
+// Returns the read's STATE, in the shape productBreakdownOf established (v1.107.0):
+//   { municipios, loading, loadError }
+//   loading   — in flight, or a transient failure being retried (errorOf stays null until
+//               MAX_ATTEMPTS, on purpose);
+//   loadError — every retry failed;
+//   neither   — `municipios` IS the answer, and an empty list is the only "no município".
+// `municipios` is null until the response lands: unknown, never empty. Until v1.107.3
+// window.geoMesh returned null both in flight and after a failure, so a failed mesh left
+// the sub-UF selector and Perfil do território on "carregando municípios…" forever.
+window.geoMeshState = function geoMeshState() {
   const key = 'geoMesh';
   ensure(key, () => `${API}/geo-mesh`);
   const data = get(key);
-  return data && Array.isArray(data.municipios) ? data.municipios : null;
+  if (data) {
+    return {
+      municipios: Array.isArray(data.municipios) ? data.municipios : [],
+      loading: false,
+      loadError: null,
+    };
+  }
+  const loadError = errorOf(key);
+  return { municipios: null, loading: !loadError, loadError };
+};
+
+// The mesh as a LOOKUP (cityCode → name, UF, ancestry): the list, or null while it is not
+// here — loading and failed alike. Fine for a label that falls back to the code; anything
+// that TELLS the researcher about the mesh (a selector, a loading or empty note) reads
+// window.geoMeshState, which says which of the two it is.
+window.geoMesh = function geoMesh() {
+  return window.geoMeshState().municipios;
 };
 
 // COMTRADE país reporter + país parceiro universes (código M49 + ISO-A3 + nome pt-BR).
@@ -226,8 +251,7 @@ window.comtradeCountries = function comtradeCountries() {
 // Basket-scoped per-(município, year) cube — the FINEST geography grain. Mirrors
 // window.geoYearly (keyed by banco + convention + basket), but at município grain so
 // the client can roll it up to whichever sub-UF level is active (via geoMesh). No
-// flow (production bancos have none). Returns null until loaded; an empty array for a
-// banco with no município grain (COMEX/COMTRADE → the BFF returns []).
+// flow (production bancos have none).
 // `years` (optional) narrows the cube to a closed [y0, y1] window. The city set is
 // the primary cost control, but it stops helping exactly where the municipal
 // choropleth needs it most: a whole-UF map is ONE year over hundreds of cities. Left
@@ -236,21 +260,43 @@ window.comtradeCountries = function comtradeCountries() {
 // existing sub-UF callers — which DO want the whole series for the heatmap — are
 // unchanged. It is part of the cache key, so the one-year map and the full-history
 // heatmap coexist instead of evicting each other.
+//
+// Returns the cube's STATE, in the shape productBreakdownOf established (v1.107.0):
+//   { rows, priceBase, loading, loadError }
+//   loading   — in flight, or a transient failure being retried;
+//   loadError — every retry failed;
+//   neither   — `rows` IS the answer, and [] means "measured, nothing": the selected
+//               municípios record none of the basket in the window (an empty array is
+//               also what the BFF returns for a banco with no município grain).
+// `rows` and `priceBase` are null until the response lands: unknown, never empty. Until
+// v1.107.3 this returned the bare rows — null in flight AND after a failure — so the
+// screens could not tell "still coming" from "never coming": Perfil do território said
+// "Sem série" while the cube loaded, and a failure read as loading forever.
+//
+// `priceBase` is the month the cube's corrected values are at (v1.105.0; null for a nominal
+// convention). It used to have its own accessor, window.municipioYearlyPriceBase, reading the
+// same key; it now travels in this object, so the rows on screen, the month they are at and
+// whether they arrived at all are read off ONE response by construction. The cube reads the
+// analytical base directly while the snapshot reads the pre-aggregated tables: across a build
+// the two can be at different months, and window.PriceBaseSkewNote is how the screen says so.
+//
+// No city set asks nothing and answers "nothing", the answer productsByMunicipio gives. A
+// caller whose set is empty only because the IBGE mesh has not arrived must say "loading"
+// itself — only it knows why its set is empty.
 window.municipioYearly = function municipioYearly(bancoId, summary, cityCodes, years) {
   const key = municipioYearlyRequest(bancoId, summary, cityCodes, years);
-  const data = key ? get(key) : null;
-  return data && Array.isArray(data.municipioYearly) ? data.municipioYearly : null;
-};
-
-// The month the cube's corrected values are at (`priceBase`, v1.105.0), or null until the
-// cube lands (and for a nominal convention). Same key as window.municipioYearly, so it reads
-// the SAME response, never a second fetch. The cube reads the analytical base directly while
-// the snapshot reads the pre-aggregated tables: the two can come back at different months
-// across a build, and window.PriceBaseSkewNote is how the screen says so.
-window.municipioYearlyPriceBase = function municipioYearlyPriceBase(bancoId, summary, cityCodes, years) {
-  const key = municipioYearlyRequest(bancoId, summary, cityCodes, years);
-  const data = key ? get(key) : null;
-  return (data && data.priceBase) || null;
+  if (!key) return { rows: [], priceBase: null, loading: false, loadError: null };
+  const data = get(key);
+  if (data) {
+    return {
+      rows: Array.isArray(data.municipioYearly) ? data.municipioYearly : [],
+      priceBase: data.priceBase || null,
+      loading: false,
+      loadError: null,
+    };
+  }
+  const loadError = errorOf(key);
+  return { rows: null, priceBase: null, loading: !loadError, loadError };
 };
 
 // The cube's cache key, with its fetch ensured — null when there is nothing to fetch.

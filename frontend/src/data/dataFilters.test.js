@@ -23,8 +23,18 @@ import '../ui/geoDrill.js';
 // each one only ever sees the stubs it sets itself.
 afterEach(() => {
   delete window.geoMesh;
+  delete window.geoMeshState;
   delete window.municipioYearly;
 });
+
+// The município-level loaders return their read's STATE (v1.107.3): the data is null while
+// it is not known — in flight, or failed after the retries — and [] only when measured empty.
+const meshReady = (municipios) => () => ({ municipios, loading: false, loadError: null });
+const MESH_PENDING = () => ({ municipios: null, loading: true, loadError: null });
+const MESH_FAILED = () => ({ municipios: null, loading: false, loadError: 'HTTP 503' });
+const cubeReady = (rows) => () => ({ rows, priceBase: null, loading: false, loadError: null });
+const CUBE_PENDING = () => ({ rows: null, priceBase: null, loading: true, loadError: null });
+const CUBE_FAILED = () => ({ rows: null, priceBase: null, loading: false, loadError: 'HTTP 503' });
 
 // applyFilters reads the active banco's snapshot from window.dataStore.get and a
 // few registry globals. Stub the minimum so the IIFE runs in isolation (no full
@@ -92,22 +102,26 @@ const MUNI_CUBE = [
 ];
 
 describe('applyFilters — sub-UF (mesorregião) narrowing rolls the município cube up by UF', () => {
-  beforeEach(() => { delete window.applyFilters; delete window.geoMesh; delete window.municipioYearly; });
+  beforeEach(() => {
+    delete window.applyFilters; delete window.geoMesh; delete window.geoMeshState;
+    delete window.municipioYearly;
+  });
 
   it('sums only the selected mesorregião’s municípios into the per-UF total', async () => {
     const applyFilters = await loadApplyFilters();
-    window.geoMesh = () => GEO_MESH;
-    window.municipioYearly = () => MUNI_CUBE;
+    window.geoMeshState = meshReady(GEO_MESH);
+    window.municipioYearly = cubeReady(MUNI_CUBE);
     // Meso M1 = cidades 1 + 2 (value 60 + 30 = 90); cidade 3 (M2, value 10) excluded.
     const f = applyFilters({ mesos: ['M1'] }, 'ibge_pevs');
     const pa = f.ufData.find((u) => u.uf === 'PA');
     expect(pa.value).toBe(90); // NOT the all-meso 100 — the M2 município is dropped
+    expect(f).toMatchObject({ subUfLoading: false, subUfLoadError: null });
   });
 
   it('builds topMunis from the cube, ranked, named via the mesh (GEO-1)', async () => {
     const applyFilters = await loadApplyFilters();
-    window.geoMesh = () => GEO_MESH;
-    window.municipioYearly = () => MUNI_CUBE;
+    window.geoMeshState = meshReady(GEO_MESH);
+    window.municipioYearly = cubeReady(MUNI_CUBE);
     // Meso M1 = cidades 1 (60) + 2 (30); cidade 3 (M2) excluded. Ranked desc, named.
     const f = applyFilters({ mesos: ['M1'] }, 'ibge_pevs');
     expect(f.topMunis.map((m) => [m.city, m.value])).toEqual([
@@ -118,27 +132,95 @@ describe('applyFilters — sub-UF (mesorregião) narrowing rolls the município 
 
   it('topMunis is empty without a sub-UF narrowing (no always-empty legacy path)', async () => {
     const applyFilters = await loadApplyFilters();
-    window.geoMesh = () => GEO_MESH;
-    window.municipioYearly = () => MUNI_CUBE;
+    window.geoMeshState = meshReady(GEO_MESH);
+    window.municipioYearly = cubeReady(MUNI_CUBE);
     const f = applyFilters({}, 'ibge_pevs'); // no geo narrowing → cube not fetched
     expect(f.topMunis).toEqual([]);
+    expect(f).toMatchObject({ subUfLoading: false, subUfLoadError: null });
   });
 
   it('holds at a loading state while the município cube has not landed', async () => {
     const applyFilters = await loadApplyFilters();
-    window.geoMesh = () => GEO_MESH;
-    window.municipioYearly = () => null; // fetch pending
+    window.geoMeshState = meshReady(GEO_MESH);
+    window.municipioYearly = CUBE_PENDING;
     const f = applyFilters({ mesos: ['M1'] }, 'ibge_pevs');
     expect(f.geoComboPending).toBe(true);
+    expect(f).toMatchObject({ subUfLoading: true, subUfLoadError: null });
+    expect(f.ufData).toEqual([]); // never the all-UF grid while the selection is on its way
   });
 
   it('loaded-but-EMPTY cube reads as honest empty — not stuck-loading, not all-UF (audit B)', async () => {
     const applyFilters = await loadApplyFilters();
-    window.geoMesh = () => GEO_MESH;
-    window.municipioYearly = () => []; // fetched, zero rows (the meso produces none of the basket)
+    window.geoMeshState = meshReady(GEO_MESH);
+    window.municipioYearly = cubeReady([]); // fetched, zero rows (the meso produces none of the basket)
     const f = applyFilters({ mesos: ['M1'] }, 'ibge_pevs');
     expect(f.geoComboPending).toBe(false); // loaded-empty is NOT pending (no eternal spinner)
+    expect(f).toMatchObject({ subUfLoading: false, subUfLoadError: null }); // and not a failure
     expect(f.ufData).toEqual([]); // empty selection → empty map, NOT the all-UF fallback
+  });
+});
+
+// Until v1.107.3 a failed read was indistinguishable from a pending one: the mesh and the
+// cube both came back null, so geoComboPending stayed true forever and the screens said
+// "carregando" for good. A failure is now its own answer — and, like a pending narrowing,
+// it never hands a screen the un-narrowed grid.
+describe('applyFilters — a failed sub-UF read is neither pending nor empty data', () => {
+  beforeEach(() => {
+    delete window.applyFilters; delete window.geoMesh; delete window.geoMeshState;
+    delete window.municipioYearly; delete window.geoYearly;
+  });
+
+  it('a failed cube reports the error, is not pending, and draws no grid', async () => {
+    const applyFilters = await loadApplyFilters();
+    window.geoMeshState = meshReady(GEO_MESH);
+    window.municipioYearly = CUBE_FAILED;
+    const f = applyFilters({ mesos: ['M1'] }, 'ibge_pevs');
+    expect(f).toMatchObject({ subUfLoadError: 'HTTP 503', subUfLoading: false, geoComboPending: false });
+    expect(f.ufData).toEqual([]);
+    expect(f.topMunis).toEqual([]);
+    expect(f.muniYearlySeries).toEqual([]);
+  });
+
+  it('a failed mesh cannot resolve the narrowing: an error, and no whole-state grid under the chip', async () => {
+    const applyFilters = await loadApplyFilters();
+    window.geoMeshState = MESH_FAILED;
+    window.municipioYearly = vi.fn(cubeReady(MUNI_CUBE));
+    const f = applyFilters({ mesos: ['M1'] }, 'ibge_pevs');
+    expect(f).toMatchObject({ subUfLoadError: 'HTTP 503', subUfLoading: false, geoComboPending: false });
+    // The snapshot's PA total (100) is the WHOLE state, not mesorregião M1: it must not stand
+    // in for the selection. Before v1.107.3 this was what the map drew.
+    expect(f.ufData).toEqual([]);
+    expect(f.ufYearlySeries).toEqual([]);
+    expect(window.municipioYearly).not.toHaveBeenCalled(); // no mesh, no city set to ask for
+  });
+
+  it('a mesh still on its way is loading, not failed', async () => {
+    const applyFilters = await loadApplyFilters();
+    window.geoMeshState = MESH_PENDING;
+    window.municipioYearly = cubeReady(MUNI_CUBE);
+    const f = applyFilters({ mesos: ['M1'] }, 'ibge_pevs');
+    expect(f).toMatchObject({ subUfLoadError: null, subUfLoading: true, geoComboPending: true });
+  });
+
+  it('a failed cube under a basket and a state subset is still not "pending"', async () => {
+    // geoComboPending's first term reads `useCube`, which a failed sub-UF cube leaves false
+    // exactly like a pending one: without the guard the screens held "Cruzando…" forever.
+    const applyFilters = await loadApplyFilters();
+    window.geoMeshState = meshReady(GEO_MESH);
+    window.municipioYearly = CUBE_FAILED;
+    window.geoYearly = () => null; // the basket's own UF cube, pending — irrelevant here
+    const f = applyFilters({ mesos: ['M1'], states: ['PA'], basket: ['A'] }, 'ibge_pevs');
+    expect(f.subUfLoadError).toBe('HTTP 503');
+    expect(f.geoComboPending).toBe(false);
+  });
+
+  it('a banco with no territory ignores a leftover sub-UF facet entirely', async () => {
+    const applyFilters = await loadApplyFilters();
+    // No per-UF grid in the snapshot = no territory to narrow (a facet left from another banco).
+    window.dataStore = { get: () => ({ ...SNAP, ufData: [], ufYearly: [] }) };
+    window.geoMeshState = MESH_FAILED;
+    const f = applyFilters({ mesos: ['M1'] }, 'un_comtrade');
+    expect(f).toMatchObject({ subUfLoadError: null, subUfLoading: false, geoComboPending: false });
   });
 });
 
@@ -480,8 +562,8 @@ describe('applyFilters — o recorte sub-UF sai nomeado do seam', () => {
 
   it('nomeia o recorte quando há um', async () => {
     const applyFilters = await loadApplyFilters();
-    window.geoMesh = () => MESH;
-    window.municipioYearly = () => ([
+    window.geoMeshState = meshReady(MESH);
+    window.municipioYearly = cubeReady([
       { year: 2021, cityCode: '1', uf: 'PA', value: 7, q_mass: 3, q_vol: 0, q_count_stock: 0, q_count_flow: 0 },
       { year: 2021, cityCode: '2', uf: 'PA', value: 5, q_mass: 2, q_vol: 0, q_count_stock: 0, q_count_flow: 0 },
     ]);

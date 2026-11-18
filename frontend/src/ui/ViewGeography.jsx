@@ -215,7 +215,12 @@ function ViewGeography({ families, conventions, summary, database, territoryComp
   // on wantMuniFallback alone left the sub-UF path (an explicit meso/município facet)
   // without names, so those rows read as bare 7-digit codes. It is a cached, shared
   // resource — asking for it whenever the município scope is open costs nothing.
-  const mesh = (scope === 'municipio' && window.geoMesh) ? window.geoMesh() : null;
+  // Read as a STATE (v1.107.3): the fallback cannot name its cities without the mesh, and a
+  // mesh still on its way and one that failed must not read alike.
+  const meshState = (scope === 'municipio' && window.geoMeshState)
+    ? window.geoMeshState()
+    : { municipios: null, loading: false, loadError: null };
+  const mesh = meshState.municipios;
   const ufCityCodes = useGeoMemo(
     () => (mesh ? mesh.filter((m) => m.uf === selectedSingleUf).map((m) => m.cityCode) : null),
     [mesh, selectedSingleUf],
@@ -224,21 +229,36 @@ function ViewGeography({ families, conventions, summary, database, territoryComp
   // the cube feeds the map (one year) and the heatmap (which already discards years
   // outside the window), so anything beyond it is fetched and thrown away. Worst case
   // measured unbounded — MG, 853 municípios — is 21.468 rows / 2,3 MB / 4,5 s.
-  const localMuniCube = (wantMuniFallback && ufCityCodes && ufCityCodes.length && window.municipioYearly)
+  // null = not asked; else { rows, priceBase, loading, loadError } (window.municipioYearly).
+  const localMuni = (wantMuniFallback && ufCityCodes && ufCityCodes.length && window.municipioYearly)
     ? window.municipioYearly(database, summary, ufCityCodes, [filtered.yearStart, filtered.yearEnd])
-    : null; // null = pending fetch (or not wanted); [] = loaded-empty; [...] = rows
-  // The month that cube's corrected values are at — same request, no second fetch (v1.105.0).
-  const localMuniBase = (wantMuniFallback && ufCityCodes && ufCityCodes.length && window.municipioYearlyPriceBase)
-    ? window.municipioYearlyPriceBase(database, summary, ufCityCodes, [filtered.yearStart, filtered.yearEnd])
     : null;
+  const localMuniCube = localMuni ? localMuni.rows : null; // null = not here; [] = loaded-empty
+  // The month that cube's corrected values are at — same response as the rows (v1.105.0).
+  const localMuniBase = localMuni ? localMuni.priceBase : null;
   // Two municipal paths reach this view and BOTH can be in flight:
   //   the view-local fallback (a single UF selected, no sub-UF facet), and
   //   dataFilters' shared cube (a município/meso facet — which is exactly what clicking
   //   a município sets, so the old guard's `!subUfActive` silenced the message for the
   //   one gesture the drill-down made most common).
-  const localMuniLoading =
-    (wantMuniFallback && !!(ufCityCodes && ufCityCodes.length) && localMuniCube == null)
-    || (filtered.subUfActive && !filtered.subUfLoaded);
+  // Each needs the mesh first. Three answers, kept apart (v1.107.3) — only the last is a
+  // measurement. Until then a failure read as loading forever, and a mesh still on its way
+  // (or an empty answer) showed the "recorte a geografia" prompt to someone who already had.
+  const muniFetchError = scope === 'municipio'
+    ? (filtered.subUfLoadError
+       || (wantMuniFallback && meshState.loadError)
+       || (localMuni && localMuni.loadError)
+       || null)
+    : null;
+  const localMuniLoading = !muniFetchError && (
+    !!filtered.subUfLoading
+    || (wantMuniFallback && meshState.loading)
+    || !!(localMuni && localMuni.loading));
+  // Something WAS asked for the município level — the shared cube or the single-UF fallback.
+  // Only then is an empty answer "sem dados"; with nothing asked the cards keep pointing at
+  // the filter, which is the honest thing to say about a question nobody posed.
+  const muniAsked = !!(filtered.subUfActive || wantMuniFallback
+    || filtered.subUfLoading || filtered.subUfLoadError);
   const localMuniRows = useGeoMemo(
     () => rankMunisFromCube(localMuniCube, mesh, filtered.yearStart, filtered.yearEnd),
     [localMuniCube, mesh, filtered.yearStart, filtered.yearEnd],
@@ -292,11 +312,20 @@ function ViewGeography({ families, conventions, summary, database, territoryComp
   // component). Mirroring both here, the same bridge pattern as patchFilter, lets
   // csvExport.js's 'geo' case export whatever granularity is ACTUALLY on screen
   // instead of always the per-UF table regardless of the Granularidade control.
+  // The município read's state rides along (v1.107.3): an empty list while it loads or
+  // after it failed is not "nothing in the recorte", and the file must not say it is.
+  const muniExportRead = useGeoMemo(
+    () => ({ loading: localMuniLoading, loadError: muniFetchError }),
+    [localMuniLoading, muniFetchError],
+  );
   useGeoEffect(() => {
     window.geoExportScope = scope;
     window.geoExportMunis = activeMuniRows;
-    return () => { delete window.geoExportScope; delete window.geoExportMunis; };
-  }, [scope, activeMuniRows]);
+    window.geoExportMuniRead = muniExportRead;
+    return () => {
+      delete window.geoExportScope; delete window.geoExportMunis; delete window.geoExportMuniRead;
+    };
+  }, [scope, activeMuniRows, muniExportRead]);
 
   // Scale geo datasets according to active dimension's multiplier
   const scaledUFs = useGeoMemo(
@@ -622,6 +651,10 @@ function ViewGeography({ families, conventions, summary, database, territoryComp
     <>
       <window.UnitFamilyBanner families={families} />
       <window.RecorteNote recorte={filtered.recorte} />
+      {/* A sub-UF facet whose IBGE mesh failed cannot be resolved, so the map falls back to UF
+          or região level over the states alone. At município level the distribution card
+          says so itself; here nothing else would. */}
+      {scope !== 'municipio' && <window.LoadErrorNote error={filtered.subUfLoadError} />}
       {/* This perspective's OWN reads — the single-UF município cube and the "Base de dados"
           card — against the snapshot's month (v1.105.0). The cubes applyFilters reads are
           already compared by MainScreen's note, so they go in as `jaComparadas`. */}
@@ -854,10 +887,22 @@ function ViewGeography({ families, conventions, summary, database, territoryComp
           const rows = scaledMunis
             .filter(m => valueKey === 'value' || (m[valueKey] != null && m[valueKey] > 0));
           if (!rows.length) {
+            // The failure lives in the card it concerns (as in Perfil do território), and
+            // only here: the heatmap below points back to it rather than alerting twice.
+            if (muniFetchError) return <window.LoadErrorNote error={muniFetchError} />;
             if (localMuniLoading) {
               return (
                 <p className="caption" style={{ padding: '12px' }}>
-                  Carregando municípios de <strong>{loadingPlace}</strong>…
+                  Carregando municípios {loadingPlace ? <>de <strong>{loadingPlace}</strong></> : 'do recorte'}…
+                </p>
+              );
+            }
+            if (muniAsked) {
+              return (
+                <p className="caption" style={{ padding: '12px' }}>
+                  Sem dados por município na seleção atual: nenhum município{' '}
+                  {loadingPlace ? <>de <strong>{loadingPlace}</strong></> : 'do recorte'} tem
+                  registro de {activeDim.label.toLowerCase()} na janela selecionada.
                 </p>
               );
             }
@@ -935,12 +980,18 @@ function ViewGeography({ families, conventions, summary, database, territoryComp
           ? <window.Heatmap rows={heatScaled.rows} valueKey="v" valueLabel={heatScaled.label} />
           : (
             <p className="caption" style={{ padding: '12px' }}>
-              {scope === 'municipio' && !localMuniLoading
-                ? <>A evolução por município aparece ao <strong>recortar a geografia</strong> — selecione
-                    uma UF ou um recorte sub-UF no filtro.</>
-                : scope === 'municipio' && localMuniLoading
-                  ? <>Carregando o histórico de <strong>{loadingPlace}</strong>…</>
-                  : 'Sem histórico anual disponível para o recorte atual.'}
+              {scope !== 'municipio'
+                ? (filtered.subUfLoadError
+                    ? 'Sem histórico: a leitura do recorte falhou (veja o aviso acima).'
+                    : 'Sem histórico anual disponível para o recorte atual.')
+                : muniFetchError
+                  ? 'Sem histórico por município: a leitura falhou (veja o aviso acima).'
+                  : localMuniLoading
+                    ? <>Carregando o histórico {loadingPlace ? <>de <strong>{loadingPlace}</strong></> : 'do recorte'}…</>
+                    : muniAsked
+                      ? 'Sem histórico anual por município na seleção atual.'
+                      : <>A evolução por município aparece ao <strong>recortar a geografia</strong> — selecione
+                          uma UF ou um recorte sub-UF no filtro.</>}
             </p>
           )}
       </div>

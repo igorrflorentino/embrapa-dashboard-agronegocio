@@ -122,6 +122,14 @@ import './countUnits.js';
     const recorte = (window.subUfChipText
       && window.subUfChipText(summary || {}, (window.geoMesh && window.geoMesh()) || []))
       || 'sem recorte sub-UF';
+    // A sub-UF narrowing still on its way, or failed for good, leaves applyFilters without
+    // the selection's numbers: the series falls back to the national one, the grid to
+    // nothing. The cases that read them refuse with the reason (v1.107.3) — a file is
+    // worse than a screen here, since it would carry the national series under its own
+    // recorte_geografico column, with no chip or note beside it.
+    const recorteNaoResolvido = f.subUfLoadError ? 'falha-recorte'
+      : f.subUfLoading ? 'carregando-recorte' : null;
+    const recusaRecorte = (subject) => ({ headers: [], rows: [], subject, motivo: recorteNaoResolvido });
     const PRODS = f.products;
     const nameOf = (c) => (PRODS.find(p => p.code === c) || {}).name || c;
 
@@ -145,6 +153,7 @@ import './countUnits.js';
     switch (view) {
       case 'value':
       case 'overview': {
+        if (recorteNaoResolvido) return recusaRecorte('serie_agregada');
         // annual aggregate series (value + qty per family)
         const headers = ['ano', `valor_${conv.currency}`, 'qtd_massa_t', 'qtd_volume_m3', ...countHeaders];
         const rows = f.ts.map(d => [
@@ -191,20 +200,25 @@ import './countUnits.js';
         const headers = ['ano', 'territorio', 'nivel', 'codigo', `valor_${conv.currency}`,
           'massa_t', 'volume_m3', ...countHeaders]
           .concat(origem ? ['tabela_sidra'] : []).concat(nivel ? ['nivel_industrializacao'] : []);
-        // Two refusals the generic "sem linhas" would explain wrongly: nothing chosen (its
-        // advice to widen the geography does nothing here), and a place still loading
-        // (the file would silently leave it out while the screen is about to show it).
+        // Three refusals the generic "sem linhas" would explain wrongly: nothing chosen (its
+        // advice to widen the geography does nothing here), a place whose read failed, and
+        // a place still loading — in both of the last two the file would silently leave the
+        // place out. Failure is checked first: a failed read never stops "loading", so
+        // "aguarde" would be advice that never comes true.
         if (!tcm || !sel.length) {
           return { headers, rows: [], subject: 'comparativo_territorios', motivo: 'sem-territorios' };
         }
         const by = Object.fromEntries(['value', 'mass', 'volume', ...countCols.map((g) => g.id)].map((m) => (
           [m, tcm.build({ database, summary, selection: sel, metric: m })])));
+        if (Object.values(by).some((b) => b.loadError)) {
+          return { headers, rows: [], subject: 'comparativo_territorios', motivo: 'falha-territorios' };
+        }
         if (Object.values(by).some((b) => b.loading)) {
           return { headers, rows: [], subject: 'comparativo_territorios', motivo: 'carregando' };
         }
         const rows = [];
         by.value.items.forEach((it, i) => {
-          if (it.loading || it.unavailable) return;
+          if (it.loading || it.loadError || it.unavailable) return;
           it.points.forEach((pt, j) => {
             const q = (m) => ((by[m].items[i].points[j] || {}).v);
             rows.push([
@@ -235,6 +249,7 @@ import './countUnits.js';
         // scope (export triggered from elsewhere, or before the view ever mounted)
         // falls back to the per-UF table — the original, always-available shape.
         const geoScope = window.geoExportScope || 'uf';
+        if (recorteNaoResolvido) return recusaRecorte('distribuicao_geografica');
         if (geoScope === 'region') {
           const headers = ['ano', 'regiao', `valor_${conv.currency}`, 'qtd_massa_t', 'qtd_volume_m3', ...countHeaders, 'escopo_produto', 'recorte_geografico'].concat(origem ? ['tabela_sidra'] : []).concat(nivel ? ['nivel_industrializacao'] : []);
           const rows = (f.regionData || []).map(r => [
@@ -248,6 +263,13 @@ import './countUnits.js';
           return { headers, rows, subject: 'distribuicao_por_regiao' };
         }
         if (geoScope === 'municipio') {
+          // The view's own município read (a single state with no sub-UF facet) has the same
+          // three states, and an empty list is a measurement only when it has neither.
+          const leitura = window.geoExportMuniRead || {};
+          if (leitura.loadError || leitura.loading) {
+            return { headers: [], rows: [], subject: 'distribuicao_por_municipio',
+                     motivo: leitura.loadError ? 'falha-recorte' : 'carregando-recorte' };
+          }
           const munis = Array.isArray(window.geoExportMunis) ? window.geoExportMunis : [];
           const headers = ['ano', 'municipio', 'uf', `valor_${conv.currency}`, 'qtd_massa_t', 'qtd_volume_m3', ...countHeaders, 'escopo_produto', 'recorte_geografico'].concat(origem ? ['tabela_sidra'] : []).concat(nivel ? ['nivel_industrializacao'] : []);
           const rows = munis.map(m => [
@@ -272,6 +294,7 @@ import './countUnits.js';
         return { headers, rows, subject: 'distribuicao_geografica' };
       }
       case 'concentration': {
+        if (recorteNaoResolvido) return recusaRecorte('concentracao');
         const ano = f.ufYearPartial ? `${f.ufLatestYear} (parcial)` : (f.ufLatestYear ?? '');
         const escopo = f.notFilteredByBasket ? 'todos os produtos' : 'cesta selecionada';
         const headers = ['ano', 'uf', 'nome', 'regiao', `valor_${conv.currency}`, ...countHeaders, 'escopo_produto', 'recorte_geografico'].concat(origem ? ['tabela_sidra'] : []).concat(nivel ? ['nivel_industrializacao'] : []);

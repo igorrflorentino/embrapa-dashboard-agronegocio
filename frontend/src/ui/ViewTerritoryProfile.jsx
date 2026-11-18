@@ -94,7 +94,12 @@ function ViewTerritoryProfile({ summary, database, conventions }) {
   // (meso/micro/intermediária/imediata/município) resolves to a city set, whose UFs are
   // the admitted ones. Empty/absent ⇒ no narrowing ⇒ the whole universe.
   const scopedCities = filtered.scopedCityCodes || null;
-  const meshAll = window.geoMesh ? window.geoMesh() : null;
+  // The mesh as a STATE (v1.107.3): the city picker, the trajectory and the composition must
+  // tell a mesh still on its way from one that failed — both leave `municipios` null.
+  const meshState = window.geoMeshState
+    ? window.geoMeshState()
+    : { municipios: null, loading: false, loadError: null };
+  const meshAll = meshState.municipios;
   const allowedUfs = useTPMemo(() => {
     const fromStates = (summary && Array.isArray(summary.states) && summary.states.length)
       ? new Set(summary.states) : null;
@@ -196,13 +201,33 @@ function ViewTerritoryProfile({ summary, database, conventions }) {
   // ── The território's trajectory ───────────────────────────────────────────
   // A combination is SUMMED, which is legitimate here: these are production values in
   // one unit and one deflation basis, so the sum is the selection's own series.
-  const muniCube = (activeLevel === 'municipio' && activeCities.length && window.municipioYearly)
+  // null = not asked (no city resolved yet); else { rows, priceBase, loading, loadError }.
+  const muniRead = (activeLevel === 'municipio' && activeCities.length && window.municipioYearly)
     ? window.municipioYearly(database, summary, activeCities, [yearStart, yearEnd])
     : null;
-  // The month that cube's corrected values are at — same request, no second fetch (v1.105.0).
-  const muniCubeBase = (activeLevel === 'municipio' && activeCities.length && window.municipioYearlyPriceBase)
-    ? window.municipioYearlyPriceBase(database, summary, activeCities, [yearStart, yearEnd])
-    : null;
+  const muniCube = muniRead ? muniRead.rows : null;
+  // The month that cube's corrected values are at — same response as the rows (v1.105.0).
+  const muniCubeBase = muniRead ? muniRead.priceBase : null;
+
+  // Where the trajectory — and the two indicators read off it — stands. Only the last branch
+  // is a measurement: until v1.107.3 "Sem série" and "sem dados" were printed while the cube
+  // was on its way (1–3 s on every change of município), and for good when it failed.
+  //   município — the IBGE mesh names the cities, then the município cube sums them;
+  //   UF        — applyFilters' grid, which under a sub-UF facet is the rollup of that same
+  //               cube, behind the same mesh.
+  const gradeEstado = {
+    loading: !!filtered.subUfLoading,
+    loadError: filtered.subUfLoadError || null,
+  };
+  const leitura = activeLevel !== 'municipio'
+    ? gradeEstado
+    : meshState.loadError
+      ? { loading: false, loadError: meshState.loadError }
+      : !Array.isArray(meshAll)
+        ? { loading: true, loadError: null }
+        : muniRead
+          ? { loading: muniRead.loading, loadError: muniRead.loadError }
+          : { loading: false, loadError: null }; // no município in the selection: nothing asked
 
   const series = useTPMemo(() => {
     const rows = activeLevel === 'municipio'
@@ -235,12 +260,15 @@ function ViewTerritoryProfile({ summary, database, conventions }) {
     : null;
   // No reader called means no place resolved yet. At município level that is the IBGE mesh
   // still on its way (the city picker says "carregando municípios…" for the same reason):
-  // nothing was asked, so the card says it is loading — never "sem produtos".
+  // nothing was asked, so the card says it is loading — never "sem produtos". A mesh that
+  // FAILED is not on its way: the card says it failed (it said "carregando" forever until
+  // v1.107.3).
+  const muniMeshError = activeLevel === 'municipio' ? meshState.loadError : null;
   const breakdown = ufBreakdown || muniBreakdown || {
     products: [],
-    loading: activeLevel === 'municipio' && !Array.isArray(mesh),
+    loading: activeLevel === 'municipio' && !Array.isArray(mesh) && !muniMeshError,
     unavailable: false,
-    loadError: null,
+    loadError: muniMeshError,
   };
 
   // ── National weight + rank ────────────────────────────────────────────────
@@ -362,11 +390,16 @@ function ViewTerritoryProfile({ summary, database, conventions }) {
                   Seleção atual ({cityOptions.length} municípios somados)
                 </option>
               )}
+              {/* Three reasons for an empty list, and only one is "there is none". */}
               {cityOptions.length
                 ? cityOptions.map((c) => (
                     <option key={c.code} value={c.code}>{c.name} · {c.uf}</option>
                   ))
-                : <option value="">carregando municípios…</option>}
+                : meshState.loadError
+                  ? <option value="">não foi possível carregar os municípios</option>
+                  : !Array.isArray(mesh)
+                    ? <option value="">carregando municípios…</option>
+                    : <option value="">nenhum município na seleção</option>}
             </select>
           </label>
         )}
@@ -399,35 +432,55 @@ function ViewTerritoryProfile({ summary, database, conventions }) {
           conventions={conv} />
       )}
 
+      {/* Each indicator answers from the read it stands on: Valor and Pico from the
+          trajectory (`leitura`), Participação and Posição from the UF grid (`gradeEstado`).
+          While that read is on its way the card says so; when it failed, it says that —
+          "sem dados" is kept for a read that came back empty. */}
       <div className="kpi-row">
         <window.KpiCardSpark
           label={<>Valor · {placeLabel}</>}
-          value={last ? window.formatValue(last.v, conv) : '—'}
-          delta={deltaV != null ? window.fmtSigned(deltaV) : null}
+          value={leitura.loadError ? '—' : leitura.loading ? '…' : (last ? window.formatValue(last.v, conv) : '—')}
+          delta={!leitura.loadError && !leitura.loading && deltaV != null ? window.fmtSigned(deltaV) : null}
           deltaPositive={window.deltaUp(deltaV)}
-          sub={last && prev
-            ? `${last.y} vs. ${prev.y}${deltaVMoeda ? ` · ${deltaVMoeda}` : ''}`
-            : (last ? String(last.y) : 'sem dados')}
-          spark={series}
+          sub={leitura.loadError
+            ? 'não foi possível carregar a série'
+            : leitura.loading
+              ? 'carregando a série…'
+              : last && prev
+                ? `${last.y} vs. ${prev.y}${deltaVMoeda ? ` · ${deltaVMoeda}` : ''}`
+                : (last ? String(last.y) : 'sem dados')}
+          spark={leitura.loadError || leitura.loading ? null : series}
         />
         <window.KpiCardSpark
           label="Participação no país"
-          value={share != null ? window.fmtPct(share) : '—'}
-          sub={nationalAvailable
-            ? `${ufName} sobre o total das UFs · ${somaNacional || `${yearStart}–${yearEnd}`}`
-            : 'indisponível sob recorte sub-UF (não há denominador nacional nesta base)'}
+          value={gradeEstado.loadError ? '—' : gradeEstado.loading ? '…' : (share != null ? window.fmtPct(share) : '—')}
+          sub={gradeEstado.loadError
+            ? 'indisponível: o recorte sub-UF não carregou'
+            : gradeEstado.loading
+              ? 'carregando o recorte sub-UF…'
+              : nationalAvailable
+                ? `${ufName} sobre o total das UFs · ${somaNacional || `${yearStart}–${yearEnd}`}`
+                : 'indisponível sob recorte sub-UF (não há denominador nacional nesta base)'}
         />
         <window.KpiCardSpark
           label="Posição no ranking"
-          value={rank ? `${rank}º` : '—'}
-          sub={rankable
-            ? `de ${rankUniverse} UFs no banco · por valor · ${somaNacional || 'na janela'}`
-            : (combined ? 'uma soma de territórios não tem posição' : 'indisponível sob recorte sub-UF')}
+          value={gradeEstado.loadError ? '—' : gradeEstado.loading ? '…' : (rank ? `${rank}º` : '—')}
+          sub={gradeEstado.loadError
+            ? 'indisponível: o recorte sub-UF não carregou'
+            : gradeEstado.loading
+              ? 'carregando o recorte sub-UF…'
+              : rankable
+                ? `de ${rankUniverse} UFs no banco · por valor · ${somaNacional || 'na janela'}`
+                : (combined ? 'uma soma de territórios não tem posição' : 'indisponível sob recorte sub-UF')}
         />
         <window.KpiCardSpark
           label="Pico histórico"
-          value={peak ? window.formatValue(peak.v, conv) : '—'}
-          sub={peak ? `em ${peak.y}` : 'sem dados na janela'}
+          value={leitura.loadError ? '—' : leitura.loading ? '…' : (peak ? window.formatValue(peak.v, conv) : '—')}
+          sub={leitura.loadError
+            ? 'não foi possível carregar a série'
+            : leitura.loading
+              ? 'carregando a série…'
+              : (peak ? `em ${peak.y}` : 'sem dados na janela')}
         />
       </div>
 
@@ -445,9 +498,17 @@ function ViewTerritoryProfile({ summary, database, conventions }) {
           overline={`Trajetória · ${window.conventionMonetaryLabel(conv)}`}
           title={`Evolução de ${placeLabel}`}
         />
-        {series.length
-          ? <window.LineChart data={scaled.data} valueKey="v" label={scaled.label} />
-          : <window.EmptyCard>Sem série para este território na janela selecionada.</window.EmptyCard>}
+        {leitura.loadError
+          ? <window.LoadErrorNote error={leitura.loadError} />
+          : leitura.loading
+            ? (
+              <p className="caption" style={{ padding: '40px 4px', textAlign: 'center' }}>
+                Carregando a série…
+              </p>
+            )
+            : series.length
+              ? <window.LineChart data={scaled.data} valueKey="v" label={scaled.label} />
+              : <window.EmptyCard>Sem série para este território na janela selecionada.</window.EmptyCard>}
       </div>
 
       <div className="card">

@@ -128,7 +128,9 @@
   }
 
   /** Everything the view and the CSV need for a selection.
-   *  Returns { items, brasil, years, loading, muniCapable }. */
+   *  Returns { items, brasil, years, loading, loadError, muniCapable, priceBases,
+   *  comparedPriceBases }. An item carries `loading`, `loadError` or `unavailable` when it
+   *  has no points to show, and only an item with none of the three is a measurement. */
   // `max` caps the selection (the screen's limit); the default-picking scan passes
   // Infinity, since it ranks all 27 states and must not see only the first eight.
   function build({ database, summary, selection, metric = 'value', max = MAX }) {
@@ -143,8 +145,11 @@
 
     const sel = (selection || []).slice(0, max);
     const muniCodes = sel.filter((t) => t.level === 'municipio').map((t) => String(t.code));
-    const muniCube = muniCapable && muniCodes.length && window.municipioYearly
-      ? window.municipioYearly(database, summary, muniCodes) : (muniCodes.length ? [] : null);
+    // The cube's read: { rows, priceBase, loading, loadError } (window.municipioYearly), or
+    // null when nothing is asked (no município chosen, or a banco without that grain).
+    const muniRead = muniCapable && muniCodes.length && window.municipioYearly
+      ? window.municipioYearly(database, summary, muniCodes) : null;
+    const muniCube = muniRead ? muniRead.rows : (muniCodes.length ? [] : null);
     const muniRows = (muniCube || []).filter(inWindow);
 
     const years = [...new Set([...ufRows, ...muniRows].map((r) => r.year))].sort((a, b) => a - b);
@@ -153,6 +158,8 @@
       const base = { ...t, key: keyOf(t), label: labelOf(t), levelLabel: LEVEL_LABEL[t.level] };
       if (t.level === 'municipio') {
         if (!muniCapable) return { ...base, unavailable: true, points: [] };
+        // A failed read is not a pending one: until v1.107.3 it read "carregando…" for good.
+        if (muniRead && muniRead.loadError) return { ...base, loadError: muniRead.loadError, points: [] };
         if (muniCube == null) return { ...base, loading: true, points: [] };
         return { ...base, points: yearly(muniRows, (r) => String(r.cityCode) === String(t.code), field, years) };
       }
@@ -166,18 +173,19 @@
     // The whole country for the SAME metric, for the share column. Every row counts,
     // including a trade banco's non-state origins, so the share is of the national total.
     const brasil = grid.loading ? [] : yearly(ufRows, () => true, field, years);
-    // The month the município cube is at (v1.105.0) — same request, no second fetch. It reads
+    // The month the município cube is at (v1.105.0) — same response as its rows. It reads
     // the analytical base directly while `brasil` comes from the pre-aggregated tables, and
     // the share divides one by the other: across a build they can be a month apart, and the
     // view says so. `comparedPriceBases` are applyFilters' cubes, whose skew MainScreen's
     // note already reports — passed on so the view never says it twice.
-    const muniPriceBase = muniCapable && muniCodes.length && window.municipioYearlyPriceBase
-      ? window.municipioYearlyPriceBase(database, summary, muniCodes) : null;
+    const muniPriceBase = muniRead ? muniRead.priceBase : null;
     return {
       items,
       brasil,
       years,
       loading: items.some((it) => it.loading),
+      // The first failed read, for the view's one note (each failed item is also marked).
+      loadError: (items.find((it) => it.loadError) || {}).loadError || null,
       muniCapable,
       priceBases: muniPriceBase ? [muniPriceBase] : [],
       comparedPriceBases: [f.muniPriceBase, f.geoPriceBase],
