@@ -162,6 +162,15 @@ away. Under a UF subset `applyFilters` swaps them for the selected UFs' own seri
 geography filter. Until v1.108.3 four perspectives did: Pará's Leite stacked at Brazil's
 ~R$ 90 bi under a "1 UF" chip, beside a Pará total of R$ 1,6 bi.
 
+Both reads of the series, this national one and the per-UF one, follow the screen's SIDRA
+table (`tabela`, the `tb` chip) since v1.108.4. Every other production read of the snapshot
+already did. Until then neither passed it. Under "Extração vegetal" the PEVS series summed
+BOTH halves of the survey beside a total that read one: R$ 43,00 bi of series under a
+R$ 5,87 bi total in 2024, measured on prod 2026-11-19. The `q_mass`/`q_vol` of `overviewTS`
+are summed FROM these series (`seam._with_overview_quantities`), so under either half they
+were the whole survey's. Without a table (absent or `all`) the read carries no `tabela`
+key, and its SQL and cache key are unchanged.
+
 ### 3.4 `ufData` — COMEX + PEVS only (`geo` capability)
 `[{ uf, name, region, col, row, value, q_mass, q_vol, q_count_stock, q_count_flow }]`,
 grouped by UF. The two count totals are §3.1's: the herd and every other count, never
@@ -252,7 +261,9 @@ município passes the cascade iff it clears every active facet (intersection).
   per-product read with ONE more predicate, `state_acronym IN UNNEST(@uf_codes)`, and the
   same filter arguments by construction (`seam._product_ts_filter_kwargs`, pinned by
   `tests/test_product_ts_by_uf.py`): COMEX follows the selected flow, like the hero and the
-  UF cube. **Cost, measured on prod 2026-11-19** (one real run per banco, nominal R$, every
+  UF cube. Since v1.108.4 the production bancos also follow the SIDRA table the total reads
+  (`tests/test_series_por_produto_tabela.py`, §3.3). The two reads had agreed with each
+  other only because both left the table out, so agreeing proved nothing. **Cost, measured on prod 2026-11-19** (one real run per banco, nominal R$, every
   year): 0,49 MB (PEVS) · 0,92 MB (PAM) · 1,05 MB (PPM) · 6,78 MB (COMEX) processed, each
   billed at BigQuery's 10 MB per-query floor, exactly like the national read beside it.
   `available: false` with an empty `productTS` for COMTRADE, which has no UF. The client side

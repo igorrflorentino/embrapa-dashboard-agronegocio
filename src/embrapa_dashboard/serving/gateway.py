@@ -1411,9 +1411,11 @@ def fetch_product_timeseries(
 ):
     """Annual per-product series (value + native quantity) for a source (backs productTS).
 
-    ``tabela`` optionally pins one SIDRA table — the cross-source PEVS quantity series
-    read ONE half of the survey (``None`` sums every table, as before). Being an argument,
-    it is part of the memoize key, so a pinned read never collides with an unpinned one.
+    ``tabela`` optionally pins one SIDRA table: the cross-source PEVS quantity series read
+    ONE half of the survey, and the snapshot's and the per-UF per-product series follow the
+    screen's table filter (v1.108.4). ``None`` sums every table, as before. Being an
+    argument, it is part of the memoize key, so a pinned read never collides with an
+    unpinned one.
 
     ``with_price_base`` selects the month the value column is at, in the same select
     (fails closed: :func:`_asks_price_base`). Only the per-UF read asks — it is a request of
