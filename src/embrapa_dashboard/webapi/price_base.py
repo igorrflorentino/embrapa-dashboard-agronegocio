@@ -146,8 +146,9 @@ def payload(column: str | None, base: PriceBase | None) -> dict | None:
     different convention (``window.priceBaseFor``). ``month`` is 'YYYY-MM', ``fxDate``
     'YYYY-MM-DD' (or null: an own-currency column converts at each period's rate).
 
-    ``column=None`` is for the bare-frame readers (products by UF / município, the município
-    cube), whose serializer never learns which column was summed. Their base can still only
+    ``column=None`` is for the bare-frame readers (products by UF / município, the UF and
+    município cubes, the selected UFs' per-product series), whose serializer never learns
+    which column was summed. Their base can still only
     have come from a deflated column — the SQL dates no other kind — and it belongs to the
     request's own convention, so the payload just leaves the column out.
     """

@@ -368,10 +368,38 @@ import './countUnits.js';
       return { y, v, q: qMass, q_mass: qMass, q_vol: qVol, q_count_stock: qStock, q_count_flow: qFlow };
     });
 
+    // ── Per-product series of a UF subset (v1.108.3) ──────────────────
+    // PRODUCT_TS_T is NATIONAL: the snapshot sums its mart's UF grain away. Under a UF subset
+    // it put Brazil's figure under the UF chip in every per-product number — Pará's Leite
+    // stacked at R$ 90 bi beside a Pará total of R$ 1,6 bi. So under a UF subset the series
+    // come from the per-UF read (window.productTSByUf → /api/product-ts): the same mart, value
+    // column and axes, summed over the selected UFs only, sliced below exactly like the
+    // snapshot's. Its four states:
+    //   resolved    — the UFs' own series ({} = measured, no product there);
+    //   loading     — NO series stands: the national one is the defect itself, so the
+    //                 screens hold every per-product number and say it is loading;
+    //   loadError   — the same hold, saying it failed;
+    //   unavailable — a banco the read cannot serve keeps the NATIONAL series, and the
+    //                 screens say plainly that they are national (productUfUnavailable).
+    // An EMPTY UF selection is "none": no series, measured, and no request. Without a UF
+    // subset nothing changes: the snapshot's series is the answer.
+    const productUfAsked = stateNarrowing && stateSet.size > 0;
+    const productUfState = (productUfAsked && window.productTSByUf)
+      ? window.productTSByUf(bancoId, summary) : null;
+    // No reader at all (no producer, or none for this banco) is "unavailable", never "loading":
+    // nothing is on its way, and a screen waiting for it would wait for good.
+    const productUfUnavailable = productUfAsked && (!productUfState || !!productUfState.unavailable);
+    const productUfLoading = !!(productUfState && productUfState.loading);
+    const productUfLoadError = (productUfState && productUfState.loadError) || null;
+    const PRODUCT_SERIES = !stateNarrowing ? PRODUCT_TS_T
+      : !productUfAsked ? {}
+      : productUfUnavailable ? PRODUCT_TS_T
+      : (productUfState.productTS || {});
+
     // ── Per-product time series, restricted to basket + window ───────
     const productTS = {};
     selectedProducts.forEach(code => {
-      const series = PRODUCT_TS_T[code];
+      const series = PRODUCT_SERIES[code];
       if (!series) return;
       productTS[code] = series.filter(d => d.y >= yearStart && d.y <= yearEnd);
     });
@@ -569,7 +597,7 @@ import './countUnits.js';
     const compositionRaw = selectedProducts
       .map(code => {
         const prod = PRODUCTS_T.find(p => p.code === code);
-        const series = PRODUCT_TS_T[code];
+        const series = PRODUCT_SERIES[code];
         if (!prod || !series) return null;
         const lastInWindow = series.filter(d => d.y >= yearStart && d.y <= yearEnd).slice(-1)[0];
         if (!lastInWindow) return null;
@@ -579,8 +607,9 @@ import './countUnits.js';
         return { name: prod.name, tabela: prod.tabela, value: lastInWindow.v };
       })
       .filter(Boolean);
-    // National: PRODUCT_TS_T has no geography. Under a sub-UF recorte the Visão geral reads
-    // the recorte's own products instead (recorteProducts.js) and slices them the same way.
+    // The selected UFs' under a UF subset, national otherwise (PRODUCT_SERIES, above). Under a
+    // sub-UF recorte the Visão geral reads the recorte's own products instead
+    // (recorteProducts.js) and slices them the same way.
     const topProducts = window.compositionSlices(compositionRaw);
 
     // ── Quality flag distribution ─────────────────────────────────────
@@ -662,7 +691,22 @@ import './countUnits.js';
       // dimensions instead of reaching into the PEVS globals (window.PRODUCTS …):
       products:        PRODUCTS_T,                 // active banco product list
       productsTotal:   allProducts.length,
-      allProductTS:    PRODUCT_TS_T,               // full (unfiltered) per-product series
+      // Every product's series over the whole history — unfiltered by basket and period, but
+      // the selected UFs' under a UF subset (PRODUCT_SERIES), like productTS and topProducts.
+      allProductTS:    PRODUCT_SERIES,
+      // Where the per-product series of a UF subset stand (v1.108.3). Requested: a UF subset
+      // narrows them (an empty selection included). Loading / failed: productTS, allProductTS
+      // and topProducts are EMPTY, held, and the screens say which — an empty series here is
+      // not "nothing produced". Unavailable: they are the NATIONAL ones, and the screens say so.
+      productUfRequested: stateNarrowing,
+      productUfLoading,
+      productUfLoadError,
+      productUfUnavailable,
+      // The month the UFs' corrected values are at — read off their own response (v1.105.0);
+      // null with no UF subset, while it loads, or under a nominal convention. A request cached
+      // on its own, so across a build it can be a month apart from the snapshot
+      // (window.PriceBaseSkewNote, csvExport's correcao_monetaria).
+      productPriceBase: (productUfState && !productUfUnavailable && productUfState.priceBase) || null,
       // The banco's ALL-TIME UF universe (distinct UFs across every covered year),
       // not just the latest year's — so the "UFs cobertas" denominator never under-
       // counts on a sparse trade year. Falls back to the latest-year UF list when

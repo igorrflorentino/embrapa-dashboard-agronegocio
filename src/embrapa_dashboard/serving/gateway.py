@@ -1407,12 +1407,17 @@ def fetch_product_timeseries(
     partners: Sequence[str] = (),
     pin_reporter: str | None = _REPORTER_PIN_DEFAULT,
     tabela: str | None = None,
+    with_price_base: bool = False,
 ):
     """Annual per-product series (value + native quantity) for a source (backs productTS).
 
     ``tabela`` optionally pins one SIDRA table — the cross-source PEVS quantity series
     read ONE half of the survey (``None`` sums every table, as before). Being an argument,
     it is part of the memoize key, so a pinned read never collides with an unpinned one.
+
+    ``with_price_base`` selects the month the value column is at, in the same select
+    (fails closed: :func:`_asks_price_base`). Only the per-UF read asks — it is a request of
+    its own (``/api/product-ts``); the snapshot is dated by its overview read.
 
     ``uf_codes`` optionally narrows to the producing/origin UFs (cross-source per-UF
     scoping: PEVS mass/volume + farm-gate price). ``flow`` narrows trade sources to
@@ -1459,6 +1464,9 @@ def fetch_product_timeseries(
         partners=par,
         has_measure_kind=source in _MEASURE_KIND_SOURCES,
         tabela=tabela,
+        price_base=_asks_price_base(
+            with_price_base, value_column or default_value, "bq_serving_dataset", table_name
+        ),
     )
     return run_query(sql, params)
 

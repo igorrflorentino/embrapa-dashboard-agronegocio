@@ -121,17 +121,19 @@ describe('ViewOverview — KPI strip + quality digest (H3 + P0 lock-in)', () => 
     expect(values).toContain('vol:20'); // latest q_vol via formatVolumeQty
   });
 
-  it('the quality digest denominator counts the REAL registry (11 flags)', () => {
+  it('the quality digest denominator counts the REAL registry (14 marcas)', () => {
     stubGlobals(FIXTURE);
     const { container } = render(
       <ViewOverview families={['mass']} summary={{}} database="ibge_pevs" conventions={{}} />
     );
-    // "{qualityFlags.length} de {QUALITY_FLAGS.length} flags" → "2 de 14 flags". 14 = the 5
+    // "{qualityFlags.length} de {QUALITY_FLAGS.length} marcas" → "2 de 14 marcas". 14 = the 5
     // base flags + the 4 outlier/problemático tiers + the 2 reserved inferred tiers + the
     // PAM-only AREA_INCONSISTENT + UNSCORED + the IBGE ISOLATED_SPIKE (all in the registry
-    // regardless of the dbt var / pipeline state).
-    expect(container.textContent).toContain('de 14 flags');
-    expect(container.textContent).not.toContain('de 6 flags'); // the old prototype count
+    // regardless of the dbt var / pipeline state). "marcas", not "flags" (v1.108.3): the
+    // editorial vocabulary's word for a quality tag on screen.
+    expect(container.textContent).toContain('de 14 marcas');
+    expect(container.textContent).not.toContain('de 6 marcas'); // the old prototype count
+    expect(container.textContent).not.toMatch(/\bflags\b/);
   });
 
   it('o card de qualidade mostra a cobertura em VALOR ao lado da de linhas', () => {
@@ -323,7 +325,7 @@ describe('ViewOverview — a sub-UF narrowing on its way or failed holds the num
       expect(k.querySelector('.kpi-sub').textContent).toBe('cruzando produto × UF…');
     }
     expect(c.textContent).toContain('Variação acumulada: …');
-    expect(c.textContent).toContain('Cobertura geográfica: … /');
+    expect(c.textContent).toContain('Cobertura geográfica da seleção: … /');
     expect(c.querySelector('.load-err')).toBeNull();
   });
 
@@ -335,7 +337,7 @@ describe('ViewOverview — a sub-UF narrowing on its way or failed holds the num
     }
     expect(c.textContent).toContain('Variação acumulada: —');
     // The empty grid of an unresolved recorte would count "0" UFs: a claim about the data.
-    expect(c.textContent).toContain('Cobertura geográfica: — /');
+    expect(c.textContent).toContain('Cobertura geográfica da seleção: — /');
     expect(c.querySelector('.load-err')).not.toBeNull();
     expect(c.textContent).not.toMatch(/[Cc]ruzando/);
   });
@@ -344,7 +346,7 @@ describe('ViewOverview — a sub-UF narrowing on its way or failed holds the num
     const c = renderWith({});
     // The latest value through formatValue (bi → absolute reais), not a hold mark.
     expect(quantityCards(c)[0].querySelector('.kpi-value').textContent).toBe('val:2000000000');
-    expect(c.textContent).toContain('Cobertura geográfica: 1 /');
+    expect(c.textContent).toContain('Cobertura geográfica da seleção: 1 /');
     expect(c.querySelector('.load-err')).toBeNull();
   });
 });
@@ -501,5 +503,87 @@ describe('ViewOverview — the basket’s product × UF cube on its way or faile
     c = renderWith({ notFilteredByBasket: true, basketGeoLoadError: 'HTTP 503' });
     expect(c.textContent).toContain('não foi possível carregar a distribuição por UF da cesta selecionada');
     expect(c.textContent).not.toContain('ainda está carregando');
+  });
+});
+
+// ── Sob um subconjunto de UFs, a composição é a das UFs (v1.108.3) ────────────────────────
+// Measured on prod 2026-11-18 (PPM, Pará): the donut sliced BRAZIL's latest year under a
+// "1 UF" chip. applyFilters now hands the UFs' own slices; while their read is on its way, or
+// after it failed, it hands none, and the card says which instead of "nenhum produto".
+describe('ViewOverview — under a UF subset the composition is the UFs’ own', () => {
+  const PARA = [{ code: 'L', name: 'Leite', share: 0.9 }, { code: 'O', name: 'Ovos de galinha', share: 0.1 }];
+  const UF = { productUfRequested: true, productUfLoading: false, productUfLoadError: null, productUfUnavailable: false };
+  const cartao = (c, overline) => [...c.querySelectorAll('.card')]
+    .find((k) => (k.querySelector('.sh-ov') || {}).textContent?.startsWith(overline));
+  const renderWith = (extra) => {
+    stubGlobals({ ...FIXTURE, ...UF, ...extra });
+    window.SectionHeader = ({ overline, title, action }) => (
+      <div className="sh">
+        <span className="sh-ov">{overline}</span>
+        <span className="sh-title">{title}</span>
+        <span className="sh-action">{action}</span>
+      </div>
+    );
+    window.NotApplicableNote = ({ note }) => {
+      const m = note ? Object.values(note).filter(Boolean) : [];
+      return m.length ? <div className="na-note">{m.join(' ')}</div> : null;
+    };
+    return render(
+      <ViewOverview families={['mass']} summary={{ states: ['PA'] }} database="ibge_ppm" conventions={{}} />,
+    ).container;
+  };
+  afterEach(() => { delete window.NotApplicableNote; });
+
+  it('resolved: the slices are the UFs’, with no note', () => {
+    const c = renderWith({ topProducts: PARA });
+    expect(cartao(c, 'Composição').querySelector('.donut').getAttribute('data-rotulos')).toBe('Leite|Ovos de galinha');
+    expect(cartao(c, 'Composição').querySelector('.na-note')).toBeNull();
+  });
+
+  it('on its way: no donut, and the card says it is loading — not "nenhum produto"', () => {
+    const c = renderWith({ topProducts: [], productUfLoading: true });
+    const card = cartao(c, 'Composição');
+    expect(card.querySelector('.donut')).toBeNull();
+    expect(card.textContent).toContain('Carregando as séries por produto das UFs escolhidas…');
+    expect(card.textContent).not.toMatch(/Nenhum produto|não têm valor/);
+  });
+
+  it('failed: no donut, and the card says it failed — never "still loading"', () => {
+    const c = renderWith({ topProducts: [], productUfLoadError: 'HTTP 503' });
+    const card = cartao(c, 'Composição');
+    expect(card.querySelector('.donut')).toBeNull();
+    expect(card.textContent).toContain('Não foi possível carregar as séries por produto das UFs escolhidas');
+    expect(card.textContent).not.toMatch(/Carregando/);
+  });
+
+  it('a banco without series by UF: the national slices, and a note saying they are national', () => {
+    const c = renderWith({ topProducts: PARA, productUfUnavailable: true });
+    const card = cartao(c, 'Composição');
+    expect(card.querySelector('.donut')).not.toBeNull();
+    expect(card.querySelector('.na-note').textContent)
+      .toContain('As séries por produto deste banco existem só para o Brasil inteiro');
+  });
+
+  it('resolved and empty: the UFs record none of the basket — said as such', () => {
+    const c = renderWith({ topProducts: [] });
+    expect(cartao(c, 'Composição').textContent)
+      .toContain('Os produtos selecionados não têm valor registrado nas UFs escolhidas no período.');
+  });
+
+  it('no UF subset: the national composition, no note', () => {
+    const c = renderWith({ topProducts: PARA, productUfRequested: false });
+    expect(cartao(c, 'Composição').querySelector('.donut')).not.toBeNull();
+    expect(cartao(c, 'Composição').querySelector('.na-note')).toBeNull();
+  });
+
+  // The flag counts are the banco's whole collection under any filter, like the KPI beside
+  // them ("acervo do banco"). The overline said "agregado", which under a UF chip read as
+  // "summed over my selection".
+  it('the quality card names its scope: the banco’s collection, not the selection', () => {
+    const c = renderWith({ topProducts: PARA });
+    const card = cartao(c, 'Qualidade dos dados');
+    expect(card.querySelector('.sh-ov').textContent).toBe('Qualidade dos dados · acervo do banco');
+    expect(card.querySelector('.sh-title').textContent).toMatch(/^Cobertura geográfica da seleção: /);
+    expect(c.textContent).not.toContain('agregado');
   });
 });

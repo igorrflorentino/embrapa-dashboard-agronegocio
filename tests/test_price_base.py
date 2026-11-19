@@ -219,6 +219,10 @@ def _builders():
         # The basket cube (/api/geo-yearly): its own request, cached apart from the snapshot.
         "production_by_uf_yearly": lambda **k: sqlbuild.production_by_uf_yearly("t", **k),
         "comex_by_uf_yearly": lambda **k: sqlbuild.comex_by_uf_yearly("t", **k),
+        # The per-UF per-product series (/api/product-ts, v1.108.3): its own request too.
+        "product_timeseries": lambda **k: sqlbuild.product_timeseries(
+            "t", code_column="product_code", **k
+        ),
         "comex_seasonality": lambda **k: sqlbuild.comex_seasonality("t", **k),
         "trade_overview": lambda **k: sqlbuild.trade_overview("t", code_column="ncm_code", **k),
         "trade_by_partner": lambda **k: sqlbuild.trade_by_partner(

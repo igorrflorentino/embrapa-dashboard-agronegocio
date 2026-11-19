@@ -316,6 +316,26 @@ def _country_reader_kwargs(summary: dict | None) -> dict:
     return kw
 
 
+def _product_ts_filter_kwargs(banco_id: str, summary: dict | None) -> dict:
+    """The server-side filters the per-product series honour beyond basket, years and UFs.
+
+    ONE place for the two reads of that series — the snapshot's national ``productTS`` and
+    the per-UF read behind ``/api/product-ts`` (v1.108.3) — so they cannot answer over
+    different datasets: summed over every UF, the per-UF read IS the national one (the
+    trade bancos' non-state origins aside). The trade marts re-query by flow, COMTRADE also
+    by regime, market and country; the production marts take none of these. Only keys that
+    differ from the gateway defaults are returned, so a production call stays byte-identical.
+    """
+    if banco_id not in _TRADE:
+        return {}
+    kw: dict = {"flow": _flow_from_summary(summary)}
+    if banco_id != "mdic_comex":
+        kw["customs"] = _customs_from_summary(summary)
+        kw["market"] = _market_from_summary(summary)
+        kw.update(_country_reader_kwargs(summary))
+    return kw
+
+
 # A basket that no row can match — an EMPTY basket reads as "no product filter" downstream
 # and would quietly serve the whole banco, the opposite of what was asked.
 _NO_CODE_SENTINEL = "__nenhum_codigo_neste_nivel__"
@@ -412,15 +432,15 @@ def snapshot(banco_id: str, conv: dict, summary: dict | None = None) -> dict:
         # (COMEX has neither dimension) — productTS is the series the views actually
         # render, so it must honour the same server-side filter as the overview.
         regime_kw = {} if banco_id == "mdic_comex" else {"customs": customs, "market": market}
+        # The per-product filters come from the helper the per-UF read shares
+        # (/api/product-ts), so the two reads of this series cannot drift apart.
         product_ts = gateway.fetch_product_timeseries(
             banco_id,
             year_start=y0,
             year_end=y1,
             codes=codes,
             value_column=value_col,
-            flow=flow,
-            **regime_kw,
-            **country_kw,
+            **_product_ts_filter_kwargs(banco_id, summary),
         )
         overview_fn = (
             gateway.fetch_comex_overview
@@ -459,7 +479,12 @@ def snapshot(banco_id: str, conv: dict, summary: dict | None = None) -> dict:
             uf_yearly = uf_yearly.rename(columns={"total_value_usd": "total_value"})
     else:  # PEVS-shaped (ibge_pevs, ibge_pam): production marts, BRL-native value matrix
         product_ts = gateway.fetch_product_timeseries(
-            banco_id, year_start=y0, year_end=y1, codes=codes, value_column=value_col
+            banco_id,
+            year_start=y0,
+            year_end=y1,
+            codes=codes,
+            value_column=value_col,
+            **_product_ts_filter_kwargs(banco_id, summary),
         )
         # Only the PEVS-shaped branch carries `tabela` — of the production marts
         # only gold_pevs_production spans two tables. None (the default) sums both.
@@ -1323,6 +1348,55 @@ def products_by_uf(
         # mais simples que ausente.
         include_tabela=True,
         with_price_base=True,
+    )
+
+
+def product_ts_by_uf_available(banco_id: str) -> bool:
+    """Whether :func:`product_ts_by_uf` has a reader for this banco: any live banco with a
+    UF grain — the three IBGE surveys and COMEX's origin UF. COMTRADE has none (its
+    geography is a country, so a UF filter never narrows it). Sent beside the series, like
+    :func:`products_by_uf_available`, because an empty series and no reader are different
+    answers."""
+    if banco_id not in _LIVE_SOURCES:
+        return False
+    banco = banco_by_id(banco_id)
+    return bool(banco) and "geo" in banco.provides
+
+
+def product_ts_by_uf(banco_id: str, conv: dict, summary: dict | None = None) -> pd.DataFrame | None:
+    """Annual per-product series summed over the SELECTED UFs only (v1.108.3).
+
+    The snapshot's per-product series is national: its mart has a UF grain, but the
+    snapshot sums it away. Under a whole-UF geography filter, every screen drawing a
+    product's series (Visão geral's composition, Valor × Volume, Perfil do produto,
+    Comparativo, Concentração, Rebanho) showed Brazil's figure under a chip saying "1 UF":
+    Leite stacked at ~R$ 90 bi for Pará, whose whole value is ~R$ 1,6 bi.
+
+    Same mart, same value column and the same server-side filters as the snapshot's read
+    (:func:`_product_ts_filter_kwargs`), plus the UFs — so summed over every UF it IS the
+    national series. Like the snapshot, it carries every product and the open window: the
+    client narrows basket and period, and the read is cached across both.
+
+    ``None`` without a UF selection. An EMPTY UF list means "no filter" to the reader and
+    would serve the national series under a UF label, the very defect this read removes.
+    Measured on prod 2026-11-18: 0,5–7 MB processed, billed at the 10 MB minimum, like
+    ``/api/products-by-uf``.
+    """
+    if not product_ts_by_uf_available(banco_id):
+        return None
+    states = _states(summary)
+    if not states:
+        return None
+    banco = banco_by_id(banco_id)
+    value_col, _ = effective_value_column(banco, conv)
+    codes = _apply_levels(banco_id, summary, _basket(summary))
+    return gateway.fetch_product_timeseries(
+        banco_id,
+        codes=codes,
+        value_column=value_col,
+        uf_codes=states,
+        with_price_base=True,
+        **_product_ts_filter_kwargs(banco_id, summary),
     )
 
 

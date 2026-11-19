@@ -38,6 +38,60 @@ window.recorteNaoSeAplica = function recorteNaoSeAplica(filtered, porque) {
     + 'Os números abaixo não se limitam aos municípios escolhidos.';
 };
 
+// The per-product series of a UF subset (v1.108.3), in the state their read is in — what a
+// per-product card says instead of its numbers, or beside them. One place for the wording,
+// so the six screens that draw these series cannot describe one read six ways.
+//   { estado: 'carregando', texto }      — held: the UFs' series are on their way;
+//   { estado: 'falha', erro, texto }     — held: the read failed for good;
+//   { estado: 'nacional', texto }        — the NATIONAL series stand, and this says so;
+// null when nothing needs saying: no UF subset, or the UFs' own series are here. In the two
+// held states applyFilters leaves the series EMPTY, so a card that drew them anyway would say
+// "nenhum produto", which is not what happened: read this first.
+// No text names a position ("abaixo", "acima"): the screens mount it above their numbers and
+// Visão geral below its donut, so a direction would be false on one of them.
+window.seriesPorUf = function seriesPorUf(filtered) {
+  if (!filtered || !filtered.productUfRequested) return null;
+  if (filtered.productUfLoadError) {
+    return {
+      estado: 'falha',
+      erro: filtered.productUfLoadError,
+      texto: 'Não foi possível carregar as séries por produto das UFs escolhidas (falha de rede '
+        + 'ou do servidor). Recarregue a página para tentar de novo.',
+    };
+  }
+  if (filtered.productUfLoading) {
+    return { estado: 'carregando', texto: 'Carregando as séries por produto das UFs escolhidas…' };
+  }
+  if (filtered.productUfUnavailable) {
+    return {
+      estado: 'nacional',
+      texto: 'As séries por produto deste banco existem só para o Brasil inteiro: os números '
+        + 'por produto desta perspectiva não se limitam às UFs escolhidas.',
+    };
+  }
+  return null;
+};
+
+// The card a per-product chart shows IN ITS PLACE while the UFs' series are held (loading,
+// failed), or beside it when they are national. Renders nothing when nothing needs saying.
+// A failure is an alert, like LoadErrorNote — whose generic sentence ("os valores exibidos
+// podem estar incompletos") would be wrong here: nothing per product is shown at all.
+function SeriesPorUfNote({ filtered }) {
+  const porUf = window.seriesPorUf(filtered);
+  if (!porUf) return null;
+  const falhou = porUf.estado === 'falha';
+  return (
+    <div className="card subtle na-note" role={falhou ? 'alert' : undefined}
+         style={falhou ? { borderLeft: '4px solid var(--err, #b71c1c)' } : undefined}>
+      <p className="cs-note" style={{ margin: 0 }}>
+        <window.Icon name={falhou ? 'warning' : 'info'} size={14} />
+        <span>{porUf.texto}</span>
+      </p>
+    </div>
+  );
+}
+window.SeriesPorUfNote = SeriesPorUfNote;
+
 // Why a geo card under a product basket still shows ALL products (applyFilters'
 // notFilteredByBasket): the basket's UF cube is on its way, or it failed. One clause for the
 // three cards that say it (Visão geral, Geografia, Concentração), so they cannot disagree.

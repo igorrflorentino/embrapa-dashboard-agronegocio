@@ -30,7 +30,9 @@ function CsvExportModal({ preview, chips, conventions, onClose }) {
       'falha-territorios': 'Não foi possível carregar os dados de parte dos territórios (falha de rede ou do servidor). Recarregue a página e tente de novo, para o arquivo sair completo.',
       'falha-recorte': 'Não foi possível carregar os dados do recorte geográfico escolhido (falha de rede ou do servidor). Recarregue a página e tente de novo.',
       'carregando-recorte': 'Os dados do recorte geográfico escolhido ainda estão carregando. Espere a tela terminar e tente de novo, para o arquivo sair com o recorte aplicado.',
-      'recorte-nao-se-aplica': 'As séries por produto existem só para o Brasil inteiro, e o recorte territorial abaixo da UF não se aplica a elas: o arquivo traria números de fora dos municípios escolhidos. Retire esse recorte do filtro de geografia para baixar estas séries.',
+      'recorte-nao-se-aplica': 'As séries por produto existem por UF inteira, não por município, e o recorte territorial abaixo da UF não se aplica a elas: o arquivo traria números de fora dos municípios escolhidos. Retire esse recorte do filtro de geografia para baixar estas séries.',
+      'carregando-series-uf': 'As séries por produto das UFs escolhidas ainda estão carregando. Espere a tela terminar e tente de novo, para o arquivo sair com as UFs aplicadas.',
+      'falha-series-uf': 'Não foi possível carregar as séries por produto das UFs escolhidas (falha de rede ou do servidor). Recarregue a página e tente de novo.',
       'carregando-cesta-uf': 'O cruzamento dos produtos escolhidos com as UFs ainda está carregando. Espere a tela terminar e tente de novo, para o arquivo sair com os dois filtros aplicados.',
       'falha-cesta-uf': 'Não foi possível carregar o cruzamento dos produtos escolhidos com as UFs (falha de rede ou do servidor). Recarregue a página e tente de novo.',
     };

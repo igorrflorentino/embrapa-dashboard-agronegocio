@@ -1,10 +1,12 @@
 // recorteProducts.js — the basket's products INSIDE the active sub-UF recorte, in one year.
 //
-// applyFilters' per-product series (productTS, topProducts) are NATIONAL: the snapshot has
-// no product × território grain. Under a sub-UF recorte they answered for the whole country
-// beneath the recorte's chip — with Portel and Breves (PA) selected on PPM, the Visão geral's
+// applyFilters' per-product series (productTS, topProducts) go no finer than a whole UF: the
+// snapshot's are national, and under a UF subset they are the selected UFs' own (v1.108.3,
+// window.productTSByUf). Under a sub-UF recorte they answered for the whole country beneath
+// the recorte's chip — with Portel and Breves (PA) selected on PPM, the Visão geral's
 // "Participação por produto" read Leite 70% / Ovos de galinha 28%, the national shares, while
-// the recorte loaded, after it failed and once it had loaded (until v1.108.2).
+// the recorte loaded, after it failed and once it had loaded (until v1.108.2). The selected
+// UFs' series would still answer for municípios outside the recorte.
 //
 // The município reader (window.productsByMunicipio → POST /api/products-by-municipio) sums
 // each product over a city set and a year window; read for ONE year it is exactly the

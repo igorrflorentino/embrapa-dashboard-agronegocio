@@ -763,6 +763,26 @@ def serialize_geo_yearly(df: pd.DataFrame | None) -> dict:
     return {"ufYearly": _uf_yearly(df), "priceBase": pbase.payload(None, base)}
 
 
+def serialize_product_ts_by_uf(df: pd.DataFrame | None, *, available: bool = True) -> dict:
+    """seam.product_ts_by_uf() → { productTS: {code: [{y, v, q, family}]}, priceBase,
+    available } (v1.108.3).
+
+    The per-product series summed over the selected UFs. Reuses :func:`_product_ts`, so the
+    scaling is BYTE-IDENTICAL to the snapshot's ``productTS``: under a whole-UF geography
+    filter the frontend draws this one in its place, and the two must speak the same units.
+
+    ``priceBase`` dates the values — the read is a request of its own, cached on its own, and
+    across a build it can come back a month apart from the snapshot. ``available`` says
+    whether the banco HAS this reader, which separates "nothing in these UFs" (measured)
+    from "never asked"; always present, so the contract does not change shape by banco."""
+    df, base = pbase.take(df)
+    return {
+        "productTS": _product_ts(df),
+        "priceBase": pbase.payload(None, base),
+        "available": available,
+    }
+
+
 def serialize_productivity(payload: dict | None) -> dict | None:
     """seam.productivity() → the ViewProductivity contract (área × rendimento).
 

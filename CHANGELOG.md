@@ -7,6 +7,96 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.108.3] - 2026-11-19
+
+**Com um filtro de UF inteira, as séries por produto passam a ser as das UFs escolhidas, e não
+mais as do Brasil.** Fecha a pendência das Notas da v1.108.2. O caso que a abriu: em Valor ×
+Volume do IBGE PPM com o Pará, "Composição histórica · valor" empilhava o Leite de 2025 em
+R$ 89,5 bi, o valor do Brasil, sob o chip "1 UF". O do Pará é R$ 1,17 bi; o PPM inteiro do Pará
+soma R$ 1,61 bi, o número que a "Série histórica" logo acima já mostrava. O mesmo valia para a
+composição da Visão geral, Perfil do produto, Comparativo entre produtos, a metade por produto da
+Concentração e o Rebanho. Enquanto as séries das UFs carregam, ou se a leitura falha, essas telas
+dizem isso em vez de mostrar os números do Brasil.
+
+### Corrigido
+- **Leitura nova, por UF.** `GET /api/product-ts` devolve as séries por produto somadas nas UFs
+  escolhidas. É a mesma consulta da série nacional do `snapshot`, com `state_acronym IN
+  UNNEST(@uf_codes)` e os mesmos filtros (o fluxo, no COMEX). Medido na produção em 2026-11-19:
+  PEVS 0,49 MB, PAM 0,92 MB, PPM 1,05 MB e COMEX 6,78 MB (com SP) processados. Cada consulta é
+  cobrada pelo mínimo de 10 MB, como a leitura nacional, muito abaixo do teto
+  `maximum_bytes_billed` (100 GiB). O UN COMTRADE não tem UF e responde `available: false`.
+- **Visão geral.** "Composição · Participação por produto" do Pará no PPM em 2025 mostra Leite 73%
+  e Ovos de galinha 26%; antes mostrava as do Brasil, 70% e 28%. A caminho, o card diz
+  "Carregando as séries por produto das UFs escolhidas…"; com falha, o aviso de falha, nunca
+  "nenhum produto".
+- **Valor × Volume.** As duas composições históricas usam as séries das UFs: o Leite do Pará em
+  2025 sai com R$ 1,17 bi, o mesmo valor da "Série histórica" acima. A caminho ou com falha, as
+  composições dão lugar ao aviso, e os totais, que já eram das UFs, ficam.
+- **Perfil do produto e Comparativo entre produtos.** Sob um filtro de UF, as séries são as das
+  UFs. Com o Amazonas e o Pará, pelo IPCA, a "Evolução relativa do valor" do Leite chega a 493 em
+  2025 (1980 = 100); a do Brasil, que aparecia antes, é 281. A caminho ou com falha, a perspectiva
+  mostra só o aviso, sem gráfico nem tabela.
+- **Concentração.** A metade por produto (curva de Lorenz e HHI por produto) usa as séries das UFs:
+  o HHI por produto do Pará em 2025 é 5.964 (o do Brasil, 5.699). A caminho, os indicadores ficam
+  em "…" com o motivo; com falha, em "—".
+- **Rebanho.** O efetivo é o das UFs, e o título diz de onde: "Rebanho · Pará · cabeças", com
+  25,6 milhões de bovinos em 2025 (o Brasil tem 234,3 milhões), ou "Rebanho · 2 UFs · cabeças".
+  Sem filtro de UF, segue "Rebanho brasileiro · cabeças".
+- **Qualidade dos dados (Visão geral).** O card conta o acervo do banco inteiro sob qualquer
+  filtro, e agora diz isso: "Qualidade dos dados · acervo do banco", "Cobertura geográfica da
+  seleção: 1 / 27 UFs" e "6 de 14 marcas" (era "flags").
+- **Exportar CSV (Perfil do produto e Comparativo entre produtos).**
+  - Com um filtro de UF, o arquivo traz as séries das UFs e uma coluna nova,
+    `abrangencia_geografica`: as UFs em ordem ("AM, PA"), ou "Brasil".
+  - A caminho ou com falha, o arquivo é recusado com motivo próprio (`carregando-series-uf`,
+    `falha-series-uf`), e o aviso diz se é para esperar ou recarregar.
+  - A recusa sob recorte sub-UF (`recorte-nao-se-aplica`) deixa de dizer que as séries existem "só
+    para o Brasil inteiro": elas existem por UF inteira, não por município.
+
+### Alterado
+- `window.productTSByUf(banco, summary)` (novo, `frontend/src/data/producers.js`) devolve
+  `{ productTS, priceBase, loading, loadError, unavailable }`, nos estados das leituras por
+  município da v1.108.1. A chave de cache é convenção, eixos e UFs; cesta e período são recortados
+  no cliente, como no `snapshot`.
+- `applyFilters`, sob um subconjunto de UFs: `productTS`, `allProductTS` e `topProducts` são os
+  das UFs; a caminho ou com falha ficam vazios, nunca os nacionais. Campos novos:
+  `productUfRequested`, `productUfLoading`, `productUfLoadError`, `productUfUnavailable` e
+  `productPriceBase`.
+- `window.seriesPorUf(...)` e `window.SeriesPorUfNote` (novos, em `RecorteNote.jsx`): o texto dos
+  três estados, escrito num lugar só.
+- O mês-base dessa leitura (`productPriceBase`) entra na checagem de dois meses
+  (`PriceBaseSkewNote`) e na coluna `correcao_monetaria` do CSV.
+- O contrato está em `docs/frontend_data_contract.md` §3.6.
+
+### Testes
+- vitest: 1896 passando em 103 arquivos (eram 1825 em 102). pytest: 2575 passando, 16 deles novos
+  em `tests/test_product_ts_by_uf.py` (15 pulados no Windows, que só rodam no Linux).
+- Contraprova: com as fontes desta versão trocadas pelas do `main`, 79 testes falham nos 14
+  arquivos de teste mudados ou novos (passam 340). Os que continuam passando são as contraprovas
+  deliberadas ("sem filtro de UF", "carregado, sem aviso").
+- Verificado numa prévia local contra a produção (só leitura), com 503, atraso e a resposta
+  `available: false` injetados em `/api/product-ts`:
+  - as duas leituras independentes concordam: a soma por produto do Pará em 2025 é igual ao total
+    da UF no cubo UF × ano (R$ 1.609,070 mi sem correção; R$ 1.698,497 mi pelo IPCA, a preços de
+    outubro de 2026);
+  - as seis perspectivas carregadas; Visão geral e Perfil do produto a caminho; Perfil do produto
+    e Valor × Volume com falha; Visão geral com a resposta `available: false`;
+  - o CSV recusado a caminho e com falha, e carregado com "PA" e com "AM, PA" na coluna nova;
+  - a prévia achou um defeito de texto, corrigido antes da versão: o aviso das séries nacionais
+    dizia "os números por produto abaixo", e a Visão geral o mostra embaixo do gráfico. Um teste
+    agora impede que esses textos nomeiem uma posição.
+
+### Notas
+- **Pendência achada no caminho, fora do escopo desta versão:** as séries por produto também
+  ignoram o filtro de tabela do IBGE PEVS (`tb`). Medido na produção em 2026-11-19: com "Extração
+  vegetal" (`tb=289`), o total de 2024 é R$ 5,87 bi, mas as séries por produto somam R$ 43,0 bi,
+  as duas metades, com os 3 produtos da silvicultura; com `tb=291`, o total é R$ 37,14 bi e as
+  séries são as mesmas. A leitura por UF repete os filtros do `snapshot` de propósito (as duas não
+  podem responder sobre conjuntos diferentes), então a correção vale para as duas juntas.
+- A leitura por UF é disparada em qualquer perspectiva sob um subconjunto de UFs, como o cubo
+  UF × ano: 10 MB cobrados por combinação de banco, convenção, eixos e UFs, com cache de 10 minutos
+  no servidor.
+
 ## [1.108.2] - 2026-11-18
 
 **Um recorte abaixo da UF deixa de exibir números do Brasil ou da UF inteira sob o seu chip, com

@@ -115,6 +115,8 @@ def test_the_sweep_actually_sees_the_calls() -> None:
         "flow_data",
         "partner_data",
         "monthly_data",
+        # The per-UF per-product series (v1.108.3).
+        "product_ts_by_uf",
     ],
 )
 def test_every_route_reaching_a_pevs_seam_parses_origem(rota: str) -> None:
@@ -140,6 +142,7 @@ _BASKET_READERS = (
     "partner_data",
     "products_by_uf",
     "monthly_data",
+    "product_ts_by_uf",
 )
 
 

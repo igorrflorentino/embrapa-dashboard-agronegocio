@@ -511,6 +511,124 @@ describe('applyFilters — basket-scoped (UF × year) cube drives the territoria
   });
 });
 
+// ── As séries por produto de um subconjunto de UFs (v1.108.3) ─────────────────────────────
+// The snapshot's productTS is NATIONAL. Under a UF subset it put Brazil's figure under the UF
+// chip in every per-product number — Pará's Leite stacked at R$ 90 bi beside a Pará total of
+// R$ 1,6 bi (measured on prod 2026-11-18). The UFs' own read replaces it, and while that read
+// is on its way, or after it failed, NO per-product series stands: the national one is the
+// defect itself.
+describe('applyFilters — under a UF subset the per-product series are the UFs’ own', () => {
+  beforeEach(() => { delete window.applyFilters; delete window.geoYearly; delete window.productTSByUf; });
+  afterEach(() => { delete window.productTSByUf; delete window.UF_DATA; });
+
+  // Pará's own series — a fraction of SNAP's national ones; Carnaúba is not produced there.
+  const PA_TS = {
+    A: [{ y: 2020, v: 3, q: 0.3, family: 'mass' }, { y: 2021, v: 4, q: 0.4, family: 'mass' }],
+    B: [{ y: 2020, v: 2, q: 0.2, family: 'mass' }, { y: 2021, v: 1, q: 0.1, family: 'mass' }],
+  };
+  const OUTUBRO = { column: null, month: '2026-10', fxDate: null };
+  const read = (productTS, extra = {}) => vi.fn(() => ({
+    productTS, priceBase: null, loading: false, loadError: null, unavailable: false, ...extra,
+  }));
+  const ESPERA = { productTS: null, loading: true };
+  const FALHA = { productTS: null, loadError: 'HTTP 503' };
+  const v = (series) => series.map((d) => d.v);
+
+  it('resolved: productTS, allProductTS and topProducts are Pará’s, never Brazil’s', async () => {
+    const applyFilters = await loadApplyFilters();
+    window.productTSByUf = read(PA_TS, { priceBase: OUTUBRO });
+    const f = applyFilters({ states: ['PA'] }, 'ibge_pevs');
+    expect(window.productTSByUf).toHaveBeenCalledWith('ibge_pevs', { states: ['PA'] });
+    expect(v(f.productTS.A)).toEqual([3, 4]);            // Brazil's is 30 → 33
+    expect(f.productTS.C).toBeUndefined();               // none in Pará: no series, not Brazil's
+    expect(f.allProductTS).toBe(PA_TS);
+    // The composition is Pará's last year: Açaí 4, Babaçu 1.
+    expect(f.topProducts.map((p) => [p.name, p.share])).toEqual([['Açaí', 0.8], ['Babaçu', 0.2]]);
+    expect(f).toMatchObject({
+      productUfRequested: true, productUfLoading: false, productUfLoadError: null,
+      productUfUnavailable: false, productPriceBase: OUTUBRO,
+    });
+  });
+
+  it('resolved: basket and period slice the UFs’ series exactly like the snapshot’s', async () => {
+    const applyFilters = await loadApplyFilters();
+    window.productTSByUf = read(PA_TS);
+    const f = applyFilters({ states: ['PA'], basket: ['B'], startDate: '2021-01-01' }, 'ibge_pevs');
+    expect(Object.keys(f.productTS)).toEqual(['B']);
+    expect(f.productTS.B).toEqual([{ y: 2021, v: 1, q: 0.1, family: 'mass' }]);
+    expect(f.topProducts.map((p) => p.name)).toEqual(['Babaçu']);
+  });
+
+  it('resolved EMPTY: the UFs record no product — a measurement, not a wait', async () => {
+    const applyFilters = await loadApplyFilters();
+    window.productTSByUf = read({});
+    const f = applyFilters({ states: ['PA'] }, 'ibge_pevs');
+    expect(f.productTS).toEqual({});
+    expect(f.topProducts).toEqual([]);
+    expect(f.productUfLoading).toBe(false);
+    expect(f.productUfUnavailable).toBe(false);
+  });
+
+  it.each([
+    ['on its way', ESPERA, { productUfLoading: true, productUfLoadError: null }],
+    ['failed', FALHA, { productUfLoading: false, productUfLoadError: 'HTTP 503' }],
+  ])('%s: NO per-product series stands — never the national one', async (_estado, state, flags) => {
+    const applyFilters = await loadApplyFilters();
+    window.productTSByUf = read(null, state);
+    const f = applyFilters({ states: ['PA'] }, 'ibge_pevs');
+    expect(f.productTS).toEqual({});
+    expect(f.allProductTS).toEqual({});
+    expect(f.topProducts).toEqual([]);
+    expect(f).toMatchObject({ productUfRequested: true, productUfUnavailable: false, productPriceBase: null, ...flags });
+    // The aggregate series is not this read's: Pará's, from the UF grid, as before.
+    expect(f.ts.find((d) => d.y === 2021).v).toBeCloseTo(0.1);
+  });
+
+  it('a banco the read cannot serve keeps the NATIONAL series, flagged so the screens say so', async () => {
+    const applyFilters = await loadApplyFilters();
+    window.productTSByUf = read(null, { unavailable: true });
+    const f = applyFilters({ states: ['PA'] }, 'ibge_pevs');
+    expect(v(f.productTS.A)).toEqual([30, 33]);
+    expect(f).toMatchObject({ productUfUnavailable: true, productUfLoading: false, productPriceBase: null });
+  });
+
+  it('no producer at all is "unavailable", never "loading": nothing is on its way', async () => {
+    const applyFilters = await loadApplyFilters();
+    const f = applyFilters({ states: ['PA'] }, 'ibge_pevs');
+    expect(f).toMatchObject({ productUfRequested: true, productUfUnavailable: true, productUfLoading: false });
+    expect(v(f.productTS.A)).toEqual([30, 33]);
+  });
+
+  it('no UF subset asks nothing: the snapshot’s national series is the answer', async () => {
+    const applyFilters = await loadApplyFilters();
+    window.productTSByUf = read(PA_TS);
+    const f = applyFilters({}, 'ibge_pevs');
+    expect(window.productTSByUf).not.toHaveBeenCalled();
+    expect(v(f.productTS.A)).toEqual([30, 33]);
+    expect(f).toMatchObject({ productUfRequested: false, productUfUnavailable: false, productPriceBase: null });
+  });
+
+  it('every UF selected is not a narrowing: no read, the national series', async () => {
+    const applyFilters = await loadApplyFilters();
+    window.UF_DATA = [{ uf: 'PA' }, { uf: 'RS' }];
+    window.productTSByUf = read(PA_TS);
+    const f = applyFilters({ states: ['PA', 'RS'] }, 'ibge_pevs');
+    expect(window.productTSByUf).not.toHaveBeenCalled();
+    expect(v(f.productTS.A)).toEqual([30, 33]);
+    expect(f.productUfRequested).toBe(false);
+  });
+
+  it('an EMPTY UF selection is "none": no series, no request, nothing pending', async () => {
+    const applyFilters = await loadApplyFilters();
+    window.productTSByUf = read(PA_TS);
+    const f = applyFilters({ states: [] }, 'ibge_pevs');
+    expect(window.productTSByUf).not.toHaveBeenCalled();
+    expect(f.productTS).toEqual({});
+    expect(f.topProducts).toEqual([]);
+    expect(f).toMatchObject({ productUfRequested: true, productUfLoading: false, productUfUnavailable: false });
+  });
+});
+
 // A sub-UF recorte ASKED for — whatever its state — is what the perspectives that cannot
 // apply one need to know (window.recorteNaoSeAplica): they read only national or whole-UF
 // series, so loading or failing changes nothing for them, and until v1.108.2 they showed

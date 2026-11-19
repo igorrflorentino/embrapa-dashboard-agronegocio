@@ -83,6 +83,23 @@ function ViewProductProfile({ families, summary, database, conventions }) {
     // the researcher changes the UF filter — the ranking would keep the old scope.
   }, [database, activeCode, hasGeo, conv.currency, conv.correction, summary?.startDate, summary?.endDate, ufScopeKey, setUfRank]);
 
+  // Neither the product's series nor its distribution goes below a whole UF: a sub-UF recorte
+  // cannot apply here, and the screen says so in every state of it (v1.108.2).
+  const recorteNota = window.recorteNaoSeAplica(filtered,
+    'a série de cada produto e a sua distribuição existem por UF inteira, não por município.');
+  // Under a UF subset the series are the selected UFs' (v1.108.3). While that read is on its
+  // way, or after it failed, there is no series to profile — the national one would be Brazil's
+  // under the UF chip — and the screen says which, never "nenhum produto disponível".
+  const porUf = window.seriesPorUf(filtered);
+  if (porUf && porUf.estado !== 'nacional') {
+    return (
+      <>
+        <window.NotApplicableNote note={{ recorte: recorteNota }} />
+        <window.SeriesPorUfNote filtered={filtered} />
+      </>
+    );
+  }
+
   if (!activeCode) {
     return (
       <window.EmptyCard>
@@ -186,12 +203,9 @@ function ViewProductProfile({ families, summary, database, conventions }) {
 
   return (
     <>
-      {/* The product's series is national and its distribution is by whole UF: neither can
-          apply a sub-UF recorte, and the screen says so in every state of it (v1.108.2). */}
-      <window.NotApplicableNote note={{
-        recorte: window.recorteNaoSeAplica(filtered,
-          'a série de cada produto existe só para o Brasil inteiro, e a distribuição, só por UF inteira.'),
-      }} />
+      <window.NotApplicableNote note={{ recorte: recorteNota }} />
+      {/* A banco with no per-UF series draws the national ones under a UF subset: said here. */}
+      <window.SeriesPorUfNote filtered={filtered} />
 
       {/* Product selector */}
       <div className="pp-selector">

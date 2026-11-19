@@ -63,6 +63,8 @@ import './countUnits.js';
       window.priceBaseFor ? window.priceBaseFor(database, alvo) : null,
       f && f.muniPriceBase,
       f && f.geoPriceBase,
+      // The selected UFs' per-product series (v1.108.3): a read of its own, like the cubes.
+      f && f.productPriceBase,
     ].filter(Boolean);
     const pb = new Set(bases.map((b) => b.month)).size === 1 ? bases[0] : null;
     const precos = window.precosDe ? window.precosDe(pb) : 'a preços do mês mais recente do índice';
@@ -175,19 +177,34 @@ import './countUnits.js';
       }
       case 'product_profile':
       case 'product_compare': {
-        // The per-product series are NATIONAL (productTS has no geography), so a sub-UF recorte
-        // cannot apply to them in ANY of its states: the file would carry the whole country's
-        // numbers under its recorte_geografico column, with no chip or note beside it. Until
-        // v1.108.2 it did. Waiting would not help, so loading and failure refuse the same way
-        // the resolved recorte does — "carregando-recorte" promises a file that never comes.
+        // The per-product series go no finer than a whole UF, so a sub-UF recorte cannot apply
+        // to them in ANY of its states: the file would carry numbers from outside the chosen
+        // municípios, with no chip or note beside it. Until v1.108.2 it carried the national
+        // ones. Waiting would not help, so loading and failure refuse the same way the resolved
+        // recorte does — "carregando-recorte" promises a file that never comes.
         if (f.subUfRequested) {
           return { headers: [], rows: [], subject: 'series_por_produto', motivo: 'recorte-nao-se-aplica' };
         }
+        // Under a UF subset the series are the selected UFs' (v1.108.3). While their read is on
+        // its way, or after it failed, applyFilters holds them empty: there is nothing the file
+        // could carry, and the national series would be Brazil's in a file exported under a UF
+        // filter. Failure first: a failed read never stops "loading".
+        if (f.productUfLoadError) {
+          return { headers: [], rows: [], subject: 'series_por_produto', motivo: 'falha-series-uf' };
+        }
+        if (f.productUfLoading) {
+          return { headers: [], rows: [], subject: 'series_por_produto', motivo: 'carregando-series-uf' };
+        }
+        // Whose series these are, in a column: a downloaded table has no chip beside it, and
+        // until v1.108.3 a file exported under a UF filter carried Brazil's numbers unlabelled.
+        const abrangencia = !f.productUfRequested ? 'Brasil'
+          : f.productUfUnavailable ? 'Brasil (este banco não tem séries por UF)'
+          : [...((summary || {}).states || [])].sort().join(', ');
         // per-product annual series. productTS.q is in mil t for mass but mi m³ for
         // volume — scaling both by 1e3 (the old code) mixed t and mil m³ under one
         // unitless "quantidade" header. Scale per family to its base unit (mass→t,
         // volume→m³) and emit the unit explicitly so the column is unambiguous.
-        const headers = ['ano', 'codigo', 'produto', `valor_${conv.currency}`, 'quantidade', 'unidade', 'familia'];
+        const headers = ['ano', 'codigo', 'produto', `valor_${conv.currency}`, 'quantidade', 'unidade', 'familia', 'abrangencia_geografica'];
         // Per-family base unit + multiplier: mass mil t→t, volume mi m³→m³, count mi un→un.
         // The old binary (volume?1e6:1e3 / m³:t) mislabelled a livestock headcount as TONNES
         // and scaled it 1000× wrong; map by family so the column is always correct.
@@ -202,6 +219,7 @@ import './countUnits.js';
             Math.round((d.q || 0) * qMul),
             qUnit,
             fam,
+            abrangencia,
           ]));
         });
         return { headers, rows, subject: 'series_por_produto' };

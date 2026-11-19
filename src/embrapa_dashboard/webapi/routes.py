@@ -821,6 +821,35 @@ def geo_yearly():
     return jsonify(serializers.serialize_geo_yearly(df))
 
 
+@api.get("/product-ts")
+def product_ts():
+    """The per-product series summed over the selected UFs (v1.108.3) — what every
+    per-product screen draws under a whole-UF geography filter, in place of the
+    snapshot's national ``productTS``.
+
+    ``states`` (comma-joined UF acronyms) is required: without it the answer is
+    ``{ productTS: {} }``, never the national series — an empty UF list means "no filter"
+    to the reader. Like ``/snapshot``, no basket and no year window: every product, full
+    history, sliced client-side, so the read is cached across both. The value axes fold
+    in through ``_with_filter_axes``, and the seam honours exactly the ones the snapshot's
+    read honours. ``available: false`` when the banco has no UF grain (COMTRADE)."""
+    banco = request.args.get("banco", "")
+    conv, err = _conversion_or_400()
+    if err:
+        return err
+    summary: dict = {}
+    states = _csv_param(request.args.get("states"))
+    if states:
+        summary["states"] = states
+    summary, err = _with_filter_axes(summary)
+    if err:
+        return err
+    df = seam.product_ts_by_uf(banco, conv, summary or None)
+    return jsonify(
+        serializers.serialize_product_ts_by_uf(df, available=seam.product_ts_by_uf_available(banco))
+    )
+
+
 @api.get("/geo-mesh")
 def geo_mesh():
     """The IBGE municipal territorial mesh (static, ~5570 rows): every município →

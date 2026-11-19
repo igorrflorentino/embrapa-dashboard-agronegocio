@@ -376,7 +376,7 @@ describe('ViewProductCompare — a sub-UF recorte does not apply, and the screen
     stubGlobals({ ...flowFixture(), subUfRequested: true, ...extra });
     const { container } = render(<ViewProductCompare summary={{}} conventions={{}} database="ibge_pevs" />);
     const nota = container.querySelector('.na-note').textContent;
-    expect(nota).toContain('O recorte territorial abaixo da UF não se aplica a esta perspectiva: as séries por produto existem só para o Brasil inteiro.');
+    expect(nota).toContain('O recorte territorial abaixo da UF não se aplica a esta perspectiva: as séries por produto existem por UF inteira, não por município.');
     expect(nota).toContain('Os números abaixo não se limitam aos municípios escolhidos.');
   });
 
@@ -384,5 +384,43 @@ describe('ViewProductCompare — a sub-UF recorte does not apply, and the screen
     stubGlobals(flowFixture());
     const { container } = render(<ViewProductCompare summary={{}} conventions={{}} database="ibge_pevs" />);
     expect(container.querySelector('.na-note')).toBeNull();
+  });
+});
+
+// ── Sob um subconjunto de UFs, a comparação é a das UFs (v1.108.3) ────────────────────────
+// Base 100, CAGR and correlation over Brazil's series under a "1 UF" chip compared the
+// country's products, not the state's. applyFilters now hands the UFs' own series; while they
+// are on their way, or after the read failed, it hands none, and the screen says which.
+describe('ViewProductCompare — under a UF subset the series are the UFs’ own', () => {
+  const UF = { productUfRequested: true, productUfLoading: false, productUfLoadError: null, productUfUnavailable: false };
+  const renderWith = (extra) => {
+    // flowFixture() takes no overrides: spread them on top.
+    stubGlobals({ ...flowFixture(), ...UF, ...extra });
+    window.Icon = () => null;
+    return render(<ViewProductCompare summary={{ states: ['PA'] }} conventions={{}} database="ibge_pevs" />).container;
+  };
+  afterEach(() => { delete window.Icon; });
+
+  it('resolved: the comparison is drawn, with no note', () => {
+    const c = renderWith({});
+    expect(multiLineProps.series).toHaveLength(3);
+    expect(c.querySelector('.na-note')).toBeNull();
+  });
+
+  it.each([
+    ['on its way', { productUfLoading: true }, 'Carregando as séries por produto das UFs escolhidas…'],
+    ['failed', { productUfLoadError: 'HTTP 503' }, 'Não foi possível carregar as séries por produto das UFs escolhidas'],
+  ])('%s: no comparison at all — the note, no chart, no table', (_estado, extra, texto) => {
+    const c = renderWith({ ...extra, allProductTS: {} });
+    expect(multiLineProps).toBeUndefined();
+    expect(c.querySelector('.pc-table')).toBeNull();
+    expect(c.querySelector('.na-note').textContent).toContain(texto);
+  });
+
+  it('a banco without series by UF: the national comparison, and a note saying so', () => {
+    const c = renderWith({ productUfUnavailable: true });
+    expect(multiLineProps.series).toHaveLength(3);
+    expect(c.querySelector('.na-note').textContent)
+      .toContain('As séries por produto deste banco existem só para o Brasil inteiro');
   });
 });

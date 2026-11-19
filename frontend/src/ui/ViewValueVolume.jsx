@@ -3,6 +3,9 @@
 // All currency / correction / mass / volume formatting goes through
 // the global metric conventions (props.conventions).
 
+// window.seriesPorUf + SeriesPorUfNote — imported for real, so the view's tests load them.
+import './RecorteNote.jsx';
+
 function ViewValueVolume({ families, conventions, summary, database }) {
   const conv      = conventions || window.DEFAULT_CONVENTIONS;
   const ccyLabel  = window.conventionMonetaryLabel(conv);
@@ -137,10 +140,16 @@ function ViewValueVolume({ families, conventions, summary, database }) {
   // says it failed instead of "cruzando…" forever.
   const falha = filtered.subUfLoadError || filtered.geoComboLoadError || null;
   const segura = comboPending || !!falha;
-  // The per-product compositions below are NATIONAL (productTS has no geography): under a
-  // sub-UF recorte they would put the whole country's products beneath its chip, so they are
+  // The per-product compositions below exist per whole UF at the finest: under a sub-UF recorte
+  // they would put products from outside the chosen municípios beneath its chip, so they are
   // not drawn, in any state of the recorte, and the screen says why (v1.108.2).
   const recorteSubUf = !!filtered.subUfRequested;
+  // Under a UF subset they are the selected UFs' (v1.108.3). While that read is on its way or
+  // after it failed they are held — the national ones would be Brazil's under the UF chip — and
+  // SeriesPorUfNote says which; a banco with no per-UF series draws the national ones, and the
+  // same note says they are national.
+  const porUf = window.seriesPorUf(filtered);
+  const composicaoSegura = !!porUf && porUf.estado !== 'nacional';
 
   return (
     <>
@@ -159,8 +168,10 @@ function ViewValueVolume({ families, conventions, summary, database }) {
             ) : (
               <>
                 Cruzando <strong>produto × UF</strong>… os totais de valor e quantidade aparecem
-                assim que o cubo territorial carrega. A composição por produto abaixo já reflete a
-                cesta selecionada.
+                assim que o cubo territorial carrega.
+                {/* Only once the UFs' own series are here (no per-UF note pending): until
+                    then the composition below is held, or national, and says so itself. */}
+                {!porUf && ' A composição por produto abaixo já reflete a cesta e as UFs selecionadas.'}
               </>
             )}
           </p>
@@ -261,13 +272,16 @@ function ViewValueVolume({ families, conventions, summary, database }) {
       {recorteSubUf && (
         <window.NotApplicableNote note={{
           recorte: 'A composição histórica por produto não aparece com um recorte territorial '
-            + 'abaixo da UF: as séries por produto existem só para o Brasil inteiro, e ela '
-            + 'mostraria números de fora dos municípios escolhidos.',
+            + 'abaixo da UF: as séries por produto existem por UF inteira, não por município, e '
+            + 'ela mostraria números de fora dos municípios escolhidos.',
         }} />
       )}
 
+      {/* The UFs' per-product series held (loading, failed) or national — said once, here. */}
+      {!recorteSubUf && <window.SeriesPorUfNote filtered={filtered} />}
+
       {/* Composition by product · value */}
-      {hasValue && !recorteSubUf && (
+      {hasValue && !recorteSubUf && !composicaoSegura && (
       <div className="card">
         <window.SectionHeader
           overline={`Composição histórica · valor (${valueStackScaled.label})`}
@@ -279,7 +293,7 @@ function ViewValueVolume({ families, conventions, summary, database }) {
 
       {/* Composition by quantity — per family */}
       <div className={'grid-' + (families.length === 2 ? '2' : '1')}>
-        {massFamily && !recorteSubUf && (
+        {massFamily && !recorteSubUf && !composicaoSegura && (
           <div className="card">
             <window.SectionHeader
               overline={<>Composição histórica · quantidade <window.UnitFamilyTag family="mass" conv={conv}/></>}
@@ -288,7 +302,7 @@ function ViewValueVolume({ families, conventions, summary, database }) {
             <window.StackedArea series={massStackScaled.layers} valueKey="q" label={massStackScaled.label} height={240} />
           </div>
         )}
-        {volFamily && !recorteSubUf && (
+        {volFamily && !recorteSubUf && !composicaoSegura && (
           <div className="card">
             <window.SectionHeader
               overline={<>Composição histórica · quantidade <window.UnitFamilyTag family="volume" conv={conv}/></>}

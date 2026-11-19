@@ -356,9 +356,13 @@ describe('build — the month the município cube is at', () => {
   it('passes on the bases MainScreen already compares, so the view never repeats them', () => {
     stub();
     const SETEMBRO = { column: null, month: '2026-09', fxDate: null };
-    window.applyFilters = () => ({ yearStart: 2019, yearEnd: 2021, muniPriceBase: SETEMBRO, geoPriceBase: null });
+    // v1.108.3: the per-product series of a UF subset are one of them too.
+    const OUTUBRO = { column: null, month: '2026-10', fxDate: null };
+    window.applyFilters = () => ({
+      yearStart: 2019, yearEnd: 2021, muniPriceBase: SETEMBRO, geoPriceBase: null, productPriceBase: OUTUBRO,
+    });
     const out = tc().build({ database: 'ibge_pevs', summary: {}, selection: [{ level: 'uf', code: 'PA' }] });
-    expect(out.comparedPriceBases).toEqual([SETEMBRO, null]);
+    expect(out.comparedPriceBases).toEqual([SETEMBRO, null, OUTUBRO]);
   });
 });
 

@@ -79,6 +79,32 @@ function ViewRebanho({ summary, conventions, database }) {
     // the researcher changes the UF filter — the map would keep the old scope.
   }, [database, activeFocus, hasGeo, conv.currency, conv.correction, summary?.startDate, summary?.endDate, ufScopeKey]);
 
+  // The species series and the map go no finer than a whole UF: a sub-UF recorte cannot apply
+  // here, and the screen says so in every state of it (v1.108.2).
+  const recorteNota = window.recorteNaoSeAplica(filtered,
+    'o efetivo de cada espécie existe aqui por UF inteira, não por município.');
+  // Under a UF subset the species series are the selected UFs' (v1.108.3). While that read is
+  // on its way, or after it failed, there is no herd to show — the national one would be
+  // Brazil's under the UF chip — and the screen says which, never "nenhum rebanho".
+  const porUf = window.seriesPorUf(filtered);
+  if (porUf && porUf.estado !== 'nacional') {
+    return (
+      <>
+        <window.NotApplicableNote note={{ recorte: recorteNota }} />
+        <window.SeriesPorUfNote filtered={filtered} />
+      </>
+    );
+  }
+  // Whose herd the series are: the selected UFs' once their own series are here, Brazil's
+  // otherwise. The title said "Rebanho brasileiro" whatever the filter.
+  const escopoUf = (() => {
+    if (!filtered.productUfRequested || filtered.productUfUnavailable) return null;
+    const ufs = (summary && summary.states) || [];
+    if (ufs.length !== 1) return `${ufs.length} UFs`;
+    const uf = (window.UF_DATA || []).find((u) => u.uf === ufs[0]);
+    return uf ? uf.name : ufs[0];
+  })();
+
   if (!available.length) {
     return (
       <window.EmptyCard>
@@ -146,18 +172,15 @@ function ViewRebanho({ summary, conventions, database }) {
 
   return (
     <>
-      {/* The species series are national and the map is by whole UF: neither can apply a
-          sub-UF recorte, and the screen says so in every state of it (v1.108.2). */}
-      <window.NotApplicableNote note={{
-        recorte: window.recorteNaoSeAplica(filtered,
-          'o efetivo de cada espécie existe aqui só para o Brasil inteiro e por UF inteira.'),
-      }} />
+      <window.NotApplicableNote note={{ recorte: recorteNota }} />
+      {/* A banco with no per-UF series draws the national ones under a UF subset: said here. */}
+      <window.SeriesPorUfNote filtered={filtered} />
 
       {/* Intro + caveat */}
       <div className="card subtle">
         <window.SectionHeader
           overline="Pecuária · efetivo dos rebanhos (PPM)"
-          title="Rebanho brasileiro · cabeças"
+          title={escopoUf ? `Rebanho · ${escopoUf} · cabeças` : 'Rebanho brasileiro · cabeças'}
         />
         <p className="caption" style={{ margin: '2px 2px 0' }}>
           O efetivo é um <strong>estoque</strong> (nº de cabeças no fim do ano), não uma produção: não

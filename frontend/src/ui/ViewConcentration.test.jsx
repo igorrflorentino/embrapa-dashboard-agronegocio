@@ -286,3 +286,61 @@ describe('ViewConcentration — under a sub-UF recorte', () => {
     expect(c.textContent).toContain('não foi possível carregar a distribuição por UF da cesta selecionada');
   });
 });
+
+// ── Sob um subconjunto de UFs, a metade por produto é a das UFs (v1.108.3) ────────────────
+// The product half read Brazil's per-product series under a "1 UF" chip: Pará's concentration
+// among products was the country's. applyFilters now hands the UFs' own series; while they are
+// on their way, or after the read failed, the product half waits or says it failed — and the
+// geographic half, which never read them, stays as measured.
+describe('ViewConcentration — under a UF subset the product half is the UFs’ own', () => {
+  const UF = { productUfRequested: true, productUfLoading: false, productUfLoadError: null, productUfUnavailable: false };
+  const PROD = 'Concentração nos 3 maiores produtos';
+  const kpi = (c, l) => c.querySelector(`.kpi[data-label="${l}"]`);
+  const valor = (c, l) => kpi(c, l).querySelector('.kpi-value').textContent;
+  const sub = (c, l) => kpi(c, l).querySelector('.kpi-sub').textContent;
+  const renderWith = (extra) => {
+    stubGlobals({ ...FIXTURE, yearStart: 2019, ...UF, ...extra });
+    window.SectionHeader = ({ overline, title }) => (
+      <div className="sh"><span className="sh-ov">{overline}</span><span className="sh-title">{title}</span></div>
+    );
+    window.Icon = () => null;
+    return render(<ViewConcentration summary={{ states: ['PA'] }} conventions={{}} database="ibge_pevs" />).container;
+  };
+  afterEach(() => { delete window.Icon; });
+
+  it('resolved: the product half is computed from the UFs’ series, with no note', () => {
+    const c = renderWith({ productTS: { P1: [{ y: 2020, v: 90 }], P2: [{ y: 2020, v: 10 }] } });
+    // Gini [10, 90] = 0,40 — Brazil's [60, 40] would give 0,10.
+    expect(c.textContent).toContain('Desigualdade entre produtos · Gini 0,40');
+    expect(sub(c, PROD)).toBe('de 2 produtos na cesta');
+    expect(c.querySelector('.na-note')).toBeNull();
+  });
+
+  it('on its way: the product half waits with "…" and says why; the UF half stands', () => {
+    const c = renderWith({ productUfLoading: true, productTS: {} });
+    expect(valor(c, PROD)).toBe('…');
+    expect(sub(c, PROD)).toBe('carregando as séries das UFs…');
+    expect(c.textContent).toContain('Desigualdade entre produtos · Gini …');
+    expect(c.textContent).toContain('Carregando as séries por produto das UFs escolhidas…');
+    expect(c.textContent).not.toMatch(/de 0 produtos/);
+    expect(valor(c, 'HHI · geográfico (UF)')).toBe('6.250');
+    expect(c.querySelector('.load-err')).toBeNull();
+  });
+
+  it('failed: "—" with the reason, the error noted once, nothing still coming', () => {
+    const c = renderWith({ productUfLoadError: 'HTTP 503', productTS: {} });
+    expect(valor(c, PROD)).toBe('—');
+    expect(sub(c, PROD)).toBe('séries das UFs não carregadas');
+    expect(c.querySelectorAll('.load-err')).toHaveLength(1);
+    expect(c.textContent).toContain('Não foi possível carregar as séries por produto das UFs escolhidas');
+    expect(c.textContent).not.toMatch(/[Cc]arregando/);
+    expect(valor(c, 'HHI · geográfico (UF)')).toBe('6.250');
+  });
+
+  it('a banco without series by UF: the national product half, and a note saying so', () => {
+    const c = renderWith({ productUfUnavailable: true });
+    expect(c.textContent).toContain('Desigualdade entre produtos · Gini 0,10');
+    expect(c.querySelector('.na-note').textContent)
+      .toContain('As séries por produto deste banco existem só para o Brasil inteiro');
+  });
+});

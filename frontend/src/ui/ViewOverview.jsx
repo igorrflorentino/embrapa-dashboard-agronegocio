@@ -335,13 +335,29 @@ function ViewOverview({ families, summary, database, conventions }) {
               <window.Donut data={window.labelProductRows(fatias, database)} size={180} valueKey="share" />
             );
             if (!recorteProds) {
+              // Under a UF subset the slices are the selected UFs' (v1.108.3). While their read
+              // is on its way, or after it failed, there is no slice to draw — the national
+              // ones would be Brazil's under the UF chip — and the card says which.
+              const porUf = window.seriesPorUf(filtered);
+              const segurada = !!porUf && porUf.estado !== 'nacional';
+              // An empty composition is not always an empty basket: a UF can produce none of
+              // the products selected, and that is a measurement, not a filter left empty.
+              const semFatias = filtered.selectedProducts.length === 0
+                ? 'Nenhum produto selecionado nos filtros.'
+                : 'Os produtos selecionados não têm valor registrado'
+                  + (filtered.productUfRequested ? ' nas UFs escolhidas' : '') + ' no período.';
               return (
                 <>
                   <window.SectionHeader overline={`Composição · ${compYearTag}`}
                                         title="Participação por produto" action={action} />
-                  {filtered.topProducts.length === 0
-                    ? aviso('Nenhum produto selecionado nos filtros.')
-                    : donut(filtered.topProducts)}
+                  {segurada
+                    ? aviso(porUf.texto)
+                    : filtered.topProducts.length === 0
+                      ? aviso(semFatias)
+                      : donut(filtered.topProducts)}
+                  {porUf && porUf.estado === 'nacional' && (
+                    <window.NotApplicableNote note={{ porUf: porUf.texto }} />
+                  )}
                 </>
               );
             }
@@ -463,14 +479,19 @@ function ViewOverview({ families, summary, database, conventions }) {
         )}
 
         <div className="card">
+          {/* Two scopes in one card, each named (v1.108.3). The rows below are the banco's
+              whole collection — no filter narrows them; the flag chips only pick which rows
+              appear — exactly like the KPI beside it, which already said "acervo do banco".
+              The overline said "agregado", which read as "aggregated over my selection"
+              under a UF chip. The coverage line in the title IS the selection's. */}
           <window.SectionHeader
-            overline="Qualidade dos dados · agregado"
+            overline="Qualidade dos dados · acervo do banco"
             title={hasGeo
               // kpiVal: an unresolved recorte has no grid to count, and its 0 would read
               // "covers no UF" (v1.108.1).
-              ? ('Cobertura geográfica: ' + kpiVal(ufCovered) + ' / ' + ufTotalReal + ' UFs')
+              ? ('Cobertura geográfica da seleção: ' + kpiVal(ufCovered) + ' / ' + ufTotalReal + ' UFs')
               : 'Distribuição das marcas de qualidade'}
-            action={<span className="caption">{filtered.qualityFlags.length} de {window.QUALITY_FLAGS.length} flags</span>}
+            action={<span className="caption">{filtered.qualityFlags.length} de {window.QUALITY_FLAGS.length} marcas</span>}
           />
           <div className="qa-summary">
             {filtered.qualityFlags.map(f => (

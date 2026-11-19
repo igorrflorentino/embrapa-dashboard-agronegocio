@@ -1888,6 +1888,7 @@ def product_timeseries(
     partners: Sequence[str] = (),
     has_measure_kind: bool = False,
     tabela: str | None = None,
+    price_base: bool = False,
 ) -> tuple[str, list]:
     """Annual per-product series — value + quantities (backs productTS).
 
@@ -1930,6 +1931,11 @@ def product_timeseries(
     the family sum mixed native extraction (t289) with planted silviculture (t291) —
     9.5× the extraction mass and 8.4× its volume in 2024 (v1.106.0). ``None`` keeps the
     query byte-identical to before the parameter existed.
+
+    ``price_base`` reads the month the summed column is at in the same select
+    (:func:`_price_base_select`). The snapshot never asks — its overview read dates it —
+    but the per-UF read (``/api/product-ts``, v1.108.3) is a request of its own, cached on
+    its own, and across a build it can come back at another month than the snapshot.
     """
     code_column = _validate_column(code_column, ALLOWED_PRODUCT_COLUMNS, "product column")
     value_column = _validate_column(value_column, ALLOWED_VALUE_COLUMNS, "value_column")
@@ -1945,6 +1951,7 @@ def product_timeseries(
     _reporter(conditions, params, reporter_column, reporter_value)
     _in_array(conditions, params, "reporter_iso_a3", "reporters", reporters)
     _in_array(conditions, params, "partner_iso_a3", "partners", partners)
+    base = _price_base_select(value_column, price_base)
     sql = f"""
         select
             {code_column}       as code,
@@ -1954,7 +1961,7 @@ def product_timeseries(
             sum(case when family = 'massa' then qty_base end)  as q_mass,
             sum(case when family = 'volume' then qty_base end) as q_vol,
             sum(case when family = 'contagem' then qty_base end) as q_count,
-            any_value(family)   as family
+            any_value(family)   as family{base}
         from `{table}`
         {_where(conditions)}
         group by {code_column}, reference_year

@@ -564,9 +564,12 @@ function MainScreen({ filters, view = 'overview', database = 'ibge_pevs', infoPa
           outra podem chegar a meses diferentes, e a tela diz isso em vez de nomear um mês só
           (v1.105.0). Sem cubo em uso, nada a comparar. As perspectivas que fazem leituras
           próprias (Perfil do território, Geografia) somam as delas num aviso seu. */}
-      {window.PriceBaseSkewNote && _f && (_f.muniPriceBase || _f.geoPriceBase) && (
+      {/* v1.108.3: under a UF subset the per-product series are a read of their own too
+          (productPriceBase), and the screens that stack or chart them sit right below. The
+          same list goes to the perspectives' own notes as `jaComparadas`. */}
+      {window.PriceBaseSkewNote && _f && (_f.muniPriceBase || _f.geoPriceBase || _f.productPriceBase) && (
         <window.PriceBaseSkewNote
-          bases={[_f.muniPriceBase, _f.geoPriceBase]}
+          bases={[_f.muniPriceBase, _f.geoPriceBase, _f.productPriceBase]}
           database={database}
           conventions={conventions || window.DEFAULT_CONVENTIONS} />
       )}
