@@ -7,6 +7,89 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.108.4] - 2026-11-19
+
+**Sob um filtro de origem do IBGE PEVS, as séries por produto passam a ser as da metade
+escolhida.** Fecha a pendência das Notas da v1.108.3. Com "Extração vegetal (nativa)" (`tb=289`),
+o total de 2024 era R$ 5,87 bi. Já as séries por produto somavam R$ 43,00 bi, as duas metades da
+pesquisa, com os 3 produtos da silvicultura empilhados sob o chip da extração. Com "Silvicultura
+(plantada)" (`tb=291`), as séries eram as mesmas. O volume e a massa do total, somados a partir
+dessas séries, também eram os da pesquisa inteira sob qualquer uma das metades.
+
+### Corrigido
+- **As duas leituras das séries por produto recebem a tabela do SIDRA.** A leitura nacional
+  (`snapshot`) e a por UF (`/api/product-ts`, da v1.108.3) passam a filtrar pela tabela, como as
+  outras leituras de produção do `snapshot` (o total, o mapa por UF e o cubo UF × ano) já faziam.
+  A correção está num lugar só, `seam._product_ts_filter_kwargs`, que as duas leituras usam.
+  Medido na produção em 2026-11-19, ano de 2024:
+
+  | origem | total | séries por produto, antes | depois |
+  |---|---|---|---|
+  | Extração vegetal (289) | R$ 5,867 bi | R$ 43,004 bi · 10 produtos | R$ 5,867 bi · 7 produtos |
+  | Silvicultura (291) | R$ 37,137 bi | R$ 43,004 bi · 10 produtos | R$ 37,137 bi · 3 produtos |
+  | Extração vegetal · Pará | R$ 2.717,305 mi | R$ 3.283,898 mi | R$ 2.717,305 mi |
+  | Silvicultura · Pará | R$ 566,593 mi | R$ 3.283,898 mi | R$ 566,593 mi |
+
+- **Volume e massa do total.** Passam a seguir a tabela. Em 2024: 32,526 mi m³ e 787,054 mil t na
+  extração; 241,319 mi m³ e 6.696,374 mil t na silvicultura. Antes eram 273,845 mi m³ e
+  7.483,428 mil t sob qualquer uma das duas, a soma exata das metades.
+- **Perspectivas que mudam**, sob um filtro de origem do PEVS:
+  - **Visão geral:** a composição por produto, o volume e a massa. Na extração, em 2025:
+    R$ 5.577.542.000, 760.832 t e 31.797.968 m³, com 7 produtos na composição.
+  - **Valor e volume:** as duas composições históricas somam o mesmo que a série histórica acima
+    delas. Na extração, em 2024: R$ 5.867.051.000, 787.054 t e 32.526.315 m³. Com o Pará:
+    R$ 2.717.305.000, 311.738 t e 5.780.771 m³.
+  - **Perfil do produto e Comparativo entre produtos:** um produto da outra metade não tem mais
+    série. Com uma cesta só da outra metade (por exemplo, um link com `tb=289` e a madeira em
+    tora da silvicultura), a perspectiva diz "Nenhum produto disponível na seleção atual". Antes,
+    desenhava a série da silvicultura sob o chip da extração.
+  - **Concentração e desigualdade:**
+    - Extração, 2025: HHI por produto de 3.221, e os 3 maiores produtos somam 85,6% ("de 6
+      produtos na cesta").
+    - Antes, pela mesma regra da tela, calculada sobre as respostas medidas antes da correção:
+      3.913 e 87,8%, sobre os 9 produtos das duas metades.
+    - Silvicultura: 5.011 e 100,0% de 3 produtos.
+- **Com "Ambas" (sem filtro de origem), nada muda.** A leitura não leva a chave `tabela`, e a
+  consulta e a chave de cache são as de antes. As respostas do `snapshot` e de `/api/product-ts`
+  do Pará saíram idênticas antes e depois da correção.
+
+### Alterado
+- `gateway.fetch_product_timeseries` já aceitava a tabela: as séries de quantidade do PEVS no
+  Cruzamento entre fontes leem uma metade só. A documentação do parâmetro passa a dizer quem mais
+  o usa. Ele já entra na chave do cache, então uma leitura com tabela nunca se confunde com uma
+  sem.
+- O contrato está em `docs/frontend_data_contract.md` §3.3 e §3.6.
+
+### Testes
+- `tests/test_series_por_produto_tabela.py`, novo, com 28 testes:
+  - toda leitura que PODE filtrar por tabela (a assinatura tem `tabela`) recebe a da tela, em
+    sete pontos de entrada do `seam`. A regra é lida das assinaturas do `gateway`, então um leitor
+    novo entra na varredura sem editar o teste;
+  - sem tabela, as séries por produto não levam a chave;
+  - o volume e a massa do total seguem a tabela;
+  - os bancos de comércio não têm esse eixo e mantêm os próprios filtros.
+- O teste da v1.108.3 que compara as duas leituras argumento por argumento
+  (`tests/test_product_ts_by_uf.py`) passava com o defeito, porque as duas omitiam a mesma
+  tabela. Concordarem entre si não provava que estavam certas. Por isso o novo teste confere cada
+  leitura contra a regra que o leitor do total sempre seguiu.
+- Contraprova: com o `seam.py` do `main`, 8 dos 28 testes falham. Os 20 que passam são os casos
+  sem tabela, os dos bancos de comércio e os dos cinco pontos de entrada que já passavam a tabela.
+- pytest: 2603 passando (15 pulados no Windows, que só rodam no Linux). vitest: 1896 passando em
+  103 arquivos, os mesmos do `main` (o frontend não muda).
+- Verificado numa prévia local contra a produção (só leitura), nas perspectivas acima, com e sem
+  o Pará.
+
+### Notas
+- **Pendência achada no caminho, fora do escopo desta versão:** as contagens de produtos e de
+  linhas não seguem a tabela. Sob qualquer uma das metades, "Seleção ativa" diz "PRODUTOS 10 / 10"
+  e "LINHAS 1,4 mi de 1,4 mi", o resumo dos filtros diz "Todos (10)", a Visão geral diz "10 de 10
+  produtos" e o seletor de produtos lista os 10. Os números (valor, volume, massa, HHI) já são os
+  da metade escolhida; só as contagens não são. A cobertura de UFs já segue a tabela: 26 / 27 na
+  extração, 25 / 27 na silvicultura.
+- O PPM também tem duas tabelas (3939 e 74), mas o painel não oferece esse filtro para ele. A
+  regra corrigida vale para qualquer banco de produção que receba uma tabela, e o teste cobre o
+  PPM.
+
 ## [1.108.3] - 2026-11-19
 
 **Com um filtro de UF inteira, as séries por produto passam a ser as das UFs escolhidas, e não

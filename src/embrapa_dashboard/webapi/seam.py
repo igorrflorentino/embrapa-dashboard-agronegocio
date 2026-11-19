@@ -242,8 +242,11 @@ def _tabela_from_summary(summary: dict | None) -> str | None:
     vs t291 (silvicultura, planted). ``'all'`` / absent → ``None`` = sum every table,
     which for PEVS is the survey's own total and keeps an unfiltered request
     byte-identical to the one this seam emitted before the axis existed. Mirrors
-    ``_flow_from_summary``; only the PEVS-shaped branch passes it, since single-table
-    bancos have no ``tabela`` column to filter on.
+    ``_flow_from_summary``. Every production reader that SUMS values or quantities takes
+    it — the production marts all carry ``tabela`` since v1.47.0 — and the trade readers
+    do not (one table per banco, nothing to choose). The banco-wide reads take none: the
+    product universe (each product carries its own ``tabela``), the years a value column
+    cannot value, the quality acervo.
     """
     if not summary:
         return None
@@ -323,11 +326,21 @@ def _product_ts_filter_kwargs(banco_id: str, summary: dict | None) -> dict:
     the per-UF read behind ``/api/product-ts`` (v1.108.3) — so they cannot answer over
     different datasets: summed over every UF, the per-UF read IS the national one (the
     trade bancos' non-state origins aside). The trade marts re-query by flow, COMTRADE also
-    by regime, market and country; the production marts take none of these. Only keys that
-    differ from the gateway defaults are returned, so a production call stays byte-identical.
+    by regime, market and country; the production marts by the SIDRA table, the filter the
+    snapshot's other production reads (overview, UF map, UF × year cube) already took.
+
+    The table was missing until v1.108.4, and agreeing with EACH OTHER did not make the two
+    reads right: under "Extração vegetal" both summed BOTH halves of PEVS beside a total
+    that read one — R$ 43,00 bi of series under a R$ 5,87 bi total (2024, measured on prod
+    2026-11-19) — and the volume and mass of that total, summed from these series by
+    :func:`_with_overview_quantities`, were both halves' too.
+
+    Only keys that differ from the gateway defaults are returned, so a request without a
+    filter (no table, or ``'all'``) stays byte-identical: same SQL, same cache key.
     """
     if banco_id not in _TRADE:
-        return {}
+        tabela = _tabela_from_summary(summary)
+        return {"tabela": tabela} if tabela else {}
     kw: dict = {"flow": _flow_from_summary(summary)}
     if banco_id != "mdic_comex":
         kw["customs"] = _customs_from_summary(summary)
@@ -477,7 +490,7 @@ def snapshot(banco_id: str, conv: dict, summary: dict | None = None) -> dict:
             uf_data = uf_data.rename(columns={"total_value_usd": "total_value"})
         if uf_yearly is not None:
             uf_yearly = uf_yearly.rename(columns={"total_value_usd": "total_value"})
-    else:  # PEVS-shaped (ibge_pevs, ibge_pam): production marts, BRL-native value matrix
+    else:  # the IBGE surveys (ibge_pevs, ibge_pam, ibge_ppm): BRL-native production marts
         product_ts = gateway.fetch_product_timeseries(
             banco_id,
             year_start=y0,
@@ -486,8 +499,9 @@ def snapshot(banco_id: str, conv: dict, summary: dict | None = None) -> dict:
             value_column=value_col,
             **_product_ts_filter_kwargs(banco_id, summary),
         )
-        # Only the PEVS-shaped branch carries `tabela` — of the production marts
-        # only gold_pevs_production spans two tables. None (the default) sums both.
+        # The SIDRA table reaches EVERY production read of the snapshot — the series above
+        # through its helper, these three directly — or a screen stacks one half of a
+        # multi-table banco under the other half's total. None (absent/'all') sums them all.
         tabela = _tabela_from_summary(summary)
         overview_ts = gateway.fetch_production_overview(
             year_start=y0,
