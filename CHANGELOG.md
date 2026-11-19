@@ -22,9 +22,9 @@ dizem isso em vez de mostrar os números do Brasil.
 - **Leitura nova, por UF.** `GET /api/product-ts` devolve as séries por produto somadas nas UFs
   escolhidas. É a mesma consulta da série nacional do `snapshot`, com `state_acronym IN
   UNNEST(@uf_codes)` e os mesmos filtros (o fluxo, no COMEX). Medido na produção em 2026-11-19:
-  PEVS 0,49 MB, PAM 0,92 MB, PPM 1,05 MB e COMEX 6,78 MB processados. Cada consulta é cobrada pelo
-  mínimo de 10 MB, como a leitura nacional, muito abaixo do teto `maximum_bytes_billed` (100 GiB).
-  O UN COMTRADE não tem UF e responde `available: false`.
+  PEVS 0,49 MB, PAM 0,92 MB, PPM 1,05 MB e COMEX 6,78 MB (com SP) processados. Cada consulta é
+  cobrada pelo mínimo de 10 MB, como a leitura nacional, muito abaixo do teto
+  `maximum_bytes_billed` (100 GiB). O UN COMTRADE não tem UF e responde `available: false`.
 - **Visão geral.** "Composição · Participação por produto" do Pará no PPM em 2025 mostra Leite 73%
   e Ovos de galinha 26%; antes mostrava as do Brasil, 70% e 28%. A caminho, o card diz
   "Carregando as séries por produto das UFs escolhidas…"; com falha, o aviso de falha, nunca
