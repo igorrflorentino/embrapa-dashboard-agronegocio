@@ -450,12 +450,6 @@ const PERMITIDOS_CAMPO_ZERADO = [
            'da escolha; nenhum número desta linha aparece na tela.',
   },
   {
-    trecho: '|| Object.values(filtered.productTS).some(s => (s[s.length - 1]?.v || 0) > 0);',
-    razao: 'Concentração: a pergunta é "algum produto tem valor positivo no último ano". ' +
-           'Ausente e zero respondem igual (nenhum dos dois é > 0), então o `|| 0` não muda ' +
-           'o resultado e nenhum número sai daqui.',
-  },
-  {
     trecho: 'acc.set(r.uf, (acc.get(r.uf) || 0) + (r.value || 0));',
     razao: 'Perfil do território: total de cada UF na janela, para a participação e a ' +
            'posição. A lacuna do deflator é por ANO e vale igual para toda UF, então as ' +

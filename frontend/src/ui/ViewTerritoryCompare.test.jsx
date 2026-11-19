@@ -31,10 +31,11 @@ const MESH = [
 let charts;
 const BELEM_ROWS = [{ year: 2021, cityCode: '1501402', uf: 'PA', value: 30, q_mass: 3 }];
 
-// The município loaders return their read's STATE (v1.108.1). `mesh`/`muniRows` null = still
-// on its way; `meshError`/`muniError` = every retry failed.
+// The município loaders return their read's STATE (v1.108.1), and so does the basket's UF
+// cube (v1.108.2). `mesh`/`muniRows`/`basketRows` null = still on its way;
+// `meshError`/`muniError`/`basketError` = every retry failed.
 function stub({ geoLevel = 'municipio', families = ['mass'], mesh = MESH, meshError = null,
-  muniRows = BELEM_ROWS, muniError = null } = {}) {
+  muniRows = BELEM_ROWS, muniError = null, basketRows = null, basketError = null } = {}) {
   charts = [];
   const products = families.map((f, i) => ({ code: `p${i}`, family: f }));
   window.dataStore = { get: () => ({ ufYearly: UF_ROWS, products }) };
@@ -48,7 +49,9 @@ function stub({ geoLevel = 'municipio', families = ['mass'], mesh = MESH, meshEr
     ? { rows: null, priceBase: null, loading: false, loadError: muniError }
     : { rows: muniRows, priceBase: null, loading: muniRows == null, loadError: null });
   window.LoadErrorNote = ({ error }) => (error ? <div className="load-err" role="alert">{String(error)}</div> : null);
-  window.geoYearly = () => null;
+  window.geoYearly = () => (basketError
+    ? { rows: null, priceBase: null, loading: false, loadError: basketError }
+    : { rows: basketRows, priceBase: null, loading: basketRows == null, loadError: null });
   window.DEFAULT_CONVENTIONS = { currency: 'BRL', correction: 'Nominal' };
   window.CURRENCY_FX = { BRL: { symbol: 'R$' } };
   window.formatValue = (v) => (v == null ? '—' : `R$ ${v}`);
@@ -285,6 +288,34 @@ describe('ViewTerritoryCompare — a município read loading, failed or empty', 
     expect(input.placeholder).toBe('Lista de municípios indisponível');
     expect(container.textContent).toContain('Não foi possível carregar a lista de municípios do IBGE');
     expect(container.textContent).not.toContain('Carregando a lista de municípios');
+  });
+
+  // The default selection is picked from the UF grid; under a narrowed basket that grid is
+  // the basket's own cube. Until v1.108.2 a failed cube read as loading forever, and the
+  // empty default said "Nenhum território escolhido" — blaming the researcher for a read.
+  it('a failed basket grid says so, instead of "nenhum território escolhido"', () => {
+    stub({ families: ['mass', 'mass'], basketError: 'HTTP 503' });
+    const { container } = render(<Harness summary={{ basket: ['p0'] }} />);
+    expect(container.querySelector('.load-err').textContent).toBe('HTTP 503');
+    expect(container.textContent).not.toContain('Nenhum território escolhido');
+    expect(container.textContent).not.toContain('Carregando os estados');
+  });
+
+  it('a basket grid on its way says it is loading', () => {
+    stub({ families: ['mass', 'mass'] });           // basketRows null → on its way
+    const { container } = render(<Harness summary={{ basket: ['p0'] }} />);
+    expect(container.textContent).toContain('Carregando os estados para a comparação inicial…');
+    expect(container.textContent).not.toContain('Nenhum território escolhido');
+    expect(container.querySelector('.load-err')).toBeNull();
+  });
+
+  it('a state chosen under a failed basket grid is named as failed, never "carregando"', () => {
+    stub({ families: ['mass', 'mass'], basketError: 'HTTP 503' });
+    const { container } = render(
+      <Harness initial={{ items: [{ level: 'uf', code: 'PA' }] }} summary={{ basket: ['p0'] }} />,
+    );
+    expect(legend(container)).toContain('Pará · não foi possível carregar');
+    expect(legend(container)).not.toContain('carregando');
   });
 
   it('a mesh on its way answers a search with "carregando", never with "nenhum município"', () => {

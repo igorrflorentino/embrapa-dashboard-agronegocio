@@ -43,7 +43,8 @@ const MUNI_ROWS = [
 
 let calls;
 function stub({ rows = UF_ROWS, geoLevel = 'municipio', muni = () => MUNI_ROWS, geoYearly = null,
-  products = [{ code: 'a' }, { code: 'b' }], muniBase = null, muniError = null } = {}) {
+  geoYearlyError = null, products = [{ code: 'a' }, { code: 'b' }], muniBase = null,
+  muniError = null } = {}) {
   calls = { muni: [], geoYearly: 0 };
   window.dataStore = { get: () => ({ ufYearly: rows, products }) };
   window.applyFilters = () => ({ yearStart: 2019, yearEnd: 2021 });
@@ -56,7 +57,13 @@ function stub({ rows = UF_ROWS, geoLevel = 'municipio', muni = () => MUNI_ROWS, 
     const rows = muniError ? null : muni();
     return { rows, priceBase: rows ? muniBase : null, loading: !muniError && rows == null, loadError: muniError };
   };
-  window.geoYearly = () => { calls.geoYearly += 1; return geoYearly; };
+  // The basket cube's read STATE too (v1.108.2): `geoYearly` gives its rows (null = still on
+  // its way); `geoYearlyError` is a read that failed for good.
+  window.geoYearly = () => {
+    calls.geoYearly += 1;
+    const rows = geoYearlyError ? null : geoYearly;
+    return { rows, priceBase: null, loading: !geoYearlyError && rows == null, loadError: geoYearlyError };
+  };
 }
 
 const pts = (item) => item.points.map((p) => p.v);
@@ -214,6 +221,32 @@ describe('build — the numbers per territory', () => {
     stub({ geoYearly: [{ year: 2020, uf: 'PA', value: 7, q_mass: 1 }] });
     out = tc().build({ database: 'ibge_pevs', summary: { basket: ['a'] }, selection: [{ level: 'uf', code: 'PA' }] });
     expect(pts(out.items[0])).toEqual([7]);
+  });
+
+  // Until v1.108.2 the cube came back null both in flight and after it failed, so every UF
+  // and região line said "carregando…" for good.
+  it('a failed basket cube fails its UF and região lines, and withholds the Brasil line', () => {
+    stub({ geoYearlyError: 'HTTP 503' });
+    const out = tc().build({ database: 'ibge_pevs', summary: { basket: ['a'] }, selection: [
+      { level: 'uf', code: 'PA' }, { level: 'regiao', code: 'N' },
+    ] });
+    for (const item of out.items) {
+      expect(item).toMatchObject({ loadError: 'HTTP 503', points: [] });
+      expect(item.loading).toBeFalsy();
+    }
+    expect(out.loadError).toBe('HTTP 503');
+    expect(out).toMatchObject({ gridLoading: false, gridLoadError: 'HTTP 503' });
+    // No share against a national line read from a grid that never came.
+    expect(out.brasil).toEqual([]);
+  });
+
+  it('the grid state says why a default selection is empty', () => {
+    stub({ geoYearly: null });
+    let out = tc().build({ database: 'ibge_pevs', summary: { basket: ['a'] }, selection: [] });
+    expect(out).toMatchObject({ gridLoading: true, gridLoadError: null });
+    stub();
+    out = tc().build({ database: 'ibge_pevs', summary: {}, selection: [] });
+    expect(out).toMatchObject({ gridLoading: false, gridLoadError: null });
   });
 
   it('an emptied basket gives no years at all, not a row of zeros', () => {

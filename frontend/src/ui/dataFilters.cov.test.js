@@ -90,7 +90,10 @@ function installGlobals(snap, { mesh, muniCube, geoCube } = {}) {
     const rows = muniCube === undefined ? [] : muniCube;
     return { rows, priceBase: null, loading: rows == null, loadError: null };
   };
-  window.geoYearly = () => (geoCube === undefined ? null : geoCube);
+  // The basket's (UF × year) cube reports its state too (v1.108.2): undefined/null = on its way.
+  window.geoYearly = () => (geoCube == null
+    ? { rows: null, priceBase: null, loading: true, loadError: null }
+    : { rows: geoCube, priceBase: null, loading: false, loadError: null });
 }
 
 let realGlobals;
@@ -265,14 +268,15 @@ describe('applyFilters — quality flags', () => {
 // `valueShare` saiu daqui na v1.45.0 junto com a dimensão inteira: nada escrevia
 // valueMin/valueMax, então os quatro testes que existiam aqui afirmavam que uma constante
 // valia 1.00 — guardavam código morto, não comportamento.
-describe('applyFilters — _shares provenance (flag/year/state)', () => {
+describe('applyFilters — _shares provenance (flag/year/state/município)', () => {
   beforeEach(() => installGlobals(makeSnapshot()));
 
   it('não publica mais um valueShare — a dimensão não existe', () => {
     const out = window.applyFilters({ basket: null }, 'ibge_pevs');
     expect(out._shares).not.toHaveProperty('valueShare');
+    // muniShare (v1.108.2): the recorte's share of the municípios, for the "Linhas" counter.
     expect(Object.keys(out._shares).sort()).toEqual(
-      ['flagShare', 'productShare', 'stateShare', 'yearShare'],
+      ['flagShare', 'muniShare', 'productShare', 'stateShare', 'yearShare'],
     );
   });
 
@@ -372,9 +376,9 @@ describe('applyFilters — state + basket narrowing (geoYearly cube)', () => {
     expect(y2021.v).toBeCloseTo(6, 6);
   });
 
-  it('basket active but cube NOT loaded (geoYearly→null) flags notFilteredByBasket', () => {
+  it('basket active but cube NOT loaded (rows: null) flags notFilteredByBasket', () => {
     const snap = makeSnapshot();
-    installGlobals(snap, { geoCube: null }); // geoYearly returns null → cube pending
+    installGlobals(snap, { geoCube: null }); // geoYearly's rows are null → cube pending
     const out = window.applyFilters({ basket: ['P1', 'P2'] }, 'ibge_pevs');
     expect(out.notFilteredByBasket).toBe(true);
   });

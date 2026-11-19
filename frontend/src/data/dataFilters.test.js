@@ -208,7 +208,7 @@ describe('applyFilters — a failed sub-UF read is neither pending nor empty dat
     const applyFilters = await loadApplyFilters();
     window.geoMeshState = meshReady(GEO_MESH);
     window.municipioYearly = CUBE_FAILED;
-    window.geoYearly = () => null; // the basket's own UF cube, pending — irrelevant here
+    window.geoYearly = CUBE_PENDING; // the basket's own UF cube, pending — irrelevant here
     const f = applyFilters({ mesos: ['M1'], states: ['PA'], basket: ['A'] }, 'ibge_pevs');
     expect(f.subUfLoadError).toBe('HTTP 503');
     expect(f.geoComboPending).toBe(false);
@@ -434,7 +434,7 @@ describe('applyFilters — basket-scoped (UF × year) cube drives the territoria
 
   it('uses the cube (not the all-products snapshot) and CLEARS the honest note', async () => {
     const applyFilters = await loadApplyFilters();
-    window.geoYearly = () => CUBE; // basket cube loaded
+    window.geoYearly = cubeReady(CUBE); // basket cube loaded
     const f = applyFilters({ basket: ['A'] }, 'ibge_pevs');
     // Map reflects the basket cube's latest year (PA 2021 = 55), NOT the snapshot's 100.
     expect(f.ufData.find((u) => u.uf === 'PA').value).toBe(55);
@@ -445,19 +445,130 @@ describe('applyFilters — basket-scoped (UF × year) cube drives the territoria
 
   it('combines the cube with a state filter (true product × UF)', async () => {
     const applyFilters = await loadApplyFilters();
-    window.geoYearly = () => CUBE;
+    window.geoYearly = cubeReady(CUBE);
     const f = applyFilters({ basket: ['A'], states: ['PA'] }, 'ibge_pevs');
     expect(f.ufData.map((u) => u.uf)).toEqual(['PA']); // RS dropped
     expect(f.ts.find((d) => d.y === 2021).v).toBeCloseTo(55 / 1000); // PA-only, basket cube
     expect(f.notFilteredByBasket).toBe(false);
   });
 
-  it('keeps the honest note while the cube is still loading (geoYearly → null)', async () => {
+  it('keeps the honest note while the cube is still loading (rows: null, loading)', async () => {
     const applyFilters = await loadApplyFilters();
-    window.geoYearly = () => null; // fetch pending
+    window.geoYearly = CUBE_PENDING; // fetch pending
     const f = applyFilters({ basket: ['A'] }, 'ibge_pevs');
     expect(f.notFilteredByBasket).toBe(true); // not yet basket-aware → still honest
+    expect(f.basketGeoLoadError).toBeNull();  // …and the note says it is on its way
     expect(f.ufData.find((u) => u.uf === 'PA').value).toBe(100); // snapshot all-products
+  });
+
+  // Until v1.108.2 window.geoYearly returned the bare rows — null for "on its way" AND for
+  // "failed for good" — so a failed cube looked pending forever: beside a UF subset, VALOR
+  // TOTAL said "…" until the page was reloaded.
+  it('a FAILED cube is its own answer: the map note says it failed, and nothing waits', async () => {
+    const applyFilters = await loadApplyFilters();
+    window.geoYearly = CUBE_FAILED;
+    const f = applyFilters({ basket: ['A'] }, 'ibge_pevs');
+    expect(f.basketGeoLoadError).toBe('HTTP 503');
+    // No UF subset: the series stays right (the national per-product one honours the
+    // basket); only the map falls back to all products, and its note says why.
+    expect(f.notFilteredByBasket).toBe(true);
+    expect(f.geoComboPending).toBe(false);
+    expect(f.geoComboLoadError).toBeNull();
+    expect(f.ts.find((d) => d.y === 2021).v).toBeCloseTo(33 / 1000); // basket A, national
+  });
+
+  it('beside a UF subset, a failed cube is geoComboLoadError — never "pending" for good', async () => {
+    const applyFilters = await loadApplyFilters();
+    window.geoYearly = CUBE_FAILED;
+    const f = applyFilters({ basket: ['A'], states: ['PA'] }, 'ibge_pevs');
+    expect(f.geoComboPending).toBe(false);
+    expect(f.geoComboLoadError).toBe('HTTP 503');
+  });
+
+  it('a cube that loaded EMPTY is a measurement, not a wait', async () => {
+    // Its `length` used to stand for "loaded": a basket with no row in any UF kept the
+    // all-products map and, beside a UF subset, held the value at "…" for good.
+    const applyFilters = await loadApplyFilters();
+    window.geoYearly = cubeReady([]);
+    const f = applyFilters({ basket: ['A'], states: ['PA'] }, 'ibge_pevs');
+    expect(f.geoComboPending).toBe(false);
+    expect(f.geoComboLoadError).toBeNull();
+    expect(f.notFilteredByBasket).toBe(false);
+    expect(f.ufData).toEqual([]); // the PA of the snapshot (all products) never stands in
+    // The series is the subset's — nothing — never the national basket series, which has no
+    // UF grain and would answer for every state.
+    expect(f.ts.map((d) => d.v)).toEqual([null, null]);
+    expect(f.ts.map((d) => d.q_mass)).toEqual([0, 0]);
+  });
+
+  it("the cube's price base comes from the same response as its rows", async () => {
+    const applyFilters = await loadApplyFilters();
+    const OUTUBRO = { column: null, month: '2026-10', fxDate: null };
+    window.geoYearly = () => ({ rows: CUBE, priceBase: OUTUBRO, loading: false, loadError: null });
+    expect(applyFilters({ basket: ['A'] }, 'ibge_pevs').geoPriceBase).toEqual(OUTUBRO);
+    window.geoYearly = CUBE_PENDING;
+    expect(applyFilters({ basket: ['A'] }, 'ibge_pevs').geoPriceBase).toBeNull();
+  });
+});
+
+// A sub-UF recorte ASKED for — whatever its state — is what the perspectives that cannot
+// apply one need to know (window.recorteNaoSeAplica): they read only national or whole-UF
+// series, so loading or failing changes nothing for them, and until v1.108.2 they showed
+// those numbers under the recorte's chip without a word.
+describe('applyFilters — subUfRequested: a recorte asked for, in every state', () => {
+  beforeEach(() => {
+    delete window.applyFilters; delete window.geoMesh; delete window.geoMeshState;
+    delete window.municipioYearly; delete window.geoYearly;
+  });
+
+  it.each([
+    ['the mesh on its way', MESH_PENDING, cubeReady(MUNI_CUBE)],
+    ['the cube on its way', meshReady(GEO_MESH), CUBE_PENDING],
+    ['the mesh failed', MESH_FAILED, cubeReady(MUNI_CUBE)],
+    ['the cube failed', meshReady(GEO_MESH), CUBE_FAILED],
+    ['resolved', meshReady(GEO_MESH), cubeReady(MUNI_CUBE)],
+    ['resolved empty', meshReady(GEO_MESH), cubeReady([])],
+  ])('%s → true', async (_estado, mesh, cube) => {
+    const applyFilters = await loadApplyFilters();
+    window.geoMeshState = mesh;
+    window.municipioYearly = cube;
+    expect(applyFilters({ mesos: ['M1'] }, 'ibge_pevs').subUfRequested).toBe(true);
+  });
+
+  it('no sub-UF facet → false', async () => {
+    const applyFilters = await loadApplyFilters();
+    window.geoMeshState = meshReady(GEO_MESH);
+    window.municipioYearly = cubeReady(MUNI_CUBE);
+    expect(applyFilters({}, 'ibge_pevs').subUfRequested).toBe(false);
+    expect(applyFilters({ basket: ['A'] }, 'ibge_pevs').subUfRequested).toBe(false);
+  });
+});
+
+// The "Linhas" counter estimated the rows a recorte keeps with stateShare — whole states —
+// so Portel + Breves read as the whole Pará (134 mil linhas in every state, as measured in
+// production). muniShare is the share of the MUNICÍPIOS in scope, the same set the cube
+// rows are.
+describe("applyFilters — muniShare: the recorte's share of the municípios", () => {
+  beforeEach(() => {
+    delete window.applyFilters; delete window.geoMesh; delete window.geoMeshState;
+    delete window.municipioYearly;
+  });
+
+  it('a mesorregião keeps its own municípios over the whole mesh', async () => {
+    const applyFilters = await loadApplyFilters();
+    window.geoMeshState = meshReady(GEO_MESH);
+    window.municipioYearly = cubeReady(MUNI_CUBE);
+    // M1 = cidades 1 and 2 of the mesh's 3.
+    expect(applyFilters({ mesos: ['M1'] }, 'ibge_pevs')._shares.muniShare).toBeCloseTo(2 / 3);
+  });
+
+  it('null without a resolved recorte — the counter then says "…" or "—", never a guess', async () => {
+    const applyFilters = await loadApplyFilters();
+    window.geoMeshState = MESH_PENDING;
+    window.municipioYearly = cubeReady(MUNI_CUBE);
+    expect(applyFilters({ mesos: ['M1'] }, 'ibge_pevs')._shares.muniShare).toBeNull();
+    window.geoMeshState = meshReady(GEO_MESH);
+    expect(applyFilters({}, 'ibge_pevs')._shares.muniShare).toBeNull();
   });
 });
 

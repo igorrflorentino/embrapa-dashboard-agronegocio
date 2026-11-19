@@ -52,6 +52,20 @@ describe('CsvExportModal — the reason for "Nada para baixar"', () => {
     expect(msg('carregando-recorte')).toMatch(/ainda estão carregando/);
   });
 
+  it('a per-product series under a sub-UF recorte is refused for good, and says what to change', () => {
+    const m = msg('recorte-nao-se-aplica');
+    expect(m).toMatch(/só para o Brasil inteiro/);
+    expect(m).toMatch(/Retire esse recorte do filtro de geografia/);
+    expect(m).not.toMatch(/carregando|Espere/); // waiting would not help
+  });
+
+  it('the basket × UF cross on its way, or failed, each get their own advice', () => {
+    expect(msg('carregando-cesta-uf')).toMatch(/ainda está carregando/);
+    const m = msg('falha-cesta-uf');
+    expect(m).toMatch(/Não foi possível carregar o cruzamento dos produtos escolhidos com as UFs/);
+    expect(m).not.toMatch(/carregando/);
+  });
+
   it('anything else is the banco not yet released', () => {
     expect(msg('banco-indisponivel')).toBe(FALLBACK);
   });
@@ -60,10 +74,16 @@ describe('CsvExportModal — the reason for "Nada para baixar"', () => {
   // as "not released yet" — wrong, and confidently so. Every reason the export gives must
   // have its own words (v1.108.1 added three).
   it('every reason csvExport.js can give has its own message, never the banco fallback', () => {
-    const motivos = [...new Set(
-      [...CSV_SRC.matchAll(/'((?:sem|carregando|falha)(?:-[a-z]+)*)'/g)].map((m) => m[1]))];
+    const motivos = [...new Set([
+      ...[...CSV_SRC.matchAll(/'((?:sem|carregando|falha)(?:-[a-z]+)*)'/g)].map((m) => m[1]),
+      // A reason written straight into `motivo:`, whatever its first word (v1.108.2 added
+      // 'recorte-nao-se-aplica', which the prefix list above would not see).
+      ...[...CSV_SRC.matchAll(/motivo: '([a-z]+(?:-[a-z]+)*)'/g)].map((m) => m[1]),
+    // The one reason whose words ARE the banco message: an unreleased banco.
+    ].filter((m) => m !== 'banco-indisponivel'))];
     expect(motivos).toEqual(expect.arrayContaining(
-      ['sem-linhas', 'sem-territorios', 'carregando', 'falha-territorios', 'falha-recorte', 'carregando-recorte']));
+      ['sem-linhas', 'sem-territorios', 'carregando', 'falha-territorios', 'falha-recorte', 'carregando-recorte',
+        'carregando-cesta-uf', 'falha-cesta-uf', 'recorte-nao-se-aplica']));
     for (const motivo of motivos) {
       cleanup();
       expect(msg(motivo), motivo).not.toBe(FALLBACK);

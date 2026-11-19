@@ -130,6 +130,11 @@ import './countUnits.js';
     const recorteNaoResolvido = f.subUfLoadError ? 'falha-recorte'
       : f.subUfLoading ? 'carregando-recorte' : null;
     const recusaRecorte = (subject) => ({ headers: [], rows: [], subject, motivo: recorteNaoResolvido });
+    // A product basket narrowed together with a UF subset needs the basket's UF cube: until it
+    // lands the series sums ALL products over the selected UFs (the screen holds it at "…"),
+    // and after it failed nothing is coming (v1.108.2). Checked after the sub-UF reasons.
+    const cestaUfNaoResolvida = f.geoComboLoadError ? 'falha-cesta-uf'
+      : f.geoComboPending ? 'carregando-cesta-uf' : null;
     const PRODS = f.products;
     const nameOf = (c) => (PRODS.find(p => p.code === c) || {}).name || c;
 
@@ -154,6 +159,9 @@ import './countUnits.js';
       case 'value':
       case 'overview': {
         if (recorteNaoResolvido) return recusaRecorte('serie_agregada');
+        if (cestaUfNaoResolvida) {
+          return { headers: [], rows: [], subject: 'serie_agregada', motivo: cestaUfNaoResolvida };
+        }
         // annual aggregate series (value + qty per family)
         const headers = ['ano', `valor_${conv.currency}`, 'qtd_massa_t', 'qtd_volume_m3', ...countHeaders];
         const rows = f.ts.map(d => [
@@ -167,6 +175,14 @@ import './countUnits.js';
       }
       case 'product_profile':
       case 'product_compare': {
+        // The per-product series are NATIONAL (productTS has no geography), so a sub-UF recorte
+        // cannot apply to them in ANY of its states: the file would carry the whole country's
+        // numbers under its recorte_geografico column, with no chip or note beside it. Until
+        // v1.108.2 it did. Waiting would not help, so loading and failure refuse the same way
+        // the resolved recorte does — "carregando-recorte" promises a file that never comes.
+        if (f.subUfRequested) {
+          return { headers: [], rows: [], subject: 'series_por_produto', motivo: 'recorte-nao-se-aplica' };
+        }
         // per-product annual series. productTS.q is in mil t for mass but mi m³ for
         // volume — scaling both by 1e3 (the old code) mixed t and mil m³ under one
         // unitless "quantidade" header. Scale per family to its base unit (mass→t,

@@ -201,6 +201,9 @@ function ViewTerritoryProfile({ summary, database, conventions }) {
     ? (cityCombined ? `${cityOptions.length} municípios selecionados`
       : !cityName ? '—' : cityUf ? `${cityName} · ${cityUf}` : cityName)
     : ufName;
+  // A combination is named in the plural ("2 municípios selecionados"), and a verb after it
+  // agrees: "O que 2 municípios selecionados produz" until v1.108.2.
+  const placePlural = activeLevel === 'municipio' ? cityCombined : combined;
 
   // ── The território's trajectory ───────────────────────────────────────────
   // A combination is SUMMED, which is legitimate here: these are production values in
@@ -518,7 +521,7 @@ function ViewTerritoryProfile({ summary, database, conventions }) {
       <div className="card">
         <window.SectionHeader
           overline={somaLocal ? `Composição · ${somaLocal}` : 'Composição'}
-          title={`O que ${placeLabel} produz`}
+          title={`O que ${placeLabel} ${placePlural ? 'produzem' : 'produz'}`}
         />
         {/* Only the LAST branch is a measurement. Loading, a failed request and a banco
             with no reader at this level all used to fall through to "Sem produtos

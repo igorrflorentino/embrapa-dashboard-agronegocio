@@ -100,17 +100,21 @@
 
   /** The (UF × year) grid for the active products. With no basket narrowing, the
    *  snapshot's all-products grid (already in memory); with one, the basket-scoped cube.
-   *  Both honour currency, correction, SIDRA table and industrialization level. */
+   *  Both honour currency, correction, SIDRA table and industrialization level.
+   *  Returns { rows, loading, loadError }: the cube's read has three states (window.geoYearly),
+   *  and until v1.108.2 a failed cube read as loading here, so every UF and região line of the
+   *  comparison said "carregando…" for good. */
   function ufGrid(database, summary) {
     const snap = window.dataStore && window.dataStore.get ? window.dataStore.get(database) : null;
     const all = snap && Array.isArray(snap.ufYearly) ? snap.ufYearly : [];
     const basket = summary && summary.basket;
     const prods = (snap && snap.products) || [];
-    if (Array.isArray(basket) && basket.length === 0) return { rows: [], loading: false };
+    if (Array.isArray(basket) && basket.length === 0) return { rows: [], loading: false, loadError: null };
     const narrowed = Array.isArray(basket) && basket.length < prods.length;
-    if (!narrowed) return { rows: all, loading: false };
-    const cube = window.geoYearly ? window.geoYearly(database, summary) : null;
-    return { rows: cube || [], loading: cube == null };
+    if (!narrowed) return { rows: all, loading: false, loadError: null };
+    const read = window.geoYearly ? window.geoYearly(database, summary) : null;
+    if (!read) return { rows: [], loading: true, loadError: null };
+    return { rows: read.rows || [], loading: !!read.loading, loadError: read.loadError || null };
   }
 
   /** One point per year. A year with NO row for the territory produced nothing there (the
@@ -163,6 +167,7 @@
         if (muniCube == null) return { ...base, loading: true, points: [] };
         return { ...base, points: yearly(muniRows, (r) => String(r.cityCode) === String(t.code), field, years) };
       }
+      if (grid.loadError) return { ...base, loadError: grid.loadError, points: [] };
       if (grid.loading) return { ...base, loading: true, points: [] };
       const match = t.level === 'uf'
         ? (r) => r.uf === t.code
@@ -172,7 +177,7 @@
 
     // The whole country for the SAME metric, for the share column. Every row counts,
     // including a trade banco's non-state origins, so the share is of the national total.
-    const brasil = grid.loading ? [] : yearly(ufRows, () => true, field, years);
+    const brasil = (grid.loading || grid.loadError) ? [] : yearly(ufRows, () => true, field, years);
     // The month the município cube is at (v1.105.0) — same response as its rows. It reads
     // the analytical base directly while `brasil` comes from the pre-aggregated tables, and
     // the share divides one by the other: across a build they can be a month apart, and the
@@ -187,6 +192,11 @@
       // The first failed read, for the view's one note (each failed item is also marked).
       loadError: (items.find((it) => it.loadError) || {}).loadError || null,
       muniCapable,
+      // The UF grid's own state, for the screen to say why the DEFAULT selection is empty:
+      // the default is picked from this grid, so while it loads (or after it failed) there
+      // is nothing to pick, and "nenhum território escolhido" would blame the researcher.
+      gridLoading: grid.loading,
+      gridLoadError: grid.loadError,
       priceBases: muniPriceBase ? [muniPriceBase] : [],
       comparedPriceBases: [f.muniPriceBase, f.geoPriceBase],
     };

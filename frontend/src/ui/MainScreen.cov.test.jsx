@@ -321,6 +321,53 @@ describe('MainScreen — "UFs cobertas" de um recorte sub-UF que não resolveu',
   });
 });
 
+// "Linhas" under a sub-UF recorte (v1.108.2). stateShare counts WHOLE states, so Portel and
+// Breves read as all of Pará — "134 mil" in every state, as measured in production. The
+// recorte's share of the municípios sizes it now; while the recorte loads, or after it failed,
+// the counter holds with the same marks and tooltip as "UFs cobertas".
+describe('MainScreen — "Linhas" sob um recorte sub-UF', () => {
+  const comRecorte = (extra) => {
+    window.applyFilters = () => ({
+      ts: [{ y: 2024, v: 1 }],
+      ufData: [],
+      ufDataFull: [{ uf: 'PA', value: 5, real: true }, { uf: 'AM', value: 3, real: true }],
+      qualityFlags: [{ id: 'OK', count: 1000 }],
+      productsTotal: 3,
+      _shares: {},
+      ...extra,
+    });
+  };
+  const linhas = (container) => [...container.querySelectorAll('.meta-row')]
+    .find((e) => e.textContent.includes('Linhas')).querySelector('.meta-val');
+
+  it('resolvido: a fração dos MUNICÍPIOS dimensiona o recorte, não a da UF inteira', () => {
+    comRecorte({ _shares: { stateShare: 0.5, muniShare: 0.01 } });
+    const v = linhas(render(<MainScreen />).container);
+    expect(v.querySelector('strong').textContent).toBe('10'); // 1000 × 0,01 — the UF's 0,5 gave 500
+  });
+
+  it('carregando: "…", com o título de "UFs cobertas"', () => {
+    comRecorte({ subUfLoading: true, _shares: { stateShare: 0.5 } });
+    const v = linhas(render(<MainScreen />).container);
+    expect(v.querySelector('strong').textContent).toBe('…');
+    expect(v.getAttribute('title')).toBe('O recorte geográfico escolhido ainda está carregando.');
+  });
+
+  it('com falha: "—", e o título diz que não carregou', () => {
+    comRecorte({ subUfLoadError: 'HTTP 503', _shares: { stateShare: 0.5 } });
+    const v = linhas(render(<MainScreen />).container);
+    expect(v.querySelector('strong').textContent).toBe('—');
+    expect(v.getAttribute('title')).toBe('Não foi possível carregar o recorte geográfico escolhido.');
+  });
+
+  it('contraprova: sem recorte sub-UF, a fração das UFs segue valendo', () => {
+    comRecorte({ _shares: { stateShare: 0.5 } });
+    const v = linhas(render(<MainScreen />).container);
+    expect(v.querySelector('strong').textContent).toBe('500');
+    expect(v.getAttribute('title')).toBeNull();
+  });
+});
+
 // O aviso de "valores corrigidos de anos até 1994 são indicativos" (v1.103.0) é montado aqui,
 // uma vez, em vez de em cada perspectiva. A regra de QUANDO aparece é de window.inflacaoAltaNoPeriodo
 // (MonetaryNotes.test.jsx); o que se prova aqui é a montagem: recebe a convenção ativa e o início

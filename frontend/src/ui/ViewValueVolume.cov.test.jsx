@@ -341,6 +341,64 @@ describe('ViewValueVolume — value-less herd + combo-pending branches', () => {
   });
 });
 
+// ── Um recorte sub-UF, em qualquer estado, e o cubo produto × UF que falhou (v1.108.2) ───
+// The per-product compositions read productTS, which has no geography: under a sub-UF
+// recorte they put the whole country's products beneath its chip — while it loaded, after it
+// failed and once it had loaded. They are withheld in every state, and the screen says why.
+describe('ViewValueVolume — under a sub-UF recorte, and a failed basket cube', () => {
+  const renderWith = (extra) => {
+    stubGlobals(valueFixture(extra));
+    window.NotApplicableNote = ({ note }) => {
+      const msgs = note ? Object.values(note).filter(Boolean) : [];
+      return msgs.length ? <div className="na-note">{msgs.join(' ')}</div> : null;
+    };
+    return render(
+      <ViewValueVolume families={['mass', 'volume']} summary={{}} database="ibge_pevs"
+                       conventions={{ currency: 'BRL', correction: 'IPCA', autoScale: false }} />,
+    ).container;
+  };
+  afterEach(() => { delete window.NotApplicableNote; });
+  const naoSeAplica = 'A composição histórica por produto não aparece com um recorte territorial abaixo da UF';
+
+  it('on its way: the totals wait for the municípios, and no national composition is drawn', () => {
+    const c = renderWith({ geoComboPending: true, subUfLoading: true, subUfRequested: true });
+    expect(c.textContent).toContain('Carregando o recorte territorial… os totais de valor e quantidade');
+    expect(c.textContent).not.toContain('Cruzando');
+    expect(c.textContent).not.toContain('já reflete a cesta'); // there is no composition below
+    expect(stackedCalls).toHaveLength(0);
+    expect(c.querySelector('.na-note').textContent).toContain(naoSeAplica);
+  });
+
+  it('failed: the failure note, no national composition, nothing still coming', () => {
+    const c = renderWith({ subUfLoadError: 'HTTP 503', subUfRequested: true });
+    expect(c.querySelector('.load-err').textContent).toBe('HTTP 503');
+    expect(stackedCalls).toHaveLength(0);
+    expect(c.querySelector('.na-note').textContent).toContain(naoSeAplica);
+    expect(c.textContent).not.toMatch(/Cruzando|Carregando/);
+  });
+
+  it('resolved: the totals are the recorte’s, and the compositions stay withheld', () => {
+    const c = renderWith({ subUfRequested: true, subUfLoaded: true });
+    expect(lineChartCalls.length).toBeGreaterThanOrEqual(3); // value, mass, volume — the recorte's ts
+    expect(stackedCalls).toHaveLength(0);
+    expect(c.querySelector('.na-note').textContent).toContain(naoSeAplica);
+  });
+
+  it('no recorte: the compositions are drawn and nothing is said', () => {
+    const c = renderWith({});
+    expect(stackedCalls.length).toBeGreaterThanOrEqual(3);
+    expect(c.querySelector('.na-note')).toBeNull();
+  });
+
+  it('the basket’s UF cube failed beside a UF subset: held with the failure, never "Cruzando…" for good', () => {
+    const c = renderWith({ geoComboPending: false, geoComboLoadError: 'HTTP 503' });
+    expect(c.querySelector('.load-err').textContent).toBe('HTTP 503');
+    expect(c.textContent).not.toContain('Cruzando');
+    expect(yoyProps).toBeUndefined();
+    expect(lineChartCalls).toHaveLength(0);
+  });
+});
+
 // ── Variação anual e a troca de moeda ────────────────────────────────────────────
 // Em valores nominais, a barra de um par que atravessa uma reforma mediria a troca de
 // moeda. YoYBars não desenha essa barra, e o card NOMEIA os anos sem barra, para uma

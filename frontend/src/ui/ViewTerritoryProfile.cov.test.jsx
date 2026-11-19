@@ -762,3 +762,34 @@ describe('ViewTerritoryProfile — at UF level under a sub-UF narrowing', () => 
     expect(c.textContent).not.toMatch(/[Cc]arregando/);
   });
 });
+
+// A combination is named in the plural, and the verb after it must agree: the composition
+// card read "O que 2 municípios selecionados produz" until v1.108.2.
+describe('ViewTerritoryProfile — o título da composição concorda com o lugar', () => {
+  const MESH = [
+    { cityCode: '1500107', cityName: 'Abaetetuba', uf: 'PA' },
+    { cityCode: '1500206', cityName: 'Acará', uf: 'PA' },
+    { cityCode: '3550308', cityName: 'São Paulo', uf: 'SP' },
+  ];
+  const tituloComposicao = (c) => [...c.querySelectorAll('.sh-title')]
+    .map((e) => e.textContent).find((t) => t.startsWith('O que '));
+
+  it('várias UFs: "produzem"', () => {
+    stubGlobals(BASE, { mesh: MESH });
+    const { container } = render(<View summary={{ states: ['PA', 'SP'] }} database="ibge_pevs" conventions={CONV} />);
+    expect(tituloComposicao(container)).toBe('O que 2 UFs selecionadas produzem');
+  });
+
+  it('vários municípios: "produzem"', () => {
+    stubGlobals({ ...BASE, scopedCityCodes: ['1500107', '1500206'] }, { mesh: MESH });
+    const { container } = render(<View summary={{ munis: ['1500107', '1500206'] }} database="ibge_pevs" conventions={CONV} />);
+    fireEvent.click([...container.querySelectorAll('.seg-opt')].find((b) => b.textContent === 'Município'));
+    expect(tituloComposicao(container)).toBe('O que 2 municípios selecionados produzem');
+  });
+
+  it('um lugar só: "produz"', () => {
+    stubGlobals(BASE, { mesh: MESH });
+    const { container } = render(<View summary={{}} database="ibge_pevs" conventions={CONV} />);
+    expect(tituloComposicao(container)).toBe('O que Pará produz');
+  });
+});

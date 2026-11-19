@@ -160,7 +160,14 @@ function ViewTerritoryCompare({ summary, conventions, database, territoryCompare
           ) : null}
         />
         <div className="tc-selected">
-          {selection.length === 0 && (
+          {/* With no choice made, the selection is the default, picked from the UF grid: an
+              empty one there means the grid is not here yet, or failed (v1.108.2) — not that
+              the researcher chose nothing. */}
+          {selection.length === 0 && !Array.isArray(state.items) && data.gridLoadError ? (
+            <window.LoadErrorNote error={data.gridLoadError} />
+          ) : selection.length === 0 && !Array.isArray(state.items) && data.gridLoading ? (
+            <span className="caption">Carregando os estados para a comparação inicial…</span>
+          ) : selection.length === 0 && (
             <span className="caption">Nenhum território escolhido. Adicione abaixo.</span>
           )}
           {items.map((it) => (

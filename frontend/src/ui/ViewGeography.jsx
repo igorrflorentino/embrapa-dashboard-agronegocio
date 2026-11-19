@@ -5,6 +5,8 @@
 // out — loaded here so the view never renders without them.
 import './geoDimensions.js';
 import './CountUnitNotes.jsx';
+// window.cestaPorUfMotivo — why the map still shows every product under a basket.
+import './RecorteNote.jsx';
 
 const { useState: useGeoState, useMemo: useGeoMemo, useEffect: useGeoEffect } = React;
 
@@ -680,10 +682,9 @@ function ViewGeography({ families, conventions, summary, database, territoryComp
       {filtered.notFilteredByBasket && (
         <div className="card subtle" style={{ marginBottom: 12 }}>
           <p className="caption" style={{ padding: '10px 12px' }}>
-            A distribuição territorial reflete <strong>todos os produtos</strong> do banco —
-            a cesta selecionada não recorta o mapa por UF/região (não há grão produto × UF nesta
-            agregação). Para a distribuição de um produto específico, use a perspectiva
-            <strong> Perfil do produto</strong>.
+            A distribuição territorial reflete <strong>todos os produtos</strong> do banco —{' '}
+            {window.cestaPorUfMotivo(filtered)}. Para a distribuição de um produto específico,
+            use a perspectiva <strong>Perfil do produto</strong>.
           </p>
         </div>
       )}

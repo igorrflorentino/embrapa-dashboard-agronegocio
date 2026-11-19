@@ -366,6 +366,19 @@ describe('ViewGeography — gating and honest-note branches', () => {
       <ViewGeography families={['mass']} summary={AT_UF} database="ibge_pevs" conventions={{ autoScale: true }} />
     );
     expect(container.textContent).toContain('todos os produtos');
+    // The reason is the cube's state: on its way here. Until v1.108.2 the note claimed there
+    // was no product × UF grain at all — which exists, and arrives a moment later.
+    expect(container.textContent).toContain('a distribuição por UF da cesta selecionada ainda está carregando');
+    expect(container.textContent).not.toContain('não há grão produto × UF');
+  });
+
+  it('says the basket’s UF split FAILED when it did — not that it is still coming', () => {
+    stubGlobals(fullFixture({ notFilteredByBasket: true, basketGeoLoadError: 'HTTP 503' }));
+    const { container } = render(
+      <ViewGeography families={['mass']} summary={AT_UF} database="ibge_pevs" conventions={{ autoScale: true }} />
+    );
+    expect(container.textContent).toContain('não foi possível carregar a distribuição por UF da cesta selecionada');
+    expect(container.textContent).not.toContain('ainda está carregando');
   });
 
   it('shows the mass-unavailable note when the family is in the basket but per-UF has no mass', () => {

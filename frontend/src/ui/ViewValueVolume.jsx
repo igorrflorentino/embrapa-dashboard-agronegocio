@@ -131,24 +131,38 @@ function ViewValueVolume({ families, conventions, summary, database }) {
   // number that disregards the basket (mirrors ViewOverview's comboPending guard). The
   // per-product composition charts below read productTS and stay basket-correct.
   const comboPending = !!filtered.geoComboPending;
-  // A sub-UF narrowing whose mesh or município cube FAILED (v1.108.1): nothing is coming, and
-  // the ts-derived series would be the un-narrowed ones — data the filter excludes. Held like
-  // the pending state; the note says it failed instead of "cruzando…" forever.
-  const recorteFalhou = filtered.subUfLoadError || null;
-  const segura = comboPending || !!recorteFalhou;
+  // A sub-UF narrowing whose mesh or município cube FAILED (v1.108.1), or the basket's UF cube
+  // failing beside a UF subset (v1.108.2): nothing is coming, and the ts-derived series would
+  // be the un-narrowed ones — data the filter excludes. Held like the pending state; the note
+  // says it failed instead of "cruzando…" forever.
+  const falha = filtered.subUfLoadError || filtered.geoComboLoadError || null;
+  const segura = comboPending || !!falha;
+  // The per-product compositions below are NATIONAL (productTS has no geography): under a
+  // sub-UF recorte they would put the whole country's products beneath its chip, so they are
+  // not drawn, in any state of the recorte, and the screen says why (v1.108.2).
+  const recorteSubUf = !!filtered.subUfRequested;
 
   return (
     <>
       <window.UnitFamilyBanner families={families} />
 
-      <window.LoadErrorNote error={recorteFalhou} />
+      <window.LoadErrorNote error={falha} />
 
-      {comboPending && !recorteFalhou && (
+      {comboPending && !falha && (
         <div className="card subtle" style={{ marginBottom: 12 }}>
           <p className="caption" style={{ padding: '10px 12px' }}>
-            Cruzando <strong>produto × UF</strong>… os totais de valor e quantidade aparecem
-            assim que o cubo territorial carrega. A composição por produto abaixo já reflete a
-            cesta selecionada.
+            {recorteSubUf ? (
+              <>
+                Carregando o <strong>recorte territorial</strong>… os totais de valor e
+                quantidade aparecem assim que os municípios escolhidos carregam.
+              </>
+            ) : (
+              <>
+                Cruzando <strong>produto × UF</strong>… os totais de valor e quantidade aparecem
+                assim que o cubo territorial carrega. A composição por produto abaixo já reflete a
+                cesta selecionada.
+              </>
+            )}
           </p>
         </div>
       )}
@@ -244,8 +258,16 @@ function ViewValueVolume({ families, conventions, summary, database }) {
       </div>
       )}
 
+      {recorteSubUf && (
+        <window.NotApplicableNote note={{
+          recorte: 'A composição histórica por produto não aparece com um recorte territorial '
+            + 'abaixo da UF: as séries por produto existem só para o Brasil inteiro, e ela '
+            + 'mostraria números de fora dos municípios escolhidos.',
+        }} />
+      )}
+
       {/* Composition by product · value */}
-      {hasValue && (
+      {hasValue && !recorteSubUf && (
       <div className="card">
         <window.SectionHeader
           overline={`Composição histórica · valor (${valueStackScaled.label})`}
@@ -257,7 +279,7 @@ function ViewValueVolume({ families, conventions, summary, database }) {
 
       {/* Composition by quantity — per family */}
       <div className={'grid-' + (families.length === 2 ? '2' : '1')}>
-        {massFamily && (
+        {massFamily && !recorteSubUf && (
           <div className="card">
             <window.SectionHeader
               overline={<>Composição histórica · quantidade <window.UnitFamilyTag family="mass" conv={conv}/></>}
@@ -266,7 +288,7 @@ function ViewValueVolume({ families, conventions, summary, database }) {
             <window.StackedArea series={massStackScaled.layers} valueKey="q" label={massStackScaled.label} height={240} />
           </div>
         )}
-        {volFamily && (
+        {volFamily && !recorteSubUf && (
           <div className="card">
             <window.SectionHeader
               overline={<>Composição histórica · quantidade <window.UnitFamilyTag family="volume" conv={conv}/></>}

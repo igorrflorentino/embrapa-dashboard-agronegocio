@@ -110,6 +110,40 @@ import './countUnits.js';
     return [...byUfYear.values()];
   }
 
+  // The donut's slices from rows of { name, tabela?, value } — biggest first, at most seven
+  // (else the six biggest plus "Outros"), each with its `share` and colour. ONE function for
+  // the national composition (applyFilters' topProducts) and the recorte's (Visão geral under
+  // a sub-UF recorte), so the two cannot slice one basket two ways.
+  window.compositionSlices = function compositionSlices(rows) {
+    const raw = (rows || [])
+      // Uma FATIA é uma parte de um total. Um produto sem valor medido naquele ano (a
+      // convenção escolhida não alcança o ano) não é uma fatia de tamanho zero — ele
+      // não é fatia nenhuma. Deixá-lo entrar como 0 fazia o Donut listar produtos com
+      // "0%" como se tivessem sido medidos e não tivessem produzido nada.
+      .filter(p => Number.isFinite(p.value))
+      .sort((a, b) => b.value - a.value);
+    // Sem `|| 1`: ele fabricava o denominador. Com total não-positivo não há composição
+    // a mostrar — um donut de zeros rotula "0%" em cada fatia (Donut.jsx desenha o
+    // rótulo), afirmando participação nula onde o que existe é ausência de dado.
+    const total = window.sumPresent(raw.map(p => p.value));
+    const COLORS = [...window.VIZ_SCALE, 'var(--pres-gray-300)', 'var(--pres-gray-400)'];
+    if (!total || total <= 0) return [];
+    if (raw.length <= 7) {
+      return raw.map((p, i) => ({
+        ...p, share: window.ratioPresent(p.value, total), color: COLORS[i % COLORS.length],
+      }));
+    }
+    const head = raw.slice(0, 6);
+    const tailVal = raw.slice(6).reduce((s, p) => s + p.value, 0);
+    return [
+      ...head.map((p, i) => ({
+        ...p, share: window.ratioPresent(p.value, total), color: COLORS[i],
+      })),
+      { name: 'Outros', value: tailVal, share: window.ratioPresent(tailVal, total),
+        color: 'var(--pres-gray-200)', muted: true },
+    ];
+  };
+
   window.applyFilters = function (summary, bancoId) {
     summary = summary || {};
 
@@ -238,17 +272,26 @@ import './countUnits.js';
     // narrowing already owns the grid.
     const subUfUnresolved = !!(hasGeoData && subUfMeshError);
     const subUfCube = (subUfLoaded && mesh) ? rollupMuniCubeToUf(muniCube, mesh, geoFacets) : null;
-    // The basket-scoped (UF × year) cube (null until the fetch lands, or for a non-geo
-    // banco). Only fetched when a basket is active — a state-only narrowing reads the
-    // all-products ufYearly already in the snapshot (no extra round-trip).
-    const basketGeoCube = (basketActive && window.geoYearly)
+    // The basket-scoped (UF × year) cube's read (window.geoYearly): `rows` is null in flight
+    // AND after a failure — `loading`/`loadError` say which — and [] when it loaded empty.
+    // Only fetched when a basket is active — a state-only narrowing reads the all-products
+    // ufYearly already in the snapshot (no extra round-trip).
+    const basketGeoState = (basketActive && window.geoYearly)
       ? window.geoYearly(bancoId, summary) : null;
+    const basketGeoCube = basketGeoState ? basketGeoState.rows : null;
     // Precedence: a sub-UF narrowing OWNS the geo grid (its rollup once loaded — even
     // when empty; nothing when it cannot be resolved); else the basket cube; else the
     // snapshot's all-products grid.
     const subUfOwnsGrid = subUfActive || subUfUnresolved;
     const geoCube = subUfOwnsGrid ? subUfCube : basketGeoCube;
-    const useCube = subUfOwnsGrid ? subUfLoaded : !!(geoCube && geoCube.length);
+    // The basket cube is loaded once its rows are KNOWN, an empty list included: a measured
+    // "nothing" is an answer. Until v1.108.2 its `length` stood for "loaded", so a basket with
+    // no row in any UF kept the all-products map and, beside a UF subset, held VALOR TOTAL at
+    // "…" for good — the same eternal wait a failed cube caused.
+    const useCube = subUfOwnsGrid ? subUfLoaded : basketGeoCube != null;
+    // The basket cube failed for good while the grid needed it (a sub-UF narrowing owns the
+    // grid otherwise, and its município cube already carries the basket).
+    const basketGeoLoadError = (!subUfOwnsGrid && basketGeoState && basketGeoState.loadError) || null;
     // Pending ONLY while the cube fetch is in flight — NOT when it loaded empty, and not
     // when it failed (subUfLoadError).
     const subUfPending = hasGeoData && subUfActive && !subUfLoaded && !subUfLoadError;
@@ -284,9 +327,12 @@ import './countUnits.js';
     // ufYearly falls back to the national series rather than zeroing it out).
     // For a sub-UF narrowing, ALWAYS use the cube-derived series once loaded — even if
     // it sums to zero (an empty selection must read as zero, not the national curve).
+    // The same holds for a basket cube that loaded EMPTY beside a UF subset: the national
+    // series it would fall back to has no UF grain, so it would answer for every state.
     const geoDerivedTs = hasGeoData && (
       (subUfActive && subUfLoaded) ||
-      (!subUfOwnsGrid && geoSource.length > 0 && (stateNarrowing || useCube))
+      (!subUfOwnsGrid && geoSource.length > 0 && (stateNarrowing || useCube)) ||
+      (!subUfOwnsGrid && stateNarrowing && useCube)
     );
 
     // ── Aggregated time series ────────────────────────────────────────
@@ -337,10 +383,13 @@ import './countUnits.js';
     // no basket is active) the map shows the snapshot's latest-year per-UF totals
     // (all products), narrowed by state. State filtering is always exact.
     // `notFilteredByBasket` stays true ONLY while a basket is active but its cube has
-    // not loaded — the geo views render an honest pt-BR note for that transient. The
-    // old code faked a basket × UF split by scaling every UF uniformly by selected/all
-    // (fabricated geography); the cube is the REAL product × UF × year grain instead.
-    const notFilteredByBasket = hasGeoData && basketActive && !useCube && !subUfUnresolved;
+    // not loaded (in flight, or failed: `basketGeoLoadError` says which) — the geo views
+    // render an honest pt-BR note for that. The old code faked a basket × UF split by
+    // scaling every UF uniformly by selected/all (fabricated geography); the cube is the
+    // REAL product × UF × year grain instead. Never under a sub-UF narrowing: its município
+    // cube already carries the basket, and the grid it owns is never the all-products one
+    // (it is empty until the cube lands, so the note claimed a map that was not drawn).
+    const notFilteredByBasket = hasGeoData && basketActive && !useCube && !subUfOwnsGrid;
     // The ONE combination the client cannot aggregate faithfully: BOTH a product
     // basket AND a UF subset, before the product×UF×year cube has loaded. The
     // national per-product series has no UF grain; the all-products UF grid has no
@@ -351,11 +400,18 @@ import './countUnits.js';
     // instead of reporting a figure that disregards the user's product filter.
     // PENDING only: a sub-UF narrowing that failed resolves nothing, ever, and is
     // reported apart (subUfLoadError). The guard is needed because the first term reads
-    // `useCube`, which a failed sub-UF cube leaves false exactly like a pending one.
+    // `useCube`, which a failed sub-UF cube leaves false exactly like a pending one. The
+    // basket cube's own failure is likewise reported apart (geoComboLoadError, below).
     const geoComboPending = !subUfLoadError && (
-      (hasGeoData && basketActive && stateNarrowing && !useCube) ||
+      (hasGeoData && basketActive && stateNarrowing && !useCube && !basketGeoLoadError) ||
       subUfPending ||
       (hasGeoData && subUfMeshPending));
+    // The same combination when the basket cube FAILED: nothing is coming, and the
+    // geo-derived `ts` sums ALL products over the selected UFs — the number geoComboPending
+    // refuses to show. Until v1.108.2 a failure read as pending, and VALOR TOTAL said "…"
+    // for good; the views now hold it with a dash and say why.
+    const geoComboLoadError = (!subUfLoadError && !subUfMeshPending && hasGeoData
+      && basketActive && stateNarrowing && !useCube && basketGeoLoadError) || null;
 
     // Tile-grid (col/row) join for cube-derived UF rows: the snapshot's ufData is
     // already decorated (decorate.js), but cube rows come straight from the serializer,
@@ -522,37 +578,10 @@ import './countUnits.js';
         // Quem rotula é `labelProductRows`, no consumidor — aqui só não se perde o dado.
         return { name: prod.name, tabela: prod.tabela, value: lastInWindow.v };
       })
-      .filter(Boolean)
-      // Uma FATIA é uma parte de um total. Um produto sem valor medido naquele ano (a
-      // convenção escolhida não alcança o ano) não é uma fatia de tamanho zero — ele
-      // não é fatia nenhuma. Deixá-lo entrar como 0 fazia o Donut listar produtos com
-      // "0%" como se tivessem sido medidos e não tivessem produzido nada.
-      .filter(p => Number.isFinite(p.value))
-      .sort((a, b) => b.value - a.value);
-    // Sem `|| 1`: ele fabricava o denominador. Com total não-positivo não há composição
-    // a mostrar — um donut de zeros rotula "0%" em cada fatia (Donut.jsx desenha o
-    // rótulo), afirmando participação nula onde o que existe é ausência de dado.
-    const compTotal = window.sumPresent(compositionRaw.map(p => p.value));
-    const COLORS = [...window.VIZ_SCALE, 'var(--pres-gray-300)', 'var(--pres-gray-400)'];
-    let topProducts;
-    if (!compTotal || compTotal <= 0) {
-      topProducts = [];
-    } else if (compositionRaw.length <= 7) {
-      topProducts = compositionRaw.map((p, i) => ({
-        ...p, share: window.ratioPresent(p.value, compTotal), color: COLORS[i % COLORS.length],
-      }));
-    } else {
-      const head = compositionRaw.slice(0, 6);
-      const tail = compositionRaw.slice(6);
-      const tailVal = tail.reduce((s, p) => s + p.value, 0);
-      topProducts = [
-        ...head.map((p, i) => ({
-          ...p, share: window.ratioPresent(p.value, compTotal), color: COLORS[i],
-        })),
-        { name: 'Outros', value: tailVal, share: window.ratioPresent(tailVal, compTotal),
-          color: 'var(--pres-gray-200)', muted: true },
-      ];
-    }
+      .filter(Boolean);
+    // National: PRODUCT_TS_T has no geography. Under a sub-UF recorte the Visão geral reads
+    // the recorte's own products instead (recorteProducts.js) and slices them the same way.
+    const topProducts = window.compositionSlices(compositionRaw);
 
     // ── Quality flag distribution ─────────────────────────────────────
     const qualityFlagsAll = QUALITY_T;
@@ -600,6 +629,15 @@ import './countUnits.js';
     // selection is full (applyAndClose normalizes full→null) → "no narrowing" → 1.
     const _realUfCount = ((UF_DATA_T || []).filter(u => u.real !== false).length) || 27;
     const stateShare = stateSet ? Math.min(1, stateSet.size / _realUfCount) : 1;
+    // Under a sub-UF recorte the selection is a set of MUNICÍPIOS, and stateShare (whole
+    // states) overstates it: Portel and Breves read as the whole Pará. muniShare = the
+    // municípios in scope (the facets, intersected with the state filter, exactly as the
+    // cube rows are) over the whole mesh. Null without a resolved recorte; the counter shows
+    // "…"/"—" while it loads or after it failed (MainScreen), never the state estimate.
+    const muniShare = (subUfActive && mesh && mesh.length)
+      ? Math.min(1, mesh.filter(m => muniPassesFacets(m, geoFacets)
+          && (!stateNarrowing || stateSet.has(m.uf))).length / mesh.length)
+      : null;
 
     return {
       ts, productTS, ufData, regionData, topMunis, topProducts,
@@ -640,6 +678,13 @@ import './countUnits.js';
       // (the product×UF cube is still loading) — the view shows a loading state
       // instead of a basket-dropped value. See geoComboPending above.
       geoComboPending,
+      // The same combination after the basket cube FAILED (its error, else null): the value
+      // stays held, with a dash and a note instead of "…" for good.
+      geoComboLoadError,
+      // The basket cube's failure whenever the grid needed it — beside a UF subset or not.
+      // Without a UF subset the series stays right (the national per-product one honours the
+      // basket); only the map falls back to all products, and its note says why.
+      basketGeoLoadError,
       // The FULL (UF × year) grid — every year, not just ufLatestYear — already
       // scoped by basket + state + sub-UF narrowing exactly like `ufData` above (it
       // IS `ufData`'s own source, pre-slice). CONF-1: the Geografia heatmap used to
@@ -665,6 +710,12 @@ import './countUnits.js';
       // it. Both false with no sub-UF facet requested.
       subUfLoading: hasGeoData && (subUfMeshPending || subUfPending),
       subUfLoadError,
+      // A sub-UF recorte has been ASKED for, whatever its state: on its way, failed, or
+      // resolved. The perspectives that cannot apply one at all — their series exist only
+      // for the whole country or whole states — say so in all three states (window.
+      // recorteNaoSeAplica): loading or failing changes nothing for a screen that never reads
+      // the recorte, and until v1.108.2 they showed national numbers under its chip, silently.
+      subUfRequested: hasGeoData && (subUfActive || subUfMeshPending || subUfPending || !!subUfLoadError),
       // The month that cube's corrected values are at (v1.105.0) — null with no cube, while
       // it loads, or under a nominal convention. Read off the cube's own response (one read).
       // The cube reads the analytical base directly and the snapshot reads the pre-aggregated
@@ -674,8 +725,9 @@ import './countUnits.js';
       // The same for the basket cube (UF × year), when it is the grid the screen draws. It
       // reads the same pre-aggregated tables as the snapshot, but in a request cached on its
       // own, so across a build it too can come back at another month.
-      geoPriceBase: (!subUfActive && useCube && window.geoYearlyPriceBase)
-        ? window.geoYearlyPriceBase(bancoId, summary)
+      // Read off the cube's own response, like its rows (window.geoYearly).
+      geoPriceBase: (!subUfOwnsGrid && useCube && basketGeoState)
+        ? basketGeoState.priceBase
         : null,
       // The active sub-UF recorte, named. Every UF row above carries a FRACTION of its
       // state when this is set — the state's own value never appears — so a surface that
@@ -691,7 +743,7 @@ import './countUnits.js';
       // it profiles a place the filter excluded, which is the no-invisible-filtering
       // violation in its purest form.
       scopedCityCodes: narrowedCities,
-      _shares: { productShare, flagShare, yearShare, stateShare },
+      _shares: { productShare, flagShare, yearShare, stateShare, muniShare },
     };
   };
 })();
