@@ -434,7 +434,7 @@ function ViewTerritoryProfile({ summary, database, conventions }) {
       {window.PriceBaseSkewNote && (
         <window.PriceBaseSkewNote
           bases={[muniCubeBase, breakdown.priceBase]}
-          jaComparadas={[filtered.muniPriceBase, filtered.geoPriceBase]}
+          jaComparadas={[filtered.muniPriceBase, filtered.geoPriceBase, filtered.productPriceBase]}
           database={database}
           conventions={conv} />
       )}

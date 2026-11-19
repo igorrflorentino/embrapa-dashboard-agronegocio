@@ -156,7 +156,7 @@ describe('ViewRebanho — a sub-UF recorte does not apply, and the screen says s
     stubGlobals({ ...FIXTURE, subUfRequested: true, ...extra });
     const { container } = render(<ViewRebanho summary={{}} database="ibge_ppm" conventions={conv()} />);
     const nota = container.querySelector('.na-note').textContent;
-    expect(nota).toContain('O recorte territorial abaixo da UF não se aplica a esta perspectiva: o efetivo de cada espécie existe aqui só para o Brasil inteiro e por UF inteira.');
+    expect(nota).toContain('O recorte territorial abaixo da UF não se aplica a esta perspectiva: o efetivo de cada espécie existe aqui por UF inteira, não por município.');
     expect(nota).toContain('Os números abaixo não se limitam aos municípios escolhidos.');
   });
 
@@ -164,5 +164,60 @@ describe('ViewRebanho — a sub-UF recorte does not apply, and the screen says s
     stubGlobals(FIXTURE);
     const { container } = render(<ViewRebanho summary={{}} database="ibge_ppm" conventions={conv()} />);
     expect(container.querySelector('.na-note')).toBeNull();
+  });
+});
+
+// ── Sob um subconjunto de UFs, o rebanho é o das UFs (v1.108.3) ───────────────────────────
+// The species series are applyFilters' per-product ones. Under a UF subset they were Brazil's,
+// under a title that said "Rebanho brasileiro" and a chip that said "1 UF". Now they are the
+// UFs' own, the title names whose herd it is, and while the read is on its way or after it
+// failed nothing is drawn — never "Nenhum rebanho", which would claim the UFs have none.
+describe('ViewRebanho — under a UF subset the herd is the UFs’ own', () => {
+  const conv = () => window.DEFAULT_CONVENTIONS;
+  const UF = { productUfRequested: true, productUfLoading: false, productUfLoadError: null, productUfUnavailable: false };
+  const titulos = (c) => [...c.querySelectorAll('.sh-title')].map((e) => e.textContent);
+  const renderWith = (extra, states = ['PA']) => {
+    stubGlobals({ ...FIXTURE, ...UF, ...extra });
+    window.Icon = () => null;
+    return render(<ViewRebanho summary={{ states }} database="ibge_ppm" conventions={conv()} />).container;
+  };
+  afterEach(() => { delete window.Icon; });
+
+  it('resolved, one UF: the title names it, and nothing else is said', () => {
+    const c = renderWith({});
+    expect(titulos(c)).toContain('Rebanho · Pará · cabeças');
+    expect(titulos(c)).not.toContain('Rebanho brasileiro · cabeças');
+    expect(donutProps).toBeTruthy();
+    expect(c.querySelector('.na-note')).toBeNull();
+  });
+
+  it('resolved, several UFs: the title counts them', () => {
+    const c = renderWith({}, ['PA', 'AM']);
+    expect(titulos(c)).toContain('Rebanho · 2 UFs · cabeças');
+  });
+
+  it.each([
+    ['on its way', { productUfLoading: true }, 'Carregando as séries por produto das UFs escolhidas…'],
+    ['failed', { productUfLoadError: 'HTTP 503' }, 'Não foi possível carregar as séries por produto das UFs escolhidas'],
+  ])('%s: no herd drawn, the note says which — never "Nenhum rebanho"', (_estado, extra, texto) => {
+    const c = renderWith({ ...extra, allProductTS: {}, productTS: {} });
+    expect(donutProps).toBeUndefined();
+    expect(multiLineProps).toBeUndefined();
+    expect(c.querySelector('.kpi')).toBeNull();
+    expect(c.textContent).not.toMatch(/Nenhum rebanho/);
+    expect(c.querySelector('.na-note').textContent).toContain(texto);
+  });
+
+  it('a banco without series by UF: the national herd, titled as Brazil’s, and a note saying so', () => {
+    const c = renderWith({ productUfUnavailable: true });
+    expect(titulos(c)).toContain('Rebanho brasileiro · cabeças');
+    expect(c.querySelector('.na-note').textContent)
+      .toContain('As séries por produto deste banco existem só para o Brasil inteiro');
+  });
+
+  it('no UF subset: Brazil’s herd, titled as such, with no note', () => {
+    const c = renderWith({ productUfRequested: false }, undefined);
+    expect(titulos(c)).toContain('Rebanho brasileiro · cabeças');
+    expect(c.querySelector('.na-note')).toBeNull();
   });
 });

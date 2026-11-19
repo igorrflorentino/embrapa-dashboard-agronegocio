@@ -447,3 +447,37 @@ describe('MainScreen — aviso de anos de inflação muito alta', () => {
       expect(container.querySelector('.child-inflacao-alta')).toBeNull();
     });
 });
+
+// ── O mês das séries por produto das UFs entra no aviso de dois meses (v1.108.3) ─────────
+// Under a UF subset the per-product series are a read of their own, cached on their own: across
+// a build they can come back a month apart from the snapshot, like the cubes. The note that
+// says so is mounted here, once, over every base applyFilters' reads carry.
+describe('MainScreen — the UFs’ per-product series join the two-months check', () => {
+  let recebidas;
+  const SETEMBRO = { column: null, month: '2026-09', fxDate: null };
+  beforeEach(() => {
+    recebidas = undefined;
+    window.PriceBaseSkewNote = ({ bases }) => { recebidas = bases; return <div className="child-skew" />; };
+  });
+  afterEach(() => { delete window.PriceBaseSkewNote; });
+  const comBase = (extra) => {
+    const padrao = window.applyFilters;
+    return (...args) => ({ ...padrao(...args), ...extra });
+  };
+
+  it('mounted for the product base alone, which is among the bases compared', () => {
+    window.applyFilters = comBase({ productPriceBase: SETEMBRO });
+    const { container } = render(
+      <MainScreen filters={{ states: ['PA'] }} view="overview" database="ibge_pevs" basket={['P1']} />,
+    );
+    expect(container.querySelector('.child-skew')).toBeTruthy();
+    expect(recebidas).toContain(SETEMBRO);
+  });
+
+  it('no read with a base of its own: nothing to compare, no note', () => {
+    const { container } = render(
+      <MainScreen filters={{}} view="overview" database="ibge_pevs" basket={['P1']} />,
+    );
+    expect(container.querySelector('.child-skew')).toBeNull();
+  });
+});

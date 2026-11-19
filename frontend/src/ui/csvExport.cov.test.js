@@ -346,14 +346,14 @@ describe('exportActiveTableCSV — per-product series with per-family units', ()
     window.exportActiveTableCSV({ view: 'product_compare', summary: {}, database: 'ibge_pevs' });
     expect(lastCsv).toBeTruthy();
     const lines = lastCsv.replace('﻿', '').split('\n');
-    expect(lines[0]).toBe('ano;codigo;produto;valor_BRL;quantidade;unidade;familia;correcao_monetaria');
+    expect(lines[0]).toBe('ano;codigo;produto;valor_BRL;quantidade;unidade;familia;abrangencia_geografica;correcao_monetaria');
     const body = lines.slice(1);
     // mass row: q*1e3 = 2000, unit t
-    expect(body).toContain(`2020;P1;Açaí;1000000;2000;t;mass;${CORRECAO_CSV}`);
+    expect(body).toContain(`2020;P1;Açaí;1000000;2000;t;mass;Brasil;${CORRECAO_CSV}`);
     // volume row: q*1e6 = 2000000, unit m³
-    expect(body).toContain(`2020;P2;Madeira;1000000;2000000;m³;volume;${CORRECAO_CSV}`);
+    expect(body).toContain(`2020;P2;Madeira;1000000;2000000;m³;volume;Brasil;${CORRECAO_CSV}`);
     // count row: q*1e6, unit un
-    expect(body).toContain(`2020;P3;Bovino;1000000;2000000;un;count;${CORRECAO_CSV}`);
+    expect(body).toContain(`2020;P3;Bovino;1000000;2000000;un;count;Brasil;${CORRECAO_CSV}`);
     // missing-family row falls back to mass (mul 1e3) and q||0 → 0
     expect(body.some((l) => l.startsWith('2020;P9;Sem família;1000000;0;t;'))).toBe(true);
   });
@@ -866,6 +866,70 @@ describe('exportActiveTableCSV — per-product series under a sub-UF recorte, an
   it('a sub-UF reason comes first: the recorte is what the file waits for', () => {
     stubRegistry(filtered({ subUfLoading: true, geoComboPending: true }));
     expect(pedir('overview', { mesos: ['1502'], basket: ['P1'] })).toMatchObject({ motivo: 'carregando-recorte' });
+  });
+});
+
+// ── As séries por produto de um subconjunto de UFs (v1.108.3) ─────────────────────────────
+// Under a UF subset the per-product series are the selected UFs' own (window.productTSByUf).
+// Until v1.108.3 they were Brazil's, and a file exported under a UF filter carried them without
+// a word: Pará's Leite at R$ 90 bi. While the UFs' read is on its way, or after it failed,
+// applyFilters holds the series EMPTY, so there is nothing true to write: the file is refused
+// with a reason of its own. Resolved, every row says whose series it is.
+describe('exportActiveTableCSV — per-product series of a UF subset', () => {
+  const filtered = (extra) => ({
+    products: PRODUCTS,
+    productTS: { P1: [{ y: 2020, v: 1.0, q: 2.0 }] },
+    productUfRequested: true, productUfLoading: false, productUfLoadError: null,
+    productUfUnavailable: false, productPriceBase: null,
+    ...extra,
+  });
+  const pedir = (view, summary) => window.prepareTableCSV({ view, summary, database: 'ibge_ppm' });
+  const linhas = () => lastCsv.replace('﻿', '').split('\n');
+  const VIEWS = ['product_profile', 'product_compare'];
+  afterEach(() => { delete window.dataStore; });
+
+  it.each(VIEWS)('%s: the UFs’ series on their way refuse with "carregando-series-uf"', (view) => {
+    stubRegistry(filtered({ productUfLoading: true, productTS: {} }));
+    expect(pedir(view, { states: ['PA'] })).toMatchObject({ erro: true, motivo: 'carregando-series-uf' });
+    expect(lastDownloadName).toBeUndefined();
+  });
+
+  it.each(VIEWS)('%s: a failed read refuses with "falha-series-uf", ahead of "loading"', (view) => {
+    stubRegistry(filtered({ productUfLoadError: 'HTTP 503', productUfLoading: true, productTS: {} }));
+    expect(pedir(view, { states: ['PA'] })).toMatchObject({ erro: true, motivo: 'falha-series-uf' });
+  });
+
+  it.each(VIEWS)('%s: resolved, every row names the UFs, sorted', (view) => {
+    stubRegistry(filtered());
+    window.exportActiveTableCSV({ view, summary: { states: ['PA', 'AM'] }, database: 'ibge_ppm' });
+    const [cabecalho, primeira] = linhas();
+    expect(cabecalho.split(';')).toContain('abrangencia_geografica');
+    // The comma makes the CSV quote the cell.
+    expect(primeira).toContain(';"AM, PA";');
+  });
+
+  it('a banco with no series by UF keeps the national ones, and the file says so', () => {
+    stubRegistry(filtered({ productUfUnavailable: true }));
+    window.exportActiveTableCSV({ view: 'product_compare', summary: { states: ['PA'] }, database: 'un_comtrade' });
+    expect(linhas()[1]).toContain(';Brasil (este banco não tem séries por UF);');
+  });
+
+  it('no UF subset: the series are Brazil’s, and the file says that too', () => {
+    stubRegistry(filtered({ productUfRequested: false }));
+    window.exportActiveTableCSV({ view: 'product_compare', summary: {}, database: 'ibge_ppm' });
+    expect(linhas()[1]).toContain(';Brasil;');
+  });
+
+  it('the UFs’ month joins the file’s: a month apart names none, the same month is named', () => {
+    const OUTUBRO = { column: 'val_real_ipca_brl', month: '2026-10', fxDate: null };
+    const correcao = () => linhas()[1].slice(linhas()[1].lastIndexOf(';') + 1).replace(/^"|"$/g, '');
+    window.dataStore = { get: () => ({ priceBase: OUTUBRO }) };
+    stubRegistry(filtered({ productPriceBase: { column: null, month: '2026-09', fxDate: null } }));
+    window.exportActiveTableCSV({ view: 'product_compare', summary: { states: ['PA'] }, database: 'ibge_ppm' });
+    expect(correcao()).toBe(CORRECAO);
+    stubRegistry(filtered({ productPriceBase: { column: null, month: '2026-10', fxDate: null } }));
+    window.exportActiveTableCSV({ view: 'product_compare', summary: { states: ['PA'] }, database: 'ibge_ppm' });
+    expect(correcao()).toBe('IPCA · Brasil, a preços de outubro de 2026');
   });
 });
 

@@ -218,6 +218,70 @@ function geoYearlyRequest(bancoId, summary) {
   return key;
 }
 
+// ── per-product series summed over the selected UFs (v1.108.3) ────────────────
+// The snapshot's productTS is NATIONAL: its mart has a UF grain and the snapshot sums it
+// away. Under a whole-UF filter every per-product number on screen (the compositions,
+// Perfil do produto, Comparativo, Concentração, Rebanho, the per-product file) was Brazil's,
+// under a chip saying "1 UF": Pará's Leite stacked at R$ 90 bi beside a Pará total of
+// R$ 1,6 bi. /api/product-ts answers the same series for the selected UFs only — same mart,
+// value column and axes, every product, the whole history — so applyFilters swaps it in for
+// the snapshot's and slices basket and period the same way. Neither is in the key.
+//
+// Returns the read's STATE, in productBreakdownOf's four-state shape:
+//   { productTS, priceBase, loading, loadError, unavailable }
+//   loading     — in flight, or a transient failure being retried (errorOf stays null until
+//                 MAX_ATTEMPTS, on purpose);
+//   loadError   — every retry failed;
+//   unavailable — the banco has no UF grain, or the API says it has no reader: nothing
+//                 was measured;
+//   none of them — `productTS` IS the answer, and {} means "measured: no product in these UFs".
+// `productTS` is null until the response lands: unknown, never empty.
+//
+// Only for a UF SELECTION: `states` absent (every UF) returns null — the snapshot's series
+// is that answer. An EMPTY selection asks nothing and answers nothing ({}): no UF chosen is no
+// row, and the API would refuse the list anyway — an empty list reads as "no filter" there.
+window.productTSByUf = function productTSByUf(bancoId, summary) {
+  if (!summary || !Array.isArray(summary.states)) return null;
+  const b = window.bancoById && window.bancoById(bancoId);
+  if (!b || !(b.provides || []).includes('geo')) {
+    return { productTS: null, priceBase: null, loading: false, loadError: null, unavailable: true };
+  }
+  if (!summary.states.length) {
+    return { productTS: {}, priceBase: null, loading: false, loadError: null, unavailable: false };
+  }
+  const conv = window.dataStore && window.dataStore.conv
+    ? window.dataStore.conv()
+    : { currency: 'BRL', correction: 'Nominal' };
+  const ax = activeAxisParams();
+  // Sorted, so one set of UFs is one cache entry whatever order it was picked in.
+  const ufs = [...summary.states].sort().join(',');
+  const key = `productTSByUf:${bancoId}:${conv.currency}|${conv.correction}|${axisKey(ax)}:${ufs}`;
+  ensure(
+    key,
+    () => `${API}/product-ts?${qs({
+      banco: bancoId,
+      states: ufs,
+      currency: conv.currency,
+      correction: conv.correction,
+      ...ax,
+    })}`,
+  );
+  const data = get(key);
+  if (data) {
+    const unavailable = data.available === false;
+    const series = data.productTS && typeof data.productTS === 'object' ? data.productTS : {};
+    return {
+      productTS: unavailable ? null : series,
+      priceBase: data.priceBase || null,
+      loading: false,
+      loadError: null,
+      unavailable,
+    };
+  }
+  const loadError = errorOf(key);
+  return { productTS: null, priceBase: null, loading: !loadError, loadError, unavailable: false };
+};
+
 // ── IBGE municipal mesh universe (sub-UF + município cascade) ──────────────────
 // One-shot fetch of every município → UF + grande região + BOTH sub-UF divisions
 // (classic meso/micro, 2017 intermediária/imediata). Banco-agnostic + static, so it

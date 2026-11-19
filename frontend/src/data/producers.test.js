@@ -3,7 +3,7 @@
 // picker must offer slugs (from /api/catalog), not PEVS product codes — this
 // guards that mapping + the sync-over-async loading shape (cold → [], hot → list).
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
@@ -622,5 +622,125 @@ describe('productsByUf / productsByMunicipio distinguem carregando, erro, indisp
       products: [{ code: '1', name: 'Leite', value: 2 }], loading: false, unavailable: false,
     });
     expect(f.mock.calls[0][1].method).toBe('POST');
+  });
+});
+
+// ── As séries por produto de um subconjunto de UFs (v1.108.3) ─────────────────────────────
+// The snapshot's productTS is national; under a UF subset this read is the per-product answer.
+// Four states, and only a response is a measurement: until it lands the series are UNKNOWN
+// (null), never {} — applyFilters would otherwise draw "no product" in Pará while it loads.
+describe('productTSByUf — the selected UFs’ per-product series, in four states', () => {
+  const OUTUBRO = { column: null, month: '2026-10', fxDate: null };
+  const LEITE = { 2682: [{ y: 2025, v: 1600, q: 600, family: 'volume' }] };
+  const failing = () => vi.fn(() => Promise.resolve({ ok: false, status: 503 }));
+  const geo = (w) => { w.bancoById = () => ({ provides: ['geo'] }); return w; };
+  afterEach(() => { delete window.dataStore; });
+
+  it('no UF selection asks nothing: the snapshot’s series is that answer', async () => {
+    const f = vi.fn(() => jsonRes({}));
+    const w = geo(await loadAll(f));
+    expect(w.productTSByUf('ibge_ppm', {})).toBeNull();
+    expect(w.productTSByUf('ibge_ppm', { states: null })).toBeNull();
+    expect(w.productTSByUf('ibge_ppm', null)).toBeNull();
+    expect(f).not.toHaveBeenCalled();
+  });
+
+  it('in flight it is loading with no series yet; landed, the series and their month', async () => {
+    const f = vi.fn(() => jsonRes({ productTS: LEITE, priceBase: OUTUBRO, available: true }));
+    const w = geo(await loadAll(f));
+    expect(w.productTSByUf('ibge_ppm', { states: ['PA'] })).toEqual({
+      productTS: null, priceBase: null, loading: true, loadError: null, unavailable: false,
+    });
+    expect(urlOf(f)).toMatch(/\/api\/product-ts\?/);
+    expect(urlOf(f)).toContain('banco=ibge_ppm');
+    expect(urlOf(f)).toContain('states=PA');
+    await tick();
+    expect(w.productTSByUf('ibge_ppm', { states: ['PA'] })).toEqual({
+      productTS: LEITE, priceBase: OUTUBRO, loading: false, loadError: null, unavailable: false,
+    });
+    expect(f).toHaveBeenCalledTimes(1);
+  });
+
+  it('a measured "nothing" is {} with no error — the only empty answer', async () => {
+    const w = geo(await loadAll(vi.fn(() => jsonRes({ productTS: {}, priceBase: null, available: true }))));
+    w.productTSByUf('ibge_ppm', { states: ['AP'] });
+    await tick();
+    expect(w.productTSByUf('ibge_ppm', { states: ['AP'] })).toEqual({
+      productTS: {}, priceBase: null, loading: false, loadError: null, unavailable: false,
+    });
+  });
+
+  it('loading while retrying, failed once the retries run out — never empty', async () => {
+    const f = failing();
+    const w = geo(await loadAll(f));
+    const read = () => w.productTSByUf('ibge_ppm', { states: ['PA'] });
+    for (let i = 0; i < 3; i++) {
+      expect(read()).toEqual({ productTS: null, priceBase: null, loading: true, loadError: null, unavailable: false });
+      await tick();
+    }
+    expect(read()).toEqual({ productTS: null, priceBase: null, loading: false, loadError: 'HTTP 503', unavailable: false });
+    expect(f).toHaveBeenCalledTimes(3);
+  });
+
+  it('a banco with no UF grain asks nothing and is unavailable — never loading', async () => {
+    const f = vi.fn(() => jsonRes({}));
+    const w = await loadAll(f);
+    w.bancoById = () => ({ provides: [] });
+    expect(w.productTSByUf('un_comtrade', { states: ['PA'] })).toEqual({
+      productTS: null, priceBase: null, loading: false, loadError: null, unavailable: true,
+    });
+    expect(f).not.toHaveBeenCalled();
+  });
+
+  it('the server saying it has no reader is unavailable, with no series to draw', async () => {
+    const w = geo(await loadAll(vi.fn(() => jsonRes({ productTS: {}, priceBase: null, available: false }))));
+    w.productTSByUf('ibge_ppm', { states: ['PA'] });
+    await tick();
+    expect(w.productTSByUf('ibge_ppm', { states: ['PA'] })).toMatchObject({
+      productTS: null, loading: false, loadError: null, unavailable: true,
+    });
+  });
+
+  it('an EMPTY UF selection asks nothing and answers "nothing" — the API reads [] as no filter', async () => {
+    const f = vi.fn(() => jsonRes({ productTS: LEITE, available: true }));
+    const w = geo(await loadAll(f));
+    expect(w.productTSByUf('ibge_ppm', { states: [] })).toEqual({
+      productTS: {}, priceBase: null, loading: false, loadError: null, unavailable: false,
+    });
+    expect(f).not.toHaveBeenCalled();
+  });
+
+  it('one set of UFs is one request, whatever order it was picked in', async () => {
+    const f = vi.fn(() => jsonRes({ productTS: LEITE, available: true }));
+    const w = geo(await loadAll(f));
+    w.productTSByUf('ibge_ppm', { states: ['PA', 'AM'] });
+    w.productTSByUf('ibge_ppm', { states: ['AM', 'PA'] });
+    expect(f).toHaveBeenCalledTimes(1);
+    expect(decodeURIComponent(urlOf(f))).toContain('states=AM,PA');
+  });
+
+  it('the convention and the axes are in the request AND the key', async () => {
+    const f = vi.fn(() => jsonRes({ productTS: LEITE, available: true }));
+    const w = geo(await loadAll(f));
+    let flow = 'export';
+    w.dataStore = { conv: () => ({ currency: 'USD', correction: 'CPI' }), flow: () => flow };
+    w.productTSByUf('mdic_comex', { states: ['PA'] });
+    expect(urlOf(f)).toContain('currency=USD');
+    expect(urlOf(f)).toContain('correction=CPI');
+    expect(urlOf(f)).toContain('flow=export');
+    // Another flow is another answer, never the previous one from memory.
+    flow = 'import';
+    w.productTSByUf('mdic_comex', { states: ['PA'] });
+    expect(f).toHaveBeenCalledTimes(2);
+    expect(urlOf(f, 1)).toContain('flow=import');
+  });
+
+  it('the basket and the period are NOT in the key: applyFilters slices them client-side', async () => {
+    const f = vi.fn(() => jsonRes({ productTS: LEITE, available: true }));
+    const w = geo(await loadAll(f));
+    w.productTSByUf('ibge_ppm', { states: ['PA'], basket: ['2682'], startDate: '2020-01-01' });
+    w.productTSByUf('ibge_ppm', { states: ['PA'], basket: ['2685'], endDate: '2022-12-01' });
+    expect(f).toHaveBeenCalledTimes(1);
+    expect(urlOf(f)).not.toMatch(/codes=|y0=|y1=/);
   });
 });

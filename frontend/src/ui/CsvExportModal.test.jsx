@@ -54,9 +54,22 @@ describe('CsvExportModal — the reason for "Nada para baixar"', () => {
 
   it('a per-product series under a sub-UF recorte is refused for good, and says what to change', () => {
     const m = msg('recorte-nao-se-aplica');
-    expect(m).toMatch(/só para o Brasil inteiro/);
+    expect(m).toMatch(/existem por UF inteira, não por município/);
+    expect(m).not.toMatch(/só para o Brasil inteiro/); // untrue since v1.108.3
     expect(m).toMatch(/Retire esse recorte do filtro de geografia/);
     expect(m).not.toMatch(/carregando|Espere/); // waiting would not help
+  });
+
+  // v1.108.3: under a UF subset the per-product series are the UFs' own read. Held while it
+  // loads or after it failed, and the advice differs: wait, or reload.
+  it('the UFs’ per-product series on their way, or failed, each get their own advice', () => {
+    const espera = msg('carregando-series-uf');
+    expect(espera).toMatch(/séries por produto das UFs escolhidas ainda estão carregando/);
+    expect(espera).toMatch(/Espere/);
+    const falha = msg('falha-series-uf');
+    expect(falha).toMatch(/Não foi possível carregar as séries por produto das UFs escolhidas/);
+    expect(falha).toMatch(/Recarregue a página/);
+    expect(falha).not.toMatch(/carregando|Espere/);
   });
 
   it('the basket × UF cross on its way, or failed, each get their own advice', () => {

@@ -27,8 +27,15 @@ function ViewConcentration({ summary, conventions, database }) {
   // answered for the whole country beneath the recorte's chip. Null without a recorte.
   const recorteProds = window.recorteProducts
     ? window.recorteProducts(filtered, summary || {}, database, conv) : null;
-  const prodEspera = !!(recorteProds && recorteProds.loading);
-  const prodFalhou = (recorteProds && recorteProds.loadError) || null;
+  // Without a recorte, under a UF subset, the cross-section is the selected UFs' per-product
+  // series (v1.108.3): held while that read is on its way or after it failed — the national
+  // series would answer for Brazil beneath the UF chip — and national, said in a note, for a
+  // banco with no per-UF series.
+  const porUf = recorteProds ? null : window.seriesPorUf(filtered);
+  const ufEspera = !!porUf && porUf.estado === 'carregando';
+  const ufFalhou = (porUf && porUf.estado === 'falha') ? porUf.erro : null;
+  const prodEspera = !!(recorteProds && recorteProds.loading) || ufEspera;
+  const prodFalhou = (recorteProds && recorteProds.loadError) || ufFalhou || null;
   const prodIndisponivel = !!(recorteProds && recorteProds.unavailable);
   const prodSegura = prodEspera || !!prodFalhou || prodIndisponivel;
   // The point each product enters the cross-section with: { code, name, v, q }. Nationally,
@@ -198,8 +205,10 @@ function ViewConcentration({ summary, conventions, database }) {
     : geoEspera ? 'carregando o recorte sub-UF…' : txt);
   const prodKpi = (val) => ((prodFalhou || prodIndisponivel) ? '—' : prodEspera ? '…' : val);
   const prodSub = (txt) => (geoFalhou ? 'recorte sub-UF não carregado'
+    : ufFalhou ? 'séries das UFs não carregadas'
     : prodFalhou ? 'produtos do recorte não carregados'
     : prodIndisponivel ? 'sem composição por produto abaixo da UF'
+    : ufEspera ? 'carregando as séries das UFs…'
     : prodEspera ? 'carregando os produtos do recorte…' : txt);
   const aviso = (texto) => (
     <p className="caption" style={{ padding: '24px 4px', textAlign: 'center' }}>{texto}</p>
@@ -208,6 +217,7 @@ function ViewConcentration({ summary, conventions, database }) {
     ? 'Não foi possível carregar o recorte territorial.'
     : 'Carregando o recorte territorial…');
   const prodAviso = () => aviso(geoFalhou ? 'Não foi possível carregar o recorte territorial.'
+    : (ufEspera || ufFalhou) ? porUf.texto
     : prodFalhou ? 'Não foi possível carregar os produtos dos municípios do recorte.'
     : prodIndisponivel ? 'Este banco não tem a composição por produto abaixo da UF.'
     : 'Carregando os produtos dos municípios do recorte…');
@@ -216,6 +226,9 @@ function ViewConcentration({ summary, conventions, database }) {
     <>
       <window.RecorteNote recorte={filtered.recorte} />
       <window.LoadErrorNote error={geoFalhou || prodFalhou} />
+      {/* The product half's loading and failure are said in its own card; a banco with no
+          per-UF series draws the national ones, and that is said here. */}
+      {porUf && porUf.estado === 'nacional' && <window.SeriesPorUfNote filtered={filtered} />}
       {onCount && (
         <div style={{ margin: '0 2px 4px' }}>
           <p className="caption" style={{ margin: 0 }}>

@@ -156,6 +156,12 @@ One annual series per product, keyed by the same `code` as `products`.
 - `q` = `SUM(qty_native)` × 1000 (PEVS convention).
 - `family` = the product's `family` (→ en).
 
+The snapshot's series are **national**: the marts carry a UF grain and the snapshot sums it
+away. Under a UF subset `applyFilters` swaps them for the selected UFs' own series from
+`GET /api/product-ts` (§3.6, v1.108.3), so no screen draws this national one under a
+geography filter. Until v1.108.3 four perspectives did: Pará's Leite stacked at Brazil's
+~R$ 90 bi under a "1 UF" chip, beside a Pará total of R$ 1,6 bi.
+
 ### 3.4 `ufData` — COMEX + PEVS only (`geo` capability)
 `[{ uf, name, region, col, row, value, q_mass, q_vol, q_count_stock, q_count_flow }]`,
 grouped by UF. The two count totals are §3.1's: the herd and every other count, never
@@ -238,6 +244,32 @@ município passes the cascade iff it clears every active facet (intersection).
   so a failed cube left `geoComboPending` pending for good ("cruzando produto × UF…" forever).
   `applyFilters` now reports a failure as `basketGeoLoadError`, and as `geoComboLoadError` when
   a UF subset needed the cross; `geoComboPending` is pending-only.
+- **The per-product series of a UF subset (v1.108.3).** `GET /api/product-ts` — `banco`,
+  `states` (required, comma-separated), `currency` / `correction` and the filter axes
+  (`flow`, `customs`, `market`, `tabela`, `niveis`, the country lists) in the query string →
+  `{ productTS, priceBase, available }`. `productTS` has the §3.3 shape, summed over the
+  selected UFs only, over every year (the client slices the window). It is the snapshot's
+  per-product read with ONE more predicate, `state_acronym IN UNNEST(@uf_codes)`, and the
+  same filter arguments by construction (`seam._product_ts_filter_kwargs`, pinned by
+  `tests/test_product_ts_by_uf.py`): COMEX follows the selected flow, like the hero and the
+  UF cube. **Cost, measured on prod 2026-11-19** (one real run per banco, nominal R$, every
+  year): 0,49 MB (PEVS) · 0,92 MB (PAM) · 1,05 MB (PPM) · 6,78 MB (COMEX) processed, each
+  billed at BigQuery's 10 MB per-query floor, exactly like the national read beside it.
+  `available: false` with an empty `productTS` for COMTRADE, which has no UF. The client side
+  is `window.productTSByUf(banco, summary)` → `{ productTS, priceBase, loading, loadError,
+  unavailable }` (`contracts.js` § ProductTSByUfState). `applyFilters` uses it for
+  `productTS`, `allProductTS` and `topProducts` whenever a UF subset is selected, and
+  reports its state as `productUfRequested` / `productUfLoading` / `productUfLoadError` /
+  `productUfUnavailable` and its month as `productPriceBase`:
+  - *loading* and *failed* leave the three EMPTY — the national series under the UF chip is
+    the defect itself — and every screen that reads them says which (`window.seriesPorUf`,
+    `window.SeriesPorUfNote`); the CSV is refused with `carregando-series-uf` /
+    `falha-series-uf`;
+  - *unavailable* (no reader for the banco) keeps the NATIONAL series, and the screens say
+    plainly that the numbers per product are Brazil's;
+  - *resolved* is a measurement: `{}` means the UFs record none of the banco's products.
+  The CSV of per-product series carries an `abrangencia_geografica` column ("Brasil", or the
+  UF acronyms), since a file has no chip beside it.
 - **What a sub-UF recorte can and cannot narrow (v1.108.2).** `applyFilters.subUfRequested` is
   true whenever a sub-UF recorte is ASKED for — loading, failed or resolved. Three rules hang
   on it:
@@ -248,9 +280,10 @@ município passes the cascade iff it clears every active facet (intersection).
     recorte's own `loading`/`loadError` while it resolves; `products: []` only when measured.
     Visão geral's composition and Concentração's product half read it instead of the national
     per-product series.
-  - *Series that exist only nationally, or only by whole UF* (`productTS`, the herd by species,
-    PAM's area and yield): Perfil do produto, Comparativo entre produtos, Rebanho, Produtividade
-    and Valor × Volume's per-product compositions cannot narrow to municípios in ANY state.
+  - *Series that exist only nationally, or only by whole UF* (`productTS` — by whole UF since
+    v1.108.3 —, the herd by species, PAM's area and yield): Perfil do produto, Comparativo
+    entre produtos, Rebanho, Produtividade and Valor × Volume's per-product compositions cannot
+    narrow to municípios in ANY state.
     They keep their numbers and say so (`window.recorteNaoSeAplica`), or withhold the chart
     (Valor × Volume), and their CSV is refused with `recorte-nao-se-aplica` — waiting would not
     help, so `carregando-recorte` would promise a file that never comes.

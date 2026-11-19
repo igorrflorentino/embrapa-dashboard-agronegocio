@@ -38,6 +38,23 @@ function ViewProductCompare({ summary, conventions, database }) {
     });
   };
 
+  // The per-product series go no finer than a whole UF: a sub-UF recorte cannot apply here,
+  // and the screen says so in every state of it (v1.108.2).
+  const recorteNota = window.recorteNaoSeAplica(filtered,
+    'as séries por produto existem por UF inteira, não por município.');
+  // Under a UF subset the series are the selected UFs' (v1.108.3). While that read is on its
+  // way, or after it failed, there is nothing to compare — the national series would be
+  // Brazil's under the UF chip — and the screen says which instead of drawing empty charts.
+  const porUf = window.seriesPorUf(filtered);
+  if (porUf && porUf.estado !== 'nacional') {
+    return (
+      <>
+        <window.NotApplicableNote note={{ recorte: recorteNota }} />
+        <window.SeriesPorUfNote filtered={filtered} />
+      </>
+    );
+  }
+
   const yearStart = filtered.yearStart, yearEnd = filtered.yearEnd;
 
   // Build per-product windows + metrics. A STOCK (herd) has no value → normalize and
@@ -134,12 +151,9 @@ function ViewProductCompare({ summary, conventions, database }) {
 
   return (
     <>
-      {/* The per-product series are national: they cannot apply a sub-UF recorte, and the
-          screen says so in every state of it (v1.108.2). */}
-      <window.NotApplicableNote note={{
-        recorte: window.recorteNaoSeAplica(filtered,
-          'as séries por produto existem só para o Brasil inteiro.'),
-      }} />
+      <window.NotApplicableNote note={{ recorte: recorteNota }} />
+      {/* A banco with no per-UF series draws the national ones under a UF subset: said here. */}
+      <window.SeriesPorUfNote filtered={filtered} />
 
       {/* Selector */}
       <div className="pp-selector">

@@ -399,6 +399,65 @@ describe('ViewValueVolume — under a sub-UF recorte, and a failed basket cube',
   });
 });
 
+// ── Sob um subconjunto de UFs, as composições são as das UFs (v1.108.3) ───────────────────
+// Measured on prod 2026-11-18 (PPM, Pará): "Composição histórica · Valor" stacked Leite at
+// Brazil's ~R$ 90 bi under a "1 UF" chip, while the total beside it was Pará's R$ 1,6 bi.
+// applyFilters now hands the UFs' own productTS; while it is on its way, or after it failed,
+// the compositions are withheld and the screen says which. The totals are not this read's.
+describe('ViewValueVolume — under a UF subset the compositions are the UFs’ own', () => {
+  const UF = { productUfRequested: true, productUfLoading: false, productUfLoadError: null, productUfUnavailable: false };
+  const renderWith = (extra) => {
+    stubGlobals(valueFixture({ ...UF, ...extra }));
+    window.Icon = () => null;
+    return render(
+      <ViewValueVolume families={['mass', 'volume']} summary={{ states: ['PA'] }} database="ibge_ppm"
+                       conventions={{ currency: 'BRL', correction: 'IPCA', autoScale: false }} />,
+    ).container;
+  };
+  afterEach(() => { delete window.Icon; });
+
+  it('resolved: the compositions are drawn from the UFs’ series, and nothing is said', () => {
+    const c = renderWith({});
+    expect(stackedCalls.length).toBeGreaterThanOrEqual(3);
+    expect(c.querySelector('.na-note')).toBeNull();
+  });
+
+  it('on its way: no composition, a note saying the UFs’ series are loading — the totals stay', () => {
+    const c = renderWith({ productUfLoading: true, productTS: {} });
+    expect(stackedCalls).toHaveLength(0);
+    expect(c.querySelector('.na-note').textContent).toBe('Carregando as séries por produto das UFs escolhidas…');
+    expect(lineChartCalls.length).toBeGreaterThanOrEqual(3); // value, mass, volume: Pará's, from ts
+  });
+
+  it('failed: no composition, an alert saying it failed — never "loading"', () => {
+    const c = renderWith({ productUfLoadError: 'HTTP 503', productTS: {} });
+    expect(stackedCalls).toHaveLength(0);
+    const nota = c.querySelector('.na-note');
+    expect(nota.getAttribute('role')).toBe('alert');
+    expect(nota.textContent).toContain('Não foi possível carregar as séries por produto das UFs escolhidas');
+    expect(c.textContent).not.toMatch(/Carregando as séries/);
+  });
+
+  it('a banco without series by UF: the national compositions, and a note saying so', () => {
+    const c = renderWith({ productUfUnavailable: true });
+    expect(stackedCalls.length).toBeGreaterThanOrEqual(3);
+    expect(c.querySelector('.na-note').textContent)
+      .toContain('As séries por produto deste banco existem só para o Brasil inteiro');
+  });
+
+  it('“a composição já reflete as UFs” is said only once it does', () => {
+    const ja = 'A composição por produto abaixo já reflete a cesta e as UFs selecionadas.';
+    let c = renderWith({ geoComboPending: true });
+    expect(c.textContent).toContain(ja);
+    cleanup();
+    c = renderWith({ geoComboPending: true, productUfLoading: true, productTS: {} });
+    expect(c.textContent).not.toContain(ja);
+    cleanup();
+    c = renderWith({ geoComboPending: true, productUfUnavailable: true });
+    expect(c.textContent).not.toContain(ja);
+  });
+});
+
 // ── Variação anual e a troca de moeda ────────────────────────────────────────────
 // Em valores nominais, a barra de um par que atravessa uma reforma mediria a troca de
 // moeda. YoYBars não desenha essa barra, e o card NOMEIA os anos sem barra, para uma

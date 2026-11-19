@@ -674,7 +674,7 @@ function ViewGeography({ families, conventions, summary, database, territoryComp
       {window.PriceBaseSkewNote && (
         <window.PriceBaseSkewNote
           bases={[localMuniBase, pbu && pbu.priceBase]}
-          jaComparadas={[filtered.muniPriceBase, filtered.geoPriceBase]}
+          jaComparadas={[filtered.muniPriceBase, filtered.geoPriceBase, filtered.productPriceBase]}
           database={database}
           conventions={conv} />
       )}

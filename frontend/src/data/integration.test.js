@@ -68,15 +68,27 @@ const GEO_CUBE_A = {
   ],
 };
 
+// The per-product series of the UF subset {PA} (what /api/product-ts returns, v1.108.3): Pará's
+// own, a fraction of the national productTS above, with Castanha absent (none in Pará).
+const PRODUCT_TS_PA = {
+  productTS: {
+    A: [{ y: 2020, v: 3, q: 0.3, family: 'mass' }, { y: 2021, v: 4, q: 0.4, family: 'mass' }],
+    B: [{ y: 2020, v: 2, q: 0.2, family: 'mass' }, { y: 2021, v: 1, q: 0.1, family: 'mass' }],
+  },
+  priceBase: null,
+  available: true,
+};
+
 // A URL-dispatching fetch mock: /snapshot varies by the currency query param,
 // /source-meta returns minimal provenance, /geo-yearly returns the basket cube.
-function makeFetch({ snapshot = snapshotFor, geoCube = GEO_CUBE_A } = {}) {
+function makeFetch({ snapshot = snapshotFor, geoCube = GEO_CUBE_A, productTs = PRODUCT_TS_PA } = {}) {
   return vi.fn((url) => {
     const u = String(url);
     if (u.includes('/source-meta')) {
       return jsonRes({ table: 'gold_pevs_production', yearStart: 2020, yearEnd: 2021 });
     }
     if (u.includes('/geo-yearly')) return jsonRes(geoCube);
+    if (u.includes('/product-ts')) return jsonRes(productTs);
     if (u.includes('/snapshot')) {
       const cur = new URL(u, 'http://x').searchParams.get('currency') || 'BRL';
       return jsonRes(snapshot(cur));
@@ -171,6 +183,35 @@ describe('integration: a state filter reaches the hero through the real ufYearly
     // The choropleth/ranking drops RS entirely.
     expect(view.ufData.map((u) => u.uf)).toEqual(['PA']);
     expect(view.ufData[0].value).toBe(100);
+  });
+});
+
+// v1.108.3: under a UF subset the per-product series are Pará's own, read from /api/product-ts.
+// Until they land NO per-product series stands — the national one under the UF chip was the
+// defect (Pará's Leite at Brazil's R$ 90 bi, measured 2026-11-18).
+describe('integration: a state filter reaches the per-product series through /api/product-ts', () => {
+  it('holds them while the read is cold, then they are the UF’s — never the national ones', async () => {
+    const f = makeFetch();
+    const { ds, applyFilters } = await boot(f);
+    await ds.load('ibge_pevs');
+
+    const cold = applyFilters({ states: ['PA'] }, 'ibge_pevs');
+    expect(cold.productUfLoading).toBe(true);
+    expect(cold.productTS).toEqual({});
+    expect(cold.topProducts).toEqual([]);
+    const pedido = f.mock.calls.map(([u]) => String(u)).find((u) => u.includes('/product-ts'));
+    expect(pedido).toContain('banco=ibge_pevs');
+    expect(pedido).toContain('states=PA');
+
+    await settle();
+
+    const hot = applyFilters({ states: ['PA'] }, 'ibge_pevs');
+    expect(hot.productUfLoading).toBe(false);
+    expect(hot.productTS.A.map((d) => d.v)).toEqual([3, 4]); // the national is 30 → 33
+    expect(hot.productTS.C).toBeUndefined();
+    expect(hot.topProducts.map((p) => [p.name, p.share])).toEqual([['Açaí', 0.8], ['Babaçu', 0.2]]);
+    // The aggregate series stays the UF grid's, as before.
+    expect(hot.ts.find((d) => d.y === 2021).v).toBeCloseTo(0.1);
   });
 });
 

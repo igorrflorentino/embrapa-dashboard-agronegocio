@@ -384,7 +384,7 @@ describe('ViewProductProfile — a sub-UF recorte does not apply, and the screen
       <ViewProductProfile families={['mass']} summary={{}} database="ibge_pevs" conventions={CONV} />,
     );
     const nota = container.querySelector('.na-note').textContent;
-    expect(nota).toContain('O recorte territorial abaixo da UF não se aplica a esta perspectiva: a série de cada produto existe só para o Brasil inteiro');
+    expect(nota).toContain('O recorte territorial abaixo da UF não se aplica a esta perspectiva: a série de cada produto e a sua distribuição existem por UF inteira, não por município.');
     expect(nota).toContain('Os números abaixo não se limitam aos municípios escolhidos.');
   });
 
@@ -395,5 +395,54 @@ describe('ViewProductProfile — a sub-UF recorte does not apply, and the screen
       <ViewProductProfile families={['mass']} summary={{}} database="ibge_pevs" conventions={CONV} />,
     );
     expect(container.querySelector('.na-note')).toBeNull();
+  });
+});
+
+// ── Sob um subconjunto de UFs, o perfil é o das UFs (v1.108.3) ────────────────────────────
+// applyFilters hands the UFs' own series under a UF subset. While they are on its way, or after
+// the read failed, it hands none: the profile is withheld and the screen says which — never
+// "Nenhum produto disponível", which would blame the filters for a read that has not arrived.
+describe('ViewProductProfile — under a UF subset the series are the UFs’ own', () => {
+  const UF = { productUfRequested: true, productUfLoading: false, productUfLoadError: null, productUfUnavailable: false };
+  const renderWith = (extra) => {
+    stubGlobals({ ...FLOW_FIXTURE, ...UF, ...extra });
+    stubFetch([{ uf: 'PA', value: 8, q_count: 0 }]);
+    window.Icon = () => null;
+    return render(
+      <ViewProductProfile families={['mass']} summary={{ states: ['PA'] }} database="ibge_pevs" conventions={CONV} />,
+    ).container;
+  };
+  afterEach(() => { delete window.Icon; });
+
+  it('resolved: the profile is drawn, with no note', () => {
+    const c = renderWith({});
+    expect(c.querySelector('.kpi')).not.toBeNull();
+    expect(c.querySelector('.na-note')).toBeNull();
+  });
+
+  it.each([
+    ['on its way', { productUfLoading: true }, 'Carregando as séries por produto das UFs escolhidas…'],
+    ['failed', { productUfLoadError: 'HTTP 503' }, 'Não foi possível carregar as séries por produto das UFs escolhidas'],
+  ])('%s: no profile at all — the note, never "nenhum produto disponível"', (_estado, extra, texto) => {
+    const c = renderWith({ ...extra, allProductTS: {}, productTS: {} });
+    expect(c.querySelector('.kpi')).toBeNull();
+    expect(c.querySelector('.line-chart')).toBeNull();
+    expect(c.querySelector('.empty-card')).toBeNull();
+    expect(c.querySelector('.na-note').textContent).toContain(texto);
+    expect(global.fetch).not.toHaveBeenCalled(); // no product, so no UF ranking asked for
+  });
+
+  it('a banco without series by UF: the national profile, and a note saying so', () => {
+    const c = renderWith({ productUfUnavailable: true });
+    expect(c.querySelector('.kpi')).not.toBeNull();
+    expect(c.querySelector('.na-note').textContent)
+      .toContain('As séries por produto deste banco existem só para o Brasil inteiro');
+  });
+
+  it('a sub-UF recorte beside a held read: both say what they are', () => {
+    const c = renderWith({ subUfRequested: true, subUfLoading: true, productUfLoading: true, allProductTS: {}, productTS: {} });
+    const notas = [...c.querySelectorAll('.na-note')].map((n) => n.textContent).join(' ');
+    expect(notas).toContain('O recorte territorial abaixo da UF não se aplica a esta perspectiva');
+    expect(notas).toContain('Carregando as séries por produto das UFs escolhidas…');
   });
 });

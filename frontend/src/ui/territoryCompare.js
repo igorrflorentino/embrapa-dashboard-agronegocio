@@ -198,7 +198,7 @@
       gridLoading: grid.loading,
       gridLoadError: grid.loadError,
       priceBases: muniPriceBase ? [muniPriceBase] : [],
-      comparedPriceBases: [f.muniPriceBase, f.geoPriceBase],
+      comparedPriceBases: [f.muniPriceBase, f.geoPriceBase, f.productPriceBase],
     };
   }
 
