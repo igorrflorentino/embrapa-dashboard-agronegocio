@@ -209,9 +209,16 @@ describe('MetricConventions — exported window helpers', () => {
     // internal volume = mi m³; m³ selected → ×1e6.
     expect(window.formatVolumeQty(1, conv)).toContain('m³');
     expect(window.formatVolumeQty(null, conv)).toBe('—');
-    // internal count = mi un; un selected → ×1e6.
-    expect(window.formatCountQty(1, conv)).toContain('un');
+    // internal count = mi un; un selected → ×1e6, named by what the caller says it counts.
+    expect(window.formatCountQty(1, conv, 'ovos')).toBe('1.000.000 ovos');
     expect(window.formatCountQty(null, conv)).toBe('—');
+  });
+
+  // v1.108.7: with no name the fallback was the convention's bare unit — "un", or "cab" for
+  // eggs — and two per-product screens called it that way for every herd.
+  it('a count nobody named reads "unidade não identificada", never the convention unit', () => {
+    expect(window.formatCountQty(1, conv)).toBe('1.000.000 unidade não identificada');
+    expect(window.formatCountQty(1, { ...conv, units: { count: 'cab' } })).not.toMatch(/\bcab\b/);
   });
 
   it('quantity multipliers + axis labels match the registry conversions', () => {
@@ -220,7 +227,24 @@ describe('MetricConventions — exported window helpers', () => {
     expect(window.countQtyMul(conv)).toBe(1e6); // mi un → un
     expect(window.massAxisLabel(conv)).toBe('t');
     expect(window.volumeAxisLabel(conv)).toBe('m³');
-    expect(window.countAxisLabel(conv)).toBe('un');
+    // No bare count label: a count axis is named by its product or its total.
+    expect(window.countAxisLabel).toBeUndefined();
+  });
+
+  it('formatProductQty writes ONE product in its family’s unit, a count by what it counts', () => {
+    const ovos = { family: 'count', unit_native: 'Mil dúzias' };
+    const bovino = { family: 'count', unit_native: 'Cabeças' };
+    expect(window.formatProductQty({ family: 'mass' }, 2, conv)).toBe('2.000 t');
+    expect(window.formatProductQty({ family: 'mass' }, 2, { ...conv, units: { mass: 'kg' } })).toBe('2.000.000 kg');
+    expect(window.formatProductQty({ family: 'volume' }, 2, conv)).toBe('2.000.000 m³');
+    expect(window.formatProductQty(ovos, 2, conv)).toBe('2.000.000 ovos');
+    expect(window.formatProductQty(bovino, 2, { ...conv, units: { count: 'cab' } })).toBe('2.000.000 cabeças');
+    // Eggs in dozens: the magnitude follows the convention, the label is its own.
+    expect(window.formatProductQty(ovos, 1.2, { ...conv, units: { count: 'dz' } })).toBe('100.000 dz');
+    expect(window.formatProductQty({ family: 'count' }, 2, conv)).toBe('2.000.000 unidade não identificada');
+    expect(window.formatProductQty(ovos, null, conv)).toBe('—');
+    // A family with no display scale carries no quantity at all (the serializer sends none).
+    expect(window.formatProductQty({ family: 'energia' }, 2, conv)).toBe('—');
   });
 
   it('valueAxisLabel appends a magnitude suffix only under auto-scale', () => {

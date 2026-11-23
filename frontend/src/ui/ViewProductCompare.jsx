@@ -236,7 +236,10 @@ function ViewProductCompare({ summary, conventions, database }) {
                     <span className="pc-row-dot" style={{ background: it.color }}></span>
                     {it.label}
                   </td>
-                  <td className="num tnum">{it.isStock ? window.formatCountQty(it.qT, conv) : window.formatValue(window.scalePresent(it.vT, 1e6), conv)}</td>
+                  {/* A row ranked on quantity shows it in its own unit: a herd in cabeças, a
+                      crop with no value in the window in t. formatCountQty with no unit put
+                      "un" beside every herd, and multiplied a crop's mil t as a count. */}
+                  <td className="num tnum">{it.isStock ? window.formatProductQty(it.prod, it.qT, conv) : window.formatValue(window.scalePresent(it.vT, 1e6), conv)}</td>
                   {/* `null >= 0` é true em JS: sem o teste de ausência, um '—' saía
                       pintado de verde, como se fosse crescimento. */}
                   <td className="num tnum" style={{ color: window.deltaColor(it.accum) }}>

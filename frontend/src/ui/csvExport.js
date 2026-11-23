@@ -205,14 +205,19 @@ import './countUnits.js';
         // unitless "quantidade" header. Scale per family to its base unit (mass→t,
         // volume→m³) and emit the unit explicitly so the column is unambiguous.
         const headers = ['ano', 'codigo', 'produto', `valor_${conv.currency}`, 'quantidade', 'unidade', 'familia', 'abrangencia_geografica'];
-        // Per-family base unit + multiplier: mass mil t→t, volume mi m³→m³, count mi un→un.
-        // The old binary (volume?1e6:1e3 / m³:t) mislabelled a livestock headcount as TONNES
-        // and scaled it 1000× wrong; map by family so the column is always correct.
-        const FAM_Q = { mass: { mul: 1e3, unit: 't' }, volume: { mul: 1e6, unit: 'm³' }, count: { mul: 1e6, unit: 'un' } };
+        // Per-family base unit + multiplier: mass mil t→t, volume mi m³→m³, count mi un→ONE
+        // of the thing counted. The old binary (volume?1e6:1e3 / m³:t) mislabelled a livestock
+        // headcount as TONNES and scaled it 1000× wrong; map by family so the column is always
+        // correct. A count's unit is what the product counts (countNameOf: "cabeças", "ovos",
+        // "frutos", or "unidade não identificada"): until v1.108.7 every count said "un".
+        const FAM_Q = { mass: { mul: 1e3, unit: () => 't' }, volume: { mul: 1e6, unit: () => 'm³' },
+                        count: { mul: 1e6, unit: (p) => window.countNameOf(p) } };
         const rows = [];
         Object.entries(f.productTS).forEach(([code, series]) => {
-          const fam = (PRODS.find(p => p.code === code) || {}).family;
-          const { mul: qMul, unit: qUnit } = FAM_Q[fam] || FAM_Q.mass;
+          const prod = PRODS.find(p => p.code === code) || {};
+          const fam = prod.family;
+          const { mul: qMul, unit: unitFor } = FAM_Q[fam] || FAM_Q.mass;
+          const qUnit = unitFor(prod);
           series.forEach(d => rows.push([
             d.y, code, nameOf(code),
             celulaValor(d.v, 1e6),
@@ -222,7 +227,11 @@ import './countUnits.js';
             abrangencia,
           ]));
         });
-        return { headers, rows, subject: 'series_por_produto' };
+        // The units the file's rows are in, for the confirmation window: this file carries
+        // them in a column, where the other files carry them in the header (qtd_massa_t).
+        const iUnidade = headers.indexOf('unidade');
+        const unidades = [...new Set(rows.map((r) => r[iUnidade]))];
+        return { headers, rows, subject: 'series_por_produto', unidades };
       }
       case 'territory_compare': {
         // The comparison's OWN places (chosen on the screen, not the geography filter),
@@ -445,6 +454,9 @@ import './countUnits.js';
       banco: banco.short,
       assunto: ASSUNTO[built.subject] || built.subject,
       colunas: built.headers,
+      // The units the quantities are in, when a column holds them (series_por_produto); the
+      // other files name theirs in the header. Never the strip's units: no file follows them.
+      ...(built.unidades ? { unidades: built.unidades } : {}),
       linhas: built.rows.length,
       // Tamanho do arquivo REAL (a string já montada), não uma estimativa por linha.
       bytes: new Blob([csv]).size,

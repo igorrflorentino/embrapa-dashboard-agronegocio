@@ -60,13 +60,16 @@ function CsvExportModal({ preview, chips, conventions, onClose }) {
     );
   }
 
+  // The file follows the strip's currency and correction, never its units: every CSV is in
+  // the base units (t, m³, and ONE of the thing counted: cabeças, ovos, frutos). Until
+  // v1.108.7 this window listed the strip's units as applied — "kg", "dz" — beside a file in
+  // tonnes and eggs. The units it shows now are the file's, read off the built rows.
   const conv = conventions || {};
-  const unidades = Object.values(conv.units || {}).filter(Boolean).join(' · ');
   const convChips = [
     conv.currency && { k: 'Moeda', v: conv.currency },
     conv.correction && { k: 'Correção', v: conv.correction === 'Nominal' ? 'Sem correção' : conv.correction },
-    unidades && { k: 'Unidades', v: unidades },
   ].filter(Boolean);
+  const unidades = (preview.unidades || []).filter(Boolean).join(' · ');
 
   return (
     <div className="cite-backdrop" onClick={onClose}>
@@ -112,6 +115,9 @@ function CsvExportModal({ preview, chips, conventions, onClose }) {
               <dt>Arquivo</dt>
               <dd><code className="csv-arquivo">{preview.arquivo}</code></dd>
             </div>
+            {/* Only the file that carries its units in a column (`unidade`); the others carry
+                them in the column names (qtd_massa_t, efetivo_cabecas), listed just below. */}
+            {unidades && <div><dt>Unidades</dt><dd>{unidades}</dd></div>}
           </dl>
 
           {/* As colunas são a resposta mais concreta a "é isto que eu espero?" — quem baixa
