@@ -7,13 +7,20 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { cleanup, render } from '@testing-library/react';
 
-const { reactState } = vi.hoisted(() => ({ reactState: { lastTraces: null, els: [] } }));
+const { reactState } = vi.hoisted(() => ({
+  reactState: { lastTraces: null, lastLayout: null, els: [] },
+}));
 
 vi.mock('./plotlyBundle', () => ({
   default: {
     // `el` is recorded too: an orientation flip MUST land on a fresh element (see the
     // remount test below), and the element identity is the only honest evidence of that.
-    react: (el, traces) => { reactState.lastTraces = traces; reactState.els.push(el); },
+    // The layout carries the margins and the unit's annotation on a short plot.
+    react: (el, traces, layout) => {
+      reactState.lastTraces = traces;
+      reactState.lastLayout = layout;
+      reactState.els.push(el);
+    },
     purge: () => {},
     Plots: { resize: () => {} },
   },
@@ -29,9 +36,15 @@ beforeAll(() => {
   };
 });
 
-afterEach(() => { cleanup(); reactState.lastTraces = null; reactState.els = []; });
+afterEach(() => {
+  cleanup();
+  reactState.lastTraces = null;
+  reactState.lastLayout = null;
+  reactState.els = [];
+});
 
 const trace = () => reactState.lastTraces?.[0];
+const layout = () => reactState.lastLayout;
 
 describe('Heatmap ragged-row column alignment', () => {
   it('builds x from the UNION of years and indexes each row, gaps → null', () => {
@@ -224,21 +237,22 @@ describe('Heatmap — colorbar anchors', () => {
     expect(t.colorbar.tickvals.at(-1)).toBe(t.zmax);
   });
 
-  it('places the unit where it cannot be read as a value, per orientation', () => {
-    // Vertical: above the bar. Beside it, Plotly rotates the title 90° and "R$" landed
-    // sideways in the gradient, between two tick labels, looking like one of them.
+  it('places the unit ABOVE the bar in both orientations, where it cannot be read as a value', () => {
+    // Vertical: the bar's title, on top. Beside the bar, Plotly rotates the title 90° and
+    // "R$" landed sideways in the gradient, between two tick labels, looking like one of them.
     const tall = Array.from({ length: 8 }, (_, i) => ({
       id: `U${i}`, label: `U${i}`, values: [{ y: 2019, v: i + 1 }],
     }));
     render(<Heatmap rows={tall} valueKey="v" valueLabel="R$" />);
     expect(trace().colorbar.title).toEqual({ text: 'R$', side: 'top', font: { size: 11 } });
+    expect(layout().annotations ?? []).toEqual([]);
     cleanup();
-    // Horizontal: 'bottom', which measurement (not intuition) shows renders the unit
-    // just above the bar, clear of the year labels and the tick labels. 'top' is
-    // measured from the colorbar GROUP, which on a container-anchored bar stretches up
-    // into the plot — it drew "R$" over the heatmap band itself.
+    // Horizontal: an annotation just above the bar, and NEVER the bar's own title. A title
+    // on this container-anchored bar is what drove the plot's height negative — the
+    // measurement is in the "draws at every row count" block below.
     render(<Heatmap rows={rows} valueKey="v" valueLabel="R$" />);
-    expect(trace().colorbar.title.side).toBe('bottom');
+    expect(trace().colorbar.title.text).toBe('');
+    expect(layout().annotations.map((a) => a.text)).toEqual(['R$']);
   });
 
   it('falls back to Plotly ticks on a degenerate (single-value) scale', () => {
@@ -352,6 +366,123 @@ describe('Heatmap — geometry invariants over 1..15 rows', () => {
     for (const n of SPAN) {
       render(<Heatmap rows={rowsFor(n)} valueKey="v" valueLabel="R$" height={400} />);
       expect(`${n}:${trace().colorbar.orientation}`).toBe(`${n}:v`);
+      cleanup();
+    }
+  });
+
+  // The rule the "draws at every row count" block below measured, stated for any row
+  // count: on a bar anchored to the container, a title is what sends the plot's height
+  // negative.
+  it('never titles a horizontal bar anchored to the container', () => {
+    for (const n of SPAN) {
+      render(<Heatmap rows={rowsFor(n)} valueKey="v" valueLabel="R$" />);
+      const cb = trace().colorbar;
+      const titled = cb.orientation === 'h' && cb.yref === 'container' && cb.title.text !== '';
+      expect(`${n}:${titled ? 'TITLED' : 'ok'}`).toBe(`${n}:ok`);
+      cleanup();
+    }
+  });
+
+  it('shows the unit exactly once, as the vertical title or as the annotation', () => {
+    // Moving the unit out of the horizontal bar must neither lose it nor print it twice.
+    for (const n of SPAN) {
+      render(<Heatmap rows={rowsFor(n)} valueKey="v" valueLabel="R$" />);
+      const shown = (trace().colorbar.title.text === 'R$' ? 1 : 0)
+        + (layout().annotations ?? []).filter((a) => a.text === 'R$').length;
+      expect(`${n}:${shown}`).toBe(`${n}:1`);
+      cleanup();
+    }
+  });
+});
+
+// ── A short heatmap has to DRAW, at every row count ──────────────────────────
+//
+// Reported in the v1.108.1 notes: Geografia with 2 municípios over 40 years showed "Não
+// foi possível renderizar este gráfico", and Plotly logged "Something went wrong with axis
+// scaling" — a negative plot height. Measured in the browser (2026-11-23, Plotly 4.3.0, the
+// 659 px Geografia card), with the unit as the TITLE of the horizontal bar anchored to the
+// container:
+//
+//   rows  height  margin the bar reserved  plot height
+//    1     132       50.7 (absorbed)          16      drew
+//    2     156      171.1                    -23.1    threw
+//    3     180      307.4                   -165.3    threw
+//    4     204       98.8                     67.4    drew; band squashed, unit under the labels
+//    5     228       83.4                    106.7    drew; unit under the labels
+//
+// Plotly places such a title `height × (thickness + ypad) / plotHeight` px down, the margin
+// the bar reserves follows the title, and the smaller plot pushes the title further: on a
+// short plot the loop runs away. With no title the reservation is a constant 50.7 px, the
+// 108 px bottom margin absorbs it, and the plot is exactly 24 × rows − 8 px at every count.
+//
+// jsdom lays nothing out, so these tests cannot watch Plotly fail. They pin the
+// configuration the measurement found to be the trigger, and the geometry that replaced it.
+
+describe('Heatmap — a short heatmap draws at every row count (1..6)', () => {
+  const rowsFor = (n) => Array.from({ length: n }, (_, i) => ({
+    id: `M${i}`, label: `Município ${i} · PA`,
+    values: Array.from({ length: 40 }, (_, k) => ({ y: 1985 + k, v: (i + 1) * 1e6 * (1 + k / 7) })),
+  }));
+  // The wrapper div <Plot> sizes; Plotly reads its height from it.
+  const plotHeight = (container) => parseFloat(container.firstChild.style.height);
+
+  it('never titles the horizontal bar anchored to the container: the measured trigger', () => {
+    for (const n of [1, 2, 3, 4, 5]) {
+      render(<Heatmap rows={rowsFor(n)} valueKey="v" valueLabel="R$" />);
+      const cb = trace().colorbar;
+      expect(`${n}: ${cb.orientation}/${cb.yref} title '${cb.title.text}'`)
+        .toBe(`${n}: h/container title ''`);
+      cleanup();
+    }
+  });
+
+  it('draws the unit as ONE annotation, 61 px under the plot at every row count', () => {
+    // y = 0 is the plot's bottom edge and yshift is in pixels, so the distance between the
+    // unit and the bar is the same at 1 row and at 5. Measured under the plot: the year
+    // labels end at 22 px, the unit's text sits at 46–59 px, the bar's top is at 67 px.
+    for (const n of [1, 2, 3, 4, 5]) {
+      render(<Heatmap rows={rowsFor(n)} valueKey="v" valueLabel="R$" />);
+      expect(layout().annotations).toEqual([{
+        text: 'R$',
+        xref: 'paper', x: 0.5, xanchor: 'center',
+        yref: 'paper', y: 0, yanchor: 'bottom',
+        yshift: -61,
+        showarrow: false,
+        font: { size: 11 },
+      }]);
+      cleanup();
+    }
+  });
+
+  it('keeps the plot at 24 × rows − 8 px, under a 108 px strip for years, unit and bar', () => {
+    // No height changed: the existing arithmetic was enough once the title stopped eating
+    // the plot. 8 px on top; 108 px below for the year labels (22), the unit and the bar
+    // with its labels (41 px from the card's bottom edge to the bar's top).
+    for (const n of [1, 2, 3, 4, 5]) {
+      const { container } = render(<Heatmap rows={rowsFor(n)} valueKey="v" valueLabel="R$" />);
+      const m = layout().margin;
+      expect(`${n}: margin ${m.t}/${m.b} plot ${plotHeight(container) - m.t - m.b}`)
+        .toBe(`${n}: margin 8/108 plot ${24 * n - 8}`);
+      cleanup();
+    }
+  });
+
+  it('from 6 rows on, the bar is vertical and the unit is its title again', () => {
+    const { container } = render(<Heatmap rows={rowsFor(6)} valueKey="v" valueLabel="R$" />);
+    const cb = trace().colorbar;
+    expect(cb.orientation).toBe('v');
+    expect(cb.yref).toBe('paper');
+    expect(cb.title).toEqual({ text: 'R$', side: 'top', font: { size: 11 } });
+    expect(layout().annotations ?? []).toEqual([]);
+    const m = layout().margin;
+    expect(plotHeight(container) - m.t - m.b).toBe(130); // 44 + 24 × 6 − (22 + 36)
+  });
+
+  it('with no unit, there is nothing to annotate and still no title', () => {
+    for (const n of [1, 5]) {
+      render(<Heatmap rows={rowsFor(n)} valueKey="v" valueLabel="" />);
+      expect(trace().colorbar.title.text).toBe('');
+      expect(layout().annotations ?? []).toEqual([]);
       cleanup();
     }
   });
