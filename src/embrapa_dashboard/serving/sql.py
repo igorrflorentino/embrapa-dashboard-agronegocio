@@ -1825,6 +1825,24 @@ def quality_by_source(
 # for any source by swapping the code/name columns. ``unit`` = base_unit (the
 # normalised unit), ``unit_native`` = the source label that qty_native is in.
 
+# The rule that names a code's unit when its rows publish more than one (v1.108.8). In the UN
+# COMTRADE mart that is 99 of the 100 codes (measured on prod 2026-11-23): almost always the
+# real unit beside "Sem unidade (N/A)", and in 20 codes two real ones, such as 440311 in m³
+# (7.038 rows) and in "Número de itens" (107 rows, all from one reporter). COMEX and the three
+# IBGE marts have one unit per code. Until v1.108.8 each field was an independent
+# ``any_value``: a code could come out as a count family with a mass unit, and the choice
+# changed with whichever row BigQuery read first.
+#
+# The keys, in order: a KNOWN family before an unknown one (a row with no unit says nothing
+# about how the code is measured, and it carries no quantity); then the family with the most
+# rows; then the family's name, so a tie is settled the same way every time. ``products()``
+# goes on to the (base_unit, unit_native) pair with the most rows inside that family, then
+# to the pair's own text, which makes the order total over the distinct pairs.
+# ``product_timeseries()`` stops at the family, which is all a point of the series carries.
+# One constant, so the two cannot be ranked by different rules.
+_UNKNOWN_FAMILY_LAST = "(family is null or family = 'desconhecida')"
+_FAMILY_RANK = f"{_UNKNOWN_FAMILY_LAST}, family_rows desc, family"
+
 
 def products(
     table: str,
@@ -1835,6 +1853,17 @@ def products(
     with_tabela: bool = False,
 ) -> tuple[str, list]:
     """Distinct product list ``(code, name, unit, unit_native, family)`` (backs `products`).
+
+    ``family``, ``unit`` (the family's base unit) and ``unit_native`` describe ONE unit
+    of the code, picked as one struct by :data:`_FAMILY_RANK` and then the most common
+    (base_unit, unit_native) pair inside the family. They always come from the same
+    group of rows, and the order is total, so the same mart gives the same answer on
+    every read. Rows in another unit keep their value in the per-product series and
+    contribute no quantity: :func:`product_timeseries` sums each family apart.
+
+    ``name``, ``measure_kind`` and ``tabela`` stay ``any_value``: each is constant per
+    code in all five marts (measured on prod 2026-11-23: 0 codes with more than one of
+    any of them), so any row gives the same answer.
 
     ``with_measure_kind`` adds ``measure_kind`` (stock | flow) — the livestock
     discriminator that ONLY ``serving_ppm_annual`` carries. The seam sets it for PPM
@@ -1852,19 +1881,47 @@ def products(
     """
     code_column = _validate_column(code_column, ALLOWED_PRODUCT_COLUMNS, "product column")
     name_column = _validate_column(name_column, ALLOWED_PRODUCT_COLUMNS, "product column")
-    extra = ",\n            any_value(measure_kind) as measure_kind" if with_measure_kind else ""
-    if with_tabela:
-        extra += ",\n            any_value(tabela) as tabela"
+    extras = [c for c, on in (("measure_kind", with_measure_kind), ("tabela", with_tabela)) if on]
+    # Constant per code (see the docstring): carried up through the two grouped levels with
+    # any_value, then selected as they are.
+    per_unit = "".join(f",\n                        any_value({c}) as {c}" for c in extras)
+    per_code = "".join(f",\n                any_value({c}) as {c}" for c in extras)
+    selected = "".join(f",\n            {c}" for c in extras)
     sql = f"""
         select
-            {code_column}            as code,
-            any_value({name_column}) as name,
-            any_value(base_unit)     as unit,
-            any_value(unit_native)   as unit_native,
-            any_value(family)        as family{extra}
-        from `{table}`
-        group by {code_column}
-        order by {code_column}
+            code,
+            name,
+            unit_pick.base_unit   as unit,
+            unit_pick.unit_native as unit_native,
+            unit_pick.family      as family{selected}
+        from (
+            select
+                code,
+                any_value(name) as name,
+                array_agg(
+                    struct(family, base_unit, unit_native)
+                    order by {_FAMILY_RANK}, unit_rows desc, base_unit, unit_native
+                    limit 1
+                )[offset(0)] as unit_pick{per_code}
+            from (
+                select
+                    *,
+                    sum(unit_rows) over (partition by code, family) as family_rows
+                from (
+                    select
+                        {code_column}            as code,
+                        family,
+                        base_unit,
+                        unit_native,
+                        count(*)                 as unit_rows,
+                        any_value({name_column}) as name{per_unit}
+                    from `{table}`
+                    group by {code_column}, family, base_unit, unit_native
+                )
+            )
+            group by code
+        )
+        order by code
     """
     return sql, []
 
@@ -1893,13 +1950,27 @@ def product_timeseries(
     """Annual per-product series — value + quantities (backs productTS).
 
     ``total_qty_native`` is the statistical quantity in ``unit_native`` (used by
-    the PEVS cross-source views, whose codes are single-family). ``q_mass`` and
+    the PEVS cross-source views, whose codes are single-family). It adds ``qty_native``
+    across units, so it is meaningless for a code whose rows mix units — 99 of the 100
+    UN COMTRADE codes (v1.108.8) — and no reader takes it there: its three readers
+    (``seam_cross``) read PEVS and PAM, one unit per code. ``q_mass`` and
     ``q_vol`` are the family base unit (t for 'massa', m³ for 'volume') summed
     PER FAMILY via CASE — mass and volume are NEVER summed together, and a
     count/energy/area family contributes to neither (it has no display scale), so
     the snapshot can never mis-scale a non-mass/volume quantity nor blend units
-    for a mixed-unit code. ``family`` (the any_value tag) rides along for the UI;
-    a code is conceptually single-family.
+    for a mixed-unit code.
+
+    ``family`` is the year's family by the rule :func:`products` ranks families with
+    (:data:`_FAMILY_RANK`), over the year's rows inside the filters: deterministic, and, in
+    every year with a row in a known unit, the family :func:`products` names, for the 100
+    COMTRADE codes, for Brazil and for every reporter (measured on prod 2026-11-23). A year
+    with no known unit at all is 'desconhecida' (3 of Brazil's 1.404 code-years, 32 of the
+    world's 1.792): it has no quantity to show. Under a narrower filter it can
+    differ, because the reporters do not share one unit: with the reporter set to the
+    United States, 440311 has more rows in "Número de itens" than in m³ in 2018–2021. So
+    the serializer does not take it as the point's family when it knows the product's
+    (``serializers._product_ts``); it remains the family of the readers that sum this
+    series directly (``seam_cross``, PEVS and PAM), and the fallback.
 
     ``uf_codes`` optionally narrows to the producing/origin UFs (``state_acronym``)
     — the PEVS/COMEX marts carry it; empty/absent = national. Used by the
@@ -1952,6 +2023,9 @@ def product_timeseries(
     _in_array(conditions, params, "reporter_iso_a3", "reporters", reporters)
     _in_array(conditions, params, "partner_iso_a3", "partners", partners)
     base = _price_base_select(value_column, price_base)
+    # The window counts each family's rows inside the year AFTER the filters, so the family
+    # ranks over exactly the rows the sums below add. It adds no column to the scan: the
+    # family is already read for the CASE sums.
     sql = f"""
         select
             {code_column}       as code,
@@ -1961,9 +2035,14 @@ def product_timeseries(
             sum(case when family = 'massa' then qty_base end)  as q_mass,
             sum(case when family = 'volume' then qty_base end) as q_vol,
             sum(case when family = 'contagem' then qty_base end) as q_count,
-            any_value(family)   as family{base}
-        from `{table}`
-        {_where(conditions)}
+            array_agg(family order by {_FAMILY_RANK} limit 1)[offset(0)] as family{base}
+        from (
+            select
+                *,
+                count(*) over (partition by {code_column}, reference_year, family) as family_rows
+            from `{table}`
+            {_where(conditions)}
+        )
         group by {code_column}, reference_year
         order by {code_column}, reference_year
     """

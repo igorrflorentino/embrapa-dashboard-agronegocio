@@ -232,6 +232,117 @@ def test_product_ts_q_for_contagem_none_for_energy_area_families():
     assert energia["v"] == 4.0  # value still emitted (mi)
 
 
+# ── productTS: each point carries its PRODUCT's family (v1.108.8) ──────────────────────
+# Measured on prod 2026-11-23, UN COMTRADE, reporter = United States, 440311 in 2018: 26 rows in
+# "Número de itens" (36.141 items), 24 with no unit, 14 in m³ (215.400 m³). The product list
+# names 440311 in m³ (7.038 of its 7.282 rows), but the year ranks as a count.
+
+_LISTA_440311 = pd.DataFrame(
+    [
+        {
+            "code": "440311",
+            "name": "Madeira em bruto, de coníferas, tratada",
+            "unit": "m³",
+            "unit_native": "Volume em metros cúbicos",
+            "family": "volume",
+            "tabela": "hs",
+        }
+    ]
+)
+
+
+def _ano_440311_eua(**override) -> pd.DataFrame:
+    linha = {
+        "code": "440311",
+        "reference_year": 2018,
+        "total_value": 9_000_000,
+        "total_qty_native": 251_541,  # items + m³: meaningless, and no reader takes it here
+        "q_mass": float("nan"),
+        "q_vol": 215_400,
+        "q_count": 36_141,
+        "family": "contagem",  # the YEAR's family: more rows in items than in m³
+    }
+    linha.update(override)
+    return pd.DataFrame([linha])
+
+
+def _serie(product_ts: pd.DataFrame, products: pd.DataFrame | None, code: str) -> list[dict]:
+    """The snapshot's ``productTS`` of one code — the path the screens read."""
+    return s.serialize_snapshot(
+        {
+            "products": products,
+            "product_ts": product_ts,
+            "overview_ts": None,
+            "uf_data": None,
+            "quality": None,
+            "value_label": "Valor (US$)",
+        }
+    )["productTS"][code]
+
+
+def test_product_ts_point_carries_the_products_family_not_the_years():
+    """A year whose rows are mostly in another unit is still a point of a m³ series: the
+    family is the product's and ``q`` is its m³ — the items add nothing to it. Before
+    v1.108.8 the point said 'count' and ``q`` was the items, which Perfil do produto drew on
+    the m³ axis it reads from the product list."""
+    (ponto,) = _serie(_ano_440311_eua(), _LISTA_440311, "440311")
+    assert ponto["family"] == "volume"
+    assert ponto["q"] == pytest.approx(0.2154)  # 215.400 m³ → mi m³
+    assert ponto["v"] == pytest.approx(9.0)  # the value is the year's whole value
+
+
+def test_product_ts_without_the_list_keeps_the_years_family():
+    """No product list (or a code it does not name): the point keeps the family the SQL
+    ranked for the year — the fallback, and what the readers that sum the series directly
+    (seam_cross, PEVS and PAM) get."""
+    (ponto,) = _serie(_ano_440311_eua(), None, "440311")
+    assert ponto["family"] == "count"
+    assert ponto["q"] == pytest.approx(0.036141)
+    (ponto,) = _serie(_ano_440311_eua(), _LISTA_440311.assign(code="440399"), "440311")
+    assert ponto["family"] == "count"
+
+
+@pytest.mark.parametrize(
+    "ano",
+    [
+        # No row in m³ that year (Brazil has three such code-years, all with no unit at all).
+        {"family": "desconhecida", "q_vol": float("nan"), "q_count": float("nan")},
+        # Rows in m³, none with a quantity.
+        {"family": "volume", "q_vol": None, "q_count": float("nan")},
+    ],
+    ids=["sem_linha_na_unidade", "linhas_sem_quantidade"],
+)
+def test_product_ts_year_without_quantity_in_the_products_unit_is_absent(ano):
+    """A year with no quantity in the product's unit has ``q`` None: absent, not a zero the
+    data never published (see _measure). The value of the year stays."""
+    (ponto,) = _serie(_ano_440311_eua(**ano), _LISTA_440311, "440311")
+    assert ponto["q"] is None
+    assert ponto["family"] == "volume"
+    assert ponto["v"] == pytest.approx(9.0)
+
+
+def test_snapshot_series_and_list_name_the_same_family():
+    """The snapshot serializes ``products`` and ``productTS`` from the same product list, so
+    every point of a listed code says the family the list says — the invariant the screens
+    assume when they label the axis from the list and route the point by its own."""
+    out = s.serialize_snapshot(
+        {
+            "products": _LISTA_440311,
+            "product_ts": pd.concat(
+                [_ano_440311_eua(), _ano_440311_eua(reference_year=2019, family="volume")]
+            ),
+            "overview_ts": None,
+            "uf_data": None,
+            "quality": None,
+            "value_label": "Valor (US$)",
+        }
+    )
+    (produto,) = out["products"]
+    familias = {p["family"] for p in out["productTS"]["440311"]}
+    assert familias == {produto["family"]} == {"volume"}
+    assert [p["q"] for p in out["productTS"]["440311"]] == [pytest.approx(0.2154)] * 2
+
+
 def test_serialize_snapshot_empty_is_safe():
     out = s.serialize_snapshot(
         {

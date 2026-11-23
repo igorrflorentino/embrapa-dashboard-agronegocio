@@ -845,8 +845,13 @@ def product_ts():
     if err:
         return err
     df = seam.product_ts_by_uf(banco, conv, summary or None)
+    # The product list names each point's family, as in the snapshot (v1.108.8). Asked only
+    # when there is a series: the read is cached, and the snapshot has normally just made it.
+    products = seam.product_list(banco) if df is not None else None
     return jsonify(
-        serializers.serialize_product_ts_by_uf(df, available=seam.product_ts_by_uf_available(banco))
+        serializers.serialize_product_ts_by_uf(
+            df, available=seam.product_ts_by_uf_available(banco), products=products
+        )
     )
 
 

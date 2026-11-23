@@ -94,6 +94,26 @@ mix; `exp_weight` (`'mil t'`) never mixes with them.
 > `code` MUST match the keys of `productTS`. They do — both come from the same Gold
 > product column.
 
+> **A code whose rows mix units names ONE of them, taken from one row (v1.108.8).** `unit`,
+> `unit_native` and `family` leave together, as one
+> `array_agg(struct(family, base_unit, unit_native) order by … limit 1)` per code
+> (`sql.products`), in a total order: a known family before an unknown one (a row in
+> "Sem unidade (N/A)" carries no quantity and says nothing of how the code is measured), then
+> the family with the most rows, the family name, the unit with the most rows inside that
+> family, then `base_unit` and `unit_native`. The rows are grouped by the three fields
+> first, so two candidates always differ in one of them and nothing can tie. `name`,
+> `tabela` and `measure_kind` stay `any_value`: they are constant per code (0 codes with
+> more than one value in the five marts, measured on prod 2026-11-23).
+>
+> Until v1.108.8 each of the three was an independent `any_value`, which skips NULLs and
+> returns whichever row BigQuery reads first. In the UN COMTRADE mart, where 99 of the 100
+> codes mix units (measured on prod 2026-11-23: the real unit beside "Sem unidade (N/A)",
+> and two real units in 20 codes), three identical reads with the result cache off gave
+> 6 codes different answers. 9 codes came out with a combination none of their rows has:
+> 440331–440334 and 440723 as family `desconhecida` with unit `m³`, which left them with no
+> quantity axis at all. COMEX and the three IBGE marts have one unit per code, so the rule
+> changes nothing there.
+
 > **`tabela` travels for EVERY banco since v1.47.2** — including the single-table ones,
 > where the value is constant (PAM `5457`, COMEX `ncm`, COMTRADE `hs`). It
 > was emitted only for PEVS/PPM until then, behind a `_TABELA_SOURCES` set; that set was
@@ -166,9 +186,40 @@ overview** (monthly detail is served by `monthlyData`, §4.3).
 One annual series per product, keyed by the same `code` as `products`.
 
 - `v` = `SUM(value)` ÷ 1e6 (**mi**) — PEVS `val_real_ipca_brl`, trade `val_yearfx_usd`.
-  (`overviewTS.v` in bi = Σ `productTS.v` ÷ 1000 — keep the factor.)
-- `q` = `SUM(qty_native)` × 1000 (PEVS convention).
-- `family` = the product's `family` (→ en).
+  (`overviewTS.v` in bi = Σ `productTS.v` ÷ 1000 — keep the factor.) It sums EVERY row of
+  the code-year, whatever its unit.
+- `family` = the product's `family` (→ en), as `products` lists it, in EVERY point
+  (v1.108.8) — in the snapshot and in `GET /api/product-ts` alike.
+- `q` = the quantity in that family's display unit (mass → mil t, volume → mi m³,
+  count → mi un), read from the family's own track (`q_mass` / `q_vol` / `q_count`, each a
+  `SUM(qty_base)` over the rows of that family only). Rows in another unit add nothing to
+  it. `null` — absent, never 0 — when the year has no quantity in the product's unit (a
+  COMTRADE year with no row in it, or rows in it that carry no quantity), and for the
+  families with no display scale (energia/área/desconhecida).
+
+> **The point's family is the product's, not its year's (v1.108.8).** The SQL still ranks a
+> family per year, by the same keys `products` ranks with and over the rows the series sums;
+> the serializer keeps it only as the fallback for a code the list does not name. A year can
+> be in another unit than its product under a reporter filter: with the United States as
+> reporter, 440311 (listed in m³) has more rows in "Número de itens" than in m³ in
+> 2018–2021. Each point used to carry its year's family (`any_value`), so those years could
+> come out as counts. Perfil do produto, which labels the axis from `products` and plots each
+> point's `q`, then drew item counts on the m³ axis, and `applyFilters`, which routes each
+> point's `q` by the POINT's family, added them to the count total. Measured on prod
+> 2026-11-23: in the Brazil scope the year's family is the product's in every code-year with
+> a known unit. It is `desconhecida` in 3 of 1.404 code-years (Brazil) and 32 of 1.792
+> (every reporter).
+
+> **What `v ÷ q` is NOT (known gap, measured 2026-11-23).** `v` covers every row and `q`
+> only the rows in the product's unit, so the implied price Perfil do produto draws
+> (`v ÷ q`) divides more rows than the quantity covers wherever a year mixes units — the
+> shape CLAUDE.md calls *"the two halves of a ratio must cover the same rows"*. COMTRADE,
+> export + import: in the Brazil scope 15 of 1.401 priced code-years are above 1,5× (worst
+> 200919 in 2002, 12,4×, with 91,9% of its value in rows without the product's unit); over
+> every reporter, 81 of 1.760 are above 1,5× and 227 above 1,1×, holding 7,09% of the value.
+> In all 227, most of the excess is value in rows without the product's unit, not rows in
+> it without a quantity. The fix is a conditioned numerator per point (the value of the rows
+> that have a quantity in the product's unit), which this contract does not carry yet.
 
 The snapshot's series are **national**: the marts carry a UF grain and the snapshot sums it
 away. Under a UF subset `applyFilters` swaps them for the selected UFs' own series from

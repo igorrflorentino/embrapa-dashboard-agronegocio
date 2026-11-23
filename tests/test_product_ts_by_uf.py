@@ -261,6 +261,34 @@ def test_the_serializer_speaks_the_snapshots_units_and_dates_the_values():
     assert out["available"] is True
 
 
+def test_the_serializer_labels_each_point_with_its_products_family():
+    """Like the snapshot (v1.108.8): with the product list, a point carries the product's
+    family and its quantity in that family, whatever unit the year's rows rank first. No
+    code of the UF bancos mixes units today (measured on prod 2026-11-23); this holds the
+    rule for the first one that does, such as an NCM whose unit changes over the years."""
+    pytest.importorskip("flask")
+    from embrapa_dashboard.webapi import serializers
+
+    ano = pd.DataFrame(
+        [
+            {
+                "code": "08055000",
+                "reference_year": 1998,
+                "total_value": 2.0e6,
+                "q_mass": 1.5e3,
+                "q_vol": None,
+                "q_count": 4.0e6,
+                "family": "contagem",
+            }
+        ]
+    )
+    lista = pd.DataFrame([{"code": "08055000", "family": "massa", "unit": "t"}])
+    (ponto,) = serializers.serialize_product_ts_by_uf(ano, products=lista)["productTS"]["08055000"]
+    assert (ponto["family"], ponto["q"]) == ("mass", pytest.approx(1.5))
+    (sem_lista,) = serializers.serialize_product_ts_by_uf(ano)["productTS"]["08055000"]
+    assert sem_lista["family"] == "count"
+
+
 @pytest.mark.parametrize("available", [True, False])
 def test_no_rows_is_an_empty_series_and_the_flag_tells_why(available):
     pytest.importorskip("flask")
@@ -341,6 +369,66 @@ def test_the_route_refuses_a_bad_value_before_the_seam_runs(monkeypatch, query):
 
     monkeypatch.setattr(seam, "product_ts_by_uf", must_not_run)
     assert client.get(f"/api/product-ts?{query}").status_code == 400
+
+
+def test_the_route_names_each_points_family_from_the_product_list(monkeypatch):
+    """The route hands the serializer the banco's product list, the one the snapshot reads,
+    so the per-UF series and the snapshot label a point the same way (v1.108.8)."""
+    from tests.test_webapi_routes import _client
+
+    client = _client(monkeypatch)
+    from embrapa_dashboard.webapi import seam
+
+    ano = pd.DataFrame(
+        [
+            {
+                "code": "2682",
+                "reference_year": 2025,
+                "total_value": 1.0e9,
+                "q_mass": 3.0e5,
+                "q_vol": 7.0e6,
+                "q_count": None,
+                "family": "volume",
+            }
+        ]
+    )
+    pedidos: list[str] = []
+    monkeypatch.setattr(seam, "product_ts_by_uf", lambda banco, conv, summary: ano)
+    monkeypatch.setattr(
+        seam.gateway,
+        "fetch_products",
+        lambda banco: pedidos.append(banco) or pd.DataFrame([{"code": "2682", "family": "massa"}]),
+    )
+    resp = client.get("/api/product-ts?banco=ibge_pevs&states=PA")
+    assert resp.status_code == 200
+    (ponto,) = resp.get_json()["productTS"]["2682"]
+    assert (ponto["family"], ponto["q"]) == ("mass", 300.0)  # 3e5 t → mil t
+    assert pedidos == ["ibge_pevs"]
+
+
+def test_the_route_reads_no_product_list_without_a_series(monkeypatch):
+    """No series (no UF, or a banco with no UF grain) is no product-list read either."""
+    from tests.test_webapi_routes import _client
+
+    client = _client(monkeypatch)
+    from embrapa_dashboard.webapi import seam
+
+    def must_not_run(banco):
+        raise AssertionError("product list read without a series")
+
+    monkeypatch.setattr(seam.gateway, "fetch_products", must_not_run)
+    assert client.get("/api/product-ts?banco=ibge_ppm").status_code == 200
+    assert client.get("/api/product-ts?banco=un_comtrade&states=PA").status_code == 200
+
+
+def test_the_seam_product_list_is_the_snapshots_read(monkeypatch):
+    seam = _seam()
+    lista = pd.DataFrame([{"code": "1", "family": "massa"}])
+    pedidos: list[str] = []
+    monkeypatch.setattr(seam.gateway, "fetch_products", lambda b: pedidos.append(b) or lista)
+    assert seam.product_list("ibge_pam") is lista
+    assert seam.product_list("banco_que_nao_existe") is None
+    assert pedidos == ["ibge_pam"]
 
 
 def test_comtrade_says_it_has_no_reader(monkeypatch):
