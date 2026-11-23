@@ -135,6 +135,28 @@ window.PRODUCAO_FLOOR = { minShare: 0.0001 };
 // poder enunciar a regra que o servidor aplicou, e o teste de paridade prende os dois.
 window.PARTNER_PRICE_FLOOR = { minShare: 0.00001, minAbs: 0.1 };
 
+// Below this share of the value, an implied price is NAMED on screen: it divides only the value
+// of the rows that carry both measures, so it describes part of what was traded. Calibrated in
+// Parceiros (v1.70.0: of the 247 partners with material weight, 75.3% sit above 95% and the
+// tail reaches 56%) and shared with the per-product series since v1.108.10 (UN Comtrade with
+// Brazil as reporter: 36 of 1,401 code-years below 90%, measured 2026-11-23), so the two
+// screens cannot drift apart. `null < 0.9` is true in JS, hence the type test: an UNKNOWN share
+// must never be named as a low one.
+window.PRICED_SHARE_MIN = 0.9;
+window.pricedShareLow = (c) => Number.isFinite(c) && c < window.PRICED_SHARE_MIN;
+
+// A share as a percentage with at least one significant digit. fmtPct's fixed decimals print
+// a coverage of 0.03% as "0,0%", which reads as nothing at all behind the price: the rounding
+// re-creates a zero the data does not have. Measured on prod 2026-11-23, every reporter:
+// 440310 in 2022 has 0.03% of its value behind its price. Below 1% it adds the decimals the
+// first significant digit needs; `minDigits` is the floor (2 in the CSV, like its share column).
+window.fmtPctSig = (x, minDigits = 1) => {
+  if (!Number.isFinite(x)) return '—';
+  const pct = Math.abs(x * 100);
+  const digits = pct > 0 && pct < 1 ? Math.max(minDigits, Math.ceil(-Math.log10(pct))) : minDigits;
+  return window.fmtPct(x, digits);
+};
+
 // Diferença entre duas medidas, preservando a ausência. Para grandezas que já são
 // percentuais (uma participação de mercado, por exemplo), onde a variação se declara em
 // PONTOS PERCENTUAIS e não em variação relativa — deltaPct responderia outra pergunta.

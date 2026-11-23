@@ -182,7 +182,7 @@ overview** (monthly detail is served by `monthlyData`, §4.3).
 > Do **not** emit `q_vol` for COMEX/COMTRADE — those rows carry no volume family in
 > the current scope. Only emit families that exist (group `qty_base` BY `family`).
 
-### 3.3 `productTS` — `{ [code]: [{ y, v, q, family, rows }] }`
+### 3.3 `productTS` — `{ [code]: [{ y, v, q, vPriced, qPriced, family, rows }] }`
 One annual series per product, keyed by the same `code` as `products`.
 
 - `v` = `SUM(value)` ÷ 1e6 (**mi**) — PEVS `val_real_ipca_brl`, trade `val_yearfx_usd`.
@@ -196,6 +196,14 @@ One annual series per product, keyed by the same `code` as `products`.
   it. `null` — absent, never 0 — when the year has no quantity in the product's unit (a
   COMTRADE year with no row in it, or rows in it that carry no quantity), and for the
   families with no display scale (energia/área/desconhecida).
+- `vPriced` / `qPriced` (v1.108.10) = the two halves of the implied price, over the SAME rows:
+  the value (mi, like `v`) and the quantity (the scale of `q`) of the rows of the product's
+  family track that carry BOTH measures (`priced_value_<track>` / `priced_qty_<track>`, from
+  `sql._priced_sums`, one condition for both). The price is `vPriced ÷ qPriced`, never
+  `v ÷ q`; `vPriced ÷ v` is how much of the year's value stands behind it. Both `null` —
+  absent, never 0 — when no row of the year has both, and for the families with no display
+  scale. PPM's herd rows have no value, so they add to neither half (the value side reads
+  the flow rows only, like `v`).
 - `rows` = `SUM(source_rows)`, the Gold rows behind the point (v1.108.9). Only the
   snapshot's read asks for it (`with_rows=True`); the per-UF read of §3.6 does not, since
   the counter reads the UF grid there. The hero's "Linhas" counter sums it (§3.5). Like `v`,
@@ -214,16 +222,30 @@ One annual series per product, keyed by the same `code` as `products`.
 > a known unit. It is `desconhecida` in 3 of 1.404 code-years (Brazil) and 32 of 1.792
 > (every reporter).
 
-> **What `v ÷ q` is NOT (known gap, measured 2026-11-23).** `v` covers every row and `q`
-> only the rows in the product's unit, so the implied price Perfil do produto draws
-> (`v ÷ q`) divides more rows than the quantity covers wherever a year mixes units — the
-> shape CLAUDE.md calls *"the two halves of a ratio must cover the same rows"*. COMTRADE,
-> export + import: in the Brazil scope 15 of 1.401 priced code-years are above 1,5× (worst
-> 200919 in 2002, 12,4×, with 91,9% of its value in rows without the product's unit); over
-> every reporter, 81 of 1.760 are above 1,5× and 227 above 1,1×, holding 7,09% of the value.
-> In all 227, most of the excess is value in rows without the product's unit, not rows in
-> it without a quantity. The fix is a conditioned numerator per point (the value of the rows
-> that have a quantity in the product's unit), which this contract does not carry yet.
+> **Why the price has its own pair (v1.108.10).** `v` covers every row and `q` only the rows
+> in the product's unit, so `v ÷ q` — what Perfil do produto drew until v1.108.10 — divided
+> more rows than the quantity covers wherever a year mixes units: the shape CLAUDE.md calls
+> *"the two halves of a ratio must cover the same rows"*. Measured on prod 2026-11-23 with the
+> readers' own SQL (COMTRADE, export + import, nominal US$):
+> - Brazil scope: 15 of 1.401 priced code-years were above 1,5× (38 above 1,1×, 2,11% of the
+>   value). Worst, 200919 in 2002: US$ 69.906/t before, US$ 5.649/t now, with 8,08% of the
+>   year's value behind it;
+> - every reporter: 81 of 1.760 above 1,5× and 227 above 1,1×, holding 7,09% of the value.
+>   Worst, 440310 in 2022: US$ 52.514/m³ before (3.158×), US$ 16,63/m³ now, over 0,03% of
+>   the value. The three code-years v1.108.8 gave a quantity axis: 440332/2000 7,4×,
+>   440333/2001 367×, 440334/2000 315×.
+>
+> In all 227, most of the excess was value in rows without the product's unit, not rows in it
+> without a quantity. Now Perfil do produto and the per-product CSV
+> (`preco_implicito_<moeda>`, `parcela_do_valor_no_preco`) divide `vPriced ÷ qPriced`, and a
+> year whose `vPriced ÷ v` is below 0,9 (`window.PRICED_SHARE_MIN`, shared with the
+> partners' `pricedShare`, §4.2) is named on screen with its share — 36 code-years in
+> the Brazil scope, 218 over every reporter. In PEVS, PAM, PPM and COMEX the two forms give
+> the same number (0 code-years differ under the nominal, IPCA and IGP-DI columns, measured
+> the same day), so there the change is one of construction. The pair reads no column the
+> series did not already read: every read processes the same bytes as before.
+> The per-product CSV writes an absent quantity as an empty cell (until v1.108.10,
+> `(d.q || 0)` wrote 0).
 
 The snapshot's series are **national**: the marts carry a UF grain and the snapshot sums it
 away. Under a UF subset `applyFilters` swaps them for the selected UFs' own series from

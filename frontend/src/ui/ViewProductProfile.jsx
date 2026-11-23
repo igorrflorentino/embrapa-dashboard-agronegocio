@@ -8,6 +8,8 @@
 import './RecorteNote.jsx';
 // window.countProductUnit — what a count product counts, named on every label below.
 import './countUnits.js';
+// window.CollapsingNameList — names the years whose price rests on part of the value.
+import './CollapsingNameList.jsx';
 
 const { useState: usePPState } = React;
 
@@ -176,9 +178,18 @@ function ViewProductProfile({ families, summary, database, conventions }) {
   // reaparecer como zero — `null * 1e6 === 0` em JS.
   const valueSeries = win.map(d => ({ y: d.y, v: window.scalePresent(d.v, 1e6 * cvf) }));  // absolute currency
   const qtySeries   = win.map(d => ({ y: d.y, q: window.scalePresent(d.q, qtyMul) }));     // display unit (×mul)
-  const preco = (d) => window.ratioPresent(window.scalePresent(d.v, 1e6 * cvf),
-                                           window.scalePresent(d.q, qtyMul));
+  // The two halves of the price cover the SAME rows (v1.108.10): the value and the quantity of
+  // the rows that carry both measures in the product's unit (vPriced, qPriced). `d.v ÷ d.q`
+  // divided every row's value by the quantity of only the rows in that unit; in UN Comtrade,
+  // 200919 in 2002 with Brazil as reporter read US$ 69,906/t where the priced rows give
+  // US$ 5,649/t, with 8.08% of the year's value behind it.
+  const preco = (d) => window.ratioPresent(window.scalePresent(d.vPriced, 1e6 * cvf),
+                                           window.scalePresent(d.qPriced, qtyMul));
   const priceSeries = win.map(d => ({ y: d.y, v: preco(d) }));                             // moeda/unidade
+  // How much of the year's value stands behind its price, and the years where that is too
+  // little to go unsaid (window.PRICED_SHARE_MIN, shared with Parceiros).
+  const parcelaDoPreco = (d) => window.ratioPresent(d.vPriced, d.v);
+  const precoParcial = win.filter(d => preco(d) != null && window.pricedShareLow(parcelaDoPreco(d)));
   // Share: by VALUE for a flow; by same-family QUANTITY for a value-less stock.
   const parte = (d) => window.scalePresent(
     isStock ? window.ratioPresent(d.q, totalQByYear[d.y]) : window.ratioPresent(d.v, totalByYear[d.y]),
@@ -201,6 +212,7 @@ function ViewProductProfile({ families, summary, database, conventions }) {
   // v1.49.0 numa forma que a varredura não cobre: multiplicação não é divisão.
   const lastQtyScaled = window.scalePresent(last.q, qtyMul);
   const lastPrice = preco(last);
+  const lastParcela = lastPrice == null ? null : parcelaDoPreco(last);
   const lastShare = parte(last);
   // Historical peak headcount (drives the stock KPI that replaces "Valor")
   const peak = win.reduce((m, d) => (d.q > m.q ? d : m), win[0] || { y: last.y, q: 0 });
@@ -302,7 +314,9 @@ function ViewProductProfile({ families, summary, database, conventions }) {
             value={lastPrice == null
               ? '—'
               : fx.symbol + ' ' + lastPrice.toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + ' /' + perUnit}
-            sub="valor ÷ quantidade"
+            sub={window.pricedShareLow(lastParcela)
+              ? `valor ÷ quantidade · apoiado em ${window.fmtPctSig(lastParcela)} do valor`
+              : 'valor ÷ quantidade'}
             spark={priceSeries.slice(-12)}
             sparkKey="v"
             sparkColor="var(--viz-7)"
@@ -370,6 +384,20 @@ function ViewProductProfile({ families, summary, database, conventions }) {
                 title={`${fx.symbol} por ${perUnit} · ${yearStart}–${yearEnd}`}
               />
               <window.LineChart data={priceSeries} label={fx.symbol + '/' + perUnit} valueKey="v" color="var(--viz-7)" height={220} trend />
+              {/* The price stands on the rows with both measures; a year where they hold too
+                  little of the value says so, by name, as Parceiros does for a partner. */}
+              <window.CollapsingNameList
+                titulo="Preço apoiado em parte do valor"
+                itens={precoParcial.map(d => `${d.y} (${window.fmtPctSig(parcelaDoPreco(d))})`)}
+                substantivo="anos"
+                regra={
+                  <>
+                    Nesses anos, parte do valor está em registros sem quantidade na unidade do
+                    produto: em outra unidade, ou sem quantidade alguma. Um preço só pode ser
+                    calculado onde valor e quantidade existem juntos, e a porcentagem é quanto do
+                    valor do ano sustenta o preço exibido. A série de valor soma o ano inteiro.
+                  </>
+                } />
             </div>
             <div className="card">
               <window.SectionHeader

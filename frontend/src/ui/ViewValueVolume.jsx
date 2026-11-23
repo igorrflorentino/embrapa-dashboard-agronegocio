@@ -44,10 +44,12 @@ function ViewValueVolume({ families, conventions, summary, database }) {
       code,
       name: PRODS.find(p => p.code === code)?.name || code,
       family: data[0]?.family,
-      // PRODUCT_TS.q is in mil units (mil t / mi m³); scale to display unit.
+      // PRODUCT_TS.q is in mil units (mil t / mi m³); scale to display unit. scalePresent, not
+      // `d.q * mul`: a year with no quantity in the product's unit (UN Comtrade, since v1.108.8)
+      // has q null, and `null * mul === 0` drew it as a layer at zero inside the stack.
       data: data.map(d => ({
         ...d,
-        q: d.q * (family === 'mass' ? massMul : volMul),
+        q: window.scalePresent(d.q, family === 'mass' ? massMul : volMul),
       })),
       color: COLORS[i % COLORS.length],
     }))
