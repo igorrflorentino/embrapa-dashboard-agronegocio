@@ -110,6 +110,20 @@ mix; `exp_weight` (`'mil t'`) never mixes with them.
 > The UI does **not** show a table filter for single-table bancos — a one-option segment
 > would be noise. The symmetry is in the data and the code, not on screen.
 
+> **Under a PEVS origin (`tb=289|291`) the COUNTS follow the origin (v1.108.5).** The list
+> stays banco-wide (both halves), so the hero keeps the banco's denominator ("PRODUTOS
+> 7 / 10"). ONE rule narrows it, `window.productsInOrigin(products, tabela)`
+> (`ui/productOrigin.js`): `applyFilters` returns it as **`productUniverse`** and counts
+> `selectedProducts` inside it, the filter chip counts over it ("Todos (7)"), and the picker
+> offers only it. A table that no produto of the banco carries (a hand-edited `tb=289` on
+> COMEX, whose readers ignore it) narrows nothing. Inside the menu the selection keeps what
+> it holds of the other origin, unseen: switching the origin back and forth, or "Selecionar
+> tudo" / "Limpar" / "Inverter" (which act on what is listed), lose nothing. Only the
+> origin's part is counted and applied, and a URL basket that crosses the halves is counted
+> the same way. Until v1.108.5 the NUMBERS followed the origin (v1.108.4) and the counts did
+> not: under "Extração vegetal" the screen read "PRODUTOS 10 / 10", "LINHAS 1,4 mi de
+> 1,4 mi", "Todos (10)" and "10 de 10 produtos", and the picker listed all 10.
+
 > **Livestock (IBGE PPM) adds two things.** (1) `products` carries an extra
 > **`measure_kind`** (`stock` | `flow`) — emitted ONLY for PPM (the gateway's
 > `with_measure_kind` flag; the column lives only in `serving_ppm_annual`). `stock` =
@@ -196,6 +210,21 @@ added.
 - `count` = row count; `share` = count ÷ total (Σ ≈ 1).
 - `label`, `color` = mapped by the React frontend from `id` (keep the palette in
   the frontend; backend ships only `id`+`count`).
+
+**`qualityByProduct` — `[{ code, tabela, name, rows, <flag id>: share, … }]`**, one entry
+per produto (matched on `(code, tabela)`, its identity), ranked by `rows`; banco-wide, like
+`quality`. The flag shares divide by `rows`, and since v1.108.5 `rows` itself travels too:
+the hero's "Linhas" counter weighs a selection by it. `_shares.productShare` is the
+selection's share of the banco's ROWS (Σ `rows` of the selected produtos ÷ Σ `rows`), no
+longer its share of PRODUCTS, because products are far from even (prod, 2026-11-23): a
+COMEX NCM code holds from 1 to 32,549 of the 496,160 rows the panel reads; PAM's açaí,
+which starts in 2015, 60,557 beside 257,294 for most crops (a basket of açaí alone read
+"239 mil" and is 61 mil); the 3 PEVS silvicultura produtos are 3 of 10 but 20.6% of the
+rows. Σ `rows` equals Σ `quality[].count`, and every `products` entry finds its `rows` by
+`(code, tabela)` (checked in all five bancos, prod 2026-11-23, PPM's two tables included). A payload
+without `rows` falls back to the count share, so the counter keeps an estimate rather than
+none. The counter stays an ESTIMATE across dimensions (the period and the UFs scale every
+produto alike); it is exact along the product one.
 
 ### 3.6 Sub-UF geography cascade — `geo-mesh` + município cube (IBGE PEVS/PAM/PPM)
 The geography filter descends BELOW UF via three dedicated endpoints (the snapshot stays
@@ -301,6 +330,7 @@ município passes the cascade iff it clears every active facet (intersection).
   - *Row counts.* `_shares.muniShare` (the municípios in scope over the whole mesh) sizes
     "Linhas" under a recorte; `stateShare` counted whole states, so Portel and Breves read as
     all of Pará. Null until the recorte resolves: the counter shows "…" or "—" meanwhile.
+    The product multiplier beside it is `productShare`, a share of ROWS since v1.108.5 (§3.5).
 
 ### 3.7 `valueGap` — the periods the active convention cannot value (every banco)
 `{ years, partial, months, valuedRange, share: null }` or `null`.

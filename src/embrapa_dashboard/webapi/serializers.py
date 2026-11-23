@@ -387,8 +387,16 @@ def serialize_source_meta(meta: dict | None) -> dict:
 
 
 def _quality_by_product(df: pd.DataFrame | None, top: int = 500) -> list[dict]:
-    """product×flag counts → [{code, tabela, name, OK, MISSING_VALUE, …}] per-product
+    """product×flag counts → [{code, tabela, name, rows, OK, MISSING_VALUE, …}] per-product
     flag shares (fractions 0-1; FlagBars keys on the flag *ids*), RANKED by row volume.
+
+    ``rows`` is the produto's row count, the sum its shares divide by. The hero's "Linhas"
+    counter sums it over the selection (v1.108.5) instead of scaling the banco's total by
+    the selection's share of PRODUCTS, and products are far from even (prod, 2026-11-23): in
+    COMEX one NCM code holds 1 row and another 32,549, of the 496,160 the panel reads (118
+    visible codes); in PAM açaí holds 60,557
+    (it starts in 2015) beside 257,294 for most crops; and the 3 PEVS silvicultura produtos
+    are 3 of 10 but 20.6% of the rows (284,673 of 1,383,211), so "Silvicultura" read +46%.
 
     Keyed on (code, tabela) — the produto's identity — not on the code alone, and
     ``tabela`` travels to the client so a consumer can disambiguate two produtos that
@@ -422,6 +430,9 @@ def _quality_by_product(df: pd.DataFrame | None, top: int = 500) -> list[dict]:
         row = {"code": code, "name": slot["name"]}
         if tabela:
             row["tabela"] = tabela
+        # `total` is a DIVISOR, floored so a degenerate slot cannot divide by zero; the raw
+        # count travels apart, unfloored, because the hero's "Linhas" counter sums it.
+        row["rows"] = _int_or_none(sum(slot["counts"].values()))
         for flag in _FLAG_KEY:  # the real Gold flag ids — absent flags read 0
             row[flag] = slot["counts"].get(flag, 0.0) / total
         out.append(row)

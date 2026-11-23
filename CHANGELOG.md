@@ -7,6 +7,96 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.108.5] - 2026-11-23
+
+**Sob um filtro de origem do IBGE PEVS, as contagens de produtos e de linhas passam a ser as da
+metade escolhida.** Fecha a pendência das Notas da v1.108.4. Os números (valor, volume, massa,
+HHI) já seguiam a origem desde a v1.108.4; as contagens não. Com "Extração vegetal (nativa)"
+(`tb=289`), "Seleção ativa" dizia "PRODUTOS 10 / 10" e "LINHAS 1,4 mi de 1,4 mi", o resumo dos
+filtros dizia "Todos (10)", a Visão geral "10 de 10 produtos", e o seletor de produtos listava os
+10, inclusive os 3 da silvicultura. Com "Silvicultura (plantada)" (`tb=291`), tudo igual.
+
+### Corrigido
+- **Uma regra só decide quais produtos uma origem oferece:** `window.productsInOrigin`
+  (`frontend/src/ui/productOrigin.js`, novo). A seleção (`applyFilters`), "Seleção ativa", o
+  resumo dos filtros, a Visão geral e o seletor passam a usá-la. Medido numa prévia local contra a
+  produção (só leitura), em 2026-11-23:
+
+  | origem | Seleção ativa · produtos | Seleção ativa · linhas | resumo dos filtros | Visão geral |
+  |---|---|---|---|---|
+  | Extração vegetal (289) | 7 / 10 | 1,1 mi de 1,4 mi | Todos (7) | 7 de 10 produtos |
+  | Silvicultura (291) | 3 / 10 | 285 mil de 1,4 mi | Todos (3) | 3 de 10 produtos |
+  | Ambas | 10 / 10 | 1,4 mi de 1,4 mi | Todos (10) | 10 de 10 produtos |
+
+  Antes da correção, as duas primeiras linhas da tabela eram iguais à terceira. O denominador de
+  "Seleção ativa" e da Visão geral continua o do banco (10), porque essas telas descrevem o
+  acervo; o resumo dos filtros conta sobre a origem, porque é o que ela oferece.
+- **O seletor de produtos lista só os produtos da origem.** Sob a extração, "PRODUTOS · PEVS — 7
+  de 7 selecionados" e, no topo do menu, "7 produtos (todos)". A escolha guarda, sem mostrar, o
+  que tem da outra metade: trocar a origem dentro do menu, ou usar "Selecionar tudo", "Limpar" e
+  "Inverter" (que agem sobre o que está listado), não perde nada. Ao aplicar, só a parte da origem
+  é enviada, e todos os produtos dela valem "Todos", sem recorte.
+- **"Linhas" passa a medir a seleção pelas linhas de cada produto, e não pela contagem de
+  produtos.** O servidor passa a mandar as linhas de cada produto (`qualityByProduct[].rows`, a
+  soma pela qual as frações da qualidade já dividiam), e o contador soma as dos produtos
+  escolhidos. Antes, multiplicava o total pela fração de PRODUTOS escolhidos, e os produtos não
+  têm o mesmo número de linhas (produção, 2026-11-23):
+  - PEVS: cada produto da extração tem 156.934 linhas, e cada um da silvicultura, 94.891. Os 3 da
+    silvicultura são 3 de 10 produtos, mas 20,6% das linhas (284.673 de 1.383.211). Pela
+    contagem, a silvicultura leria 415 mil (+46%), e a extração 968 mil, no lugar de 1,1 mi.
+  - PAM: o açaí começa em 2015 e tem 60.557 linhas, ao lado de 257.294 na maioria das lavouras.
+    Uma cesta só de açaí lia "239 mil de 3,3 mi" e passa a ler "61 mil de 3,3 mi".
+  - COMEX: um código NCM tem de 1 a 32.549 das 496.160 linhas que o painel lê.
+
+  Nos cinco bancos, todo produto acha as suas linhas pela identidade (código e tabela), e a soma é
+  igual ao total da qualidade: PEVS 1.383.211, PAM 3.349.171, PPM 3.615.864 (com as duas tabelas,
+  3939 e 74), COMEX 496.160 e UN COMTRADE 2.550.537. Uma resposta sem o campo volta à fração por
+  contagem, em vez de não mostrar nada.
+- **Uma cesta igual à origem inteira deixa de pedir o cubo UF × ano.** Com `tb=289` e os 7
+  produtos da extração na cesta (um link montado à mão, por exemplo), a cesta era tratada como um
+  recorte de produtos, porque 7 é menos que 10, e pedia `/api/geo-yearly` para não estreitar
+  nada. Agora ela é comparada com os produtos da origem.
+- **Uma tabela que o banco não tem não estreita nada.** Um `tb=289` colado num link do COMEX, cujos
+  leitores ignoram a tabela, continua mostrando "Todos (118)", "118 / 118" e "496 mil de 496 mil"
+  (prévia). Esconder todos os produtos ao lado de números que são de todos seria pior que o
+  defeito corrigido.
+
+### Alterado
+- `serializers._quality_by_product` passa a emitir `rows` em cada produto. As frações por marca
+  de qualidade não mudam.
+- O contrato está em `docs/frontend_data_contract.md`: §3.1 (as contagens sob uma origem e o
+  `productUniverse`), §3.5 (`qualityByProduct`, que não estava documentado) e §3.6.
+
+### Testes
+- vitest, 28 testes novos:
+  - `frontend/src/ui/productOrigin.test.js`, novo, com 14: a regra, e `applyFilters` com os 10
+    produtos do PEVS e as linhas medidas na produção (cada metade, "Ambas", uma cesta que cruza as
+    metades, uma resposta sem `rows`, uma tabela que o banco não tem, e quando o cubo da cesta é
+    ou não pedido);
+  - `frontend/src/data/chipCoverage.test.js`, 7: o total do resumo conta sobre a origem, e
+    `resolveChipBasket`, a cesta que o resumo conta, saiu do `main.jsx` para poder ser testada;
+  - `frontend/src/ui/FilterMenu.cov.test.jsx`, 4: o seletor sob cada origem, a troca de origem
+    dentro do menu sem perder escolhas, e o caso sem origem;
+  - `frontend/src/ui/MainScreen.cov.test.jsx`, 3: "PRODUTOS 7 / 10", "0 / 10" para uma cesta só
+    da outra metade (o que a tela desenha), e a forma antiga do resultado de `applyFilters`.
+- pytest: os dois testes de `_quality_by_product` conferem `rows`.
+- Contraprova: com o código do `main` (mantida só a regra nova, para os testes poderem carregar),
+  20 dos 28 testes novos falham, todos pelo motivo esperado: 10 onde deveria haver 7, 0,2 (a
+  fração por contagem) onde deveria haver 0,182 (a fração por linhas), "2 / 10" onde a tela
+  desenha 0. Os 8 que passam são os casos que não podem mudar: os 4 da própria regra, a tabela
+  que o banco não tem, a regra antiga do cubo sem origem, "Seleção ativa" com a forma antiga do
+  resultado e o seletor sem origem. Com o `serializers.py` do `main`, os dois testes de pytest
+  falham (`KeyError: 'rows'`).
+- pytest: 2603 passando (15 pulados no Windows, que só rodam no Linux). vitest: 1924 passando em
+  104 arquivos.
+
+### Notas
+- **"Linhas" continua uma estimativa entre dimensões.** O contador multiplica a fração de linhas
+  dos produtos escolhidos pelas frações de anos e de UFs do banco inteiro, como se todo produto
+  tivesse linhas em todos os anos e UFs. Ao longo dos produtos, agora é exato. Entre dimensões,
+  não: só o açaí do PAM com o período 1990–2000, por exemplo, ainda estima cerca de 13 mil linhas
+  pela fórmula, e o açaí não tem nenhuma antes de 2015.
+
 ## [1.108.4] - 2026-11-19
 
 **Sob um filtro de origem do IBGE PEVS, as séries por produto passam a ser as da metade

@@ -418,7 +418,13 @@ function MainScreen({ filters, view = 'overview', database = 'ibge_pevs', infoPa
   // not the synthetic window.PRODUCTS the prov getter reads (12). Fallback to
   // prov only when the snapshot hasn't loaded.
   const productsTotal = (_f && _f.productsTotal != null) ? _f.productsTotal : prov.productsTotal;
-  const productsSelected = basket == null ? productsTotal : basket.length;
+  // The selection is the engine's (applyFilters), never the raw basket: the basket ∩ the
+  // ORIGIN's products (v1.108.5). Under "Extração vegetal" the 3 silvicultura produtos are
+  // outside it, so the counter reads "7 / 10", as "UFs" and "Linhas" beside it already read
+  // a part over the banco's whole. Until then it read "10 / 10" beside the extração's numbers.
+  const productsSelected = (_f && _f.productsTotal != null && Array.isArray(_f.selectedProducts))
+    ? _f.selectedProducts.length
+    : (basket == null ? productsTotal : basket.length);
   // Total rows = sum of the snapshot's quality-flag counts (every Gold row carries
   // exactly one quality flag, so the sum IS the row count). Live ⇒ matches the real
   // table (1,35 mi for PEVS, measured 2026-09-08) instead of prov.totalRows' synthetic

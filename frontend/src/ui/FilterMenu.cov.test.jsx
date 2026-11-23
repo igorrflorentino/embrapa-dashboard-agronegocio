@@ -755,3 +755,113 @@ describe('FilterMenu — the IBGE mesh loading, failed or empty', () => {
     expect(payload.geo).toBe('1 UF · 2 municípios');
   });
 });
+
+// ── Sob uma origem do PEVS, o seletor oferece só os produtos dela (v1.108.5) ─────────────────
+// Até a v1.108.4 o seletor listava os 10 produtos sob qualquer metade e o resumo dizia "10
+// produtos (todos)", ao lado de números que já eram os da metade escolhida. Um produto é
+// (banco, tabela, código): a origem estreita a LISTA, não só os números.
+describe('FilterMenu — sob uma origem, o seletor oferece só os produtos dela', () => {
+  const EXTRACAO = [
+    ['3403', 'Açaí (fruto)'], ['3404', 'Castanha-de-caju'], ['3405', 'Castanha-do-pará'],
+    ['3433', 'Carvão vegetal'], ['3434', 'Lenha'], ['3435', 'Madeira em tora'],
+    ['3450', 'Pinheiro brasileiro (madeira em tora)'],
+  ].map(([code, name]) => ({ code, name, unit: 't', family: 'mass', tabela: '289' }));
+  const SILVICULTURA = [['3455', 'Carvão vegetal'], ['3456', 'Lenha'], ['3457', 'Madeira em tora']]
+    .map(([code, name]) => ({ code, name, unit: 't', family: 'mass', tabela: '291' }));
+  const PEVS = [...EXTRACAO, ...SILVICULTURA];
+  const codigos = (lista) => lista.map((p) => p.code);
+
+  beforeEach(() => {
+    window.TABELA_OPTIONS = {
+      ibge_pevs: [
+        { value: 'all', label: 'Ambas' },
+        { value: '289', label: 'Extração vegetal (nativa)', short: 'extração' },
+        { value: '291', label: 'Silvicultura (plantada)', short: 'silvicultura' },
+      ],
+    };
+    window.tabelaOptionsFor = (id) => window.TABELA_OPTIONS[id] || null;
+    window.dataStore = {
+      get: () => ({ products: PEVS, overviewTS: [{ y: 1986 }, { y: 2025 }] }),
+      meta: () => ({ table: 'gold_pevs_production' }),
+    };
+  });
+  afterEach(() => {
+    delete window.tabelaOptionsFor;
+    delete window.TABELA_OPTIONS;
+  });
+
+  const secaoProdutos = (c) => [...c.querySelectorAll('.fm-section')]
+    .find((s) => (s.querySelector('.fm-section-label') || {}).textContent?.includes('Produtos'));
+  const listados = (c) => [...secaoProdutos(c).querySelectorAll('.fm-grid .fm-code')]
+    .map((n) => n.textContent);
+  const origem = (c, label) => fireEvent.click(
+    [...c.querySelectorAll('.seg-opt')].find((b) => b.textContent === label));
+  const caixa = (c, code) => [...secaoProdutos(c).querySelectorAll('.fm-grid .fm-check')]
+    .find((l) => l.querySelector('.fm-code').textContent === code).querySelector('input');
+
+  it('Extração vegetal: lista os 7, conta sobre eles, e "todos eles" é aplicado sem recorte', () => {
+    const onApply = vi.fn();
+    const { container } = render(
+      <FilterMenu open banco="ibge_pevs" value={{ tabela: '289' }} onClose={() => {}} onApply={onApply} />,
+    );
+    expect(listados(container)).toEqual(codigos(EXTRACAO));
+    expect(container.textContent).toContain('7 de 7 selecionados');
+    expect(container.querySelector('.fm-summary').textContent).toContain('7 produtos (todos)');
+    fireEvent.click(container.querySelector('.btn-primary'));
+    const payload = onApply.mock.calls[0][0];
+    expect(payload.products).toBe('Todos (7)');
+    expect(payload.basket).toBeNull();
+    expect(payload.tabela).toBe('289');
+  });
+
+  it('uma escolha dentro da origem é aplicada como tal, contada sobre a origem', () => {
+    const onApply = vi.fn();
+    const { container } = render(
+      <FilterMenu open banco="ibge_pevs" value={{ tabela: '289' }} onClose={() => {}} onApply={onApply} />,
+    );
+    fireEvent.click(caixa(container, '3403'));
+    expect(container.textContent).toContain('6 de 7 selecionados');
+    fireEvent.click(container.querySelector('.btn-primary'));
+    const payload = onApply.mock.calls[0][0];
+    expect(payload.products).toBe('6 de 7');
+    // Só códigos da extração: os 3 da silvicultura, marcados no estado, não vão junto.
+    expect(payload.basket).toEqual(codigos(EXTRACAO).filter((c) => c !== '3403'));
+  });
+
+  it('trocar a origem dentro do menu refaz a lista sem perder nenhuma escolha', () => {
+    const onApply = vi.fn();
+    const { container } = render(
+      <FilterMenu open banco="ibge_pevs" value={null} onClose={() => {}} onApply={onApply} />,
+    );
+    expect(listados(container)).toEqual(codigos(PEVS));
+    fireEvent.click(caixa(container, '3456'));               // Lenha, silvicultura
+    expect(container.textContent).toContain('9 de 10 selecionados');
+
+    origem(container, 'Extração vegetal (nativa)');
+    expect(listados(container)).toEqual(codigos(EXTRACAO));
+    expect(container.textContent).toContain('7 de 7 selecionados');
+
+    origem(container, 'Ambas');                               // a Lenha desmarcada segue desmarcada
+    expect(container.textContent).toContain('9 de 10 selecionados');
+
+    origem(container, 'Silvicultura (plantada)');
+    expect(listados(container)).toEqual(codigos(SILVICULTURA));
+    expect(container.textContent).toContain('2 de 3 selecionados');
+    fireEvent.click(container.querySelector('.btn-primary'));
+    const payload = onApply.mock.calls[0][0];
+    expect(payload.tabela).toBe('291');
+    expect(payload.basket).toEqual(['3455', '3457']);
+    expect(payload.products).toBe('2 de 3');
+  });
+
+  it('contraprova: sem origem, a lista e as contagens são as do banco inteiro', () => {
+    const onApply = vi.fn();
+    const { container } = render(
+      <FilterMenu open banco="ibge_pevs" value={null} onClose={() => {}} onApply={onApply} />,
+    );
+    expect(container.textContent).toContain('10 de 10 selecionados');
+    fireEvent.click(container.querySelector('.btn-primary'));
+    expect(onApply.mock.calls[0][0].products).toBe('Todos (10)');
+    expect(onApply.mock.calls[0][0].basket).toBeNull();
+  });
+});
