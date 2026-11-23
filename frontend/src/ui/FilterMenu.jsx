@@ -24,6 +24,11 @@
 // parent leaves its children UNSELECTED (re-pick them, or use
 // "Selecionar tudo") — enforced by the cascade-pruning effects below.
 
+// productsInOrigin: the products one origin (SIDRA table) offers, which the picker lists
+// (v1.108.5). Imported here, not left to main.jsx's script order, because the tests load
+// this file alone.
+import './productOrigin.js';
+
 const { useState, useMemo } = React;
 
 // --- Domain data ---------------------------------------------------
@@ -563,15 +568,29 @@ function FilterMenu({ open = false, banco = 'ibge_pevs', value, onClose, onApply
   // away in Silver), simply never appears. `fluxo` is the one banco-specific dim
   // wired functional (server-side); see window.bancoFilterDims for the contract.
 
+  // Origem da produção (PEVS). Declared here, above the product list, because it narrows
+  // the list: a produto's identity is (banco, tabela, código), and the picker offers only the
+  // chosen origin's produtos (v1.108.5). 'all' = both halves.
+  const [origem, setOrigem] = useState((value && value.tabela) || 'all');
+
   // Active banco's product universe (NOT the hardcoded PEVS list) so the picker
   // shows the right commodities/codes per banco (NCM for COMEX, HS6 for
   // Comtrade, …). For PEVS this equals window.PRODUCTS → behavior unchanged.
-  const PRODS = useMemo(() => {
+  // `tabela` rides along: it is what the origin narrows by.
+  const PRODS_ALL = useMemo(() => {
     const snap = (window.dataStore && window.dataStore.get && window.dataStore.get(banco))
               || (window.snapshotFor && window.snapshotFor(banco)) || null;
     return ((snap && snap.products) || window.PRODUCTS || [])
-      .map(p => ({ code: p.code, name: p.name, unit: p.unit, family: p.family }));
+      .map(p => ({ code: p.code, name: p.name, unit: p.unit, family: p.family, tabela: p.tabela }));
   }, [banco]);
+  // What the picker lists, counts and applies: the chosen origin's produtos, every produto
+  // without one (v1.108.5). Under "Extração vegetal" the 3 silvicultura produtos are not
+  // listed, and the selection is counted over the 7 offered. Until then the picker listed
+  // all 10 and the summary read "10 produtos (todos)" under either half. What the selection
+  // holds of the other origin stays in it, unseen, so switching the origin back and forth
+  // inside the menu loses nothing; only the part on offer is counted and applied
+  // (`productsVisible`, below).
+  const PRODS = useMemo(() => window.productsInOrigin(PRODS_ALL, origem), [PRODS_ALL, origem]);
 
   // A `multi-tree` product dim (COMEX NCM, Comtrade HS6) renders the picker as an
   // expandable SH-prefix tree instead of the flat grid; PEVS/PAM/PPM ('products') stay
@@ -638,7 +657,7 @@ function FilterMenu({ open = false, banco = 'ibge_pevs', value, onClose, onApply
   const QUICK_RANGES = useMemo(() => buildQuickRanges(yearStart, yearEnd), [yearStart, yearEnd]);
 
   // multi-selects (Sets)
-  const [products, setProducts] = useState(new Set(PRODS.map(p => p.code)));
+  const [products, setProducts] = useState(new Set(PRODS_ALL.map(p => p.code)));
   const [flags,    setFlags]    = useState(new Set(QUALITY.map(f => f.flag)));
   // Geo selection (nations → regions → states → municípios) + cascade pruning +
   // eligibility live in a dedicated, unit-tested hook (useGeoCascade.js). Defaults:
@@ -742,7 +761,7 @@ function FilterMenu({ open = false, banco = 'ibge_pevs', value, onClose, onApply
   const [customs, setCustoms] = useState((value && value.customs) || 'all');
   // Tipo de mercado (server-side, COMTRADE only). 'all' = every purpose.
   const [market, setMarket] = useState((value && value.market) || 'all');
-  const [origem, setOrigem] = useState((value && value.tabela) || 'all');
+  // (Origem da produção is declared above the product list, which it narrows.)
   const [niveis, setNiveis] = useState(
     new Set((value && value.niveis) || (nivelOptions || []).map((o) => o.value)),
   );
@@ -766,7 +785,7 @@ function FilterMenu({ open = false, banco = 'ibge_pevs', value, onClose, onApply
   React.useEffect(() => {
     if (open && !wasOpen.current) {
       const v = value || {};
-      setProducts(v.basket  != null ? new Set(v.basket)  : new Set(PRODS.map(p => p.code)));
+      setProducts(v.basket  != null ? new Set(v.basket)  : new Set(PRODS_ALL.map(p => p.code)));
       setFlags(   v.flags   != null ? new Set(v.flags)   : new Set(QUALITY.map(f => f.flag)));
       setNations( v.nations != null ? new Set(v.nations) : new Set(['BR']));
       // States travel in the deep-link; regions/nations do NOT. Seed states from the
@@ -855,6 +874,12 @@ function FilterMenu({ open = false, banco = 'ibge_pevs', value, onClose, onApply
       p.name.toLowerCase().includes(q) || p.code.includes(q)
     );
   }, [qProducts, PRODS]);
+  // The selection as the menu counts and applies it: the produtos on offer (PRODS). What the
+  // state holds outside them (the other origin's produtos) is neither counted nor sent.
+  const productsVisible = useMemo(() => {
+    const offered = new Set(PRODS.map((p) => p.code));
+    return new Set([...products].filter((c) => offered.has(c)));
+  }, [products, PRODS]);
   const filteredFlags = useMemo(() => {
     if (!qFlags) return QUALITY;
     const q = qFlags.toLowerCase();
@@ -900,9 +925,9 @@ function FilterMenu({ open = false, banco = 'ibge_pevs', value, onClose, onApply
 
   // summary
   const summary = useMemo(() => {
-    const prodTxt = products.size === PRODS.length
+    const prodTxt = productsVisible.size === PRODS.length
       ? `${PRODS.length} produtos (todos)`
-      : `${products.size} de ${PRODS.length} produtos`;
+      : `${productsVisible.size} de ${PRODS.length} produtos`;
     const period = `${formatMonth(startDate)}–${formatMonth(endDate)}`;
     const geoTxt = window.filterSummary.geoHeaderText({
       hasGeo,
@@ -920,12 +945,12 @@ function FilterMenu({ open = false, banco = 'ibge_pevs', value, onClose, onApply
       subUf: subUfText,
     });
     return { prodTxt, period, geoTxt };
-  }, [products, startDate, endDate, nations, regions, states, munisCounted, muniUniverseUnknown, hasGeo, muniSliceable, MUNIS, PRODS.length, subUfText]);
+  }, [productsVisible, startDate, endDate, nations, regions, states, munisCounted, muniUniverseUnknown, hasGeo, muniSliceable, MUNIS, PRODS.length, subUfText]);
 
   // chip-bar summary published on apply (display strings only)
   const buildChipSummary = () => {
     const prodChip = window.chipFmt.products(
-      products.size, PRODS.length, (PRODS.find(p => products.has(p.code)) || {}).name);
+      productsVisible.size, PRODS.length, (PRODS.find(p => productsVisible.has(p.code)) || {}).name);
     // Period chip is YEAR–YEAR in both the apply AND the URL-restore path (withChips
     // uses chipFmt.period), because the underlying filter is year-granular — showing
     // MM/AAAA here made the chip change shape between apply and reload (L1).
@@ -1015,7 +1040,8 @@ function FilterMenu({ open = false, banco = 'ibge_pevs', value, onClose, onApply
     if (typeof onApply === 'function') {
       onApply({
         ...buildChipSummary(),
-        basket:    fullOrNull(products, PRODS.length),
+        // The part on offer only: under an origin, every one of ITS produtos = no narrowing.
+        basket:    fullOrNull(productsVisible, PRODS.length),
         flags:     fullOrNull(flags, QUALITY.length),
         nations:   [...nations],
         // All five regions = Brasil, i.e. no region narrowing. Emitting the full list made
@@ -1056,7 +1082,7 @@ function FilterMenu({ open = false, banco = 'ibge_pevs', value, onClose, onApply
 
   // restore defaults
   const restoreDefaults = () => {
-    setProducts(new Set(PRODS.map(p => p.code)));
+    setProducts(new Set(PRODS_ALL.map(p => p.code)));
     setFlags(new Set(QUALITY.map(f => f.flag)));
     setNations(new Set(['BR']));
     setRegions(new Set(FM_REGIONS.map(r => r.id)));
@@ -1120,7 +1146,7 @@ function FilterMenu({ open = false, banco = 'ibge_pevs', value, onClose, onApply
                   <SearchInput value={qProducts} onChange={setQProducts} placeholder="Buscar produto ou código…"/>
                 </div>
                 <span className="fm-section-meta">
-                  <strong>{products.size}</strong> de {PRODS.length} selecionados
+                  <strong>{productsVisible.size}</strong> de {PRODS.length} selecionados
                 </span>
               </div>
 

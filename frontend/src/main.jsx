@@ -6,7 +6,7 @@
 
 import './bootstrap-globals'; // window.React/ReactDOM — must be first
 import React, { useState, useEffect } from 'react';
-import { resolveChipCoverage } from './data/chipCoverage';
+import { resolveChipBasket, resolveChipCoverage } from './data/chipCoverage';
 import { subscribe as subscribeResource } from './data/resource';
 
 // ── registries + utils ────────────────────────────────────────────────────────
@@ -149,18 +149,10 @@ function withChips(summary, database, conventions) {
     meta,
     hasDateSel: !!(s.startDate || s.endDate),
   });
-  // Clamp the hydrated basket to the active banco's LOADED product universe. A shared/
-  // bookmarked link may carry a code the Curadoria later hid/discontinued (or a code from a
-  // different banco); the data layer already intersects it away, so counting the RAW basket
-  // would show a phantom "1 de N" chip over charts that actually render all products. Clamp
-  // only once the real snapshot is loaded (else f.products is the PEVS synthetic fallback);
-  // an empty result → null = "Todos", matching what the data layer actually displays.
-  let basket = s.basket || null;
-  if (snapLoaded && basket) {
-    const universe = new Set((f.products || []).map((p) => p.code));
-    basket = basket.filter((c) => universe.has(c));
-    if (!basket.length) basket = null;
-  }
+  // The basket the chip counts: clamped to the banco's loaded products, then to the origin's
+  // (v1.108.5) — the universe `total` counts over. The rules and their reasons are in
+  // chipCoverage.resolveChipBasket, where a test can reach them.
+  const basket = resolveChipBasket({ snapLoaded, basket: s.basket, applied: f });
   const firstName =
     basket && basket.length === 1
       ? ((f.products || []).find((p) => p.code === basket[0]) || {}).name

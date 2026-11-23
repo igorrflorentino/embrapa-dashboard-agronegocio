@@ -550,6 +550,9 @@ def test_quality_by_product_per_product_shares_top_n():
     assert "OUTLIER" not in out[1] and "BOUNDARY_HISTORIC" not in out[1]
     # No `tabela` column in the frame → the key is absent, not an empty string.
     assert "tabela" not in out[0]
+    # Each produto's row count travels beside its shares (v1.108.5): the hero's "Linhas"
+    # counter sums it over the selection instead of scaling by the product COUNT.
+    assert [r["rows"] for r in out] == [800, 100]
 
 
 def test_quality_by_product_keys_on_the_produto_identity_not_the_name():
@@ -586,6 +589,8 @@ def test_quality_by_product_keys_on_the_produto_identity_not_the_name():
     assert [(r["code"], r["tabela"]) for r in out] == [("3435", "289"), ("3457", "291")]
     assert out[0]["OK"] == 0.3 and out[0]["UNSCORED"] == 0.7
     assert out[1]["OK"] == 1.0
+    # The row count is per produto too: the two halves' Madeira em tora stay apart.
+    assert [r["rows"] for r in out] == [1000, 500]
 
 
 def test_serialize_market_nature_passthrough():

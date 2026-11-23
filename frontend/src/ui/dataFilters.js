@@ -8,6 +8,8 @@
 import './seriesUtils.js';
 // countGroups: the basket's counts, split by what they count (countUnits.js).
 import './countUnits.js';
+// productsInOrigin: the products the screen's origin (SIDRA table) offers (v1.108.5).
+import './productOrigin.js';
 //
 // Input shape (from FilterMenu.onApply):
 //   { basket:    string[]  // product codes;  null = all · [] = none
@@ -175,10 +177,17 @@ import './countUnits.js';
     const REGIONS_T    = snap.regions    || window.REGIONS || [];
 
     const allProducts = PRODUCTS_T.map(p => p.code);
+    // The products the screen's ORIGIN offers: one SIDRA table, or all of them (v1.108.5).
+    // The selection never reaches past it. Under "Extração vegetal" the silvicultura produtos
+    // are not selected, so every count of the selection leaves them out, as the numbers
+    // already did (the series are read per table since v1.108.4). `allProducts` stays the
+    // banco's universe, the hero's denominator.
+    const productUniverse = window.productsInOrigin(PRODUCTS_T, summary.tabela);
+    const universeCodes = new Set(productUniverse.map(p => p.code));
     // Distinguish "no product filter applied" (basket == null → all) from
     // "explicitly cleared" (basket == [] → none). Zero always means none.
     const basket = summary.basket == null ? allProducts : summary.basket;
-    const selectedProducts = basket.filter(c => allProducts.includes(c));
+    const selectedProducts = basket.filter(c => universeCodes.has(c));
 
     const yearStart = yearOf(summary.startDate) || (OVERVIEW_T[0] && OVERVIEW_T[0].y) || 1986;
     const yearEnd   = yearOf(summary.endDate)   || (OVERVIEW_T[OVERVIEW_T.length - 1] && OVERVIEW_T[OVERVIEW_T.length - 1].y) || 2024;
@@ -201,9 +210,18 @@ import './countUnits.js';
     const ufYearlyAll = Array.isArray(snap.ufYearly) ? snap.ufYearly : [];
     // A basket genuinely narrows products only when a proper, non-empty subset is
     // selected (null = all; [] = none → handled by the empty-series path below).
+    //
+    // "Proper" is measured against the ORIGIN's products (v1.108.5): under "Extração
+    // vegetal" the snapshot's grid is already the extração's, so a basket of all 7 extração
+    // produtos narrows nothing and needs no cube. A basket that names produtos of the banco
+    // but NONE of the origin (only silvicultura codes under "Extração vegetal") still asks
+    // for the cube, which comes back empty: that measured "nothing" is the answer, where the
+    // snapshot's grid would show every extração produto. Without an origin this is the rule
+    // it always was (the basket ∩ the banco, non-empty and short of the banco).
+    const basketNamesBanco = basket.some((c) => allProducts.includes(c));
     const basketActive =
       hasGeoData && summary.basket != null &&
-      selectedProducts.length > 0 && selectedProducts.length < allProducts.length;
+      basketNamesBanco && selectedProducts.length < productUniverse.length;
     // A state filter genuinely narrows only below the canonical 27-UF universe (the
     // all-selected default is NOT a narrowing). Summing the (UF × year) grid over a
     // proper subset is the only case where it diverges from the national series.
@@ -510,10 +528,39 @@ import './countUnits.js';
     })();
 
     // productShare is NO LONGER used to scale displayed UF/region/heatmap values
-    // (that fabricated geography — see above). It survives only as an ESTIMATED
-    // multiplier for the hero "Linhas" provenance counter (MainScreen), where an
-    // approximate row count is acceptable and clearly labelled as a selection size.
-    const productShare = allProducts.length ? (selectedProducts.length / allProducts.length) : 0;
+    // (that fabricated geography — see above). It survives only as the product
+    // multiplier of the hero "Linhas" provenance counter (MainScreen).
+    //
+    // It is the selection's share of the banco's ROWS, from each produto's own row count
+    // (qualityByProduct[].rows, v1.108.5), not its share of PRODUCTS. Products are far from
+    // even (prod, 2026-11-23): a COMEX NCM code holds from 1 to 32,549 of the 496,160 rows
+    // the panel reads; PAM's açaí, which starts in 2015, 60,557 beside 257,294 for most
+    // crops; the 3 PEVS silvicultura produtos are 3 of 10 but 20.6% of the rows, so the
+    // count share read "Silvicultura" at +46%. A produto is matched on (code, tabela), its
+    // identity. If any
+    // produto's row count is missing (a payload from before v1.108.5), it falls back to the
+    // count share, so the counter keeps an estimate rather than none. The counter stays an
+    // estimate across dimensions (the period and the UFs scale every produto alike); it is
+    // exact along the product one.
+    const rowsByProduto = new Map();
+    (snap.qualityByProduct || []).forEach((r) => {
+      if (Number.isFinite(r.rows)) rowsByProduto.set(`${r.code}|${r.tabela || ''}`, r.rows);
+    });
+    const rowsOf = (p) => rowsByProduto.get(`${p.code}|${p.tabela || ''}`);
+    const rowsKnown = PRODUCTS_T.length > 0 && PRODUCTS_T.every((p) => Number.isFinite(rowsOf(p)));
+    const productShare = (() => {
+      const rowsAll = rowsKnown ? PRODUCTS_T.reduce((s, p) => s + rowsOf(p), 0) : 0;
+      if (!(rowsAll > 0)) {
+        return allProducts.length ? (selectedProducts.length / allProducts.length) : 0;
+      }
+      // Both halves sum the same field over the same product list (a share of a partition):
+      // the selection's produtos, in the origin, over every produto of the banco.
+      const selectedSet = new Set(selectedProducts);
+      const rowsSelected = productUniverse
+        .filter((p) => selectedSet.has(p.code))
+        .reduce((s, p) => s + rowsOf(p), 0);
+      return rowsSelected / rowsAll;
+    })();
 
     // region totals derived from the REAL (state-filtered) ufData
     //
@@ -691,6 +738,10 @@ import './countUnits.js';
       // dimensions instead of reaching into the PEVS globals (window.PRODUCTS …):
       products:        PRODUCTS_T,                 // active banco product list
       productsTotal:   allProducts.length,
+      // The products the screen's origin offers (all of them without one): what the picker
+      // lists and the product chip counts over (main.jsx), v1.108.5. `productsTotal` stays the
+      // banco's, the denominator of the hero and of "N de M produtos".
+      productUniverse,
       // Every product's series over the whole history — unfiltered by basket and period, but
       // the selected UFs' under a UF subset (PRODUCT_SERIES), like productTS and topProducts.
       allProductTS:    PRODUCT_SERIES,

@@ -481,3 +481,41 @@ describe('MainScreen — the UFs’ per-product series join the two-months check
     expect(container.querySelector('.child-skew')).toBeNull();
   });
 });
+
+// "Produtos" counts the selection the engine draws: the basket inside the origin (v1.108.5).
+// Under "Extração vegetal" it read "10 / 10" — the raw basket (null = all) over the banco —
+// beside numbers that were already the extração's.
+describe('MainScreen — "Produtos" conta a seleção dentro da origem', () => {
+  const EXTRACAO = ['3403', '3404', '3405', '3433', '3434', '3435', '3450'];
+  const comSelecao = (selectedProducts) => {
+    window.applyFilters = () => ({
+      ts: [{ y: 2024, v: 1 }],
+      ufData: [{ uf: 'PA', value: 5, real: true }],
+      ufDataFull: [{ uf: 'PA', value: 5, real: true }],
+      qualityFlags: [{ id: 'OK', count: 1383211 }],
+      productsTotal: 10,
+      selectedProducts,
+      _shares: {},
+    });
+  };
+  const produtos = (container) => [...container.querySelectorAll('.meta-row')]
+    .find((e) => e.querySelector('.meta-label')?.textContent === 'Produtos')
+    .querySelector('.meta-val');
+
+  it('Extração vegetal: 7 / 10, não 10 / 10', () => {
+    comSelecao(EXTRACAO);
+    expect(produtos(render(<MainScreen basket={null} />).container).textContent).toBe('7 / 10');
+  });
+
+  it('uma cesta só com produtos da outra metade: 0 / 10, o que a tela desenha', () => {
+    comSelecao([]);
+    expect(produtos(render(<MainScreen basket={['3455', '3456']} />).container).textContent)
+      .toBe('0 / 10');
+  });
+
+  it('sem a seleção do motor (resultado de outra forma), vale a cesta como antes', () => {
+    comSelecao(undefined);
+    expect(produtos(render(<MainScreen basket={['3403', '3404']} />).container).textContent)
+      .toBe('2 / 10');
+  });
+});
