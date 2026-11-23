@@ -14,6 +14,45 @@ function heatColorscale() {
   return stops.map((c, i) => [i / (stops.length - 1), c]);
 }
 
+// ── The short layout: up to 5 rows and no explicit height ───────────────────────
+//
+// A short plot cannot hold a vertical colour bar, so the bar goes HORIZONTAL, under the
+// plot, anchored to the CONTAINER's bottom edge. The unit goes just above the bar, as a
+// layout annotation. It is deliberately NOT the bar's own title.
+//
+// Why not the title. Measured 2026-11-23, Plotly 4.3.0, the Geografia card at 659 px:
+// for a horizontal bar with yref 'container', Plotly places a top/bottom title at
+// `gs.t + height × (thickness + ypad) / gs.h + …` (colorbar/draw.js, `posH * pos`), a
+// fraction of the PLOT's height multiplied by the CONTAINER's. The bar reserves bottom
+// margin down to its title, that margin shrinks the plot, and a shorter plot pushes the
+// title lower still. On a short plot the loop runs away until the plot's height is
+// negative and Plotly throws "Something went wrong with axis scaling", which the card
+// shows as "Não foi possível renderizar este gráfico":
+//
+//   rows  height  margin the bar reserved  plot height
+//    1     132       50.7 (absorbed)          16      drew
+//    2     156      171.1                    -23.1    threw
+//    3     180      307.4                   -165.3    threw
+//    4     204       98.8                     67.4    drew; the band lost 20 px, unit under the labels
+//    5     228       83.4                    106.7    drew; unit under the labels
+//
+// With no title, the reservation is a constant 50.7 px (the 12 px bar, its ticks and
+// labels, and Plotly's 10 px padding above and below). The 108 px bottom margin absorbs
+// it at every row count, so the plot is exactly height − 116 = 24 × rows − 8 px, the
+// same arithmetic that sizes it below.
+//
+// What those 108 px hold, measured downwards from the plot's bottom edge: the year labels
+// end at 22 px; the unit's text sits at 46–59 px; the bar's top is at 67 px, which is
+// CB_BAR_TOP px above the card's bottom edge.
+const SHORT_MARGIN = { l: 120, r: 16, t: 8, b: 108 };
+const TALL_MARGIN = { l: 120, r: 92, t: 22, b: 36 };
+// px from the container's bottom edge to the top of the horizontal bar (measured 40.7).
+const CB_BAR_TOP = 41;
+// px between the unit annotation's box and the bar, so the unit reads as the bar's.
+const UNIT_GAP = 6;
+// The unit annotation's bottom edge, in px below the plot's bottom edge (= −61).
+const SHORT_UNIT_YSHIFT = -(SHORT_MARGIN.b - CB_BAR_TOP - UNIT_GAP);
+
 function Heatmap({ rows = [], valueKey = 'v', valueLabel = '', height }) {
   // x = a SINGLE sorted year axis built from the UNION of every row's years.
   // Building x from rows[0] alone (and z from each row's own array) misaligns
@@ -54,7 +93,8 @@ function Heatmap({ rows = [], valueKey = 'v', valueLabel = '', height }) {
   // The threshold is measured, not guessed: the bar's drawn height tracks the plotting
   // area, and at 4 rows that came out at 44px — three ~12px labels stacked into 44px,
   // legible but touching. At 6 rows it is ~100px, which lets them breathe. Below that
-  // the bar goes horizontal, where a one-row heatmap has width to spare.
+  // the bar goes horizontal, where a one-row heatmap has width to spare (see the
+  // short-layout note above for how the unit travels with it).
   const autoHeight = 22 + rows.length * 24 + 22;
   const shortPlot = !height && rows.length <= 5;
 
@@ -71,11 +111,6 @@ function Heatmap({ rows = [], valueKey = 'v', valueLabel = '', height }) {
       // Sparse/ragged rows set missing cells to null (drawn as gaps). Suppress hover on
       // those gaps so a null cell doesn't pop a tooltip with a blank "%{z:,.2f}" value.
       hoverongaps: false,
-      // The colorbar spans the PLOT's height, so on a short plot it has nowhere to put a
-      // right-side title AND its ticks: with a single row (a one-UF selection) the plot
-      // is ~68px and the unit collided with the values into an unreadable smudge.
-      // Below the threshold the bar goes HORIZONTAL, under the plot, where width is the
-      // one thing a one-row heatmap has plenty of.
       // Both branches declare the SAME keys. Plotly.react leaves an omitted nested
       // attribute at its previous value, so a key present in one branch and absent from
       // the other would survive an orientation flip and place the bar by half-stale
@@ -88,19 +123,19 @@ function Heatmap({ rows = [], valueKey = 'v', valueLabel = '', height }) {
         lenmode: 'fraction',
         thickness: 12,
         thicknessmode: 'pixels',
-        // The unit label, placed where it cannot be mistaken for a value.
-        //   vertical   → above the bar. Beside it, Plotly rotates the text 90°, which
-        //                landed "R$" sideways in the middle of the gradient, between two
-        //                tick labels, reading as if it were one of them.
-        //   horizontal → 'bottom'. Counter-intuitive, and measured rather than assumed:
-        //                it renders the unit just ABOVE the bar (title 72-85px, bar
-        //                92-104px), clear of both the year labels above and the tick
-        //                labels below. 'top' is measured from the colorbar GROUP, which
-        //                on a container-anchored bar stretches up into the plot, so it
-        //                drew "R$" over the heatmap band itself at y=10.
+        // The unit sits ABOVE the bar in both orientations, where it cannot be mistaken
+        // for a value.
+        //   vertical   → the bar's title, side 'top'. Beside the bar, Plotly rotates the
+        //                text 90°, which landed "R$" sideways in the middle of the
+        //                gradient, between two tick labels, reading as if it were one.
+        //   horizontal → EMPTY. The unit is the `unitAnnotation` below instead: a title
+        //                on this bar is what drove the plot's height negative (the
+        //                short-layout note at the top of this file).
+        // With no text Plotly draws no title at all, whatever the side: measured, the
+        // horizontal bar lands on the same pixels with 'top' and with 'bottom'.
         title: {
-          text: valueLabel,
-          side: shortPlot ? 'bottom' : 'top',
+          text: shortPlot ? '' : valueLabel,
+          side: 'top',
           font: { size: 11 },
         },
         outlinewidth: 0,
@@ -130,14 +165,31 @@ function Heatmap({ rows = [], valueKey = 'v', valueLabel = '', height }) {
     },
   ];
 
+  // The horizontal bar's unit. y = 0 is the plot's bottom edge and yshift is in pixels,
+  // so the unit keeps the same distance from the bar however short the plot is: both are
+  // placed inside the same 108 px strip. Annotations take no 'container' reference,
+  // which is why the anchor is the plot's edge and not the card's. Being part of the
+  // figure, the unit also travels with the modebar's PNG download.
+  const unitAnnotation = shortPlot && valueLabel
+    ? [{
+        text: valueLabel,
+        xref: 'paper', x: 0.5, xanchor: 'center',
+        yref: 'paper', y: 0, yanchor: 'bottom',
+        yshift: SHORT_UNIT_YSHIFT,
+        showarrow: false,
+        font: { size: 11 },
+      }]
+    : [];
+
   const layout = baseLayout({
-    // A horizontal colorbar lives BELOW the plot, so it needs bottom room the
-    // vertical one never did.
-    // Room for the colorbar in whichever direction it sits: to the right when
-    // vertical (bar + tick labels + the unit above it), below when horizontal. Too
-    // tight and Plotly clips the labels, which is how a legend stops being one.
-    margin: { l: 120, r: shortPlot ? 16 : 92, t: shortPlot ? 8 : 22, b: shortPlot ? 108 : 36 },
+    // Room for the colorbar in whichever direction it sits: to the right when vertical
+    // (bar + tick labels + the unit above it), below when horizontal (the year labels,
+    // the unit and the bar, as measured in the short-layout note). Too tight and Plotly
+    // clips the labels, which is how a legend stops being one. Copied, so Plotly never
+    // holds the module-level objects.
+    margin: { ...(shortPlot ? SHORT_MARGIN : TALL_MARGIN) },
     hovermode: 'closest',
+    annotations: unitAnnotation,
     // x = a LINEAR year axis (not category): the years are contiguous integers, so a
     // numeric axis renders the heatmap cells identically (centred on each year, width
     // 1) while letting yearAxis() THIN the labels to fit the width — a category axis
