@@ -7,6 +7,127 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.108.7] - 2026-11-23
+
+**Nas perspectivas por produto e no CSV por produto, a contagem se nomeia pelo que o produto
+conta.** Fecha a pendência das Notas da v1.108.0. O Perfil do produto, o Rebanho e o Comparativo
+entre produtos escreviam a unidade de contagem da convenção (`un`, `cab`) ao lado de cada número, e o
+CSV por produto dizia `un` na coluna `unidade`. Os ovos de galinha de 2025 apareciam como
+"68.830.404.000 un" a "R$ 0,53 /un", e a ficha técnica dizia "Unidade nativa: un (unidades)" de um
+produto que o IBGE publica em "Mil dúzias". Nenhum número somava coisas diferentes: faltava o nome. A
+ordem de grandeza não muda, porque a contagem já chega em UMA unidade da coisa contada: a quantidade
+de base (`qty_base`) multiplica "Mil dúzias" por 12.000 e "Mil frutos" por 1.000, segundo o arquivo
+de referência `unit_family_conversions`. Nenhum fator novo por produto.
+
+### Corrigido
+- **Perfil do produto.** A quantidade, o eixo, a etiqueta da família ("Contagem · ovos"), o preço e a
+  ficha técnica dizem o que o produto conta. Medido numa prévia local contra a produção (só
+  leitura), em 2026-11-23, com o código do `main` e com o desta versão:
+
+  | produto, 2025 | antes | depois |
+  |---|---|---|
+  | Ovos de galinha (PPM) | 68.830.404.000 un · R$ 0,53 /un · "R$ por un" · "un (unidades)" | 68.830.404.000 ovos · R$ 0,53 /ovo · "R$ por ovo" · "Mil dúzias" |
+  | Abacaxi (PAM) | 1.596.703.000 un · R$ 3,07 /un · "un (unidades)" | 1.596.703.000 frutos · R$ 3,07 /fruto · "Mil frutos" |
+
+  A conta confere com a fonte: 5.735.867 mil dúzias × 12.000 = 68.830.404.000 ovos. Com "cab" na
+  faixa de convenções, os ovos continuam "ovos" (antes, "cab"). Com um múltiplo escolhido (`dz`,
+  `milheiro`), o número está nesse múltiplo e a tela diz `dz`.
+- **Rebanho.** Galináceos, 2025: o efetivo e o pico passam de "1.607.487.573 un" a "1.607.487.573
+  cabeças", a UF líder (PR) de "463.493.696 un" a "463.493.696 cabeças", e a etiqueta da evolução e a
+  legenda do mapa por UF, de "un" a "cabeças". A composição e a evolução põem todas as espécies numa
+  unidade só. Se uma espécie tiver unidade não reconhecida, as duas são recusadas e as espécies são
+  nomeadas, como nas outras telas desde a v1.108.0. Hoje as 8 espécies da PPM são publicadas em
+  "Cabeças", e nada é recusado.
+- **CSV por produto** (Perfil do produto e Comparativo entre produtos). A coluna `unidade` diz
+  `cabeças`, `ovos` ou `frutos`, no lugar de `un`. Medido na prévia, sem gravar arquivo:
+  - PPM, com Bovino, os dois ovos e Galináceos: 208 linhas, nenhuma com `un`. Em 2025, 234.251.041
+    `cabeças` (Bovino), 68.830.404.000 `ovos` (galinha) e 3.494.304.000 `ovos` (codorna).
+  - PAM: 1.596.703.000 `frutos` (abacaxi) e 2.018.298.000 `frutos` (coco-da-baía).
+- **A janela de confirmação do CSV listava as unidades da faixa de convenções como se o arquivo as
+  seguisse.** Nenhum CSV segue: todos saem em t, m³ e na coisa contada. Com kg na faixa, a janela
+  dizia "Unidades: kg · m³" ao lado de um arquivo em cabeças e ovos. "Convenções métricas" passa a
+  listar só a moeda e a correção, que o arquivo segue, e o arquivo por produto ganha a linha
+  "Unidades: cabeças · ovos", lida das linhas montadas. Achado no caminho.
+- **Perfil do produto: o preço dizia a unidade de base, não a escolhida.** Com kg na faixa, a soja de
+  2025 lia "R$ 1,91 /t" e "R$ por t" sobre um número calculado por quilo (a tonelada sai a R$ 1.907).
+  Agora lê "R$ 1,91 /kg". Achado no caminho.
+- **Perfil do produto e Comparativo entre produtos: uma lavoura sem valor na janela era contada como
+  cabeças.** Sob o IPCA, que começa em 1980, a PAM de 1974 a 1979 tem quantidade e não tem valor
+  corrigido. A tela desenha esse produto com os cartões do rebanho, e esses cartões formatavam toda
+  quantidade como contagem: mil vezes maior e sem unidade. A soja de 1979 lia "10.240.306.000 un", e
+  a coluna "Magnitude (1979)" do Comparativo lia "10.240.306.000 un" (soja) e "16.306.380.000 un"
+  (milho). Agora lê "10.240.306 t" e "16.306.380 t". Achado no caminho.
+
+### Alterado
+- `countUnits.js` ganha dois nomes, para não haver uma segunda tabela de nomes:
+  - `countNameOf`: o que UM produto conta, por extenso ("ovos"; "ovo" no singular, para um preço);
+  - `countProductUnit`: a unidade em que o produto aparece. É a coisa contada quando a unidade da
+    convenção vale uma dela (`un`, `cab`), e o múltiplo escolhido quando vale mais (`dz`,
+    `milheiro`).
+- Uma contagem de unidade não reconhecida diz "unidade não identificada" em toda convenção. Quando
+  há um múltiplo, aparece ao lado dele ("dz (unidade não identificada)"), como nas demais telas desde
+  a v1.108.0.
+- `MetricConventions.jsx`:
+  - sai `window.countAxisLabel`, que dava a unidade da convenção a um eixo de contagem;
+  - entra `window.formatProductQty`, que escreve a quantidade de UM produto na unidade da sua
+    família;
+  - sem unidade, `formatCountQty` passa a dizer "unidade não identificada", e não mais a unidade da
+    convenção. Uma tela nova que esqueça de nomear a contagem diz que não sabe, em vez de afirmar
+    `un`.
+- Nada muda no servidor. Os números só mudam na lavoura sem valor (acima).
+
+### Testes
+- vitest: 28 testes novos e 3 reescritos, de 1931 para 1959 testes em 105 arquivos.
+  - `ViewProductProfile.test.jsx`, novo, com 9: roda os módulos de unidade reais, sem trocá-los por
+    imitações, e confere ovos, abacaxi, rebanho, "cab", `dz`, unidade não reconhecida, t, kg e a
+    lavoura sem valor.
+  - `ViewRebanho.test.jsx`, com 6: cartões, eixo, etiqueta, mapa e UF líder em "cabeças", `dz`, e a
+    espécie de unidade não reconhecida recusada e nomeada.
+  - `countUnits.test.js`, com 6 novos e 1 reescrito; `csvExport.cov.test.js`, com 2 novos e 1
+    reescrito.
+  - `CsvExportModal.test.jsx`, com 2; `MetricConventions.cov.test.jsx`, com 2 novos e 1 reescrito;
+    `ViewProductCompare.cov.test.jsx`, com 1.
+- Contraprova: com as 8 fontes do `main` no lugar e os testes desta versão, 29 testes falham (26 dos
+  28 novos e os 3 reescritos), todos pelo motivo esperado:
+  - a unidade nua da convenção onde a coisa deveria ser nomeada (`un`, `cab`, "un (unidades)");
+  - "/t" no preço calculado por quilo;
+  - a lavoura sem valor mil vezes maior e em `un`;
+  - a janela do CSV com "kg · dz" e sem a linha das unidades do arquivo;
+  - `countAxisLabel` ainda exportado, e os nomes novos ausentes.
+
+  Os 2 novos que passam no `main` são os casos que não podiam mudar: o preço em t sob a convenção em
+  t, e o Rebanho em `dz`, que o `main` já escrevia certo.
+- A primeira contraprova mostrou que três verificações de "nenhuma unidade nua" eram fracas.
+  Liam o texto inteiro da tela, que cola os vizinhos ("234 un2021"), e com isso uma fronteira de
+  palavra da expressão regular nunca cai entre duas letras ou dígitos. Elas passaram a ler cada
+  texto impresso isolado, e a do CSV passou a ler as convenções elemento por elemento.
+- vitest: 1959 passando em 105 arquivos, com a meta de cobertura. pytest: 2603 passando (15
+  pulados no Windows, que só rodam no Linux). eslint, `vite build`, ruff e `uv lock --check` sem
+  erro.
+
+### Notas
+- **Pendências achadas no caminho, fora do escopo desta versão:**
+  - Perfil do produto: uma lavoura sem valor na janela é desenhada como rebanho. Na soja de
+    1974–1979 sob o IPCA, a tela mostra:
+    - "Efetivo" e "Pico histórico";
+    - "Participação no efetivo", que sai "—";
+    - "Tipo de medida: Estoque (efetivo)";
+    - "Onde Soja (em grão) é criado";
+    - um ranking de UFs que lê a contagem de cabeças e mostra zero em toda UF.
+
+    Esta versão corrige só a ordem de grandeza e a unidade dessa quantidade. O Comparativo entre
+    produtos tem a mesma troca: uma cesta só dessas lavouras ganha o título "Evolução relativa do
+    efetivo (cabeças)".
+  - A ficha técnica de um produto de massa ou volume diz como "Unidade nativa" a unidade de base da
+    família ("t (toneladas)", "m³ (metros cúbicos)"), e não a que a fonte publica. No COMEX, que mede
+    o peso em quilogramas, ela diz "t (toneladas)".
+  - No CSV por produto:
+    - uma quantidade ausente sai como `0` (já registrado nas Notas do PR #593);
+    - uma família desconhecida sai em `t`;
+    - a coluna `familia` traz os nomes internos, em inglês (`mass`, `volume`, `count`).
+
+---
+
 ## [1.108.6] - 2026-11-23
 
 **O mapa de calor da Geografia passa a desenhar com qualquer número de linhas.** Fecha a

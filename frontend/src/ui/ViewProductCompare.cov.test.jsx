@@ -32,6 +32,9 @@ function stubGlobals(filtered) {
   window.corrColor = () => 'var(--ok)';
   window.formatValue = (v) => `val:${v}`;
   window.formatCountQty = (v) => `count:${v}`;
+  // Echoes the product it was given: the magnitude of a row is that row's product, in its
+  // family's unit (the real formatter is tested in MetricConventions.cov.test.jsx).
+  window.formatProductQty = (p, v) => `${p.family}:${p.unit_native || '?'}:${v}`;
   window.fmtSigned = (x, d) => (x >= 0 ? '+' : '') + (x || 0).toFixed(d ?? 0) + '%';
   window.UNIT_FAMILIES = {
     mass: { label: 'Massa' },
@@ -273,9 +276,34 @@ describe('ViewProductCompare — single-product + value-less herd branches', () 
     );
     // All stock → normalized basis label switches to "do efetivo (cabeças)".
     expect(container.textContent).toContain('do efetivo (cabeças)');
-    // Stock rows render headcount magnitude (qT via formatCountQty), not value.
+    // Stock rows render headcount magnitude (qT via formatProductQty), not value.
     expect(container.textContent).toContain('count:');
     expect(container.textContent).not.toContain('val:');
+  });
+
+  // v1.108.7: the magnitude cell called formatCountQty with no unit, so every herd read "un",
+  // and a crop with no value in the window (ranked on quantity, like a herd) was multiplied
+  // as a count. Each row is now formatted as its own product.
+  it('the magnitude of a row ranked on quantity is its own product, in its own unit', () => {
+    stubGlobals({
+      selectedProducts: ['2670', '40124'],
+      allProductTS: {
+        2670: [{ y: 1978, v: 0, q: 200 }, { y: 1979, v: 0, q: 240 }],
+        40124: [{ y: 1978, v: null, q: 9.5 }, { y: 1979, v: null, q: 10.2 }],
+      },
+      products: [
+        { code: '2670', name: 'Bovino', family: 'count', measure_kind: 'stock', unit_native: 'Cabeças' },
+        // PAM under IPCA before 1980: no value in the window, so it is ranked on quantity.
+        { code: '40124', name: 'Soja (em grão)', family: 'mass', unit_native: 'Toneladas' },
+      ],
+      yearStart: 1978,
+      yearEnd: 1979,
+    });
+    const { container } = render(
+      <ViewProductCompare summary={{}} conventions={{}} database="ibge_pam" />);
+    const cells = [...container.querySelectorAll('.pc-table tbody tr')]
+      .map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent));
+    expect(cells.map((c) => c[1])).toEqual(['count:Cabeças:240', 'mass:Toneladas:10.2']);
   });
 });
 

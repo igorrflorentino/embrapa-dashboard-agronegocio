@@ -20,11 +20,8 @@ const nomesDe = (products, database) => {
 function CountRefusedNote({ groups, database, marginTop }) {
   const refused = (groups || []).filter((g) => g.mixed);
   if (!refused.length) return null;
-  const itens = refused.flatMap((g) => g.products.map((p) => {
-    const noun = window.countNounOf(p);
-    const what = noun ? window.COUNT_NOUNS[noun].plural : 'unidade não identificada';
-    return { ...p, name: `${p.name || p.code} (${what})` };
-  }));
+  const itens = refused.flatMap((g) => g.products.map((p) => (
+    { ...p, name: `${p.name || p.code} (${window.countNameOf(p)})` })));
   const plurals = [...new Set(refused.flatMap((g) => g.plurals))];
   return (
     <window.CollapsingNameList
