@@ -289,7 +289,7 @@ describe('MainScreen — o contador de linhas ignora a seleção de qualidade', 
   });
 });
 
-// "Linhas" COUNTS the recorte's rows (v1.108.10): applyFilters sums the Gold rows behind the
+// "Linhas" COUNTS the recorte's rows (v1.108.9): applyFilters sums the Gold rows behind the
 // screen's series (`rowsInView`), and the shares only back an estimate when that count did not
 // come. Before, the estimate was all there was, and it read thousands of rows for PAM's açaí over
 // 1990–2000 — a period it has no row in.
@@ -401,7 +401,7 @@ describe('MainScreen — "UFs cobertas" de um recorte sub-UF que não resolveu',
 
 // "Linhas" under a sub-UF recorte (v1.108.2). stateShare counts WHOLE states, so Portel and
 // Breves read as all of Pará — "134 mil" in every state, as measured in production. The
-// recorte's share of the municípios sizes the ESTIMATE now (since v1.108.10 the counter counts,
+// recorte's share of the municípios sizes the ESTIMATE now (since v1.108.9 the counter counts,
 // and the estimate is only its fallback); while the recorte loads, or after it failed, the
 // counter holds with the same marks and tooltip as "UFs cobertas".
 describe('MainScreen — "Linhas" sob um recorte sub-UF', () => {

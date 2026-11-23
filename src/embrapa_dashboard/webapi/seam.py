@@ -448,7 +448,7 @@ def snapshot(banco_id: str, conv: dict, summary: dict | None = None) -> dict:
         # The per-product filters come from the helper the per-UF read shares
         # (/api/product-ts), so the two reads of this series cannot drift apart.
         # `with_rows`: the Gold rows behind each point, which the hero's "Linhas" counter sums
-        # (v1.108.10) — a column the read returns, not a filter, so it is not in that helper.
+        # (v1.108.9) — a column the read returns, not a filter, so it is not in that helper.
         product_ts = gateway.fetch_product_timeseries(
             banco_id,
             year_start=y0,
@@ -896,7 +896,7 @@ def geo_yearly(banco_id: str, conv: dict, summary: dict | None = None) -> pd.Dat
     # different price base than the snapshot it is drawn beside. It carries its month
     # (`price_base_*`, split off by the serializer) so the screen can say so (v1.105.0),
     # and the Gold rows behind each (UF, year), which the hero's "Linhas" counter sums
-    # under a basket (v1.108.10).
+    # under a basket (v1.108.9).
     if banco_id == "mdic_comex":
         df = gateway.fetch_comex_by_uf_yearly(
             ncm_codes=codes,
@@ -987,7 +987,7 @@ def geo_municipio_yearly(
             tabela=_tabela_from_summary(summary),
             with_price_base=True,
             # The Gold rows behind each (município, year): the hero's "Linhas" counter
-            # under a sub-UF recorte (v1.108.10). A count(*), so it costs no byte.
+            # under a sub-UF recorte (v1.108.9). A count(*), so it costs no byte.
             with_rows=True,
         )
     except NotFound:
@@ -1395,6 +1395,16 @@ def product_ts_by_uf_available(banco_id: str) -> bool:
         return False
     banco = banco_by_id(banco_id)
     return bool(banco) and "geo" in banco.provides
+
+
+def product_list(banco_id: str) -> pd.DataFrame | None:
+    """The banco's product list, the one the snapshot reads (``gateway.fetch_products``,
+    cached), for a route that serializes a per-product series apart from the snapshot:
+    each point of the series carries its product's family (``serializers._product_ts``,
+    v1.108.8). ``None`` for a banco that is not live."""
+    if banco_id not in _LIVE_SOURCES:
+        return None
+    return gateway.fetch_products(banco_id)
 
 
 def product_ts_by_uf(banco_id: str, conv: dict, summary: dict | None = None) -> pd.DataFrame | None:

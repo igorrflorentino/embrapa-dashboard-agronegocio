@@ -1,4 +1,4 @@
-"""The Gold rows behind each point travel to the screen (v1.108.10).
+"""The Gold rows behind each point travel to the screen (v1.108.9).
 
 The hero's "Linhas" counter used to ESTIMATE how many Gold rows the recorte held, multiplying
 the banco's total by the shares of value of each filter. A share of VALUE is not a share of

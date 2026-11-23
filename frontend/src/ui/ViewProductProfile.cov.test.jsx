@@ -27,13 +27,13 @@ function stubGlobals(filtered) {
   window.bancoDim = () => ({ codeLabel: 'Código IBGE' });
   window.massAxisLabel = () => 't';
   window.volumeAxisLabel = () => 'm³';
-  window.countAxisLabel = () => 'cabeças';
   window.massQtyMul = () => 1;
   window.volumeQtyMul = () => 1;
   window.countQtyMul = () => 1;
   window.scaleSeries = (data, _max, _conv, _key, label) => ({ data, label });
   window.formatValue = (v) => `val:${v}`;
   window.formatCountQty = (v) => `count:${v}`;
+  window.formatProductQty = (p, v) => `${p.family}:${v}`;
   window.fmtSigned = () => '+0%';
   window.fmtPct = (x) => `${Math.round((x || 0) * 100)}%`;
   window.UNIT_FAMILIES = {

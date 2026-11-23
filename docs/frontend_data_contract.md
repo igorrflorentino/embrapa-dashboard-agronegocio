@@ -94,6 +94,26 @@ mix; `exp_weight` (`'mil t'`) never mixes with them.
 > `code` MUST match the keys of `productTS`. They do — both come from the same Gold
 > product column.
 
+> **A code whose rows mix units names ONE of them, taken from one row (v1.108.8).** `unit`,
+> `unit_native` and `family` leave together, as one
+> `array_agg(struct(family, base_unit, unit_native) order by … limit 1)` per code
+> (`sql.products`), in a total order: a known family before an unknown one (a row in
+> "Sem unidade (N/A)" carries no quantity and says nothing of how the code is measured), then
+> the family with the most rows, the family name, the unit with the most rows inside that
+> family, then `base_unit` and `unit_native`. The rows are grouped by the three fields
+> first, so two candidates always differ in one of them and nothing can tie. `name`,
+> `tabela` and `measure_kind` stay `any_value`: they are constant per code (0 codes with
+> more than one value in the five marts, measured on prod 2026-11-23).
+>
+> Until v1.108.8 each of the three was an independent `any_value`, which skips NULLs and
+> returns whichever row BigQuery reads first. In the UN COMTRADE mart, where 99 of the 100
+> codes mix units (measured on prod 2026-11-23: the real unit beside "Sem unidade (N/A)",
+> and two real units in 20 codes), three identical reads with the result cache off gave
+> 6 codes different answers. 9 codes came out with a combination none of their rows has:
+> 440331–440334 and 440723 as family `desconhecida` with unit `m³`, which left them with no
+> quantity axis at all. COMEX and the three IBGE marts have one unit per code, so the rule
+> changes nothing there.
+
 > **`tabela` travels for EVERY banco since v1.47.2** — including the single-table ones,
 > where the value is constant (PAM `5457`, COMEX `ncm`, COMTRADE `hs`). It
 > was emitted only for PEVS/PPM until then, behind a `_TABELA_SOURCES` set; that set was
@@ -166,12 +186,44 @@ overview** (monthly detail is served by `monthlyData`, §4.3).
 One annual series per product, keyed by the same `code` as `products`.
 
 - `v` = `SUM(value)` ÷ 1e6 (**mi**) — PEVS `val_real_ipca_brl`, trade `val_yearfx_usd`.
-  (`overviewTS.v` in bi = Σ `productTS.v` ÷ 1000 — keep the factor.)
-- `q` = `SUM(qty_native)` × 1000 (PEVS convention).
-- `family` = the product's `family` (→ en).
-- `rows` = `SUM(source_rows)`, the Gold rows behind the point (v1.108.10). Only the
+  (`overviewTS.v` in bi = Σ `productTS.v` ÷ 1000 — keep the factor.) It sums EVERY row of
+  the code-year, whatever its unit.
+- `family` = the product's `family` (→ en), as `products` lists it, in EVERY point
+  (v1.108.8) — in the snapshot and in `GET /api/product-ts` alike.
+- `q` = the quantity in that family's display unit (mass → mil t, volume → mi m³,
+  count → mi un), read from the family's own track (`q_mass` / `q_vol` / `q_count`, each a
+  `SUM(qty_base)` over the rows of that family only). Rows in another unit add nothing to
+  it. `null` — absent, never 0 — when the year has no quantity in the product's unit (a
+  COMTRADE year with no row in it, or rows in it that carry no quantity), and for the
+  families with no display scale (energia/área/desconhecida).
+- `rows` = `SUM(source_rows)`, the Gold rows behind the point (v1.108.9). Only the
   snapshot's read asks for it (`with_rows=True`); the per-UF read of §3.6 does not, since
-  the counter reads the UF grid there. The hero's "Linhas" counter sums it (§3.5).
+  the counter reads the UF grid there. The hero's "Linhas" counter sums it (§3.5). Like `v`,
+  it counts every row of the code-year, whatever its unit.
+
+> **The point's family is the product's, not its year's (v1.108.8).** The SQL still ranks a
+> family per year, by the same keys `products` ranks with and over the rows the series sums;
+> the serializer keeps it only as the fallback for a code the list does not name. A year can
+> be in another unit than its product under a reporter filter: with the United States as
+> reporter, 440311 (listed in m³) has more rows in "Número de itens" than in m³ in
+> 2018–2021. Each point used to carry its year's family (`any_value`), so those years could
+> come out as counts. Perfil do produto, which labels the axis from `products` and plots each
+> point's `q`, then drew item counts on the m³ axis, and `applyFilters`, which routes each
+> point's `q` by the POINT's family, added them to the count total. Measured on prod
+> 2026-11-23: in the Brazil scope the year's family is the product's in every code-year with
+> a known unit. It is `desconhecida` in 3 of 1.404 code-years (Brazil) and 32 of 1.792
+> (every reporter).
+
+> **What `v ÷ q` is NOT (known gap, measured 2026-11-23).** `v` covers every row and `q`
+> only the rows in the product's unit, so the implied price Perfil do produto draws
+> (`v ÷ q`) divides more rows than the quantity covers wherever a year mixes units — the
+> shape CLAUDE.md calls *"the two halves of a ratio must cover the same rows"*. COMTRADE,
+> export + import: in the Brazil scope 15 of 1.401 priced code-years are above 1,5× (worst
+> 200919 in 2002, 12,4×, with 91,9% of its value in rows without the product's unit); over
+> every reporter, 81 of 1.760 are above 1,5× and 227 above 1,1×, holding 7,09% of the value.
+> In all 227, most of the excess is value in rows without the product's unit, not rows in
+> it without a quantity. The fix is a conditioned numerator per point (the value of the rows
+> that have a quantity in the product's unit), which this contract does not carry yet.
 
 The snapshot's series are **national**: the marts carry a UF grain and the snapshot sums it
 away. Under a UF subset `applyFilters` swaps them for the selected UFs' own series from
@@ -224,10 +276,10 @@ the panel reads; PAM's açaí, which starts in 2015, 60,557 beside 257,294 for m
 3 PEVS silvicultura produtos are 3 of 10 but 20.6% of the rows. Σ `rows` equals Σ
 `quality[].count`, and every `products` entry finds its `rows` by `(code, tabela)` (checked
 in all five bancos, prod 2026-11-23, PPM's two tables included). A payload without `rows`
-falls back to the count share. Since v1.108.10 the share only backs the counter's fallback
+falls back to the count share. Since v1.108.9 the share only backs the counter's fallback
 estimate (below).
 
-**The hero's "Linhas" counter COUNTS (v1.108.10).** It shows `applyFilters.rowsInView`, the
+**The hero's "Linhas" counter COUNTS (v1.108.9).** It shows `applyFilters.rowsInView`, the
 sum of `rows` over the points of `filtered.ts`, the series the screen draws, which is already
 cut to the selection: produtos, period and territory. Every read that can feed `ts` carries
 the Gold rows behind each of its points:
@@ -269,7 +321,7 @@ also kept a `valueShare` multiplier, always 1 since `_shares` lost the key in v1
 gone.
 
 **When it cannot count.** `rowsInView` is `null` when a point arrives without `rows` (a
-payload from before v1.108.10) or a UF subset meets a snapshot with no UF grid. The counter
+payload from before v1.108.9) or a UF subset meets a snapshot with no UF grid. The counter
 then falls back to the old estimate, total × `productShare` × `yearShare` × (`muniShare` ??
 `stateShare`), and marks it: "≈ 61 mil", with a tooltip that says it is an estimate. A counted
 number carries the exact figure in its tooltip ("60.557 linhas da base analítica neste
@@ -294,7 +346,7 @@ município passes the cascade iff it clears every active facet (intersection).
   the `cityCode → ancestry` map from it. `{ municipios: [] }` if the dim isn't built.
 - **`POST /api/municipio-yearly`** — body `{ cityCodes: [...] }`; `banco` / `codes` /
   `currency` / `correction` in the query string → `{ municipioYearly: [{ year, cityCode,
-  uf, value, q_mass, q_vol, q_count_stock, q_count_flow, rows }] }` (`rows`, since v1.108.10:
+  uf, value, q_mass, q_vol, q_count_stock, q_count_flow, rows }] }` (`rows`, since v1.108.9:
   the Gold rows behind the cell, a `count(*)` in the same select). The basket + **city-scoped** per-(município,
   year) cube, read straight from Gold (`maximum_bytes_billed`-guarded). **POST, not GET**:
   the resolved city set can be hundreds of codes — too large for a query string (gunicorn's
@@ -379,7 +431,7 @@ município passes the cascade iff it clears every active facet (intersection).
     They keep their numbers and say so (`window.recorteNaoSeAplica`), or withhold the chart
     (Valor × Volume), and their CSV is refused with `recorte-nao-se-aplica` — waiting would not
     help, so `carregando-recorte` would promise a file that never comes.
-  - *Row counts.* Under a resolved recorte "Linhas" COUNTS (v1.108.10, §3.5): the município
+  - *Row counts.* Under a resolved recorte "Linhas" COUNTS (v1.108.9, §3.5): the município
     cube's `rows` survive the rollup to (UF, year) (`rollupMuniCubeToUf`), so Portel and Breves
     read 560, Gold's own `count(*)`. Until then `_shares.muniShare` (the municípios in scope
     over the whole mesh) sized an estimate — 497 for the same two — and it now backs only the

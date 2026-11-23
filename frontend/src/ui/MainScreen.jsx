@@ -436,7 +436,7 @@ function MainScreen({ filters, view = 'overview', database = 'ibge_pevs', infoPa
   // The registry prov no longer fabricates a row count, so the only source is the
   // live snapshot's quality-flag sum; show "—" until it resolves (never a fake total).
   const totalRows = _liveRows || prov.totalRows;
-  // The rows of the recorte, COUNTED (v1.108.10): every read behind the screen's series
+  // The rows of the recorte, COUNTED (v1.108.9): every read behind the screen's series
   // returns the Gold rows each of its points sums, and applyFilters adds them over exactly
   // what the series sums (`rowsInView`). Until then this was an estimate — the total times
   // shares of the selection — and PAM's açaí over 1990–2000, a period it has no row in, read
@@ -448,11 +448,11 @@ function MainScreen({ filters, view = 'overview', database = 'ibge_pevs', infoPa
   // problemático" made the header read "20 de 1,4 mi linhas" while every chart kept drawing
   // 1,4 mi — the counter claimed a recorte that does not exist. Same reason
   // `valueShareForRange` left in v1.45.0 (its multiplier stayed here, always 1, until
-  // v1.108.10).
+  // v1.108.9).
   // `_shares.flagShare` stays exposed: as a NUMBER it is honest ("this fraction of the Gold
   // rows carries the ticked flags"), it is just not a recorte of the screen.
   const rowsCounted = (_f && Number.isFinite(_f.rowsInView)) ? _f.rowsInView : null;
-  // Only when the count did not come (a payload from before v1.108.10, or a UF subset the
+  // Only when the count did not come (a payload from before v1.108.9, or a UF subset the
   // series cannot honour) does the old estimate stand in, and the label says it is one.
   // Clamped to the total: the shares are heuristic, and a share slightly >1 must never
   // render "more filtered rows than the total" (M1). Under a sub-UF recorte the selection

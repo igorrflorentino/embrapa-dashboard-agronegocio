@@ -113,7 +113,7 @@ import './productOrigin.js';
     return [...byUfYear.values()];
   }
 
-  // The Gold rows behind a sum of points (v1.108.10), added STRICTLY: one point that came
+  // The Gold rows behind a sum of points (v1.108.9), added STRICTLY: one point that came
   // without its count (`rows`, a payload from before the reads carried it) makes the whole
   // sum unknown (null), never a smaller number. The opposite of addPresent, on purpose: a
   // value total may skip a missing value and stay a total of what is present, but a row
@@ -550,7 +550,7 @@ import './productOrigin.js';
     // productShare is NO LONGER used to scale displayed UF/region/heatmap values
     // (that fabricated geography — see above). It survives only as the product
     // multiplier of the hero "Linhas" ESTIMATE, the fallback for when the rows could not be
-    // counted (rowsInView, v1.108.10); the counter itself counts them.
+    // counted (rowsInView, v1.108.9); the counter itself counts them.
     //
     // It is the selection's share of the banco's ROWS, from each produto's own row count
     // (qualityByProduct[].rows, v1.108.5), not its share of PRODUCTS. Products are far from
@@ -711,11 +711,11 @@ import './productOrigin.js';
     // ── Row counter (for hero "SELEÇÃO ATIVA · Linhas") ────────────────
     // The Gold rows behind exactly what `ts` sums — the same reads, years, UFs, products and
     // axes (origin, flow, níveis, the COMTRADE countries: each read already applies them) —
-    // so the counter COUNTS them (v1.108.10). Until then it multiplied the banco's total by
+    // so the counter COUNTS them (v1.108.9). Until then it multiplied the banco's total by
     // shares of the selection, and a share of the products' rows spread evenly over the years
     // is not the rows of the recorte: PAM's açaí over 1990–2000, a period it has no row in,
     // read thousands. Null when it cannot be counted — a point without `rows` (a payload from
-    // before v1.108.10), or a geography `ts` itself does not honour: a UF subset with no UF
+    // before v1.108.9), or a geography `ts` itself does not honour: a UF subset with no UF
     // grid, a sub-UF recorte not resolved, a basket × UF cross whose cube is pending or failed
     // (`ts` sums every product there). MainScreen then holds the mark or shows the estimate
     // below and says it is one. The quality selection stays out by decision (MainScreen).

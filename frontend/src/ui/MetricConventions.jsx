@@ -22,6 +22,8 @@
 // it above DataGate (same reasoning as filterOpen) survives the remount.
 
 import { magnitudeParts } from '../charts/magnitude.js';
+// window.COUNT_UNKNOWN — what formatCountQty calls a count nobody named.
+import './countUnits.js';
 
 // ── Qual economia cada correção mede ────────────────────────────────────────────
 //
@@ -506,12 +508,26 @@ window.formatVolumeQty = (miM3, conv) => {
 // Contagem (head / eggs — PPM livestock): internal q_count holds *millions of units*
 // (mi un), the same ÷1e6 scaling the serializer applies. Mirrors mass/volume so the
 // herd reads in the user-picked count unit (un / dz / milheiro / cabeça). `unitLabel`
-// names what is counted when the caller knows it (window.countGroupUnit: "ovos",
-// "frutos"); the multiplier stays the convention's.
+// names what is counted (window.countGroupUnit for a total, window.countProductUnit for
+// one product: "cabeças", "ovos", "frutos"); the multiplier stays the convention's.
+// A caller that names nothing gets "unidade não identificada", never the convention's
+// bare 'un' or 'cab': until v1.108.7 that fallback put "un" beside every herd on Perfil do
+// produto and Rebanho.
 window.formatCountQty = (miUn, conv, unitLabel) => {
   if (miUn == null) return '—';
   const v = miUn * window.countQtyMul(conv);
-  return _fmtRescaled(v, conv, unitLabel || window.unitOf(conv, 'count'));
+  return _fmtRescaled(v, conv, unitLabel || window.COUNT_UNKNOWN);
+};
+// ONE product's quantity (its productTS `q`), in its family's unit: mass and volume in the
+// unit the strip picked, a count in the thing the product counts (countProductUnit). For
+// the per-product screens, where every figure belongs to a single product. A family with no
+// display scale has no `q` (the serializer sends none) and reads '—'.
+window.formatProductQty = (product, q, conv) => {
+  const family = product && product.family;
+  if (family === 'count') return window.formatCountQty(q, conv, window.countProductUnit(product, conv));
+  if (family === 'volume') return window.formatVolumeQty(q, conv);
+  if (family === 'mass') return window.formatMassQty(q, conv);
+  return '—';
 };
 
 // Multipliers: internal dataset units (mil t / mi m³) → selected display
@@ -523,7 +539,8 @@ window.volumeQtyMul  = (conv) => 1e6  / window.unitToBase('volume', window.unitO
 window.countQtyMul   = (conv) => 1e6  / window.unitToBase('count', window.unitOf(conv, 'count'));
 window.massAxisLabel   = (conv) => window.unitOf(conv, 'mass');
 window.volumeAxisLabel = (conv) => window.unitOf(conv, 'volume');
-window.countAxisLabel  = (conv) => window.unitOf(conv, 'count');
+// No count counterpart, on purpose: the convention's count unit ('un', 'cab') does not say
+// what is counted, and a count axis is named by its product or its total (countUnits.js).
 
 // Human label for the active monetary convention (e.g. "USD · IPCA (Brasil)").
 // A economia entra entre parênteses quando o índice NÃO é o da moeda exibida — é aí que

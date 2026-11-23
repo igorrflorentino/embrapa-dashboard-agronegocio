@@ -133,10 +133,15 @@ def _measure(value: Any) -> float | None:
     expect for absence: Plotly leaves a GAP (connectgaps defaults to false) and the
     pt-BR formatters (``fmtSigned``/``numBR``/``pctBR``) already render it as '—'.
 
-    Only VALUE columns need this. Quantities are read straight from the source and
-    carry no index dependency — measured on prod 2026-09-06, ``qty_base`` is NULL in
-    0 of 42.529 mart rows across PEVS/PAM/PPM, while ``val_real_ipca_brl`` is NULL in
-    13.430 — so the quantity paths deliberately keep :func:`_num`.
+    Value columns need this. Quantities are read straight from the source and carry no
+    index dependency — measured on prod 2026-09-06, ``qty_base`` is NULL in 0 of 42.529
+    mart rows across PEVS/PAM/PPM, while ``val_real_ipca_brl`` is NULL in 13.430 — so the
+    quantity paths that sum ACROSS products keep :func:`_num`. The one exception is the
+    per-product ``q`` (:func:`_product_ts`, v1.108.8): there it is the quantity in the
+    PRODUCT's unit, and a UN COMTRADE year can have none (no row in that unit, or rows in
+    it with no quantity), which is absent, not zero. In the IBGE and COMEX marts no
+    code-year has a NULL quantity, nationally or by UF (measured on prod 2026-11-23), so
+    there the two coercions give the same number.
     """
     if value is None:
         return None
@@ -179,7 +184,7 @@ def _count_totals(row: Any) -> dict[str, float]:
 def _source_rows(row: Any) -> dict[str, int | None]:
     """The Gold rows one output row sums, as ``rows`` — only when the read counted them.
 
-    The hero's "Linhas" counter sums them over what the screen draws (v1.108.10): the
+    The hero's "Linhas" counter sums them over what the screen draws (v1.108.9): the
     snapshot's ``productTS`` and ``ufYearly``, the basket cube and the município cube ask
     for ``source_rows`` (``sql._source_rows_select``). A frame without the column was not
     asked, and its rows carry no ``rows`` key: the client reads that as "not counted" and
@@ -276,7 +281,8 @@ def serialize_snapshot(snap: dict) -> dict:
         # e as correções que os alcançam (v1.81.0) — ver _covering.
         "valueGap": gap,
         "products": _products(snap.get("products")),
-        "productTS": _product_ts(snap.get("product_ts")),
+        # The same product list: each point of a series carries its product's family.
+        "productTS": _product_ts(snap.get("product_ts"), snap.get("products")),
         "overviewTS": _overview_ts(snap.get("overview_ts")),
         "ufData": _uf_data(snap.get("uf_data")),
         "ufYearly": _uf_yearly(snap.get("uf_yearly")),
@@ -513,31 +519,54 @@ def _products(df: pd.DataFrame | None) -> list[dict]:
     return out
 
 
-def _product_ts(df: pd.DataFrame | None) -> dict:
+# The per-family quantity column of the per-product series and its display scale: massa → mil t,
+# volume → mi m³, contagem → mi un (millions of head / eggs). energia/area/desconhecida have no
+# display convention, so they have no track and their q is None (absent rather than mis-scaled).
+_QTY_TRACK = {"massa": ("q_mass", 1e3), "volume": ("q_vol", 1e6), "contagem": ("q_count", 1e6)}
+
+
+def _product_families(products: pd.DataFrame | None) -> dict[str, str]:
+    """``{code: family}`` as ``products`` lists them (Gold's pt id), for :func:`_product_ts`."""
+    if _empty(products) or "family" not in products.columns:
+        return {}
+    return {
+        str(r.code): r.family
+        for r in products.itertuples()
+        if isinstance(r.family, str) and r.family
+    }
+
+
+def _product_ts(df: pd.DataFrame | None, products: pd.DataFrame | None = None) -> dict:
     """GROUP BY code → {code: [{y, v(mi), q(mil t | mi m³ | mi un | None), family}]}.
 
-    ``q`` is the display quantity in the code's family base unit (massa → mil t,
-    volume → mi m³, contagem → mi un, i.e. millions of head/eggs), read from the
-    per-family ``q_mass`` / ``q_vol`` / ``q_count`` CASE columns so the families are
-    never blended. ``contagem`` carries the livestock HEADCOUNT (PPM's herd, the
-    defining content of that banco) and egg counts — without its own track it would
-    be invisible in every quantity chart. energia/area/desconhecida still have no
-    display convention → ``q`` is None (absent rather than mis-scaled).
+    ``family`` is the PRODUCT's, as ``products`` lists it, in every point of its series
+    (v1.108.8). Each point used to carry the family of its own year (``any_value`` in
+    SQL), and a UN COMTRADE year can be in another unit than the product: with the
+    reporter set to the United States, 440311 (listed in m³) has more rows in "Número
+    de itens" than in m³ in 2018–2021, so those years could come out as counts — and,
+    ranked by the year's rows, always would. The screens read the product's family to
+    label the axis (Perfil do produto) and the point's to route its quantity (the
+    national total, Valor × Volume), so they would draw item counts on a m³ axis.
+    Without ``products``, or for a code it does not list, the point keeps the family the
+    SQL ranked for its year (``sql.product_timeseries``).
+
+    ``q`` is the display quantity in that family's base unit, read from the per-family
+    ``q_mass`` / ``q_vol`` / ``q_count`` CASE columns, so the families are never blended
+    and the rows in another unit add nothing to it. ``contagem`` carries the livestock
+    HEADCOUNT (PPM's herd, the defining content of that banco) and egg counts — without
+    its own track it would be invisible in every quantity chart. A year with no quantity
+    in the product's unit has ``q`` None, never 0 (see :func:`_measure`).
     """
     if _empty(df):
         return {}
+    families = _product_families(products)
     out: dict[str, list[dict]] = {}
     for r in df.itertuples():
-        fam_raw = getattr(r, "family", "")
-        if fam_raw == "massa":
-            q: float | None = _num(getattr(r, "q_mass", 0)) / 1e3  # t → mil t
-        elif fam_raw == "volume":
-            q = _num(getattr(r, "q_vol", 0)) / 1e6  # m³ → mi m³
-        elif fam_raw == "contagem":
-            q = _num(getattr(r, "q_count", 0)) / 1e6  # un → mi un (head / eggs)
-        else:
-            q = None  # energia/area/desconhecida: no display scale
-        out.setdefault(str(r.code), []).append(
+        code = str(r.code)
+        fam_raw = families.get(code) or getattr(r, "family", "")
+        track = _QTY_TRACK.get(fam_raw)
+        q = _measure_scaled(getattr(r, track[0], None), track[1]) if track else None
+        out.setdefault(code, []).append(
             {
                 "y": int(r.reference_year),
                 # ABSENT stays absent (see _measure): a year the chosen deflator /
@@ -790,13 +819,20 @@ def serialize_geo_yearly(df: pd.DataFrame | None) -> dict:
     return {"ufYearly": _uf_yearly(df), "priceBase": pbase.payload(None, base)}
 
 
-def serialize_product_ts_by_uf(df: pd.DataFrame | None, *, available: bool = True) -> dict:
+def serialize_product_ts_by_uf(
+    df: pd.DataFrame | None,
+    *,
+    available: bool = True,
+    products: pd.DataFrame | None = None,
+) -> dict:
     """seam.product_ts_by_uf() → { productTS: {code: [{y, v, q, family}]}, priceBase,
     available } (v1.108.3).
 
     The per-product series summed over the selected UFs. Reuses :func:`_product_ts`, so the
     scaling is BYTE-IDENTICAL to the snapshot's ``productTS``: under a whole-UF geography
     filter the frontend draws this one in its place, and the two must speak the same units.
+    ``products`` is the banco's product list, as the snapshot's: each point carries its
+    product's family here too (v1.108.8).
 
     ``priceBase`` dates the values — the read is a request of its own, cached on its own, and
     across a build it can come back a month apart from the snapshot. ``available`` says
@@ -804,7 +840,7 @@ def serialize_product_ts_by_uf(df: pd.DataFrame | None, *, available: bool = Tru
     from "never asked"; always present, so the contract does not change shape by banco."""
     df, base = pbase.take(df)
     return {
-        "productTS": _product_ts(df),
+        "productTS": _product_ts(df, products),
         "priceBase": pbase.payload(None, base),
         "available": available,
     }

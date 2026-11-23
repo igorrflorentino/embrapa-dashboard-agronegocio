@@ -10,6 +10,10 @@
 
 // window.recorteNaoSeAplica — imported for real, so the view's tests load it on their own.
 import './RecorteNote.jsx';
+// window.countGroups / countProductUnit / CountRefusedNote — the herd is named by what it
+// counts (cabeças), never by the convention's bare 'un'.
+import './countUnits.js';
+import './CountUnitNotes.jsx';
 
 const { useState: useRbState, useEffect: useRbEffect } = React;
 
@@ -32,7 +36,6 @@ function ViewRebanho({ summary, conventions, database }) {
 
   const yearStart = filtered.yearStart, yearEnd = filtered.yearEnd;
   const qtyMul = window.countQtyMul(conv);
-  const unitAx = window.countAxisLabel(conv);
   const PALETTE = ['var(--viz-1)', 'var(--viz-2)', 'var(--viz-3)', 'var(--viz-4)',
                    'var(--viz-5)', 'var(--viz-6)', 'var(--viz-7)', 'var(--viz-9)'];
   const hasGeo = filtered.ufDataFull.length > 0;
@@ -114,6 +117,16 @@ function ViewRebanho({ summary, conventions, database }) {
     );
   }
 
+  // What the counts are named by (countUnits.js), never the convention's bare 'un' or 'cab'.
+  // The composition and the evolution put every species on ONE unit, so they take the herd's
+  // group: heads of different species are one unit, cabeças. A species whose unit is not
+  // recognised would make that shared unit a claim about something it may not count, so the
+  // group is refused and named instead (CountRefusedNote), as every other count total is.
+  // The focused species' cards and map are its own, and name its own unit.
+  const herdGroup = window.countGroups(filtered.products, available)
+    .find(g => g.total === 'stock') || null;
+  const herdUnit = herdGroup && !herdGroup.mixed ? window.countGroupUnit(herdGroup, conv) : null;
+
   // Latest-year composition: each species' headcount share. A cross-species comparison
   // shown ONLY as relative composition (the caveat note makes the non-additivity explicit).
   const latestByCode = {};
@@ -149,6 +162,7 @@ function ViewRebanho({ summary, conventions, database }) {
 
   // Focused-species KPIs (current efetivo, YoY, historical peak).
   const focusProd = filtered.products.find(p => p.code === activeFocus);
+  const focusUnit = window.countProductUnit(focusProd, conv);
   const focusWin  = filtered.allProductTS[activeFocus].filter(d => d.y >= yearStart && d.y <= yearEnd);
   // `q: null`, não `q: 0`: uma janela sem ponto algum (período fora da cobertura da
   // pesquisa) não tem efetivo ZERO, tem efetivo desconhecido. Medido na tela com
@@ -211,7 +225,7 @@ function ViewRebanho({ summary, conventions, database }) {
       <div className="kpi-row">
         <window.KpiCardSpark
           label={<>Efetivo · {focusProd.name}</>}
-          value={window.formatCountQty(fLast.q, conv)}
+          value={window.formatCountQty(fLast.q, conv, focusUnit)}
           delta={window.fmtSigned(fDelta)}
           deltaPositive={window.deltaUp(fDelta)}
           sub={`${fLast.y} vs. ${fPrev.y}`}
@@ -221,7 +235,7 @@ function ViewRebanho({ summary, conventions, database }) {
         />
         <window.KpiCardSpark
           label="Pico histórico"
-          value={window.formatCountQty(fPeak.q, conv)}
+          value={window.formatCountQty(fPeak.q, conv, focusUnit)}
           sub={`em ${fPeak.y}`}
           spark={focusWin.slice(-12).map(d => ({ y: d.y, q: d.q }))}
           sparkKey="q"
@@ -236,30 +250,36 @@ function ViewRebanho({ summary, conventions, database }) {
           <window.KpiCardSpark
             label={<>UF líder · {focusProd.name}</>}
             value={ufTop[0].uf}
-            sub={`${ufTop[0].value.toLocaleString('pt-BR', { maximumFractionDigits: 0 })} ${unitAx}`}
+            sub={`${ufTop[0].value.toLocaleString('pt-BR', { maximumFractionDigits: 0 })} ${focusUnit}`}
           />
         )}
       </div>
 
-      {/* Composition + evolution */}
-      <div className="grid-2">
-        <div className="card">
-          <window.SectionHeader
-            overline={`Composição do efetivo · ${yearEnd}`}
-            title="Participação por espécie (cabeças)"
-            action={<span className="caption">{available.length} espécies</span>}
-          />
-          <window.Donut data={compData} size={180} valueKey="share" />
+      {/* Composition + evolution: every species on one unit, or neither is drawn */}
+      {herdUnit ? (
+        <div className="grid-2">
+          <div className="card">
+            <window.SectionHeader
+              overline={`Composição do efetivo · ${yearEnd}`}
+              title="Participação por espécie (cabeças)"
+              action={<span className="caption">{available.length} espécies</span>}
+            />
+            <window.Donut data={compData} size={180} valueKey="share" />
+          </div>
+          <div className="card">
+            <window.SectionHeader
+              overline={<>Evolução por espécie · {yearStart}–{yearEnd} · <window.UnitFamilyTag family="count" conv={conv} unit={herdUnit}/></>}
+              title="Efetivo ao longo do tempo"
+              action={<span className="caption">use o zoom para as espécies menores</span>}
+            />
+            <window.MultiLineChart series={evoSeries} label={herdUnit} valueKey="v" height={300} />
+          </div>
         </div>
+      ) : (
         <div className="card">
-          <window.SectionHeader
-            overline={<>Evolução por espécie · {yearStart}–{yearEnd} · <window.UnitFamilyTag family="count" conv={conv}/></>}
-            title="Efetivo ao longo do tempo"
-            action={<span className="caption">use o zoom para as espécies menores</span>}
-          />
-          <window.MultiLineChart series={evoSeries} label={unitAx} valueKey="v" height={300} />
+          <window.CountRefusedNote groups={[herdGroup].filter(Boolean)} database={database} marginTop={0} />
         </div>
-      </div>
+      )}
 
       {/* Per-UF map of the focused species */}
       {hasGeo && (
@@ -278,7 +298,7 @@ function ViewRebanho({ summary, conventions, database }) {
               Não foi possível carregar a distribuição por UF. Tente novamente.
             </p>
           ) : ufMapRows.length ? (
-            <window.BrazilTileMap data={ufMapRows} valueKey="value" label={unitAx} />
+            <window.BrazilTileMap data={ufMapRows} valueKey="value" label={focusUnit} />
           ) : (
             <p className="caption" style={{ padding: '40px 4px', textAlign: 'center' }}>
               Sem dados por UF para esta espécie.

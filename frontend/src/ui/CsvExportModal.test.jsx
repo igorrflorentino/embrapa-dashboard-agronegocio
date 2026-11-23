@@ -103,3 +103,39 @@ describe('CsvExportModal — the reason for "Nada para baixar"', () => {
     }
   });
 });
+
+// ── As unidades que a janela diz são as do arquivo (v1.108.7) ─────────────────────────────
+// No CSV follows the strip's units: every file is in t, m³ and ONE of the thing counted. Until
+// v1.108.7 this window listed the strip's units under "Convenções métricas" — "kg · dz" beside a
+// file in tonnes and eggs. The units it lists now come off the built rows (preview.unidades),
+// and only the file that carries them in a column has any to list.
+describe('CsvExportModal — the units it lists are the file’s, never the strip’s', () => {
+  const PREVIEW = {
+    erro: false, linhas: 2, colunas: ['ano', 'codigo', 'quantidade', 'unidade'], bytes: 100,
+    assunto: 'Séries por produto', banco: 'IBGE PPM', arquivo: 'ibge_ppm_series_por_produto_2020.csv',
+    baixar: () => {},
+  };
+  const STRIP = { currency: 'BRL', correction: 'Nominal', units: { mass: 'kg', count: 'dz' } };
+  const abrir = (preview) => render(
+    <window.CsvExportModal preview={preview} conventions={STRIP} onClose={() => {}} />).container;
+  const linha = (c, rotulo) => [...c.querySelectorAll('.csv-lista > div')]
+    .find((d) => d.querySelector('dt').textContent === rotulo);
+  // The convention chips as {k: v}. Read per element: the container's textContent glues the
+  // key to its value ("Unidadeskg · dz"), and a regex word boundary never falls inside it.
+  const convencoes = (c) => Object.fromEntries([...c.querySelectorAll('.fm-chip-filter')]
+    .map((e) => { const k = e.querySelector('.fm-chip-k').textContent; return [k, e.textContent.slice(k.length)]; }));
+
+  it('the per-product file lists the units its rows are in', () => {
+    const c = abrir({ ...PREVIEW, unidades: ['cabeças', 'ovos'] });
+    expect(linha(c, 'Unidades').querySelector('dd').textContent).toBe('cabeças · ovos');
+    expect(convencoes(c)).toEqual({ Moeda: 'BRL', 'Correção': 'Sem correção' });
+  });
+
+  it('a file that names its units in its column names lists none, and never the strip’s', () => {
+    const c = abrir(PREVIEW);
+    expect(linha(c, 'Unidades')).toBeUndefined();
+    // The currency and the correction DO travel with the file, and are still listed; the
+    // strip's units ("kg · dz") do not, and are not.
+    expect(convencoes(c)).toEqual({ Moeda: 'BRL', 'Correção': 'Sem correção' });
+  });
+});

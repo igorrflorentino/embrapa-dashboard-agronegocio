@@ -7,6 +7,7 @@ never touch a live warehouse.
 
 from __future__ import annotations
 
+import re
 from datetime import UTC
 from pathlib import Path
 from unittest import mock
@@ -1104,13 +1105,146 @@ def test_products_lists_distinct_codes_with_unit_and_family():
     )
     assert "group by ncm_code" in query
     assert "any_value(ncm_description)" in query
-    assert "any_value(base_unit)" in query
-    assert "any_value(unit_native)" in query
-    assert "any_value(family)" in query
+    # The three unit fields leave as ONE struct (v1.108.8), never three any_value.
+    assert "unit_pick.base_unit   as unit" in query
+    assert "unit_pick.unit_native as unit_native" in query
+    assert "unit_pick.family      as family" in query
     # measure_kind is OFF by default → the SELECT stays schema-compatible with marts
     # (COMEX/PEVS/PAM) that do not carry the column.
     assert "measure_kind" not in query
     assert params == []
+
+
+# ── products / productTS: a code whose rows mix units names ONE of them (v1.108.8) ─────
+# In the UN COMTRADE mart 99 of the 100 codes mix units (measured on prod 2026-11-23): the
+# real unit beside "Sem unidade (N/A)", and in 20 codes two real ones — 440311 in m³ (7.038
+# rows) and in "Número de itens" (107). Each field used to be an independent any_value, so a
+# code could come out as a count family with a mass unit, and the pick changed with the row
+# BigQuery read first. These tests hold the CONSTRUCTION, the only proof of determinism: a
+# sample read can repeat the same row by chance, and BigQuery's result cache answers the same
+# text with the same rows.
+
+_UNIT_FIELDS = ("family", "base_unit", "unit_native")
+
+
+def _pick_order(query: str, picked: str) -> list[str]:
+    """The ORDER BY keys of the ``array_agg(<picked> order by … limit 1)`` in ``query``."""
+    m = re.search(
+        r"array_agg\(\s*"
+        + re.escape(picked)
+        + r"\s+order by\s+(.+?)\s+limit 1\s*\)\[offset\(0\)\]",
+        query,
+        flags=re.S,
+    )
+    assert m, f"no ordered pick of {picked!r} in the query"
+    keys: list[str] = []
+    depth, current = 0, ""
+    for ch in m.group(1):  # split on the commas outside parentheses
+        depth += (ch == "(") - (ch == ")")
+        if ch == "," and depth == 0:
+            keys.append(" ".join(current.split()))
+            current = ""
+        else:
+            current += ch
+    return [*keys, " ".join(current.split())]
+
+
+_PRODUCTS_VARIANTS = [
+    pytest.param("serving_comtrade_annual", "cmd_code", "cmd_description", {}, id="comtrade"),
+    pytest.param("serving_comex_annual", "ncm_code", "ncm_description", {}, id="comex"),
+    pytest.param(
+        "serving_pevs_annual",
+        "product_code",
+        "product_description",
+        {"with_tabela": True},
+        id="pevs",
+    ),
+    pytest.param(
+        "serving_ppm_annual",
+        "product_code",
+        "product_description",
+        {"with_tabela": True, "with_measure_kind": True},
+        id="ppm",
+    ),
+]
+
+
+@pytest.mark.parametrize(("table", "code_col", "name_col", "flags"), _PRODUCTS_VARIANTS)
+def test_products_takes_family_and_units_from_one_row(table, code_col, name_col, flags):
+    """``family``, ``unit`` and ``unit_native`` come out of ONE ordered pick of the struct of
+    the three, so a count family can never leave with a mass unit. The only ``any_value``
+    left wraps columns that are constant per code (name, table, measure_kind: 0 codes with
+    more than one in the five marts, measured on prod 2026-11-23)."""
+    query, _ = sql.products(
+        f"p.serving.{table}", code_column=code_col, name_column=name_col, **flags
+    )
+    assert _pick_order(query, "struct(family, base_unit, unit_native)")
+    for field in _UNIT_FIELDS:
+        assert f"any_value({field})" not in query
+    wrapped = set(re.findall(r"any_value\((\w+)\)", query))
+    assert wrapped <= {name_col, "name", "tabela", "measure_kind"}, wrapped
+    # The unit fields of the answer are the struct's, field by field.
+    assert re.search(r"unit_pick\.base_unit\s+as unit\b", query)
+    assert re.search(r"unit_pick\.unit_native\s+as unit_native\b", query)
+    assert re.search(r"unit_pick\.family\s+as family\b", query)
+
+
+@pytest.mark.parametrize(("table", "code_col", "name_col", "flags"), _PRODUCTS_VARIANTS)
+def test_products_ranks_units_in_a_total_order(table, code_col, name_col, flags):
+    """The pick is deterministic only if no two distinct units of a code can tie. The rows
+    are grouped by (code, family, base_unit, unit_native) first, so two candidates differ in
+    at least one of the three — and the order ends on the three, ascending: total.
+
+    Before that, the order says which unit names the code: a known family before an unknown
+    one ("Sem unidade (N/A)" carries no quantity and says nothing of how the code is
+    measured — in four COMTRADE codes it has MORE rows than the real unit), the family with
+    the most rows, then the pair with the most rows inside it."""
+    query, _ = sql.products(
+        f"p.serving.{table}", code_column=code_col, name_column=name_col, **flags
+    )
+    order = _pick_order(query, "struct(family, base_unit, unit_native)")
+    assert order == [
+        "(family is null or family = 'desconhecida')",
+        "family_rows desc",
+        "family",
+        "unit_rows desc",
+        "base_unit",
+        "unit_native",
+    ]
+    # The candidates ARE the distinct units: the group that counts unit_rows is the struct.
+    assert f"group by {code_col}, family, base_unit, unit_native" in query
+    assert "count(*)                 as unit_rows" in query
+    assert "sum(unit_rows) over (partition by code, family) as family_rows" in query
+
+
+def test_product_timeseries_ranks_the_years_family_by_the_products_rule():
+    """The series ranks each year's family by the SAME keys ``products`` ranks families
+    with — one constant, so the two cannot be told apart by different rules — over the
+    rows the series sums: the window counts inside the filtered subquery. The order ends
+    on the family, total over the distinct families the pick returns."""
+    query, _ = sql.product_timeseries(
+        "p.serving.serving_comtrade_annual",
+        code_column="cmd_code",
+        year_start=2000,
+        flow="export",
+        reporter_column="reporter_iso_a3",
+        reporter_value="BRA",
+    )
+    assert "any_value(" not in query
+    series_rank = _pick_order(query, "family")
+    products_rank = _pick_order(
+        sql.products("t", code_column="cmd_code", name_column="cmd_description")[0],
+        "struct(family, base_unit, unit_native)",
+    )
+    family_rank = ["(family is null or family = 'desconhecida')", "family_rows desc", "family"]
+    assert series_rank == family_rank
+    assert products_rank[:3] == family_rank
+    window = "count(*) over (partition by cmd_code, reference_year, family) as family_rows"
+    assert window in query
+    # Every filter sits INSIDE the subquery the window counts over, before the outer group.
+    inner = query[query.index(window) : query.index("group by cmd_code, reference_year")]
+    for predicate in ("reference_year >= @year_start", "flow = @flow", "reporter_iso_a3 = @"):
+        assert predicate in inner, predicate
 
 
 def test_products_adds_the_sidra_table_only_when_requested():
@@ -1173,7 +1307,9 @@ def test_product_timeseries_sums_value_and_native_quantity():
     assert "as q_count" in query
     # qty_base is never summed across families anymore — the old single column is gone.
     assert "as total_qty_base" not in query
-    assert "any_value(family)" in query
+    # The year's family is ranked, not any row's (v1.108.8).
+    assert "any_value(family)" not in query
+    assert "[offset(0)] as family" in query
     assert "product_code in unnest(@codes)" in query.lower()
     by_name = {p.name: p for p in params}
     assert by_name["codes"].values == ["3405"]

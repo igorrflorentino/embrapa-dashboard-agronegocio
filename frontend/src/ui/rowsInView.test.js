@@ -1,6 +1,6 @@
-// rowsInView.test.js — o contador "Linhas" CONTA as linhas do recorte (v1.108.10).
+// rowsInView.test.js — o contador "Linhas" CONTA as linhas do recorte (v1.108.9).
 //
-// Até a v1.108.9 ele estimava: o total do banco vezes a fração dos produtos, a dos anos e a
+// Até a v1.108.8 ele estimava: o total do banco vezes a fração dos produtos, a dos anos e a
 // das UFs. A fração dos anos supõe que todo produto tem linhas em todo ano, e não tem: o açaí
 // da PAM começa em 2015, e o recorte açaí × 1990–2000 lia milhares de linhas num período em que
 // ele não tem linha alguma. Agora cada leitura por trás da série da tela devolve as linhas da
@@ -62,7 +62,7 @@ function agrupar(linhas, chave) {
   return [...m.values()];
 }
 
-// As leituras, como o servidor as monta. `semLinhas` reproduz uma resposta de antes da v1.108.10.
+// As leituras, como o servidor as monta. `semLinhas` reproduz uma resposta de antes da v1.108.9.
 function leituras(linhas, { semLinhas = false } = {}) {
   const n = (g) => (semLinhas ? {} : { rows: g.length });
   const productTS = {};
@@ -271,7 +271,7 @@ describe('rowsInView — um recorte abaixo da UF', () => {
 
 // ── Uma resposta sem contagem ────────────────────────────────────────────────────────────────
 describe('rowsInView — sem a contagem na resposta, a contagem é desconhecida, nunca menor', () => {
-  it('uma resposta de antes da v1.108.10: nulo, e a estimativa segue disponível', async () => {
+  it('uma resposta de antes da v1.108.9: nulo, e a estimativa segue disponível', async () => {
     // A cesta pede o cubo também, e um servidor antigo o devolve igualmente sem contagem.
     instalarCubos({ semLinhas: true });
     const applyFilters = await carregar(snapshot({ semLinhas: true }));
