@@ -115,6 +115,98 @@ desenham as 36.963 do Brasil (exportação e importação).
   período 1990–2000, "Seleção ativa" lê "Linhas 0" ao lado de "Anos cobertos 11 / 52". Fica para
   uma próxima versão.
 
+## [1.108.6] - 2026-11-23
+
+**O mapa de calor da Geografia passa a desenhar com qualquer número de linhas.** Fecha a
+pendência das Notas da v1.108.1. Com 2 municípios em 40 anos, o cartão dizia "Não foi possível
+renderizar este gráfico", e o console registrava o erro do Plotly `Something went wrong with axis
+scaling`. Com 3 linhas, o mesmo. Com 4 e 5 linhas o mapa desenhava, mas a unidade caía abaixo da
+barra de cor, no pé do cartão, e a faixa do gráfico perdia até 20,6 px. O caso de 5 linhas é o das
+5 regiões: é o que a Geografia mostra quando não há filtro de UF.
+
+### Corrigido
+- **A barra de cor horizontal (até 5 linhas) deixa de ter título, e a unidade passa a ser uma
+  anotação logo acima dela.** A causa foi medida numa prévia local contra a produção (só leitura)
+  em 2026-11-23, com o Plotly 4.3.0 e o cartão de 659 px. Na barra horizontal presa à base da
+  figura (`yref: 'container'`), o Plotly posiciona o título a uma fração da altura do GRÁFICO
+  multiplicada pela altura da FIGURA (`colorbar/draw.js`). A barra reserva margem inferior até o
+  título, essa margem encolhe o gráfico, e um gráfico menor empurra o título mais para baixo. Num
+  gráfico curto o ciclo segue até a altura do gráfico ficar negativa, e o Plotly desiste
+  (`set_convert.js`). Com linhas de 40 anos:
+
+  | linhas | altura da figura | margem reservada pela barra | altura do gráfico | no `main` |
+  |---|---|---|---|---|
+  | 1 | 132 | 50,7 (cabe na margem) | 16 | desenhava |
+  | 2 | 156 | 171,1 | −23,1 | erro |
+  | 3 | 180 | 307,4 | −165,3 | erro |
+  | 4 | 204 | 98,8 | 67,4, no lugar de 88 | desenhava, com a unidade abaixo da barra |
+  | 5 | 228 | 83,4 | 106,7, no lugar de 112 | desenhava, com a unidade abaixo da barra |
+
+  Sem título, a barra reserva sempre os mesmos 50,7 px (a barra de 12 px, os traços, os rótulos e o
+  respiro do próprio Plotly), que cabem nos 108 px de margem inferior. A altura do gráfico passa a
+  ser exatamente 24 × linhas − 8 px, a mesma conta que já dimensionava o cartão. Nenhuma altura,
+  margem ou limiar mudou.
+- **A unidade fica à mesma distância da barra em qualquer contagem de linhas.** A anotação está 61
+  px abaixo da borda inferior do gráfico: ancorada ao gráfico, porque anotações não aceitam
+  referência à figura, e deslocada em pixels. Medido nos cartões reais, com a prévia reconstruída
+  (PAM, 1985–2024, R$ nominal; px a partir do topo da figura):
+
+  | recorte | altura do gráfico | unidade | barra |
+  |---|---|---|---|
+  | 1 município (Belém) | 16 | 70–82,7 | 91,3–103,3 |
+  | 2 municípios (Belém, Ananindeua) | 40 | 94–106,7 | 115,3–127,3 |
+  | 5 municípios (mais Santarém, Marabá e Paragominas) | 112 | 166–178,7 | 187,3–199,3 |
+  | 5 regiões | 112 | 166–178,7 | 187,3–199,3 |
+
+  Em todos, abaixo do gráfico: os anos terminam a 22 px, a unidade ocupa de 46 a 59 px e a barra
+  começa a 67 px. No `main`, as 5 regiões tinham a faixa com 106,3 px e a unidade em 205,3–218 px,
+  39 px abaixo da barra (154,1–166,1) e dos rótulos dela.
+- **A barra vertical (6 linhas ou mais) não mudou.** Medidas com o `main` e com a correção, nas
+  mesmas condições, 6 e 12 UFs dão as mesmas caixas até 0,1 px: gráfico, barra, título "R$" e os
+  três rótulos (6 UFs: gráfico de 130 px e barra de 92 px; 12 UFs: 274 px e 236 px).
+- O comentário do `main` justificava o título no lado de baixo com uma medição de **1 linha**
+  (título em 72–85 px, barra em 92–104 px), em que a reserva ainda cabe na margem. Ela não valia de
+  2 a 5 linhas. O comentário novo traz a tabela inteira.
+
+### Testes
+- vitest, `frontend/src/charts/Heatmap.test.jsx`, 7 testes novos e 1 reescrito (de 24 para 31):
+  - na varredura de 1 a 15 linhas (v1.31.5), 2: nenhuma barra horizontal presa à figura tem
+    título; a unidade aparece exatamente uma vez, como título da barra vertical ou como anotação;
+  - num bloco novo, de 1 a 6 linhas de 40 anos (o caso da pendência), 5: a condição medida não
+    ocorre; a unidade é uma anotação só, 61 px abaixo do gráfico; o gráfico tem 24 × linhas − 8 px
+    sobre a faixa de 108 px; de 6 linhas em diante a barra é vertical e a unidade volta a ser o
+    título dela; sem unidade, não há nem anotação nem título;
+  - reescrito: "a unidade fica acima da barra nas duas orientações" passa a conferir a anotação no
+    ramo horizontal.
+- **O que esses testes não veem.** Nos testes, o Plotly é simulado: a biblioteca 4.x não carrega no
+  vitest, e o jsdom não mede texto. Os testes conferem o leiaute que o painel envia, não o que o
+  Plotly calcula com ele, e por isso a varredura da v1.31.5 nunca viu a altura negativa. Os testes
+  novos fixam a condição que, medida no navegador, a produz (um título numa barra horizontal presa
+  à figura). A prova de que o mapa desenha são as medições acima.
+- Contraprova: com o `Heatmap.jsx` do `main`, 4 dos 31 falham, pelo motivo esperado: o título `R$`
+  na barra horizontal, onde deveria estar vazio (3 testes), e a anotação ausente (1). Os 27 que
+  passam são comportamentos que não podem mudar, entre eles a barra vertical, as alturas e as
+  margens.
+- vitest: 1931 passando em 104 arquivos, com a meta de cobertura. pytest: 2603 passando (15
+  pulados no Windows, que só rodam no Linux). eslint, `vite build`, ruff e `uv lock --check` sem
+  erro.
+
+### Notas
+- **A hipótese da v1.108.1 não era a causa.** Ela atribuía o erro aos 40 px que sobram dos 156 px
+  depois das margens (8 + 108). Com a correção, esses mesmos 40 px desenham: quem deixava a altura
+  negativa era a margem reservada pelo título.
+- **Achado no caminho, fora do escopo:** na barra vertical (mapa de calor com 6 linhas ou mais, e
+  o de "Sazonalidade e tendências", que é sempre vertical), a caixa do título da unidade invade a do
+  rótulo de cima em 2,1 px na vertical e, com unidades largas como "R$ mi" e "US$ mi", em 13 a 14
+  px na horizontal. Na tela, a unidade fica colada sobre o rótulo de cima ("R$ mi" sobre "79 mi").
+  É anterior a esta versão e igual no `main`.
+- **O outro mapa de calor do painel foi conferido.** O de "Sazonalidade e tendências" (mês × ano,
+  `MonthYearHeatmap`) não tem leiaute curto: altura fixa de 240 px e barra sempre vertical. Desenha
+  com 1, 2, 5, 6 e 12 anos (gráfico de 180 px, barra de 142 px). `window.Heatmap` só é usado na
+  Geografia.
+- Medidas antes de `document.fonts.ready`, as caixas de texto do mesmo código variaram até 1,2 px
+  entre duas leituras. As comparações entre o `main` e a correção acima esperam as fontes.
+
 ## [1.108.5] - 2026-11-23
 
 **Sob um filtro de origem do IBGE PEVS, as contagens de produtos e de linhas passam a ser as da
