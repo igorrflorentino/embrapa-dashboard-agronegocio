@@ -66,11 +66,9 @@ const stubPopup = () => ({
   addTo() { return this; }, remove() {},
 });
 
-beforeEach(async () => {
-  popupHtml = '';
-  vi.resetModules();
-  fakeMap = new FakeMap();
-  window.autoScaleNum = (v) => (Math.abs(v) >= 1e6 ? { factor: 1e6, suffix: 'mi' } : { factor: 1, suffix: '' });
+// The three modules the loader imports, replaced. Registered again before every test,
+// because `vi.resetModules()` drops what the component imported, and once for the warm-up.
+function mockMaplibre() {
   // CSS mocked for the same reason as in BrazilChoropleth.test.jsx: transformed afresh
   // after every resetModules, it could outlast waitFor under a loaded full-suite run.
   vi.doMock('maplibre-gl/dist/maplibre-gl.css', () => ({}));
@@ -82,6 +80,22 @@ beforeEach(async () => {
     NavigationControl: function NavigationControl() {},
     setWorkerUrl: () => {},
   }));
+}
+
+// The first load of the component's modules, paid while the file is collected, where no time
+// limit runs — the same warm-up as in BrazilChoropleth.test.jsx, for the same reason: left to
+// the tests, it fell on the first test's beforeEach alone. A load that throws is ignored here:
+// each test imports the component again and reports it.
+mockMaplibre();
+await import('./MunicipioChoropleth.jsx').catch(() => {});
+await import('./maplibreLoader.js').then((m) => m.loadMaplibre()).catch(() => {});
+
+beforeEach(async () => {
+  popupHtml = '';
+  vi.resetModules();
+  fakeMap = new FakeMap();
+  window.autoScaleNum = (v) => (Math.abs(v) >= 1e6 ? { factor: 1e6, suffix: 'mi' } : { factor: 1, suffix: '' });
+  mockMaplibre();
   global.fetch = vi.fn(() =>
     Promise.resolve({ ok: true, json: () => Promise.resolve(meshFC('1500107', '1500131', '1500206')) }),
   );
@@ -101,12 +115,18 @@ const DATA = [
   { cityCode: '1500131', city: 'Abel Figueiredo', value: 10e6 },
 ];
 
+// The map exists only once the mesh fetch and maplibre's dynamic import have settled. Same
+// limits as in BrazilChoropleth.test.jsx, for the same reason: the wait gets 5 s and the test
+// 10 s, so the wait can run out first and fail on its own assertion instead of on the generic
+// "Test timed out".
+const MAP_INIT_WAIT = { timeout: 5000 };
+vi.setConfig({ testTimeout: 10_000 });
+
 async function renderMap(props = {}) {
   const r = render(
     <MunicipioChoropleth uf="PA" data={DATA} valueKey="value" label="R$" {...props} />,
   );
-  // Waiting on module loading (mesh fetch + maplibre), so give it real headroom.
-  await waitFor(() => expect(fakeMap.loadHandler).toBeTypeOf('function'), { timeout: 5000 });
+  await waitFor(() => expect(fakeMap.loadHandler).toBeTypeOf('function'), MAP_INIT_WAIT);
   await fakeMap.fireLoad();
   return r;
 }
@@ -223,7 +243,7 @@ describe('MunicipioChoropleth — tally invariants over mesh × data', () => {
   const render1 = async (props) => {
     const uf = `U${ufSeq++}`;
     const r = render(<MunicipioChoropleth uf={uf} valueKey="value" label="R$" {...props} />);
-    await waitFor(() => expect(fakeMap.loadHandler).toBeTypeOf('function'), { timeout: 5000 });
+    await waitFor(() => expect(fakeMap.loadHandler).toBeTypeOf('function'), MAP_INIT_WAIT);
     await fakeMap.fireLoad();
     return r;
   };
@@ -314,7 +334,7 @@ describe('MunicipioChoropleth — focusCity', () => {
   it('filters both layers down to the focused município', async () => {
     render(<MunicipioChoropleth uf="PA" data={DATA} valueKey="value" label="R$"
                                 focusCity="1500107" />);
-    await waitFor(() => expect(fakeMap.loadHandler).toBeTypeOf('function'), { timeout: 5000 });
+    await waitFor(() => expect(fakeMap.loadHandler).toBeTypeOf('function'), MAP_INIT_WAIT);
     await fakeMap.fireLoad();
     await waitFor(() => expect(fakeMap.filters['mun-fill']).toBeTruthy());
     for (const layer of ['mun-fill', 'mun-line']) {
@@ -324,7 +344,7 @@ describe('MunicipioChoropleth — focusCity', () => {
 
   it('brings the whole state back when the focus clears', async () => {
     render(<MunicipioChoropleth uf="PA" data={DATA} valueKey="value" label="R$" />);
-    await waitFor(() => expect(fakeMap.loadHandler).toBeTypeOf('function'), { timeout: 5000 });
+    await waitFor(() => expect(fakeMap.loadHandler).toBeTypeOf('function'), MAP_INIT_WAIT);
     await fakeMap.fireLoad();
     await waitFor(() => expect(fakeMap.paintProps['mun-fill.fill-color']).toBeTruthy());
     expect(fakeMap.filters['mun-fill']).toBeNull();
@@ -337,7 +357,7 @@ describe('MunicipioChoropleth — focusCity', () => {
     // which looks exactly like "this município has no polygon".
     render(<MunicipioChoropleth uf="PA" data={DATA} valueKey="value" label="R$"
                                 focusCity={1500107} />);
-    await waitFor(() => expect(fakeMap.loadHandler).toBeTypeOf('function'), { timeout: 5000 });
+    await waitFor(() => expect(fakeMap.loadHandler).toBeTypeOf('function'), MAP_INIT_WAIT);
     await fakeMap.fireLoad();
     await waitFor(() => expect(fakeMap.filters['mun-fill']).toBeTruthy());
     expect(fakeMap.filters['mun-fill'][2]).toBe('1500107');
@@ -354,7 +374,7 @@ describe('MunicipioChoropleth — the tally goes quiet when one município is fo
     const { container } = render(
       <MunicipioChoropleth uf="PA" data={DATA} valueKey="value" label="R$" focusCity="1500107" />,
     );
-    await waitFor(() => expect(fakeMap.loadHandler).toBeTypeOf('function'), { timeout: 5000 });
+    await waitFor(() => expect(fakeMap.loadHandler).toBeTypeOf('function'), MAP_INIT_WAIT);
     await fakeMap.fireLoad();
     expect(container.textContent).not.toMatch(/em cinza/);
   });
@@ -367,7 +387,7 @@ describe('MunicipioChoropleth — the tally goes quiet when one município is fo
     const { container } = render(
       <MunicipioChoropleth uf="PA" data={DATA} valueKey="value" label="R$" />,
     );
-    await waitFor(() => expect(fakeMap.loadHandler).toBeTypeOf('function'), { timeout: 5000 });
+    await waitFor(() => expect(fakeMap.loadHandler).toBeTypeOf('function'), MAP_INIT_WAIT);
     await fakeMap.fireLoad();
     expect(container.textContent).toMatch(/em cinza/);
   });
@@ -427,7 +447,7 @@ describe('MunicipioChoropleth — robustez e eficiência', () => {
       <MunicipioChoropleth uf="PA" data={DATA} valueKey="value" label="R$" />,
     );
     await waitFor(() => expect(container.textContent).toContain('Mapa indisponível neste navegador.'),
-      { timeout: 5000 });
+      MAP_INIT_WAIT);
     console.error.mockRestore();
   });
 

@@ -7,6 +7,103 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.108.11] - 2026-11-23
+
+**Os testes dos dois mapas carregam o componente uma vez, antes do primeiro teste, e a espera pelo
+mapa passa a caber no tempo limite do teste.** Fecha a pendência das Notas da v1.108.1:
+`BrazilChoropleth.test.jsx` falhou uma vez sob carga numa rodada completa. A falha não se
+reproduziu em 35 rodadas completas, 25 delas sob carga, em que outros seis arquivos falharam por
+tempo limite. A análise achou dois defeitos nos próprios testes dos mapas, e esta versão corrige os
+dois. Muda só teste; nada chega ao painel (sem tag, pela política de release).
+
+### Corrigido
+- **O primeiro teste de cada arquivo pagava sozinho a primeira carga do componente.** O vitest
+  busca e transforma um módulo na primeira vez que um processo de teste o pede e guarda essa cópia
+  através de cada `vi.resetModules()`, então os testes seguintes só a executam de novo. Essa
+  primeira vez caía no `beforeEach` do primeiro teste, que tem 10 s de tempo limite, e com 40
+  processos de teste chegou a levar 6,7 s ali. Agora `BrazilChoropleth.test.jsx` e
+  `MunicipioChoropleth.test.jsx` importam o componente e chamam o carregador do maplibre
+  (`loadMaplibre`) uma vez, quando o arquivo é carregado, onde nenhum tempo limite corre. Duas
+  coisas não mudam:
+  - cada teste ainda importa o componente de novo depois de `vi.resetModules()`, e nenhum herda o
+    estado de outro: o carregador começa vazio em cada teste, como pedem os testes de
+    `setWorkerUrl` e do carregamento único;
+  - um componente que não carrega continua reprovando cada teste com o próprio erro, e não o
+    arquivo inteiro: a carga antecipada ignora a falha, e cada teste a encontra de novo.
+- **A espera pelo mapa nunca podia vencer antes do teste.** Os testes esperam o mapa existir por
+  até 5 s (`waitFor`), e o comentário prometia essa folga a uma máquina ocupada. Só que o teste
+  também tinha 5 s, o padrão do vitest, contados desde o `render`, que vem antes da espera. O tempo
+  limite do teste vencia sempre primeiro, com o genérico "Test timed out in 5000ms" no lugar da
+  asserção que diz o que não aconteceu. A espera continua com 5 s, e os testes desses dois arquivos
+  passam a ter 10 s (`vi.setConfig({ testTimeout: 10_000 })`, que vale só para o arquivo que o
+  chama).
+  - A outra saída, encurtar a espera para caber nos 5 s, foi descartada pela medição. Com três
+    suítes ao mesmo tempo, os testes antigos chegaram à espera até 1,8 s depois do fim do
+    `beforeEach`, então a espera teria de ficar abaixo de 3,2 s, e os testes ficariam mais
+    sensíveis à carga, não menos.
+
+### Testes
+- **Medição, antes e depois, com a mesma carga da análise**: rodadas completas da suíte
+  (`vitest run --coverage`) em grupos de três ao mesmo tempo, cada grupo todo com os testes antigos
+  dos mapas ou todo com os novos, e a ordem dos lados alternada (antigos e depois novos, novos e
+  depois antigos), para que a carga da máquina, que muda ao longo da hora, pese igual nos dois.
+  Foram 8 grupos de cada lado, em dois lotes: 24 rodadas de cada lado, cada uma executando os dois
+  arquivos uma vez. Os tempos vêm de marcas postas em cópias temporárias dos dois arquivos, fora do
+  repositório. O primeiro teste de cada arquivo:
+
+  | primeiro teste | Brasil, antes | Brasil, depois | municipal, antes | municipal, depois |
+  |---|---|---|---|---|
+  | `beforeEach`, mediana | 494 ms | 26 ms | 399 ms | 13 ms |
+  | `beforeEach`, máximo | 1.800 ms | 188 ms | 2.036 ms | 338 ms |
+  | corpo, mediana | 1.450 ms | 1.685 ms | 1.629 ms | 1.895 ms |
+  | corpo, máximo | 3.577 ms | 6.138 ms | 3.349 ms | 5.465 ms |
+  | `beforeEach` e corpo, mediana | 2.308 ms | 1.695 ms | 2.179 ms | 1.903 ms |
+  | `beforeEach` e corpo, máximo | 4.262 ms | 6.151 ms | 3.966 ms | 5.540 ms |
+
+  - A primeira carga saiu do `beforeEach`. Ela agora acontece quando o arquivo é carregado, fora de
+    qualquer tempo limite: mediana de 445 ms no mapa do Brasil e de 534 ms no municipal, máximo de
+    3,1 s e 5,3 s. O `beforeEach` dos outros testes não mudou (mediana de 21 ms e de 5 ms, antes e
+    depois).
+  - O corpo do primeiro teste não encolheu, nem devia: a carga antecipada importa o componente, mas
+    não o desenha, e a primeira renderização do processo continua no primeiro teste, cujo corpo
+    leva, na mediana, de 7 a 10 vezes o dos outros testes do arquivo na mesma rodada, antes e
+    depois. A mediana do corpo subiu 0,24 s e 0,27 s. Descontada a carga (o corpo dividido pela
+    mediana dos outros testes do arquivo na mesma rodada), a razão desce num arquivo e sobe no outro
+    (de 7,6 para 6,7 vezes e de 8,3 para 9,6 vezes): a medição não separa essa diferença da carga.
+  - Os máximos do lado novo vêm de uma única rodada, em que o primeiro teste dos dois arquivos
+    passou de 5 s (6,1 s e 5,5 s). Os dois pararam ao mesmo tempo, em processos diferentes, com
+    2,7 s de parada em comum antes da espera pelo mapa: foi a carga, não o teste. Passaram, como
+    todos os testes dos mapas nas 48 rodadas.
+- **Contraprova**: os testes antigos e os novos rodaram contra o código antigo do componente e
+  contra três mutantes do carregador.
+  - Código antigo: o componente e os módulos locais que ele importa (`choroplethScale`,
+    `geoSanitize`, `brazilUfGeo`, `maplibreLoader`), como estavam em cada revisão anterior do
+    componente: 10 do mapa do Brasil, do #185 à v1.93.1, e 5 do mapa municipal, da v1.26.0 à
+    v1.93.1.
+  - Mutantes do carregador: sem o cache da v1.93.1, com o `.default` da v1.24.22, sem
+    `setWorkerUrl`.
+  - Nas 21 variantes, os dois lados reprovam exatamente os mesmos testes: 181 falhas de cada lado.
+    Muda a mensagem. Os testes antigos davam 86 dessas falhas como "Test timed out in 5000ms", e os
+    novos, nenhuma: cada uma traz a asserção que diz o que faltou. O mapa municipal da v1.32.1, que
+    chamava um `setFailed` inexistente, agora reprova com "expected … to contain 'Mapa indisponível
+    neste navegador.'".
+- vitest: 1998 passando em 106 arquivos, os mesmos da v1.108.10 (nenhum teste novo nesta versão),
+  com a cobertura acima dos mínimos. pytest: 2640 passando (15 pulados no Windows, que só rodam no
+  Linux).
+
+### Notas
+- **Sob essa carga, outros arquivos falham por tempo limite, e os mapas não.** Nas 48 rodadas
+  medidas, nenhum teste dos mapas falhou, e 35 rodadas tiveram alguma falha em outros arquivos,
+  todas "Test timed out in 5000ms": `AppShell.cov` (65 falhas, 64 delas na matriz da citação ABNT),
+  `ViewCadastroProdutos` (20), `FilterMenu.cov` (6), `absenceGuard` (4), `ViewCrossSource.cov` (3),
+  `Heatmap` (2), `ViewCuration.cov`, `ViewGeography.cov` e `ViewTerritoryCompare` (1 cada).
+  - Foram 15 das 24 rodadas com os testes antigos dos mapas e 20 das 24 com os novos, mas a direção
+    se inverteu de um lote para o outro: 4 de 12 contra 11 de 12 no primeiro lote, 11 de 12 contra
+    9 de 12 no segundo. É a carga da máquina, dividida com outras sessões de trabalho, e não esta
+    mudança, que só toca os dois arquivos dos mapas.
+  - A sensibilidade da suíte inteira à carga (limite de processos, tempos limite globais) é uma
+    decisão à parte, fora do escopo desta versão.
+
 ## [1.108.10] - 2026-11-23
 
 **O preço implícito por produto passa a dividir o valor e a quantidade das mesmas linhas, e o CSV

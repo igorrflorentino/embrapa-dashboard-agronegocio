@@ -15,7 +15,7 @@ const DATA = [
 
 let fakeMap;
 let BrazilChoropleth;
-let calls;      // ordered record of maplibre entry points the component touched
+let calls = []; // ordered record of maplibre entry points the component touched
 let workerUrl;
 let mapOptions; // what the component passed to `new maplibregl.Map(...)`
 
@@ -108,11 +108,9 @@ const stubPopup = () => ({
   remove: noop,
 });
 
-beforeEach(async () => {
-  vi.resetModules();
-  calls = [];
-  popupHtml = '';
-  workerUrl = undefined;
+// The three modules the loader imports, replaced. Registered again before every test,
+// because `vi.resetModules()` drops what the component imported, and once for the warm-up.
+function mockMaplibre() {
   // The real worker is a 470 kB bundle; under jsdom we only need the URL string.
   // The CSS too: left real, Vite transformed maplibre's stylesheet again after every
   // resetModules, and under a loaded full-suite run that alone could outlast waitFor's
@@ -143,6 +141,25 @@ beforeEach(async () => {
       workerUrl = url;
     },
   }));
+}
+
+// The FIRST load of the component's modules is paid here, while the file is collected, where
+// no time limit runs. vitest fetches and transforms a module the first time a worker asks for
+// it and keeps that copy through every `vi.resetModules()`, so a test only re-runs it. Left to
+// the tests, that first load fell on the first test's beforeEach alone, under the 10 s limit of
+// hooks, and with 40 workers it took up to 6.7 s there. The first test is still the slowest of
+// the file: its body pays the worker's first render, which this load does not do.
+// A load that throws is ignored here: each test imports the component again and reports it.
+mockMaplibre();
+await import('./BrazilChoropleth.jsx').catch(() => {});
+await import('./maplibreLoader.js').then((m) => m.loadMaplibre()).catch(() => {});
+
+beforeEach(async () => {
+  vi.resetModules();
+  calls = [];
+  popupHtml = '';
+  workerUrl = undefined;
+  mockMaplibre();
   ({ BrazilChoropleth } = await import('./BrazilChoropleth.jsx'));
 });
 
@@ -153,11 +170,18 @@ afterEach(() => {
   vi.doUnmock('maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url');
 });
 
-// maplibre is imported dynamically, so the map only exists a few microtasks in. The wait
-// is on module loading, not on the code under test, so it gets real headroom: a busy
-// machine running the whole suite is not a failure of the map.
+// maplibre is imported dynamically, so the map only exists a few microtasks in, and the tests
+// wait for it: up to 5 s, room for a busy machine running the whole suite. That wait has to be
+// able to run out before the TEST does, so that a map that never comes up fails on the wait's
+// assertion, which names what did not happen. Under vitest's default of 5 s per test it never
+// could: the test's clock starts at the render, before the wait, and ran out first with the
+// generic "Test timed out in 5000ms". So the tests here get 10 s: the wait keeps its full 5 s
+// as long as the render before it takes under 5 s.
+const MAP_INIT_WAIT = { timeout: 5000 };
+vi.setConfig({ testTimeout: 10_000 });
+
 async function waitForMapInit() {
-  await waitFor(() => expect(fakeMap.loadHandler).toBeTypeOf('function'), { timeout: 5000 });
+  await waitFor(() => expect(fakeMap.loadHandler).toBeTypeOf('function'), MAP_INIT_WAIT);
 }
 
 describe('BrazilChoropleth — first paint', () => {
@@ -395,7 +419,7 @@ describe('BrazilChoropleth — robustez e eficiência', () => {
     fakeMap = new Error('Failed to initialize WebGL');
     const { container } = render(<BrazilChoropleth data={DATA} valueKey="value" label="R$" />);
     await waitFor(() => expect(container.textContent).toContain('Mapa indisponível neste navegador.'),
-      { timeout: 5000 });
+      MAP_INIT_WAIT);
     console.error.mockRestore();
   });
 
@@ -456,7 +480,7 @@ describe('BrazilChoropleth — robustez e eficiência', () => {
       <BrazilChoropleth data={DATA} valueKey="value" label="R$" />
       <BrazilChoropleth data={DATA} valueKey="value" label="R$" />
     </>);
-    await waitFor(() => expect(calls.filter((c) => c === 'Map')).toHaveLength(2), { timeout: 5000 });
+    await waitFor(() => expect(calls.filter((c) => c === 'Map')).toHaveLength(2), MAP_INIT_WAIT);
     expect(calls.filter((c) => c === 'setWorkerUrl')).toHaveLength(1);
     expect(calls[0]).toBe('setWorkerUrl'); // still wired BEFORE the first map
   });
