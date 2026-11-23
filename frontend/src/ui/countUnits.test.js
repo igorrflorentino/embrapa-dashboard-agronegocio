@@ -143,9 +143,74 @@ describe('COUNT_UNIT_NOUN — every count unit the seeds can produce, and nothin
       .toEqual(Array(6).fill('unidades'));
   });
 
-  it('every noun has its plural', () => {
+  it('every noun has its plural, and its singular for a price ("R$ por ovo")', () => {
     const nouns = new Set(Object.values(window.COUNT_UNIT_NOUN));
-    for (const n of nouns) expect(window.COUNT_NOUNS[n].plural).toMatch(/\S/);
+    for (const n of nouns) {
+      expect(window.COUNT_NOUNS[n].plural).toMatch(/\S/);
+      expect(window.COUNT_NOUNS[n].singular).toMatch(/\S/);
+    }
+  });
+});
+
+// ── One product alone (v1.108.7) ─────────────────────────────────────────────────────────
+// The per-product screens (Perfil do produto, Rebanho, Comparativo entre produtos) and the
+// per-product CSV wrote the convention's count unit beside a single product: "un" beside a
+// herd, the eggs and the pineapples alike, and the CSV's `unidade` column said "un" for all
+// of them. A product counts one thing, so no figure added different things — only the name
+// was missing. These are the names they read now.
+describe('countNameOf — what ONE product counts, in words', () => {
+  it('the thing the source unit names, plural by default and singular for a rate', () => {
+    expect([BOVINO, OVOS, ABACAXI].map((p) => window.countNameOf(p))).toEqual(['cabeças', 'ovos', 'frutos']);
+    expect([BOVINO, OVOS, ABACAXI].map((p) => window.countNameOf(p, { singular: true })))
+      .toEqual(['cabeça', 'ovo', 'fruto']);
+    expect(window.countNameOf({ unit_native: 'NUMERO (UNIDADE)' })).toBe('unidades');
+  });
+
+  it('an unknown or absent unit is said, the same words the refused-total note uses', () => {
+    for (const p of [{ unit_native: 'Caixas' }, { unit_native: '' }, {}, null]) {
+      expect(window.countNameOf(p)).toBe('unidade não identificada');
+      expect(window.countNameOf(p, { singular: true })).toBe('unidade não identificada');
+    }
+    const [g] = window.countGroups([{ code: 'X', family: 'count', unit_native: 'Caixas' }], ['X']);
+    expect(g.plurals).toEqual([window.COUNT_UNKNOWN]);
+  });
+});
+
+describe('countProductUnit — the unit ONE count product is shown in', () => {
+  const conv = (unit) => ({ units: { count: unit } });
+  afterEach(() => { delete window.unitOf; });
+  const withConventions = () => { window.unitOf = (c, fam) => c.units[fam]; };
+
+  it('a unit worth one of the thing is named by the thing, whichever the convention picked', () => {
+    withConventions();
+    for (const u of ['un', 'cab']) {
+      expect([BOVINO, OVOS, ABACAXI].map((p) => window.countProductUnit(p, conv(u))))
+        .toEqual(['cabeças', 'ovos', 'frutos']);
+    }
+    expect(window.countProductUnit(OVOS, conv('un'), { singular: true })).toBe('ovo');
+  });
+
+  it('with no convention to read, the thing itself', () => {
+    expect(window.countProductUnit(ABACAXI, undefined)).toBe('frutos');
+  });
+
+  it('a multiple the researcher picked keeps its own label, as a total does', () => {
+    withConventions();
+    expect(window.countProductUnit(OVOS, conv('dz'))).toBe('dz');
+    expect(window.countProductUnit(OVOS, conv('dz'), { singular: true })).toBe('dz');
+    expect(window.countProductUnit(BOVINO, conv('milheiro'))).toBe('milheiro');
+    const [eggs] = window.countGroups([OVOS], codes(OVOS));
+    expect(window.countProductUnit(OVOS, conv('dz'))).toBe(window.countGroupUnit(eggs, conv('dz')));
+  });
+
+  it('an unknown unit says so in every convention — never "un", never "cab"', () => {
+    withConventions();
+    const X = { code: 'X', family: 'count' };
+    expect(window.countProductUnit(X, conv('un'))).toBe('unidade não identificada');
+    expect(window.countProductUnit(X, conv('cab'))).toBe('unidade não identificada');
+    expect(window.countProductUnit(X, conv('un'), { singular: true })).toBe('unidade não identificada');
+    // The number is still in dozens, so the multiple stays beside what is not known.
+    expect(window.countProductUnit(X, conv('dz'))).toBe('dz (unidade não identificada)');
   });
 });
 

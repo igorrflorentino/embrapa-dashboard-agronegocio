@@ -12,9 +12,9 @@
 
 import * as React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render } from '@testing-library/react';
+import { cleanup, render, waitFor } from '@testing-library/react';
 
-let donutProps, multiLineProps;
+let donutProps, multiLineProps, tileMapProps;
 
 function stubGlobals(filtered) {
   window.applyFilters = () => filtered;
@@ -29,19 +29,19 @@ function stubGlobals(filtered) {
     const msgs = note ? Object.values(note).filter(Boolean) : [];
     return msgs.length ? <div className="na-note">{msgs.join(' ')}</div> : null;
   };
-  window.UnitFamilyTag = ({ family }) => <span className="uft">{family}</span>;
+  window.UnitFamilyTag = ({ family, unit }) => <span className="uft">{family}{unit ? ` · ${unit}` : ''}</span>;
   window.KpiCardSpark = ({ label, value, sub }) => (
     <div className="kpi"><span className="kpi-label">{label}</span><span className="kpi-value">{value}</span><span className="kpi-sub">{sub}</span></div>
   );
   window.Donut = (props) => { donutProps = props; return <div className="donut" />; };
   window.MultiLineChart = (props) => { multiLineProps = props; return <div className="mlc" />; };
-  window.BrazilTileMap = () => <div className="tilemap" />;
+  window.BrazilTileMap = (props) => { tileMapProps = props; return <div className="tilemap" />; };
 }
 
 let ViewRebanho;
 
 beforeEach(async () => {
-  donutProps = undefined; multiLineProps = undefined;
+  donutProps = undefined; multiLineProps = undefined; tileMapProps = undefined;
   // The view's `const { useState } = React` runs at import time → React must be global first.
   globalThis.React = React;
   window.React = React;
@@ -56,12 +56,13 @@ beforeEach(async () => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 // Bovino (234 mi cab) + Suíno (42) are STOCK herds; Ovos de galinha is a count FLOW
-// (has value) and must NOT count as part of the efetivo.
+// (has value) and must NOT count as part of the efetivo. `unit_native` is what the API
+// serves (measured on prod 2026-11-18): it is what a count is named by.
 const FIXTURE = {
   products: [
-    { code: '2670', name: 'Bovino', family: 'count', unit: 'un', measure_kind: 'stock' },
-    { code: '2675', name: 'Suíno', family: 'count', unit: 'un', measure_kind: 'stock' },
-    { code: '2685', name: 'Ovos de galinha', family: 'count', unit: 'un', measure_kind: 'flow' },
+    { code: '2670', name: 'Bovino', family: 'count', unit: 'un', measure_kind: 'stock', unit_native: 'Cabeças' },
+    { code: '2675', name: 'Suíno', family: 'count', unit: 'un', measure_kind: 'stock', unit_native: 'Cabeças' },
+    { code: '2685', name: 'Ovos de galinha', family: 'count', unit: 'un', measure_kind: 'flow', unit_native: 'Mil dúzias' },
   ],
   selectedProducts: ['2670', '2675', '2685'],
   allProductTS: {
@@ -219,5 +220,92 @@ describe('ViewRebanho — under a UF subset the herd is the UFs’ own', () => {
     const c = renderWith({ productUfRequested: false }, undefined);
     expect(titulos(c)).toContain('Rebanho brasileiro · cabeças');
     expect(c.querySelector('.na-note')).toBeNull();
+  });
+});
+
+// ── Uma contagem se nomeia pelo que conta (v1.108.7) ──────────────────────────────────────
+// Until v1.108.7 the cards, the evolution's axis and the UF map wrote the convention's unit
+// beside every herd: "234.000.000 un" for Bovino under the default, "cab" under the other.
+// The herd counts heads, and the screen now says so in every convention worth ONE of the
+// thing; a multiple the researcher picked ('dz') keeps its own label, since the number is
+// in that multiple. A species whose unit nobody named says so, and is never drawn on the
+// herd's shared unit.
+describe('ViewRebanho — a count is named by what it counts', () => {
+  const withCount = (count) => ({
+    ...window.DEFAULT_CONVENTIONS,
+    units: { ...window.DEFAULT_CONVENTIONS.units, ...(count ? { count } : {}) },
+  });
+  const kpi = (c, label) => {
+    const card = [...c.querySelectorAll('.kpi')]
+      .find((k) => k.querySelector('.kpi-label').textContent === label);
+    return card && { value: card.querySelector('.kpi-value').textContent, sub: card.querySelector('.kpi-sub').textContent };
+  };
+  const renderRb = (conv, fixture = FIXTURE) => {
+    stubGlobals(fixture);
+    return render(<ViewRebanho summary={{}} database="ibge_ppm" conventions={conv} />).container;
+  };
+  // Each printed string on its own: textContent glues neighbours ("234.000.000 un2021 vs."),
+  // and a regex word boundary never falls between two word characters.
+  const impressos = (c) => [...c.querySelectorAll('.kpi-value, .kpi-sub, .sh-title, .sh-ov, .uft')]
+    .map((e) => e.textContent.trim());
+  const UNIDADE_NUA = /(\s|\/)(un|cab)$/;
+
+  // The table holds the unit id, not the convention: it.each runs before beforeEach has
+  // imported MetricConventions.jsx, so DEFAULT_CONVENTIONS does not exist yet at that point.
+  it.each([
+    ['the default (un)', null],
+    ['cab', 'cab'],
+  ])('under %s the cards, the axis and the tag say "cabeças", never the bare unit', (_nome, count) => {
+    const c = renderRb(withCount(count));
+    expect(kpi(c, 'Efetivo · Bovino').value).toBe('234.000.000 cabeças');
+    expect(kpi(c, 'Pico histórico').value).toBe('234.000.000 cabeças');
+    expect(multiLineProps.label).toBe('cabeças');
+    expect(c.textContent).toContain('count · cabeças');
+    expect(impressos(c).filter((t) => UNIDADE_NUA.test(t))).toEqual([]);
+  });
+
+  it('under a multiple the researcher picked (dz), the number is in dúzias and says "dz"', () => {
+    const c = renderRb(withCount('dz'));
+    expect(kpi(c, 'Efetivo · Bovino').value).toBe('19.500.000 dz'); // 234e6 / 12
+    expect(multiLineProps.label).toBe('dz');
+  });
+
+  it('the UF map and the UF líder card name the heads too', async () => {
+    global.fetch = vi.fn(() => Promise.resolve({
+      ok: true, json: () => Promise.resolve({ uf: [{ uf: 'MT', q_count: 30 }, { uf: 'GO', q_count: 20 }] }),
+    }));
+    const c = renderRb(withCount(null));
+    await waitFor(() => expect(tileMapProps).toBeTruthy());
+    expect(tileMapProps.label).toBe('cabeças');
+    expect(kpi(c, 'UF líder · Bovino').sub).toBe('30.000.000 cabeças');
+    expect(impressos(c).filter((t) => UNIDADE_NUA.test(t))).toEqual([]);
+  });
+
+  // A species whose unit is not recognised: its own cards say so, and the composition and
+  // the evolution — which put every species on one unit — are refused and named, never drawn
+  // on "cabeças", which would be a claim about something it may not count.
+  const SEM_UNIDADE = {
+    ...FIXTURE,
+    products: [...FIXTURE.products,
+      { code: '2699', name: 'Espécie sem unidade', family: 'count', unit: 'un', measure_kind: 'stock' }],
+    selectedProducts: [...FIXTURE.selectedProducts, '2699'],
+    allProductTS: { ...FIXTURE.allProductTS,
+      '2699': [{ y: 2020, v: 0, q: 400, family: 'count' }, { y: 2021, v: 0, q: 500, family: 'count' }] },
+  };
+
+  it('an unrecognised species says "unidade não identificada" and the shared charts are refused', () => {
+    const c = renderRb(withCount(null), SEM_UNIDADE);
+    expect(kpi(c, 'Efetivo · Espécie sem unidade').value).toBe('500.000.000 unidade não identificada');
+    expect(donutProps).toBeUndefined();
+    expect(multiLineProps).toBeUndefined();
+    expect(c.textContent).toContain('Contagens que não se somam');
+    expect(c.textContent).toContain('Espécie sem unidade (unidade não identificada)');
+    expect(c.textContent).toContain('Bovino (cabeças)');
+  });
+
+  it('under dz an unrecognised species keeps the multiple and still says it is unknown', () => {
+    const c = renderRb(withCount('dz'), SEM_UNIDADE);
+    expect(kpi(c, 'Efetivo · Espécie sem unidade').value)
+      .toBe('41.666.667 dz (unidade não identificada)'); // 500e6 / 12
   });
 });

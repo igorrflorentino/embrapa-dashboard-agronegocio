@@ -26,14 +26,19 @@
     .toLowerCase().replace(/\s+/g, ' ').trim();
 
   // The thing counted, per noun. `plural` names ONE base unit of the count ('un'), the
-  // magnitude the screens multiply by the convention's count unit.
+  // magnitude the screens multiply by the convention's count unit; `singular` names it in a
+  // rate ("R$ por ovo").
   const NOUNS = {
-    cabecas: { plural: 'cabeças' },
-    ovos: { plural: 'ovos' },
-    frutos: { plural: 'frutos' },
-    arvores: { plural: 'árvores' },
-    unidades: { plural: 'unidades' },
+    cabecas: { plural: 'cabeças', singular: 'cabeça' },
+    ovos: { plural: 'ovos', singular: 'ovo' },
+    frutos: { plural: 'frutos', singular: 'fruto' },
+    arvores: { plural: 'árvores', singular: 'árvore' },
+    unidades: { plural: 'unidades', singular: 'unidade' },
   };
+
+  // What a count whose unit nobody named is called, in every place that names one: never a
+  // guess, and never the convention's bare 'un' or 'cab', which would claim a thing.
+  const UNKNOWN = 'unidade não identificada';
 
   // Every count unit the sources publish, by what it counts (normalized native unit →
   // noun). countUnits.test.js reads the dbt seeds that make a unit a count
@@ -66,6 +71,15 @@
     return UNIT_NOUN[norm(product && product.unit_native)] || null;
   }
 
+  /** What ONE product counts, in words: "cabeças", "ovos", "frutos" ("ovo" with
+   *  `singular`), or "unidade não identificada" when its unit is unknown. This is the name
+   *  of ONE base unit of its count: the magnitude of the CSV's per-product `quantidade`. */
+  function countNameOf(product, { singular = false } = {}) {
+    const noun = countNounOf(product);
+    if (!noun) return UNKNOWN;
+    return NOUNS[noun][singular ? 'singular' : 'plural'];
+  }
+
   // The two totals a reader that sums across products returns (sql._count_split), in the
   // order the screens offer them: the herd first, the defining content of the PPM.
   const TOTALS = [
@@ -92,7 +106,7 @@
       const members = counts.filter(t.member);
       if (!members.length) return null;
       const nouns = [...new Set(members.map(countNounOf))];
-      const plurals = nouns.map((n) => (n ? NOUNS[n].plural : 'unidade não identificada'));
+      const plurals = nouns.map((n) => (n ? NOUNS[n].plural : UNKNOWN));
       const mixed = nouns.length !== 1 || nouns[0] == null;
       const plural = mixed ? null : NOUNS[nouns[0]].plural;
       return {
@@ -109,16 +123,37 @@
     }).filter(Boolean);
   }
 
+  /** The convention's count unit when it is worth MORE than one of the thing ('dz',
+   *  'milheiro'), else null ('un', 'cab', or no convention to read). */
+  function conventionMultiple(conv) {
+    const unitId = window.unitOf ? window.unitOf(conv, 'count') : 'un';
+    const fam = (window.UNIT_FAMILIES || {}).count;
+    const u = fam && (fam.units || []).find((x) => x.id === unitId);
+    return u && u.toBase !== 1 ? u : null;
+  }
+
   /** The display unit of a count group under the active convention. A unit worth ONE of
    *  the thing ('un', 'cab') is named by the thing itself, so eggs never read "cab" and a
    *  herd never reads "un"; a multiple the researcher picked ('dz', 'milheiro') keeps its
    *  own label. */
   function countGroupUnit(group, conv) {
-    const unitId = window.unitOf ? window.unitOf(conv, 'count') : 'un';
-    const fam = (window.UNIT_FAMILIES || {}).count;
-    const u = fam && (fam.units || []).find((x) => x.id === unitId);
-    if (!u || u.toBase === 1) return group.plural;
-    return u.label;
+    const multiple = conventionMultiple(conv);
+    return multiple ? multiple.label : group.plural;
+  }
+
+  /** The display unit of ONE count product: what Perfil do produto, Rebanho and Comparativo
+   *  entre produtos write beside its count. countGroupUnit's rule, for a product alone: the
+   *  thing it counts ("ovos"; "ovo" with `singular`, for a price) or the multiple the
+   *  researcher picked ('dz'). A product whose unit is unknown says so in every convention,
+   *  beside the multiple when there is one, since the number is still in that multiple. The
+   *  magnitude is the convention's either way (countQtyMul): the count arrives in ONE base
+   *  unit of the thing (qty_base, the seed unit_family_conversions' to_base), so no product
+   *  needs a factor of its own. */
+  function countProductUnit(product, conv, { singular = false } = {}) {
+    const multiple = conventionMultiple(conv);
+    const known = countNounOf(product) != null;
+    if (!multiple) return countNameOf(product, { singular });
+    return known ? multiple.label : `${multiple.label} (${UNKNOWN})`;
   }
 
   /** The group a single-measure reading should draw when the basket has NO value at all
@@ -144,12 +179,15 @@
 
   Object.assign(window, {
     countNounOf,
+    countNameOf,
     countGroups,
     countGroupUnit,
+    countProductUnit,
     countGroupWithData,
     hasCount,
     countColumn,
     COUNT_NOUNS: NOUNS,
     COUNT_UNIT_NOUN: UNIT_NOUN,
+    COUNT_UNKNOWN: UNKNOWN,
   });
 })();

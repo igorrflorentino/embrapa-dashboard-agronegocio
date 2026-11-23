@@ -61,7 +61,10 @@ lia as linhas, não por uma regra. Agora saem assim por construção.
   somam nada a ela (`q_mass`, `q_vol` e `q_count` já eram separados). Numa prévia local contra a
   produção (só leitura), 440311 com os EUA mostra 140.351, 234.044, 215.400 e 199.139 m³ de 2018
   a 2021, no eixo de m³; e os quatro códigos das Notas, com o Brasil, com os EUA e com todos os
-  países, têm em todo ponto a família da lista.
+  países, têm em todo ponto a família da lista. O mesmo vale para o que já se nomeava pelo
+  produto: a coluna `unidade` do CSV por produto e, desde a v1.108.7, a unidade do preço no Perfil
+  do produto ("por m³", "por ovo"). Agora a quantidade de todo ano está na unidade que esses
+  rótulos dizem.
 - **A família do ano segue a mesma ordem da lista** (`sql.product_timeseries`), contada sobre as
   linhas que a série soma. Ela só vale para um código que a lista não traz.
 - **Um ano sem quantidade na unidade do produto sai ausente ("—"), nunca 0.** Esta regra não muda
@@ -121,11 +124,225 @@ contagem por família leem só colunas que a consulta já lia.
   2000 (315×). E mostra 440311 com os EUA em m³ de 2018 a 2021, com o preço 1,6–2,1× acima do das
   linhas em m³ (antes esses anos podiam sair em itens no eixo de m³). O conserto é o numerador
   condicionado, o valor só das linhas com quantidade na unidade do produto, como `pricedShare` já
-  faz em Parceiros. Ele pede uma coluna nova na série e uma mudança no Perfil do produto, arquivo
-  que outra sessão está alterando agora (v1.108.7).
+  faz em Parceiros. Ele pede uma coluna nova na série e uma mudança no Perfil do produto, e fica
+  para uma versão própria. A v1.108.7 mudou o nome da unidade do preço, não a conta.
 - **O CSV por produto ainda escreve 0 num ano sem quantidade** (`(d.q || 0)` em `csvExport.js`). O
   arquivo não muda com esta versão, porque esses anos já saíam sem quantidade ou com 0; mas o
-  certo é a célula vazia. `csvExport.js` também está sendo alterado pela sessão da v1.108.7.
+  certo é a célula vazia. A v1.108.7 alterou `csvExport.js` (a unidade das contagens), mas não
+  essa linha.
+
+## [1.108.7] - 2026-11-23
+
+**Nas perspectivas por produto e no CSV por produto, a contagem se nomeia pelo que o produto
+conta.** Fecha a pendência das Notas da v1.108.0. O Perfil do produto, o Rebanho e o Comparativo
+entre produtos escreviam a unidade de contagem da convenção (`un`, `cab`) ao lado de cada número, e o
+CSV por produto dizia `un` na coluna `unidade`. Os ovos de galinha de 2025 apareciam como
+"68.830.404.000 un" a "R$ 0,53 /un", e a ficha técnica dizia "Unidade nativa: un (unidades)" de um
+produto que o IBGE publica em "Mil dúzias". Nenhum número somava coisas diferentes: faltava o nome. A
+ordem de grandeza não muda, porque a contagem já chega em UMA unidade da coisa contada: a quantidade
+de base (`qty_base`) multiplica "Mil dúzias" por 12.000 e "Mil frutos" por 1.000, segundo o arquivo
+de referência `unit_family_conversions`. Nenhum fator novo por produto.
+
+### Corrigido
+- **Perfil do produto.** A quantidade, o eixo, a etiqueta da família ("Contagem · ovos"), o preço e a
+  ficha técnica dizem o que o produto conta. Medido numa prévia local contra a produção (só
+  leitura), em 2026-11-23, com o código do `main` e com o desta versão:
+
+  | produto, 2025 | antes | depois |
+  |---|---|---|
+  | Ovos de galinha (PPM) | 68.830.404.000 un · R$ 0,53 /un · "R$ por un" · "un (unidades)" | 68.830.404.000 ovos · R$ 0,53 /ovo · "R$ por ovo" · "Mil dúzias" |
+  | Abacaxi (PAM) | 1.596.703.000 un · R$ 3,07 /un · "un (unidades)" | 1.596.703.000 frutos · R$ 3,07 /fruto · "Mil frutos" |
+
+  A conta confere com a fonte: 5.735.867 mil dúzias × 12.000 = 68.830.404.000 ovos. Com "cab" na
+  faixa de convenções, os ovos continuam "ovos" (antes, "cab"). Com um múltiplo escolhido (`dz`,
+  `milheiro`), o número está nesse múltiplo e a tela diz `dz`.
+- **Rebanho.** Galináceos, 2025: o efetivo e o pico passam de "1.607.487.573 un" a "1.607.487.573
+  cabeças", a UF líder (PR) de "463.493.696 un" a "463.493.696 cabeças", e a etiqueta da evolução e a
+  legenda do mapa por UF, de "un" a "cabeças". A composição e a evolução põem todas as espécies numa
+  unidade só. Se uma espécie tiver unidade não reconhecida, as duas são recusadas e as espécies são
+  nomeadas, como nas outras telas desde a v1.108.0. Hoje as 8 espécies da PPM são publicadas em
+  "Cabeças", e nada é recusado.
+- **CSV por produto** (Perfil do produto e Comparativo entre produtos). A coluna `unidade` diz
+  `cabeças`, `ovos` ou `frutos`, no lugar de `un`. Medido na prévia, sem gravar arquivo:
+  - PPM, com Bovino, os dois ovos e Galináceos: 208 linhas, nenhuma com `un`. Em 2025, 234.251.041
+    `cabeças` (Bovino), 68.830.404.000 `ovos` (galinha) e 3.494.304.000 `ovos` (codorna).
+  - PAM: 1.596.703.000 `frutos` (abacaxi) e 2.018.298.000 `frutos` (coco-da-baía).
+- **A janela de confirmação do CSV listava as unidades da faixa de convenções como se o arquivo as
+  seguisse.** Nenhum CSV segue: todos saem em t, m³ e na coisa contada. Com kg na faixa, a janela
+  dizia "Unidades: kg · m³" ao lado de um arquivo em cabeças e ovos. "Convenções métricas" passa a
+  listar só a moeda e a correção, que o arquivo segue, e o arquivo por produto ganha a linha
+  "Unidades: cabeças · ovos", lida das linhas montadas. Achado no caminho.
+- **Perfil do produto: o preço dizia a unidade de base, não a escolhida.** Com kg na faixa, a soja de
+  2025 lia "R$ 1,91 /t" e "R$ por t" sobre um número calculado por quilo (a tonelada sai a R$ 1.907).
+  Agora lê "R$ 1,91 /kg". Achado no caminho.
+- **Perfil do produto e Comparativo entre produtos: uma lavoura sem valor na janela era contada como
+  cabeças.** Sob o IPCA, que começa em 1980, a PAM de 1974 a 1979 tem quantidade e não tem valor
+  corrigido. A tela desenha esse produto com os cartões do rebanho, e esses cartões formatavam toda
+  quantidade como contagem: mil vezes maior e sem unidade. A soja de 1979 lia "10.240.306.000 un", e
+  a coluna "Magnitude (1979)" do Comparativo lia "10.240.306.000 un" (soja) e "16.306.380.000 un"
+  (milho). Agora lê "10.240.306 t" e "16.306.380 t". Achado no caminho.
+
+### Alterado
+- `countUnits.js` ganha dois nomes, para não haver uma segunda tabela de nomes:
+  - `countNameOf`: o que UM produto conta, por extenso ("ovos"; "ovo" no singular, para um preço);
+  - `countProductUnit`: a unidade em que o produto aparece. É a coisa contada quando a unidade da
+    convenção vale uma dela (`un`, `cab`), e o múltiplo escolhido quando vale mais (`dz`,
+    `milheiro`).
+- Uma contagem de unidade não reconhecida diz "unidade não identificada" em toda convenção. Quando
+  há um múltiplo, aparece ao lado dele ("dz (unidade não identificada)"), como nas demais telas desde
+  a v1.108.0.
+- `MetricConventions.jsx`:
+  - sai `window.countAxisLabel`, que dava a unidade da convenção a um eixo de contagem;
+  - entra `window.formatProductQty`, que escreve a quantidade de UM produto na unidade da sua
+    família;
+  - sem unidade, `formatCountQty` passa a dizer "unidade não identificada", e não mais a unidade da
+    convenção. Uma tela nova que esqueça de nomear a contagem diz que não sabe, em vez de afirmar
+    `un`.
+- Nada muda no servidor. Os números só mudam na lavoura sem valor (acima).
+
+### Testes
+- vitest: 28 testes novos e 3 reescritos, de 1931 para 1959 testes em 105 arquivos.
+  - `ViewProductProfile.test.jsx`, novo, com 9: roda os módulos de unidade reais, sem trocá-los por
+    imitações, e confere ovos, abacaxi, rebanho, "cab", `dz`, unidade não reconhecida, t, kg e a
+    lavoura sem valor.
+  - `ViewRebanho.test.jsx`, com 6: cartões, eixo, etiqueta, mapa e UF líder em "cabeças", `dz`, e a
+    espécie de unidade não reconhecida recusada e nomeada.
+  - `countUnits.test.js`, com 6 novos e 1 reescrito; `csvExport.cov.test.js`, com 2 novos e 1
+    reescrito.
+  - `CsvExportModal.test.jsx`, com 2; `MetricConventions.cov.test.jsx`, com 2 novos e 1 reescrito;
+    `ViewProductCompare.cov.test.jsx`, com 1.
+- Contraprova: com as 8 fontes do `main` no lugar e os testes desta versão, 29 testes falham (26 dos
+  28 novos e os 3 reescritos), todos pelo motivo esperado:
+  - a unidade nua da convenção onde a coisa deveria ser nomeada (`un`, `cab`, "un (unidades)");
+  - "/t" no preço calculado por quilo;
+  - a lavoura sem valor mil vezes maior e em `un`;
+  - a janela do CSV com "kg · dz" e sem a linha das unidades do arquivo;
+  - `countAxisLabel` ainda exportado, e os nomes novos ausentes.
+
+  Os 2 novos que passam no `main` são os casos que não podiam mudar: o preço em t sob a convenção em
+  t, e o Rebanho em `dz`, que o `main` já escrevia certo.
+- A primeira contraprova mostrou que três verificações de "nenhuma unidade nua" eram fracas.
+  Liam o texto inteiro da tela, que cola os vizinhos ("234 un2021"), e com isso uma fronteira de
+  palavra da expressão regular nunca cai entre duas letras ou dígitos. Elas passaram a ler cada
+  texto impresso isolado, e a do CSV passou a ler as convenções elemento por elemento.
+- vitest: 1959 passando em 105 arquivos, com a meta de cobertura. pytest: 2603 passando (15
+  pulados no Windows, que só rodam no Linux). eslint, `vite build`, ruff e `uv lock --check` sem
+  erro.
+
+### Notas
+- **Pendências achadas no caminho, fora do escopo desta versão:**
+  - Perfil do produto: uma lavoura sem valor na janela é desenhada como rebanho. Na soja de
+    1974–1979 sob o IPCA, a tela mostra:
+    - "Efetivo" e "Pico histórico";
+    - "Participação no efetivo", que sai "—";
+    - "Tipo de medida: Estoque (efetivo)";
+    - "Onde Soja (em grão) é criado";
+    - um ranking de UFs que lê a contagem de cabeças e mostra zero em toda UF.
+
+    Esta versão corrige só a ordem de grandeza e a unidade dessa quantidade. O Comparativo entre
+    produtos tem a mesma troca: uma cesta só dessas lavouras ganha o título "Evolução relativa do
+    efetivo (cabeças)".
+  - A ficha técnica de um produto de massa ou volume diz como "Unidade nativa" a unidade de base da
+    família ("t (toneladas)", "m³ (metros cúbicos)"), e não a que a fonte publica. No COMEX, que mede
+    o peso em quilogramas, ela diz "t (toneladas)".
+  - No CSV por produto:
+    - uma quantidade ausente sai como `0` (já registrado nas Notas do PR #593);
+    - uma família desconhecida sai em `t`;
+    - a coluna `familia` traz os nomes internos, em inglês (`mass`, `volume`, `count`).
+
+---
+
+## [1.108.6] - 2026-11-23
+
+**O mapa de calor da Geografia passa a desenhar com qualquer número de linhas.** Fecha a
+pendência das Notas da v1.108.1. Com 2 municípios em 40 anos, o cartão dizia "Não foi possível
+renderizar este gráfico", e o console registrava o erro do Plotly `Something went wrong with axis
+scaling`. Com 3 linhas, o mesmo. Com 4 e 5 linhas o mapa desenhava, mas a unidade caía abaixo da
+barra de cor, no pé do cartão, e a faixa do gráfico perdia até 20,6 px. O caso de 5 linhas é o das
+5 regiões: é o que a Geografia mostra quando não há filtro de UF.
+
+### Corrigido
+- **A barra de cor horizontal (até 5 linhas) deixa de ter título, e a unidade passa a ser uma
+  anotação logo acima dela.** A causa foi medida numa prévia local contra a produção (só leitura)
+  em 2026-11-23, com o Plotly 4.3.0 e o cartão de 659 px. Na barra horizontal presa à base da
+  figura (`yref: 'container'`), o Plotly posiciona o título a uma fração da altura do GRÁFICO
+  multiplicada pela altura da FIGURA (`colorbar/draw.js`). A barra reserva margem inferior até o
+  título, essa margem encolhe o gráfico, e um gráfico menor empurra o título mais para baixo. Num
+  gráfico curto o ciclo segue até a altura do gráfico ficar negativa, e o Plotly desiste
+  (`set_convert.js`). Com linhas de 40 anos:
+
+  | linhas | altura da figura | margem reservada pela barra | altura do gráfico | no `main` |
+  |---|---|---|---|---|
+  | 1 | 132 | 50,7 (cabe na margem) | 16 | desenhava |
+  | 2 | 156 | 171,1 | −23,1 | erro |
+  | 3 | 180 | 307,4 | −165,3 | erro |
+  | 4 | 204 | 98,8 | 67,4, no lugar de 88 | desenhava, com a unidade abaixo da barra |
+  | 5 | 228 | 83,4 | 106,7, no lugar de 112 | desenhava, com a unidade abaixo da barra |
+
+  Sem título, a barra reserva sempre os mesmos 50,7 px (a barra de 12 px, os traços, os rótulos e o
+  respiro do próprio Plotly), que cabem nos 108 px de margem inferior. A altura do gráfico passa a
+  ser exatamente 24 × linhas − 8 px, a mesma conta que já dimensionava o cartão. Nenhuma altura,
+  margem ou limiar mudou.
+- **A unidade fica à mesma distância da barra em qualquer contagem de linhas.** A anotação está 61
+  px abaixo da borda inferior do gráfico: ancorada ao gráfico, porque anotações não aceitam
+  referência à figura, e deslocada em pixels. Medido nos cartões reais, com a prévia reconstruída
+  (PAM, 1985–2024, R$ nominal; px a partir do topo da figura):
+
+  | recorte | altura do gráfico | unidade | barra |
+  |---|---|---|---|
+  | 1 município (Belém) | 16 | 70–82,7 | 91,3–103,3 |
+  | 2 municípios (Belém, Ananindeua) | 40 | 94–106,7 | 115,3–127,3 |
+  | 5 municípios (mais Santarém, Marabá e Paragominas) | 112 | 166–178,7 | 187,3–199,3 |
+  | 5 regiões | 112 | 166–178,7 | 187,3–199,3 |
+
+  Em todos, abaixo do gráfico: os anos terminam a 22 px, a unidade ocupa de 46 a 59 px e a barra
+  começa a 67 px. No `main`, as 5 regiões tinham a faixa com 106,3 px e a unidade em 205,3–218 px,
+  39 px abaixo da barra (154,1–166,1) e dos rótulos dela.
+- **A barra vertical (6 linhas ou mais) não mudou.** Medidas com o `main` e com a correção, nas
+  mesmas condições, 6 e 12 UFs dão as mesmas caixas até 0,1 px: gráfico, barra, título "R$" e os
+  três rótulos (6 UFs: gráfico de 130 px e barra de 92 px; 12 UFs: 274 px e 236 px).
+- O comentário do `main` justificava o título no lado de baixo com uma medição de **1 linha**
+  (título em 72–85 px, barra em 92–104 px), em que a reserva ainda cabe na margem. Ela não valia de
+  2 a 5 linhas. O comentário novo traz a tabela inteira.
+
+### Testes
+- vitest, `frontend/src/charts/Heatmap.test.jsx`, 7 testes novos e 1 reescrito (de 24 para 31):
+  - na varredura de 1 a 15 linhas (v1.31.5), 2: nenhuma barra horizontal presa à figura tem
+    título; a unidade aparece exatamente uma vez, como título da barra vertical ou como anotação;
+  - num bloco novo, de 1 a 6 linhas de 40 anos (o caso da pendência), 5: a condição medida não
+    ocorre; a unidade é uma anotação só, 61 px abaixo do gráfico; o gráfico tem 24 × linhas − 8 px
+    sobre a faixa de 108 px; de 6 linhas em diante a barra é vertical e a unidade volta a ser o
+    título dela; sem unidade, não há nem anotação nem título;
+  - reescrito: "a unidade fica acima da barra nas duas orientações" passa a conferir a anotação no
+    ramo horizontal.
+- **O que esses testes não veem.** Nos testes, o Plotly é simulado: a biblioteca 4.x não carrega no
+  vitest, e o jsdom não mede texto. Os testes conferem o leiaute que o painel envia, não o que o
+  Plotly calcula com ele, e por isso a varredura da v1.31.5 nunca viu a altura negativa. Os testes
+  novos fixam a condição que, medida no navegador, a produz (um título numa barra horizontal presa
+  à figura). A prova de que o mapa desenha são as medições acima.
+- Contraprova: com o `Heatmap.jsx` do `main`, 4 dos 31 falham, pelo motivo esperado: o título `R$`
+  na barra horizontal, onde deveria estar vazio (3 testes), e a anotação ausente (1). Os 27 que
+  passam são comportamentos que não podem mudar, entre eles a barra vertical, as alturas e as
+  margens.
+- vitest: 1931 passando em 104 arquivos, com a meta de cobertura. pytest: 2603 passando (15
+  pulados no Windows, que só rodam no Linux). eslint, `vite build`, ruff e `uv lock --check` sem
+  erro.
+
+### Notas
+- **A hipótese da v1.108.1 não era a causa.** Ela atribuía o erro aos 40 px que sobram dos 156 px
+  depois das margens (8 + 108). Com a correção, esses mesmos 40 px desenham: quem deixava a altura
+  negativa era a margem reservada pelo título.
+- **Achado no caminho, fora do escopo:** na barra vertical (mapa de calor com 6 linhas ou mais, e
+  o de "Sazonalidade e tendências", que é sempre vertical), a caixa do título da unidade invade a do
+  rótulo de cima em 2,1 px na vertical e, com unidades largas como "R$ mi" e "US$ mi", em 13 a 14
+  px na horizontal. Na tela, a unidade fica colada sobre o rótulo de cima ("R$ mi" sobre "79 mi").
+  É anterior a esta versão e igual no `main`.
+- **O outro mapa de calor do painel foi conferido.** O de "Sazonalidade e tendências" (mês × ano,
+  `MonthYearHeatmap`) não tem leiaute curto: altura fixa de 240 px e barra sempre vertical. Desenha
+  com 1, 2, 5, 6 e 12 anos (gráfico de 180 px, barra de 142 px). `window.Heatmap` só é usado na
+  Geografia.
+- Medidas antes de `document.fonts.ready`, as caixas de texto do mesmo código variaram até 1,2 px
+  entre duas leituras. As comparações entre o `main` e a correção acima esperam as fontes.
 
 ## [1.108.5] - 2026-11-23
 

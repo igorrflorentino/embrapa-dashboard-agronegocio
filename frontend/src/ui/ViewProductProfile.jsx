@@ -6,6 +6,8 @@
 // window.recorteNaoSeAplica — a real dependency, not one main.jsx's import order happens
 // to satisfy: the view's tests load it on its own.
 import './RecorteNote.jsx';
+// window.countProductUnit — what a count product counts, named on every label below.
+import './countUnits.js';
 
 const { useState: usePPState } = React;
 
@@ -110,14 +112,34 @@ function ViewProductProfile({ families, summary, database, conventions }) {
 
   const prod   = filtered.products.find(p => p.code === activeCode);
   const family = prod.family;
-  // Family-aware axis + multiplier (mass→t, volume→m³, count→cabeças/un). The old
-  // binary "mass ? … : volume" would label a livestock headcount in m³.
-  const AXIS_FN = { mass: window.massAxisLabel, volume: window.volumeAxisLabel, count: window.countAxisLabel };
+  // Family-aware axis + multiplier + formatter (mass→t, volume→m³, count→what the product
+  // counts). The old binary "mass ? … : volume" would label a livestock headcount in m³, and
+  // until v1.108.7 a count read the convention's bare unit: "un" beside a herd, the eggs and
+  // the pineapples alike. countProductUnit names the thing ("cabeças", "ovos", "frutos").
+  const countUnit = (c, opts) => window.countProductUnit(prod, c, opts);
+  const AXIS_FN = { mass: window.massAxisLabel, volume: window.volumeAxisLabel, count: (c) => countUnit(c) };
   const QMUL_FN = { mass: window.massQtyMul,    volume: window.volumeQtyMul,    count: window.countQtyMul };
   const FAM_COLOR = { mass: 'var(--viz-2)', volume: 'var(--viz-4)', count: 'var(--viz-9)' };
   const unitAx = (AXIS_FN[family] || window.massAxisLabel)(conv);
   const qtyMul = (QMUL_FN[family] || window.massQtyMul)(conv);
   const qColor = FAM_COLOR[family] || 'var(--viz-2)';
+  // A quantity written out, in the unit the axis names. The stock cards below called
+  // formatCountQty whatever the family, so a crop that reached them (a window with no value,
+  // see isStock) was multiplied as a count and labelled "un".
+  const fmtQty = (q) => window.formatProductQty(prod, q, conv);
+  // The price's denominator: ONE of the unit the quantity is shown in — "R$ por ovo", "R$/kg".
+  // It was the family's base unit (prod.unit), so every count read "/un", and with kg chosen
+  // in the conventions a price computed per kg read "/t".
+  const perUnit = family === 'count' ? countUnit(conv, { singular: true }) : unitAx;
+  // The family tag beside a quantity names a count by what it counts ("Contagem · ovos");
+  // mass and volume keep the convention's unit, which the tag reads on its own.
+  const famUnit = family === 'count' ? unitAx : undefined;
+  // The unit as the source publishes it. prod.unit is the family's base, 'un' for every
+  // count; a count reads unit_native instead ("Mil dúzias", "Cabeças", "Mil frutos"), and one
+  // whose unit is not recognised says so rather than show a label nobody checked.
+  const unidadeNativa = family === 'count'
+    ? (window.countNounOf(prod) ? prod.unit_native : window.COUNT_UNKNOWN)
+    : `${prod.unit} (${window.UNIT_FAMILIES[family].long})`;
 
   // Per-product series (PRODUCT_TS.v in base-currency mi, .q in family display unit)
   const raw = filtered.allProductTS[activeCode];
@@ -230,8 +252,8 @@ function ViewProductProfile({ families, summary, database, conventions }) {
       <div className="kpi-row">
         {isStock ? (
           <window.KpiCardSpark
-            label={<>Efetivo · <window.UnitFamilyTag family={family} conv={conv}/></>}
-            value={window.formatCountQty(last.q, conv)}
+            label={<>Efetivo · <window.UnitFamilyTag family={family} conv={conv} unit={famUnit}/></>}
+            value={fmtQty(last.q)}
             delta={window.fmtSigned(deltaQ)}
             deltaPositive={window.deltaUp(deltaQ)}
             sub={`${last.y} vs. ${prev.y}`}
@@ -254,7 +276,7 @@ function ViewProductProfile({ families, summary, database, conventions }) {
         {isStock ? (
           <window.KpiCardSpark
             label="Pico histórico"
-            value={window.formatCountQty(peak.q, conv)}
+            value={fmtQty(peak.q)}
             sub={`em ${peak.y}`}
             spark={win.slice(-12).map(d => ({ y: d.y, q: d.q }))}
             sparkKey="q"
@@ -262,7 +284,7 @@ function ViewProductProfile({ families, summary, database, conventions }) {
           />
         ) : (
           <window.KpiCardSpark
-            label={<>Quantidade · <window.UnitFamilyTag family={family} conv={conv}/></>}
+            label={<>Quantidade · <window.UnitFamilyTag family={family} conv={conv} unit={famUnit}/></>}
             value={lastQtyScaled == null
               ? '—'
               : lastQtyScaled.toLocaleString('pt-BR', { maximumFractionDigits: 0 }) + ' ' + unitAx}
@@ -279,7 +301,7 @@ function ViewProductProfile({ families, summary, database, conventions }) {
             label="Preço médio implícito"
             value={lastPrice == null
               ? '—'
-              : fx.symbol + ' ' + lastPrice.toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + ' /' + prod.unit}
+              : fx.symbol + ' ' + lastPrice.toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + ' /' + perUnit}
             sub="valor ÷ quantidade"
             spark={priceSeries.slice(-12)}
             sparkKey="v"
@@ -302,7 +324,7 @@ function ViewProductProfile({ families, summary, database, conventions }) {
           <div className="grid-2">
             <div className="card">
               <window.SectionHeader
-                overline={<>Série do efetivo · <window.UnitFamilyTag family={family} conv={conv}/></>}
+                overline={<>Série do efetivo · <window.UnitFamilyTag family={family} conv={conv} unit={famUnit}/></>}
                 title={`${prod.name} · efetivo (${qtyScaled.label})`}
               />
               <window.LineChart data={qtyScaled.data} label={qtyScaled.label} valueKey="q" color={qColor} height={230} trend />
@@ -333,7 +355,7 @@ function ViewProductProfile({ families, summary, database, conventions }) {
             </div>
             <div className="card">
               <window.SectionHeader
-                overline={<>Série de quantidade · <window.UnitFamilyTag family={family} conv={conv}/></>}
+                overline={<>Série de quantidade · <window.UnitFamilyTag family={family} conv={conv} unit={famUnit}/></>}
                 title={`${prod.name} · quantidade (${qtyScaled.label})`}
               />
               <window.LineChart data={qtyScaled.data} label={qtyScaled.label} valueKey="q" color={qColor} height={230} />
@@ -345,9 +367,9 @@ function ViewProductProfile({ families, summary, database, conventions }) {
             <div className="card">
               <window.SectionHeader
                 overline="Preço médio implícito · valor ÷ quantidade"
-                title={`${fx.symbol} por ${prod.unit} · ${yearStart}–${yearEnd}`}
+                title={`${fx.symbol} por ${perUnit} · ${yearStart}–${yearEnd}`}
               />
-              <window.LineChart data={priceSeries} label={fx.symbol + '/' + prod.unit} valueKey="v" color="var(--viz-7)" height={220} trend />
+              <window.LineChart data={priceSeries} label={fx.symbol + '/' + perUnit} valueKey="v" color="var(--viz-7)" height={220} trend />
             </div>
             <div className="card">
               <window.SectionHeader
@@ -393,12 +415,12 @@ function ViewProductProfile({ families, summary, database, conventions }) {
           />
           <dl className="pp-spec">
             <dt>{codeLabel}</dt><dd className="tnum">{prod.code}</dd>
-            <dt>Unidade nativa</dt><dd>{prod.unit} ({window.UNIT_FAMILIES[family].long})</dd>
+            <dt>Unidade nativa</dt><dd>{unidadeNativa}</dd>
             <dt>Família de unidade</dt><dd>{window.UNIT_FAMILIES[family].label}</dd>
             {isStock && <><dt>Tipo de medida</dt><dd>Estoque (efetivo)</dd></>}
             <dt>Cobertura temporal</dt><dd className="tnum">{yearStart}–{yearEnd}</dd>
             {isStock
-              ? <><dt>Efetivo ({last.y})</dt><dd>{window.formatCountQty(last.q, conv)}</dd></>
+              ? <><dt>Efetivo ({last.y})</dt><dd>{fmtQty(last.q)}</dd></>
               : <><dt>Valor ({last.y})</dt><dd>{window.formatValue(window.scalePresent(last.v, 1e6), conv)}</dd></>}
             <dt>{isStock ? 'Participação no efetivo' : 'Participação na cesta'}</dt><dd>{window.fmtPct(window.scalePresent(lastShare, 0.01))}</dd>
             {/* Since v1.49.0 'OK' means EXAMINED by the implied-price detector and cleared —

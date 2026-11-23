@@ -68,7 +68,12 @@ const CORRECAO_CSV = `"${CORRECAO}"`;
 const PRODUCTS = [
   { code: 'P1', name: 'Açaí', family: 'mass' },
   { code: 'P2', name: 'Madeira', family: 'volume' },
-  { code: 'P3', name: 'Bovino', family: 'count' },
+  // A count is named by its `unit_native` (what the API serves): the CSV's `unidade` column
+  // says what ONE unit of the `quantidade` is — a head, an egg, a fruit.
+  { code: 'P3', name: 'Bovino', family: 'count', unit_native: 'Cabeças' },
+  { code: 'P4', name: 'Ovos de galinha', family: 'count', unit_native: 'Mil dúzias' },
+  { code: 'P5', name: 'Abacaxi', family: 'count', unit_native: 'Mil frutos' },
+  { code: 'P6', name: 'Contagem sem unidade', family: 'count' },
   { code: 'P9', name: 'Sem família' }, // no family → FAM_Q fallback to mass
 ];
 
@@ -336,12 +341,12 @@ describe('exportActiveTableCSV — per-product series with per-family units', ()
     productTS: {
       P1: [{ y: 2020, v: 1.0, q: 2.0 }], // mass → t, mul 1e3
       P2: [{ y: 2020, v: 1.0, q: 2.0 }], // volume → m³, mul 1e6
-      P3: [{ y: 2020, v: 1.0, q: 2.0 }], // count → un, mul 1e6
+      P3: [{ y: 2020, v: 1.0, q: 2.0 }], // count → ONE of the thing (cabeças), mul 1e6
       P9: [{ y: 2020, v: 1.0, q: undefined }], // no family → mass fallback; q || 0
     },
   };
 
-  it('labels each family with its correct base unit (mass→t, volume→m³, count→un)', () => {
+  it('labels each family with its correct base unit (mass→t, volume→m³, count→what it counts)', () => {
     stubRegistry(FILTERED);
     window.exportActiveTableCSV({ view: 'product_compare', summary: {}, database: 'ibge_pevs' });
     expect(lastCsv).toBeTruthy();
@@ -352,8 +357,8 @@ describe('exportActiveTableCSV — per-product series with per-family units', ()
     expect(body).toContain(`2020;P1;Açaí;1000000;2000;t;mass;Brasil;${CORRECAO_CSV}`);
     // volume row: q*1e6 = 2000000, unit m³
     expect(body).toContain(`2020;P2;Madeira;1000000;2000000;m³;volume;Brasil;${CORRECAO_CSV}`);
-    // count row: q*1e6, unit un
-    expect(body).toContain(`2020;P3;Bovino;1000000;2000000;un;count;Brasil;${CORRECAO_CSV}`);
+    // count row: q*1e6, named by what it counts (until v1.108.7 every count said "un")
+    expect(body).toContain(`2020;P3;Bovino;1000000;2000000;cabeças;count;Brasil;${CORRECAO_CSV}`);
     // missing-family row falls back to mass (mul 1e3) and q||0 → 0
     expect(body.some((l) => l.startsWith('2020;P9;Sem família;1000000;0;t;'))).toBe(true);
   });
@@ -376,6 +381,45 @@ describe('exportActiveTableCSV — per-product series with per-family units', ()
     expect(lastCsv).toContain('series_por_produto'.slice(0, 0) || 'codigo'); // header present
     // O nome traz o ano do arquivo (a série por produto tem coluna `ano`), não "completo".
     expect(lastDownloadName).toBe('ibge_pevs_series_por_produto_2020.csv');
+  });
+
+  // ── v1.108.7: a contagem se nomeia pelo que conta, no arquivo também ──────────────
+  // The `quantidade` of a count arrives in ONE of the thing (qty_base: Mil dúzias × 12.000,
+  // Mil frutos × 1.000, from the seed unit_family_conversions), so the column names that
+  // thing. A unit nobody named says so — never "un", which would claim a thing.
+  const CONTAGENS = {
+    products: PRODUCTS,
+    productTS: {
+      P3: [{ y: 2020, v: 0, q: 234 }],
+      P4: [{ y: 2020, v: 1.0, q: 1.2 }],
+      P5: [{ y: 2020, v: 1.0, q: 1.5 }],
+      P6: [{ y: 2020, v: 1.0, q: 3.0 }],
+    },
+  };
+
+  it('each count names what it counts — cabeças, ovos, frutos — and an unknown one says so', () => {
+    stubRegistry(CONTAGENS);
+    window.exportActiveTableCSV({ view: 'product_profile', summary: {}, database: 'ibge_ppm' });
+    const body = lastCsv.replace('﻿', '').split('\n').slice(1);
+    const unidadeDe = (code) => body.find((l) => l.split(';')[1] === code).split(';')[5];
+    const quantidadeDe = (code) => body.find((l) => l.split(';')[1] === code).split(';')[4];
+    expect(unidadeDe('P3')).toBe('cabeças');
+    expect(unidadeDe('P4')).toBe('ovos');
+    expect(unidadeDe('P5')).toBe('frutos');
+    expect(unidadeDe('P6')).toBe('unidade não identificada');
+    // The magnitude is one of the thing, unchanged: 1,2 mi ovos = 1.200.000 eggs.
+    expect(quantidadeDe('P4')).toBe('1200000');
+    expect(quantidadeDe('P5')).toBe('1500000');
+    expect(body.some((l) => l.split(';')[5] === 'un')).toBe(false);
+  });
+
+  it('the confirmation descriptor lists the units the rows are in, for this file only', () => {
+    stubRegistry(CONTAGENS);
+    const porProduto = window.prepareTableCSV({ view: 'product_profile', summary: {}, database: 'ibge_ppm' });
+    expect(porProduto.unidades).toEqual(['cabeças', 'ovos', 'frutos', 'unidade não identificada']);
+    stubRegistry({ ...CONTAGENS, ts: [{ y: 2020, v: 1.0, q_mass: 2.0, q_vol: 0 }] });
+    const agregado = window.prepareTableCSV({ view: 'overview', summary: {}, database: 'ibge_ppm' });
+    expect(agregado).not.toHaveProperty('unidades');
   });
 });
 
