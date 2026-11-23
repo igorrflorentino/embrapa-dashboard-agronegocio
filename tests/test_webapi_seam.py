@@ -1876,9 +1876,22 @@ def test_snapshot_pevs_threads_basket_window_and_value_column(monkeypatch):
     def fake_products(banco_id):
         return pd.DataFrame([{"code": "1", "name": "Açaí"}])
 
-    def fake_pts(source, year_start=None, year_end=None, codes=(), value_column=None, uf_codes=()):
+    def fake_pts(
+        source,
+        year_start=None,
+        year_end=None,
+        codes=(),
+        value_column=None,
+        uf_codes=(),
+        with_rows=False,
+    ):
         recorded["pts"] = dict(
-            source=source, y0=year_start, y1=year_end, codes=codes, value_column=value_column
+            source=source,
+            y0=year_start,
+            y1=year_end,
+            codes=codes,
+            value_column=value_column,
+            with_rows=with_rows,
         )
         return pd.DataFrame(
             [
@@ -1936,6 +1949,8 @@ def test_snapshot_pevs_threads_basket_window_and_value_column(monkeypatch):
     assert recorded["pts"]["codes"] == ("1",)
     assert recorded["pts"]["y0"] == 2018 and recorded["pts"]["y1"] == 2021
     assert recorded["pts"]["value_column"] == "val_real_ipca_brl"
+    # The series carries the Gold rows behind each point: the hero's "Linhas" counter.
+    assert recorded["pts"]["with_rows"] is True
     assert recorded["ov"]["source"] == "ibge_pevs"
     # No `tabela` in the summary → None = every table, which is what the
     # reader emitted before the axis existed. The axis must be opt-IN, never a default
@@ -2089,17 +2104,31 @@ def test_snapshot_comex_brl_request_serves_real_brl_column_not_usd(monkeypatch):
         return pd.DataFrame([{"state_acronym": "SP", "total_value_usd": 3.0}])
 
     def fake_by_uf_yearly(
-        year_start=None, year_end=None, ncm_codes=(), flow=None, value_column=None
+        year_start=None,
+        year_end=None,
+        ncm_codes=(),
+        flow=None,
+        value_column=None,
+        with_rows=False,
     ):
         recorded["uf_yearly"] = value_column
+        recorded["uf_yearly_rows"] = with_rows
         return pd.DataFrame(
             [{"state_acronym": "SP", "reference_year": 2022, "total_value_usd": 3.0}]
         )
 
     def fake_pts(
-        source, year_start=None, year_end=None, codes=(), value_column=None, uf_codes=(), flow=None
+        source,
+        year_start=None,
+        year_end=None,
+        codes=(),
+        value_column=None,
+        uf_codes=(),
+        flow=None,
+        with_rows=False,
     ):
         recorded["pts"] = value_column
+        recorded["pts_rows"] = with_rows
         return pd.DataFrame()
 
     monkeypatch.setattr(seam.gateway, "fetch_products", lambda b: pd.DataFrame())
@@ -2116,6 +2145,8 @@ def test_snapshot_comex_brl_request_serves_real_brl_column_not_usd(monkeypatch):
     assert recorded["uf"] == "val_yearfx_brl"
     assert recorded["uf_yearly"] == "val_yearfx_brl"
     assert recorded["pts"] == "val_yearfx_brl"
+    # Both grids the hero's "Linhas" counter sums carry the Gold rows behind them.
+    assert recorded["uf_yearly_rows"] is True and recorded["pts_rows"] is True
     # The value_column the snapshot reports is the real BRL column (no USD-derived
     # mock conversion), and the label states R$ + the FOB customs basis.
     assert out["value_column"] == "val_yearfx_brl"

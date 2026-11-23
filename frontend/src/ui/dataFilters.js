@@ -99,7 +99,7 @@ import './productOrigin.js';
       // nascem em 0 porque ali o zero é um zero de verdade.
       if (!row) {
         row = { uf: r.uf, year: r.year, value: null, q_mass: 0, q_vol: 0,
-                q_count_stock: 0, q_count_flow: 0 };
+                q_count_stock: 0, q_count_flow: 0, rows: 0 };
         byUfYear.set(key, row);
       }
       row.value = window.addPresent(row.value, r.value == null ? NaN : r.value);
@@ -108,8 +108,18 @@ import './productOrigin.js';
       // The herd and the counted production stay two totals (countUnits.js).
       row.q_count_stock += r.q_count_stock || 0;
       row.q_count_flow += r.q_count_flow || 0;
+      row.rows = addCount(row.rows, r.rows);
     }
     return [...byUfYear.values()];
+  }
+
+  // The Gold rows behind a sum of points (v1.108.9), added STRICTLY: one point that came
+  // without its count (`rows`, a payload from before the reads carried it) makes the whole
+  // sum unknown (null), never a smaller number. The opposite of addPresent, on purpose: a
+  // value total may skip a missing value and stay a total of what is present, but a row
+  // count that skips a point is simply a wrong count.
+  function addCount(acc, n) {
+    return (acc != null && Number.isFinite(n)) ? acc + n : null;
   }
 
   // The donut's slices from rows of { name, tabela?, value } — biggest first, at most seven
@@ -327,6 +337,8 @@ import './productOrigin.js';
       // dependência de índice, e um zero ali é um zero de verdade.
       let v = null;
       let qMass = 0, qVol = 0, qStock = 0, qFlow = 0;
+      // The Gold rows behind this year's sum, over the very rows summed (addCount).
+      let nRows = 0;
       for (const r of rows) {
         if (r.year !== y) continue;
         if (stateNarrowing && !stateSet.has(r.uf)) continue;
@@ -336,8 +348,10 @@ import './productOrigin.js';
         qVol  += (r.q_vol  || 0);        // already mi m³
         qStock += (r.q_count_stock || 0); // already mi un — heads (the herd)
         qFlow  += (r.q_count_flow || 0);  // already mi un — eggs, fruits
+        nRows = addCount(nRows, r.rows);
       }
-      return { v, q_mass: qMass, q_vol: qVol, q_count_stock: qStock, q_count_flow: qFlow };
+      return { v, q_mass: qMass, q_vol: qVol, q_count_stock: qStock, q_count_flow: qFlow,
+               rows: nRows };
     };
     // Engage the geo-derived series only when it adds correctness the national series
     // can't: a real state narrowing, OR a basket whose territorial cube has loaded —
@@ -360,17 +374,21 @@ import './productOrigin.js';
     const isStock = {};
     PRODUCTS_T.forEach(p => { isStock[p.code] = p.measure_kind === 'stock'; });
     const allYears = OVERVIEW_T.map(d => d.y).filter(y => y >= yearStart && y <= yearEnd);
+    // Each point also carries `rows`, the Gold rows behind it (null when not counted).
     const ts = allYears.map(y => {
       if (geoDerivedTs) {
         const g = sumStates(geoSource, y);
         return { y, v: g.v, q: g.q_mass, q_mass: g.q_mass, q_vol: g.q_vol,
-                 q_count_stock: g.q_count_stock, q_count_flow: g.q_count_flow };
+                 q_count_stock: g.q_count_stock, q_count_flow: g.q_count_flow, rows: g.rows };
       }
       // National path (no state narrowing): per-product series, basket + year aware.
       // Mesma regra do sumStates: o valor só existe se ALGUM produto da cesta tiver
       // valor naquele ano; senão fica null e vira lacuna no gráfico.
       let v = null;
       let qMass = 0, qVol = 0, qStock = 0, qFlow = 0;
+      // A product with no point that year has no Gold row in it: the marts hold only the
+      // (product, year) groups that exist. So a missing point adds 0, a counted one its rows.
+      let nRows = 0;
       selectedProducts.forEach(code => {
         const series = PRODUCT_TS_T[code];
         if (!series) return;
@@ -382,8 +400,10 @@ import './productOrigin.js';
         if (pt.family === 'count') {
           if (isStock[code]) qStock += pt.q; else qFlow += pt.q;
         }
+        nRows = addCount(nRows, pt.rows);
       });
-      return { y, v, q: qMass, q_mass: qMass, q_vol: qVol, q_count_stock: qStock, q_count_flow: qFlow };
+      return { y, v, q: qMass, q_mass: qMass, q_vol: qVol, q_count_stock: qStock, q_count_flow: qFlow,
+               rows: nRows };
     });
 
     // ── Per-product series of a UF subset (v1.108.3) ──────────────────
@@ -529,7 +549,8 @@ import './productOrigin.js';
 
     // productShare is NO LONGER used to scale displayed UF/region/heatmap values
     // (that fabricated geography — see above). It survives only as the product
-    // multiplier of the hero "Linhas" provenance counter (MainScreen).
+    // multiplier of the hero "Linhas" ESTIMATE, the fallback for when the rows could not be
+    // counted (rowsInView, v1.108.9); the counter itself counts them.
     //
     // It is the selection's share of the banco's ROWS, from each produto's own row count
     // (qualityByProduct[].rows, v1.108.5), not its share of PRODUCTS. Products are far from
@@ -539,9 +560,8 @@ import './productOrigin.js';
     // count share read "Silvicultura" at +46%. A produto is matched on (code, tabela), its
     // identity. If any
     // produto's row count is missing (a payload from before v1.108.5), it falls back to the
-    // count share, so the counter keeps an estimate rather than none. The counter stays an
-    // estimate across dimensions (the period and the UFs scale every produto alike); it is
-    // exact along the product one.
+    // count share, so the estimate keeps a figure rather than none. The estimate is exact
+    // along the product dimension only: the period and the UFs scale every produto alike.
     const rowsByProduto = new Map();
     (snap.qualityByProduct || []).forEach((r) => {
       if (Number.isFinite(r.rows)) rowsByProduto.set(`${r.code}|${r.tabela || ''}`, r.rows);
@@ -689,6 +709,23 @@ import './productOrigin.js';
     const qualityTs = QUALITY_TS_T.filter(d => d.y >= yearStart && d.y <= yearEnd);
 
     // ── Row counter (for hero "SELEÇÃO ATIVA · Linhas") ────────────────
+    // The Gold rows behind exactly what `ts` sums — the same reads, years, UFs, products and
+    // axes (origin, flow, níveis, the COMTRADE countries: each read already applies them) —
+    // so the counter COUNTS them (v1.108.9). Until then it multiplied the banco's total by
+    // shares of the selection, and a share of the products' rows spread evenly over the years
+    // is not the rows of the recorte: PAM's açaí over 1990–2000, a period it has no row in,
+    // read thousands. Null when it cannot be counted — a point without `rows` (a payload from
+    // before v1.108.9), or a geography `ts` itself does not honour: a UF subset with no UF
+    // grid, a sub-UF recorte not resolved, a basket × UF cross whose cube is pending or failed
+    // (`ts` sums every product there). MainScreen then holds the mark or shows the estimate
+    // below and says it is one. The quality selection stays out by decision (MainScreen).
+    // No product selected holds no row, whatever the geography.
+    const rowsCountable = !geoComboPending && !geoComboLoadError
+      && (geoDerivedTs || (!stateNarrowing && !subUfOwnsGrid));
+    const rowsInView = !selectedProducts.length ? 0
+      : rowsCountable ? ts.reduce((acc, d) => addCount(acc, d.rows), 0)
+      : null;
+    // The shares below survive only as the FALLBACK estimate of that count.
     const flagShare  = flagSet
       ? filteredFlags.reduce((s, f) => s + f.share, 0)
       : 1;
@@ -838,6 +875,9 @@ import './productOrigin.js';
       // it profiles a place the filter excluded, which is the no-invisible-filtering
       // violation in its purest form.
       scopedCityCodes: narrowedCities,
+      // The Gold rows of the recorte, counted (see the Row counter above); null when they
+      // could not be. `_shares` only backs the estimate MainScreen shows in that case.
+      rowsInView,
       _shares: { productShare, flagShare, yearShare, stateShare, muniShare },
     };
   };

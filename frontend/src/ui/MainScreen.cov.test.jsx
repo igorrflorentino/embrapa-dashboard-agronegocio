@@ -250,7 +250,7 @@ describe('MainScreen — banco/view gating', () => {
 // qualidade não recorta série alguma (nenhum mart de serving carrega a flag), então
 // incluí-la no produto fazia o cabeçalho afirmar um recorte que nenhum gráfico refletia.
 describe('MainScreen — o contador de linhas ignora a seleção de qualidade', () => {
-  function comShares(shares) {
+  function comShares(shares, extra = {}) {
     window.applyFilters = () => ({
       ts: [{ y: 2024, v: 1 }],
       ufData: [{ uf: 'PA', value: 5, real: true }],
@@ -258,6 +258,7 @@ describe('MainScreen — o contador de linhas ignora a seleção de qualidade', 
       qualityFlags: [{ id: 'OK', count: 1000 }],
       productsTotal: 3,
       _shares: shares,
+      ...extra,
     });
   }
   const linhasLidas = (container) => {
@@ -266,18 +267,95 @@ describe('MainScreen — o contador de linhas ignora a seleção de qualidade', 
     return row ? row.textContent : '';
   };
 
-  it('flagShare 0,02 NÃO encolhe o contador', () => {
+  it('contado: a seleção de qualidade não entra na soma', () => {
+    // 700 counted rows: with flagShare in the product they would be 14.
+    comShares({ flagShare: 0.02 }, { rowsInView: 700 });
+    const { container } = render(<MainScreen />);
+    expect(linhasLidas(container)).toContain('700 de 1000');
+  });
+
+  it('na estimativa, flagShare 0,02 também NÃO encolhe o contador', () => {
     comShares({ flagShare: 0.02 });
     const { container } = render(<MainScreen />);
     // 1000 linhas (a soma das flags), inteiras: com flagShare no produto seriam 20.
-    expect(linhasLidas(container)).toContain('1000');
+    expect(linhasLidas(container)).toContain('≈ 1000');
     expect(linhasLidas(container)).not.toContain('20 de');
   });
 
-  it('as demais dimensões continuam encolhendo', () => {
+  it('na estimativa, as demais dimensões continuam encolhendo', () => {
     comShares({ yearShare: 0.5 });
     const { container } = render(<MainScreen />);
-    expect(linhasLidas(container)).toContain('500');
+    expect(linhasLidas(container)).toContain('≈ 500');
+  });
+});
+
+// "Linhas" COUNTS the recorte's rows (v1.108.9): applyFilters sums the Gold rows behind the
+// screen's series (`rowsInView`), and the shares only back an estimate when that count did not
+// come. Before, the estimate was all there was, and it read thousands of rows for PAM's açaí over
+// 1990–2000 — a period it has no row in.
+describe('MainScreen — "Linhas" conta as linhas do recorte', () => {
+  const comContagem = (extra) => {
+    window.applyFilters = () => ({
+      ts: [{ y: 2024, v: 1 }],
+      ufData: [{ uf: 'PA', value: 5, real: true }],
+      ufDataFull: [{ uf: 'PA', value: 5, real: true }],
+      qualityFlags: [{ id: 'OK', count: 100000 }],
+      productsTotal: 3,
+      // Shares that would give 50.000 rows: a count must win over them, whatever they say.
+      _shares: { productShare: 1, yearShare: 0.5 },
+      ...extra,
+    });
+  };
+  const linhas = (container) => [...container.querySelectorAll('.meta-row')]
+    .find((e) => e.textContent.includes('Linhas')).querySelector('.meta-val');
+
+  it('a contagem é o número, e o título a traz por inteiro', () => {
+    comContagem({ rowsInView: 60557 });
+    const v = linhas(render(<MainScreen />).container);
+    expect(v.querySelector('strong').textContent).toBe('60557');
+    expect(v.getAttribute('title')).toBe('60.557 linhas da base analítica neste recorte.');
+  });
+
+  it('zero linhas é uma contagem: aparece 0, nunca a estimativa', () => {
+    // PAM açaí over 1990–2000: the estimate gave 50.000 here; the recorte has no row at all.
+    comContagem({ rowsInView: 0 });
+    const v = linhas(render(<MainScreen />).container);
+    expect(v.querySelector('strong').textContent).toBe('0');
+    expect(v.getAttribute('title')).toBe('0 linhas da base analítica neste recorte.');
+  });
+
+  it('uma linha, no singular', () => {
+    comContagem({ rowsInView: 1 });
+    const v = linhas(render(<MainScreen />).container);
+    expect(v.getAttribute('title')).toBe('1 linha da base analítica neste recorte.');
+  });
+
+  it('sem contagem, a estimativa aparece marcada e o título diz que é uma', () => {
+    comContagem({ rowsInView: null });
+    const v = linhas(render(<MainScreen />).container);
+    expect(v.querySelector('strong').textContent).toBe('≈ 50000');
+    expect(v.getAttribute('title')).toMatch(/^Estimativa: a contagem exata deste recorte não está disponível/);
+  });
+
+  it('cesta × UF aguardando o cubo: "…", nem contagem nem estimativa', () => {
+    comContagem({ rowsInView: null, geoComboPending: true });
+    const v = linhas(render(<MainScreen />).container);
+    expect(v.querySelector('strong').textContent).toBe('…');
+    expect(v.getAttribute('title')).toBe('O recorte geográfico escolhido ainda está carregando.');
+  });
+
+  it('cesta × UF com o cubo em falha: "—", e o título diz que não carregou', () => {
+    comContagem({ rowsInView: null, geoComboPending: false, geoComboLoadError: 'HTTP 503' });
+    const v = linhas(render(<MainScreen />).container);
+    expect(v.querySelector('strong').textContent).toBe('—');
+    expect(v.getAttribute('title')).toBe('Não foi possível carregar o recorte geográfico escolhido.');
+  });
+
+  it('sem contagem e sem total, não há o que estimar: "—"', () => {
+    comContagem({ rowsInView: null, qualityFlags: [] });
+    const v = linhas(render(<MainScreen />).container);
+    expect(v.querySelector('strong').textContent).toBe('—');
+    expect(v.getAttribute('title')).toBeNull();
   });
 });
 
@@ -323,8 +401,9 @@ describe('MainScreen — "UFs cobertas" de um recorte sub-UF que não resolveu',
 
 // "Linhas" under a sub-UF recorte (v1.108.2). stateShare counts WHOLE states, so Portel and
 // Breves read as all of Pará — "134 mil" in every state, as measured in production. The
-// recorte's share of the municípios sizes it now; while the recorte loads, or after it failed,
-// the counter holds with the same marks and tooltip as "UFs cobertas".
+// recorte's share of the municípios sizes the ESTIMATE now (since v1.108.9 the counter counts,
+// and the estimate is only its fallback); while the recorte loads, or after it failed, the
+// counter holds with the same marks and tooltip as "UFs cobertas".
 describe('MainScreen — "Linhas" sob um recorte sub-UF', () => {
   const comRecorte = (extra) => {
     window.applyFilters = () => ({
@@ -343,7 +422,21 @@ describe('MainScreen — "Linhas" sob um recorte sub-UF', () => {
   it('resolvido: a fração dos MUNICÍPIOS dimensiona o recorte, não a da UF inteira', () => {
     comRecorte({ _shares: { stateShare: 0.5, muniShare: 0.01 } });
     const v = linhas(render(<MainScreen />).container);
-    expect(v.querySelector('strong').textContent).toBe('10'); // 1000 × 0,01 — the UF's 0,5 gave 500
+    expect(v.querySelector('strong').textContent).toBe('≈ 10'); // 1000 × 0,01 — the UF's 0,5 gave 500
+  });
+
+  it('resolvido e contado: a contagem dos municípios, não a fração', () => {
+    comRecorte({ rowsInView: 37, _shares: { stateShare: 0.5, muniShare: 0.01 } });
+    const v = linhas(render(<MainScreen />).container);
+    expect(v.querySelector('strong').textContent).toBe('37');
+  });
+
+  it('carregando: "…" mesmo com a contagem de outro estado na mão', () => {
+    // rowsInView is null in this state (applyFilters refuses to count), but the hold must not
+    // depend on it: whatever came, the selection is not resolved yet.
+    comRecorte({ subUfLoading: true, rowsInView: 1000, _shares: { stateShare: 0.5 } });
+    const v = linhas(render(<MainScreen />).container);
+    expect(v.querySelector('strong').textContent).toBe('…');
   });
 
   it('carregando: "…", com o título de "UFs cobertas"', () => {
@@ -360,11 +453,11 @@ describe('MainScreen — "Linhas" sob um recorte sub-UF', () => {
     expect(v.getAttribute('title')).toBe('Não foi possível carregar o recorte geográfico escolhido.');
   });
 
-  it('contraprova: sem recorte sub-UF, a fração das UFs segue valendo', () => {
+  it('contraprova: sem recorte sub-UF, a fração das UFs segue valendo na estimativa', () => {
     comRecorte({ _shares: { stateShare: 0.5 } });
     const v = linhas(render(<MainScreen />).container);
-    expect(v.querySelector('strong').textContent).toBe('500');
-    expect(v.getAttribute('title')).toBeNull();
+    expect(v.querySelector('strong').textContent).toBe('≈ 500');
+    expect(v.getAttribute('title')).toMatch(/^Estimativa:/);
   });
 });
 

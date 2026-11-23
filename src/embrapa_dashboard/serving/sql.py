@@ -121,6 +121,30 @@ def _price_base_select(value_column: str, enabled: bool) -> str:
     )
 
 
+def _source_rows_select(enabled: bool, *, gold: bool = False) -> str:
+    """How many rows of the analytical base (Gold) each output row sums, as ``source_rows``.
+
+    It backs the hero's "Linhas" counter (v1.108.9), which until then ESTIMATED the rows of
+    a selection by multiplying independent shares of the banco's total: a basket of PAM's
+    açaí over 1990–2000 read ~13 mil rows, and açaí has none before 2015. The count comes back
+    from the same read that sums the series the screen draws, so it is the count of exactly
+    those rows, under exactly those filters.
+
+    Every annual mart already carries ``source_rows`` (``count(*)`` of the Gold rows folded
+    into each mart row), so a mart read sums it; a Gold-direct read (``gold=True``, the
+    município cube) counts its own rows, which reads no column at all.
+
+    Returns "" (the query as it was) unless the caller asked. Cost, measured by dry run on
+    2026-11-23 for a full mart: one INT64 column, +0.08 to +1.02 MB on the PEVS, PAM, PPM and
+    COMEX marts (inside BigQuery's 10 MB per-query floor) and +20.4 MB on
+    serving_comtrade_annual, whose rows are as fine as Gold's; nothing on the Gold-direct read.
+    """
+    if not enabled:
+        return ""
+    expr = "count(*)" if gold else "sum(source_rows)"
+    return f",\n            {expr} as source_rows"
+
+
 def table_ref(settings, dataset_attr: str, table: str) -> str:
     """Build a fully-qualified `project.dataset.table` reference from settings."""
     project = settings.gcp_project_id
@@ -614,6 +638,7 @@ def production_by_uf_yearly(
     has_measure_kind: bool = False,
     tabela: str | None = None,
     price_base: bool = False,
+    rows: bool = False,
 ) -> tuple[str, list]:
     """Production by (UF, year) from ``serving_pevs_annual`` (backs the ano × UF heatmap).
 
@@ -627,7 +652,8 @@ def production_by_uf_yearly(
     ``price_base`` adds the month the summed column is at (:func:`_price_base_select`).
     The basket cube (``/api/geo-yearly``) asks for it: it is a separate read, cached on
     its own, so across a build it can come back at a different month than the snapshot
-    it is shown beside.
+    it is shown beside. ``rows`` adds the Gold rows each (UF, year) sums
+    (:func:`_source_rows_select`).
     """
     value_column = _validate_column(value_column, ALLOWED_VALUE_COLUMNS, "value_column")
     conditions: list[str] = []
@@ -635,7 +661,7 @@ def production_by_uf_yearly(
     _year_bounds(conditions, params, year_start, year_end)
     _tabela(conditions, params, tabela)
     _in_array(conditions, params, "product_code", "product_codes", product_codes)
-    base = _price_base_select(value_column, price_base)
+    base = _source_rows_select(rows) + _price_base_select(value_column, price_base)
     sql = f"""
         select
             state_acronym,
@@ -703,10 +729,12 @@ def production_by_municipio_yearly(
     tabela: str | None = None,
     price_base: bool = False,
     has_measure_kind: bool = False,
+    rows: bool = False,
 ) -> tuple[str, list]:
     """Production by (município, year) straight from ``gold_<source>_production``,
     which is ALREADY município-grained — backs the sub-UF + live-município geography
-    cascade.
+    cascade. ``rows`` adds how many Gold rows each (município, year) sums, a ``count(*)``
+    that reads no column (:func:`_source_rows_select`).
 
     Município is the finest grain and an on-demand/gated level, so it reads Gold
     DIRECTLY (basket-scoped + the gateway's ``maximum_bytes_billed`` guard) rather
@@ -728,7 +756,7 @@ def production_by_municipio_yearly(
     _in_array(conditions, params, "city_code", "city_codes", city_codes)
     if visibility_predicate:
         conditions.append(visibility_predicate)
-    base = _price_base_select(value_column, price_base)
+    base = _source_rows_select(rows, gold=True) + _price_base_select(value_column, price_base)
     sql = f"""
         select
             city_code,
@@ -1345,6 +1373,7 @@ def comex_by_uf_yearly(
     flow: str | None = None,
     value_column: str = "val_yearfx_usd",
     price_base: bool = False,
+    rows: bool = False,
 ) -> tuple[str, list]:
     """COMEX value by (UF, year) from ``serving_comex_annual`` (backs the ano × UF heatmap).
 
@@ -1353,7 +1382,7 @@ def comex_by_uf_yearly(
     renders real per-UF history. ``total_value_usd`` (renamed by the seam to
     ``total_value``) is the choropleth/heatmap measure. ``value_column`` picks the
     currency×correction measure (BRL/USD/EUR — the real columns the mart now carries).
-    ``price_base``: as in :func:`production_by_uf_yearly`.
+    ``price_base`` and ``rows``: as in :func:`production_by_uf_yearly`.
     """
     value_column = _validate_column(value_column, ALLOWED_VALUE_COLUMNS, "value_column")
     conditions: list[str] = []
@@ -1361,7 +1390,7 @@ def comex_by_uf_yearly(
     _year_bounds(conditions, params, year_start, year_end)
     _in_array(conditions, params, "ncm_code", "ncm_codes", ncm_codes)
     _flow(conditions, params, flow)
-    base = _price_base_select(value_column, price_base)
+    base = _source_rows_select(rows) + _price_base_select(value_column, price_base)
     sql = f"""
         select
             state_acronym,
@@ -1946,6 +1975,7 @@ def product_timeseries(
     has_measure_kind: bool = False,
     tabela: str | None = None,
     price_base: bool = False,
+    rows: bool = False,
 ) -> tuple[str, list]:
     """Annual per-product series — value + quantities (backs productTS).
 
@@ -2007,6 +2037,10 @@ def product_timeseries(
     (:func:`_price_base_select`). The snapshot never asks — its overview read dates it —
     but the per-UF read (``/api/product-ts``, v1.108.3) is a request of its own, cached on
     its own, and across a build it can come back at another month than the snapshot.
+
+    ``rows`` adds the Gold rows each (product, year) sums (:func:`_source_rows_select`). The
+    snapshot asks: its series is the one the hero's "Linhas" counter sums when no
+    geography narrows the screen.
     """
     code_column = _validate_column(code_column, ALLOWED_PRODUCT_COLUMNS, "product column")
     value_column = _validate_column(value_column, ALLOWED_VALUE_COLUMNS, "value_column")
@@ -2022,10 +2056,11 @@ def product_timeseries(
     _reporter(conditions, params, reporter_column, reporter_value)
     _in_array(conditions, params, "reporter_iso_a3", "reporters", reporters)
     _in_array(conditions, params, "partner_iso_a3", "partners", partners)
-    base = _price_base_select(value_column, price_base)
+    base = _source_rows_select(rows) + _price_base_select(value_column, price_base)
     # The window counts each family's rows inside the year AFTER the filters, so the family
     # ranks over exactly the rows the sums below add. It adds no column to the scan: the
-    # family is already read for the CASE sums.
+    # family is already read for the CASE sums. The subquery's `*` also carries the mart's
+    # `source_rows` up to the outer sum when `rows` asks for it.
     sql = f"""
         select
             {code_column}       as code,

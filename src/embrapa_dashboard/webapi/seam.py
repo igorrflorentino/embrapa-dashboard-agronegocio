@@ -447,12 +447,15 @@ def snapshot(banco_id: str, conv: dict, summary: dict | None = None) -> dict:
         regime_kw = {} if banco_id == "mdic_comex" else {"customs": customs, "market": market}
         # The per-product filters come from the helper the per-UF read shares
         # (/api/product-ts), so the two reads of this series cannot drift apart.
+        # `with_rows`: the Gold rows behind each point, which the hero's "Linhas" counter sums
+        # (v1.108.9) — a column the read returns, not a filter, so it is not in that helper.
         product_ts = gateway.fetch_product_timeseries(
             banco_id,
             year_start=y0,
             year_end=y1,
             codes=codes,
             value_column=value_col,
+            with_rows=True,
             **_product_ts_filter_kwargs(banco_id, summary),
         )
         overview_fn = (
@@ -480,7 +483,12 @@ def snapshot(banco_id: str, conv: dict, summary: dict | None = None) -> dict:
         )
         uf_yearly = (
             gateway.fetch_comex_by_uf_yearly(
-                year_start=y0, year_end=y1, ncm_codes=codes, value_column=value_col, flow=flow
+                year_start=y0,
+                year_end=y1,
+                ncm_codes=codes,
+                value_column=value_col,
+                flow=flow,
+                with_rows=True,
             )
             if banco_id == "mdic_comex"
             else None
@@ -497,6 +505,7 @@ def snapshot(banco_id: str, conv: dict, summary: dict | None = None) -> dict:
             year_end=y1,
             codes=codes,
             value_column=value_col,
+            with_rows=True,
             **_product_ts_filter_kwargs(banco_id, summary),
         )
         # The SIDRA table reaches EVERY production read of the snapshot — the series above
@@ -527,6 +536,7 @@ def snapshot(banco_id: str, conv: dict, summary: dict | None = None) -> dict:
             value_column=value_col,
             source=banco_id,
             tabela=tabela,
+            with_rows=True,
         )
 
     gap_rows = _value_gap_rows(banco_id, value_col)
@@ -884,10 +894,16 @@ def geo_yearly(banco_id: str, conv: dict, summary: dict | None = None) -> pd.Dat
     flow = _flow_from_summary(summary)
     # The cube is its own read, cached on its own: across a build it can come back at a
     # different price base than the snapshot it is drawn beside. It carries its month
-    # (`price_base_*`, split off by the serializer) so the screen can say so (v1.105.0).
+    # (`price_base_*`, split off by the serializer) so the screen can say so (v1.105.0),
+    # and the Gold rows behind each (UF, year), which the hero's "Linhas" counter sums
+    # under a basket (v1.108.9).
     if banco_id == "mdic_comex":
         df = gateway.fetch_comex_by_uf_yearly(
-            ncm_codes=codes, value_column=value_col, flow=flow, with_price_base=True
+            ncm_codes=codes,
+            value_column=value_col,
+            flow=flow,
+            with_price_base=True,
+            with_rows=True,
         )
         if df is not None:
             df = df.rename(columns={"total_value_usd": "total_value"})
@@ -898,6 +914,7 @@ def geo_yearly(banco_id: str, conv: dict, summary: dict | None = None) -> pd.Dat
         source=banco_id,
         tabela=_tabela_from_summary(summary),
         with_price_base=True,
+        with_rows=True,
     )
 
 
@@ -969,6 +986,9 @@ def geo_municipio_yearly(
             source=banco_id,
             tabela=_tabela_from_summary(summary),
             with_price_base=True,
+            # The Gold rows behind each (município, year): the hero's "Linhas" counter
+            # under a sub-UF recorte (v1.108.9). A count(*), so it costs no byte.
+            with_rows=True,
         )
     except NotFound:
         # gold_<source>_production not built → documented None (serialize_municipio_yearly

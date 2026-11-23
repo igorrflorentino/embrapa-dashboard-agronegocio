@@ -181,6 +181,19 @@ def _count_totals(row: Any) -> dict[str, float]:
     }
 
 
+def _source_rows(row: Any) -> dict[str, int | None]:
+    """The Gold rows one output row sums, as ``rows`` — only when the read counted them.
+
+    The hero's "Linhas" counter sums them over what the screen draws (v1.108.9): the
+    snapshot's ``productTS`` and ``ufYearly``, the basket cube and the município cube ask
+    for ``source_rows`` (``sql._source_rows_select``). A frame without the column was not
+    asked, and its rows carry no ``rows`` key: the client reads that as "not counted" and
+    falls back to an estimate it labels as one, never as zero rows."""
+    if not hasattr(row, "source_rows"):
+        return {}
+    return {"rows": _int_or_none(row.source_rows)}
+
+
 # ── snapshot ──────────────────────────────────────────────────────────────────
 
 
@@ -561,6 +574,7 @@ def _product_ts(df: pd.DataFrame | None, products: pd.DataFrame | None = None) -
                 "v": _measure_scaled(r.total_value, 1e6),
                 "q": q,
                 "family": _fam(fam_raw),
+                **_source_rows(r),
             }
         )
     return out
@@ -641,6 +655,7 @@ def _uf_yearly(df: pd.DataFrame | None) -> list[dict]:
             "q_mass": _num(getattr(r, "q_mass", 0)) / 1e3,
             "q_vol": _num(getattr(r, "q_vol", 0)) / 1e6,
             **_count_totals(r),
+            **_source_rows(r),
         }
         for r in df.itertuples()
     ]
@@ -665,6 +680,7 @@ def _municipio_yearly(df: pd.DataFrame | None) -> list[dict]:
             "q_mass": _num(getattr(r, "q_mass", 0)) / 1e3,
             "q_vol": _num(getattr(r, "q_vol", 0)) / 1e6,
             **_count_totals(r),
+            **_source_rows(r),
         }
         for r in df.itertuples()
     ]
@@ -672,7 +688,7 @@ def _municipio_yearly(df: pd.DataFrame | None) -> list[dict]:
 
 def serialize_municipio_yearly(df: pd.DataFrame | None) -> dict:
     """seam.geo_municipio_yearly() → { municipioYearly: [{year, cityCode, uf, value,
-    q_mass, q_vol, q_count_stock, q_count_flow}] }.
+    q_mass, q_vol, q_count_stock, q_count_flow, rows}] }.
 
     The basket-scoped per-(município, year) cube — the finest geography grain. The
     client joins ``cityCode`` to /geo-mesh to roll it up to the selected sub-UF level
@@ -786,7 +802,7 @@ def serialize_product_uf(df: pd.DataFrame | None) -> dict:
 
 def serialize_geo_yearly(df: pd.DataFrame | None) -> dict:
     """seam.geo_yearly() → { ufYearly: [{year, uf, name, region, value, q_mass, q_vol,
-    q_count_stock, q_count_flow}] }.
+    q_count_stock, q_count_flow, rows}] }.
 
     The basket-scoped per-(UF, year) cube backing the geography-aware hero/map/series.
     Reuses :func:`_uf_yearly` so the value/quantity scaling (value ÷1e6 → mi, q_mass

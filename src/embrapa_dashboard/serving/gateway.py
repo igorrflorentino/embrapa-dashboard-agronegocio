@@ -309,8 +309,12 @@ def fetch_production_by_uf_yearly(
     source: str = "ibge_pevs",
     tabela: str | None = None,
     with_price_base: bool = False,
+    with_rows: bool = False,
 ):
-    """Production by (UF, year) for a PEVS-shaped source (backs the ano × UF heatmap)."""
+    """Production by (UF, year) for a PEVS-shaped source (backs the ano × UF heatmap).
+
+    ``with_rows`` adds the Gold rows each (UF, year) sums, for the hero's "Linhas" counter
+    (``sqlbuild._source_rows_select``). Being an argument, it is part of the memoize key."""
     settings = get_settings()
     mart = _production_mart(source)
     table = sqlbuild.table_ref(settings, "bq_serving_dataset", mart)
@@ -323,6 +327,7 @@ def fetch_production_by_uf_yearly(
         has_measure_kind=source in _MEASURE_KIND_SOURCES,
         tabela=tabela,
         price_base=_asks_price_base(with_price_base, value_column, "bq_serving_dataset", mart),
+        rows=with_rows,
     )
     return run_query(sql, params)
 
@@ -343,6 +348,7 @@ def fetch_production_by_municipio_yearly(
     source: str = "ibge_pevs",
     tabela: str | None = None,
     with_price_base: bool = False,
+    with_rows: bool = False,
 ):
     """Production by (município, year) for a PEVS-shaped source, straight from
     gold_<source>_production (already município-grained) — backs the sub-UF +
@@ -352,7 +358,9 @@ def fetch_production_by_municipio_yearly(
     a narrowed selection cheap (the client passes only the selected municípios' codes).
     ``None`` for a source with no município grain (COMEX/COMTRADE), or when no
     ``city_codes`` scope is given — the cube is always city-scoped, so an empty set
-    means "nothing to fetch" rather than a full ~146k-row município grid scan."""
+    means "nothing to fetch" rather than a full ~146k-row município grid scan.
+    ``with_rows`` adds the Gold rows each (município, year) sums — a ``count(*)``, so it
+    costs no byte — for the hero's "Linhas" counter under a sub-UF recorte."""
     if source not in _MUNICIPIO_SOURCES or not city_codes:
         return None
     settings = get_settings()
@@ -375,6 +383,7 @@ def fetch_production_by_municipio_yearly(
         ),
         # The herd and the counted flows (eggs) come back as separate totals.
         has_measure_kind=source in _MEASURE_KIND_SOURCES,
+        rows=with_rows,
     )
     return run_query(sql, params)
 
@@ -727,11 +736,13 @@ def fetch_comex_by_uf_yearly(
     flow: str | None = None,
     value_column: str = "val_yearfx_usd",
     with_price_base: bool = False,
+    with_rows: bool = False,
 ):
     """COMEX value by (UF, year) (backs the ano × UF heatmap for COMEX).
 
     ``value_column`` picks the currency×correction measure (default USD; the mart
-    carries the full BRL/USD/EUR matrix).
+    carries the full BRL/USD/EUR matrix). ``with_rows``: as in
+    :func:`fetch_production_by_uf_yearly`.
     """
     settings = get_settings()
     table = sqlbuild.table_ref(settings, "bq_serving_dataset", "serving_comex_annual")
@@ -745,6 +756,7 @@ def fetch_comex_by_uf_yearly(
         price_base=_asks_price_base(
             with_price_base, value_column, "bq_serving_dataset", "serving_comex_annual"
         ),
+        rows=with_rows,
     )
     return run_query(sql, params)
 
@@ -1408,8 +1420,13 @@ def fetch_product_timeseries(
     pin_reporter: str | None = _REPORTER_PIN_DEFAULT,
     tabela: str | None = None,
     with_price_base: bool = False,
+    with_rows: bool = False,
 ):
     """Annual per-product series (value + native quantity) for a source (backs productTS).
+
+    ``with_rows`` adds the Gold rows each (product, year) sums (``source_rows``). Only the
+    snapshot asks: its series is what the hero's "Linhas" counter sums when no geography
+    narrows the screen. Being an argument, it is part of the memoize key.
 
     ``tabela`` optionally pins one SIDRA table: the cross-source PEVS quantity series read
     ONE half of the survey, and the snapshot's and the per-UF per-product series follow the
@@ -1469,6 +1486,7 @@ def fetch_product_timeseries(
         price_base=_asks_price_base(
             with_price_base, value_column or default_value, "bq_serving_dataset", table_name
         ),
+        rows=with_rows,
     )
     return run_query(sql, params)
 

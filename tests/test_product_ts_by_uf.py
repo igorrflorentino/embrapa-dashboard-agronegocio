@@ -213,6 +213,9 @@ def test_the_per_uf_read_answers_over_the_snapshot_reads_filters(monkeypatch, ba
     nacional, por_uf = calls
     assert por_uf.pop("uf_codes") == tuple(summary["states"])
     assert por_uf.pop("with_price_base") is True
+    # The snapshot's series also returns the Gold rows behind each point, which the hero's
+    # "Linhas" counter sums (v1.108.9). A returned column, like the base, not a filter.
+    assert nacional.pop("with_rows") is True
     # The snapshot route sends no year window either; the seam passes it as None.
     assert nacional.pop("year_start") is None and nacional.pop("year_end") is None
     assert nacional == por_uf
