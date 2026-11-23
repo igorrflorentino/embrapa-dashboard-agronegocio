@@ -162,13 +162,16 @@ overview** (monthly detail is served by `monthlyData`, §4.3).
 > Do **not** emit `q_vol` for COMEX/COMTRADE — those rows carry no volume family in
 > the current scope. Only emit families that exist (group `qty_base` BY `family`).
 
-### 3.3 `productTS` — `{ [code]: [{ y, v, q, family }] }`
+### 3.3 `productTS` — `{ [code]: [{ y, v, q, family, rows }] }`
 One annual series per product, keyed by the same `code` as `products`.
 
 - `v` = `SUM(value)` ÷ 1e6 (**mi**) — PEVS `val_real_ipca_brl`, trade `val_yearfx_usd`.
   (`overviewTS.v` in bi = Σ `productTS.v` ÷ 1000 — keep the factor.)
 - `q` = `SUM(qty_native)` × 1000 (PEVS convention).
 - `family` = the product's `family` (→ en).
+- `rows` = `SUM(source_rows)`, the Gold rows behind the point (v1.108.10). Only the
+  snapshot's read asks for it (`with_rows=True`); the per-UF read of §3.6 does not, since
+  the counter reads the UF grid there. The hero's "Linhas" counter sums it (§3.5).
 
 The snapshot's series are **national**: the marts carry a UF grain and the snapshot sums it
 away. Under a UF subset `applyFilters` swaps them for the selected UFs' own series from
@@ -213,18 +216,66 @@ added.
 
 **`qualityByProduct` — `[{ code, tabela, name, rows, <flag id>: share, … }]`**, one entry
 per produto (matched on `(code, tabela)`, its identity), ranked by `rows`; banco-wide, like
-`quality`. The flag shares divide by `rows`, and since v1.108.5 `rows` itself travels too:
-the hero's "Linhas" counter weighs a selection by it. `_shares.productShare` is the
-selection's share of the banco's ROWS (Σ `rows` of the selected produtos ÷ Σ `rows`), no
-longer its share of PRODUCTS, because products are far from even (prod, 2026-11-23): a
-COMEX NCM code holds from 1 to 32,549 of the 496,160 rows the panel reads; PAM's açaí,
-which starts in 2015, 60,557 beside 257,294 for most crops (a basket of açaí alone read
-"239 mil" and is 61 mil); the 3 PEVS silvicultura produtos are 3 of 10 but 20.6% of the
-rows. Σ `rows` equals Σ `quality[].count`, and every `products` entry finds its `rows` by
-`(code, tabela)` (checked in all five bancos, prod 2026-11-23, PPM's two tables included). A payload
-without `rows` falls back to the count share, so the counter keeps an estimate rather than
-none. The counter stays an ESTIMATE across dimensions (the period and the UFs scale every
-produto alike); it is exact along the product one.
+`quality`. The flag shares divide by `rows`, and since v1.108.5 `rows` itself travels too.
+`_shares.productShare` is the selection's share of the banco's ROWS (Σ `rows` of the
+selected produtos ÷ Σ `rows`), no longer its share of PRODUCTS, because products are far
+from even (prod, 2026-11-23): a COMEX NCM code holds from 1 to 32,549 of the 496,160 rows
+the panel reads; PAM's açaí, which starts in 2015, 60,557 beside 257,294 for most crops; the
+3 PEVS silvicultura produtos are 3 of 10 but 20.6% of the rows. Σ `rows` equals Σ
+`quality[].count`, and every `products` entry finds its `rows` by `(code, tabela)` (checked
+in all five bancos, prod 2026-11-23, PPM's two tables included). A payload without `rows`
+falls back to the count share. Since v1.108.10 the share only backs the counter's fallback
+estimate (below).
+
+**The hero's "Linhas" counter COUNTS (v1.108.10).** It shows `applyFilters.rowsInView`, the
+sum of `rows` over the points of `filtered.ts`, the series the screen draws, which is already
+cut to the selection: produtos, period and territory. Every read that can feed `ts` carries
+the Gold rows behind each of its points:
+
+| `ts` comes from | read | `rows` is |
+|---|---|---|
+| no UF subset, no basket (or a basket whose UF cube is not in yet) | snapshot `productTS` (§3.3), summed over the selected produtos | `SUM(source_rows)` |
+| a UF subset, no basket | snapshot `ufYearly` | `SUM(source_rows)` |
+| a basket, with or without a UF subset | `GET /api/geo-yearly` (§3.6) | `SUM(source_rows)` |
+| a sub-UF recorte | `POST /api/municipio-yearly` (§3.6) | `count(*)` on Gold |
+
+A mart's `source_rows` is the `count(*)` of the Gold rows it folded, so the sum equals Gold's
+`count(*)` under the same visibility gate (`tests/test_source_rows.py` derives the five marts
+from the gateway and fails if one stops carrying it). The sum is STRICT (`addCount` in
+`dataFilters.js`): one point without a count makes the whole count `null`, never a smaller
+number. A value total is lenient on purpose (summing the present ones is the right reading);
+a count that skipped a point would be a wrong number, not a partial one. A produto with no
+point in a year adds 0: the marts hold only the (produto, year) groups that exist.
+
+Checked against prod Gold `count(*)` on 2026-11-23, counter = Gold in every case:
+
+| recorte | before (estimate) | counted |
+|---|---|---|
+| PAM, açaí, 1990–2000 (açaí starts in 2015) | 13 mil | 0 |
+| PEVS, Pará, 2010–2020: both origins / extração / silvicultura | 14 mil / – / 3 mil | 11,170 / 10,801 / 369 |
+| PEVS, Portel + Breves, every year | 497 | 560 |
+| COMEX, 44079990, export, 2015–2024, Pará | 402 | 1,716 |
+| COMTRADE, the default (Brazil as reporter, export + import) | 2,6 mi | 36,963 |
+
+**What the count follows.** Period, produtos (the basket) and industrialization level (`ni`)
+in every banco; the PEVS origin (`tb`) on every read of the table above; UFs and every sub-UF
+level down to the município in the IBGE bancos; UFs and flow (`fx`) in COMEX; flow, partners
+and reporters in COMTRADE (the national path, whose reporter pin is Brazil by default). **Not
+the data-quality selection**, by a decision older than the count (recorded in
+`MainScreen.jsx`): no pre-aggregated table carries `data_quality_flag`, so the quality
+selection cuts no series, and a counter that followed it would claim a recorte no chart
+draws. `_shares.flagShare` stays exposed as a number, never as a multiplier. The estimate
+also kept a `valueShare` multiplier, always 1 since `_shares` lost the key in v1.45.0; it is
+gone.
+
+**When it cannot count.** `rowsInView` is `null` when a point arrives without `rows` (a
+payload from before v1.108.10) or a UF subset meets a snapshot with no UF grid. The counter
+then falls back to the old estimate, total × `productShare` × `yearShare` × (`muniShare` ??
+`stateShare`), and marks it: "≈ 61 mil", with a tooltip that says it is an estimate. A counted
+number carries the exact figure in its tooltip ("60.557 linhas da base analítica neste
+recorte."). While the territory is loading (`subUfLoading`, `geoComboPending`) it reads "…",
+and after a failure (`subUfLoadError`, `geoComboLoadError`) "—": never the estimate, which
+would count whole states (Portel and Breves would read as all of Pará).
 
 ### 3.6 Sub-UF geography cascade — `geo-mesh` + município cube (IBGE PEVS/PAM/PPM)
 The geography filter descends BELOW UF via three dedicated endpoints (the snapshot stays
@@ -243,7 +294,8 @@ município passes the cascade iff it clears every active facet (intersection).
   the `cityCode → ancestry` map from it. `{ municipios: [] }` if the dim isn't built.
 - **`POST /api/municipio-yearly`** — body `{ cityCodes: [...] }`; `banco` / `codes` /
   `currency` / `correction` in the query string → `{ municipioYearly: [{ year, cityCode,
-  uf, value, q_mass, q_vol, q_count_stock, q_count_flow }] }`. The basket + **city-scoped** per-(município,
+  uf, value, q_mass, q_vol, q_count_stock, q_count_flow, rows }] }` (`rows`, since v1.108.10:
+  the Gold rows behind the cell, a `count(*)` in the same select). The basket + **city-scoped** per-(município,
   year) cube, read straight from Gold (`maximum_bytes_billed`-guarded). **POST, not GET**:
   the resolved city set can be hundreds of codes — too large for a query string (gunicorn's
   ~4 KB request-line limit → 414). A **non-empty `cityCodes` is required** (so the backend
@@ -327,10 +379,12 @@ município passes the cascade iff it clears every active facet (intersection).
     They keep their numbers and say so (`window.recorteNaoSeAplica`), or withhold the chart
     (Valor × Volume), and their CSV is refused with `recorte-nao-se-aplica` — waiting would not
     help, so `carregando-recorte` would promise a file that never comes.
-  - *Row counts.* `_shares.muniShare` (the municípios in scope over the whole mesh) sizes
-    "Linhas" under a recorte; `stateShare` counted whole states, so Portel and Breves read as
-    all of Pará. Null until the recorte resolves: the counter shows "…" or "—" meanwhile.
-    The product multiplier beside it is `productShare`, a share of ROWS since v1.108.5 (§3.5).
+  - *Row counts.* Under a resolved recorte "Linhas" COUNTS (v1.108.10, §3.5): the município
+    cube's `rows` survive the rollup to (UF, year) (`rollupMuniCubeToUf`), so Portel and Breves
+    read 560, Gold's own `count(*)`. Until then `_shares.muniShare` (the municípios in scope
+    over the whole mesh) sized an estimate — 497 for the same two — and it now backs only the
+    fallback for a payload without `rows`. While the recorte loads the counter shows "…", after
+    a failure "—", in every case: never the estimate, and never a count of the UF grid.
 
 ### 3.7 `valueGap` — the periods the active convention cannot value (every banco)
 `{ years, partial, months, valuedRange, share: null }` or `null`.

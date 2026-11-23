@@ -7,6 +7,114 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.108.10] - 2026-11-23
+
+**"Linhas", em "Seleção ativa", passa a contar as linhas do recorte, em vez de estimá-las.** Fecha
+a pendência das Notas da v1.108.5. O contador multiplicava o total do banco pela fração de linhas
+dos produtos escolhidos e pelas frações de anos e de UFs (ou de municípios) do banco inteiro, como
+se todo produto tivesse linhas em todos os anos e em todo o território. Só o açaí do PAM, de 1990 a
+2000, lia "13 mil", e o açaí não tem nenhuma linha antes de 2015. O UN COMTRADE, que abre com o
+Brasil como reportante, lia "2,6 mi", as linhas de todos os reportantes, ao lado de gráficos que
+desenham as 36.963 do Brasil (exportação e importação).
+
+### Corrigido
+- **O contador soma as linhas da base analítica por trás de cada ponto da série que a tela
+  desenha.** As tabelas pré-agregadas já guardavam, em cada linha, quantas linhas da base analítica
+  ela soma. As leituras que alimentam a série passam a devolver essa soma, e o contador a acumula
+  pelo mesmo caminho que a série já seguia:
+  - sem UF escolhida: a série por produto do resumo do banco, somada nos produtos escolhidos;
+  - com UFs: a grade UF × ano do resumo, somada nas UFs escolhidas;
+  - com uma cesta de produtos: o cubo UF × ano da cesta (`/api/geo-yearly`);
+  - abaixo da UF, da mesorregião ao município: o cubo por município (`/api/municipio-yearly`), que
+    lê a base analítica e passa a contar as linhas no mesmo `select` que soma o valor.
+
+  Medido numa prévia local contra a produção (só leitura), em 2026-11-23, e conferido em cada caso
+  com `count(*)` na base analítica, sem os produtos ocultos pelo ciclo de vida, como toda leitura do
+  painel. A tela arredonda ("11 mil"); a dica do número traz a contagem por inteiro.
+
+  | recorte | antes | agora | dica = `count(*)` |
+  |---|---|---|---|
+  | PAM · açaí · 1990–2000 | 13 mil | 0 | 0 |
+  | PEVS · Pará · 2010–2020 · as duas origens | 14 mil | 11 mil | 11.170 |
+  | PEVS · Pará · 2010–2020 · extração vegetal (289) | não medido | 11 mil | 10.801 |
+  | PEVS · Pará · 2010–2020 · silvicultura (291) | 3 mil | 369 | 369 |
+  | PEVS · Portel + Breves (PA) · todos os anos | 497 | 560 | 560 |
+  | PEVS · Portel + Breves · 2010–2020 | não medido | 154 | 154 |
+  | PEVS · Portel + Breves · silvicultura | não medido | 0 | 0 |
+  | COMEX · exportação · 2020–2024 | não medido | 152 mil | 152.335 |
+  | COMEX · 44079990 · exportação · 2015–2024 · Pará | 402 | 2 mil | 1.716 |
+  | UN COMTRADE · abertura (Brasil reportante, exportação e importação) | 2,6 mi | 37 mil | 36.963 |
+
+  A exportação do COMEX em 2020–2024 tem 155.030 linhas contando os 3 códigos ocultos; o contador
+  lê as 152.335 que o painel mostra.
+- **O que o contador segue.** Em todo banco, o período, os produtos e, onde houver, o nível de
+  industrialização.
+  No PEVS, a origem (`tb`), em todas as leituras acima. Nos bancos do IBGE, as UFs e todos os níveis
+  abaixo delas, até o município. No COMEX, as UFs e o fluxo. No UN COMTRADE, que não tem UF, o fluxo,
+  os parceiros e os reportantes. A seleção de qualidade continua de fora, pela decisão já registrada
+  em `MainScreen.jsx`: nenhuma tabela pré-agregada carrega a marca de qualidade, então ela não
+  recorta série alguma, e o contador afirmaria um recorte que nenhum gráfico desenha.
+- **A soma é estrita.** Se um único ponto chega sem contagem, a contagem inteira fica desconhecida,
+  e nunca vira um número menor. Um total de valor soma os pontos presentes, por decisão; uma
+  contagem que pulasse um ponto seria um número errado, não parcial.
+- **A estimativa sobra só como reserva, e marcada.** Sem contagem (uma resposta de antes desta
+  versão, ou um filtro de UF num banco cujo resumo não traz a grade por UF), o contador volta à
+  fórmula antiga e mostra "≈ 61 mil", com a dica "Estimativa: a contagem exata deste recorte não
+  está disponível, e o número vem da proporção de produtos, anos e território selecionados." Com
+  contagem, a dica traz o número inteiro: "60.557 linhas da base analítica neste recorte."
+- **Enquanto o território carrega, "…"; depois de uma falha, "—".** Já valia para o recorte abaixo
+  da UF (v1.108.2) e passa a valer para o cubo da cesta × UF, a caminho ou em falha, em que o
+  contador mostrava a estimativa.
+
+### Alterado
+- Os leitores que alimentam a série ganham a opção de contar (`rows` no SQL; `with_rows` no
+  `gateway`, onde entra na chave do cache). `product_timeseries`, `production_by_uf_yearly` e
+  `comex_by_uf_yearly` somam a coluna `source_rows` das tabelas pré-agregadas;
+  `production_by_municipio_yearly` conta com `count(*)` na base analítica. Desligada, a opção deixa
+  o SQL e os parâmetros idênticos aos de antes (teste). O resumo do banco, `/api/geo-yearly` e
+  `/api/municipio-yearly` a ligam, e os serializadores entregam o campo `rows` em cada ponto de
+  `productTS` e em cada linha de `ufYearly` e `municipioYearly`.
+- **Custo, medido na produção em 2026-11-23:** a coluna acrescenta de 0,08 a 1,02 MB processados a
+  cada leitura das tabelas pré-agregadas do PEVS, PAM, PPM e COMEX, e 20,4 MB à do UN COMTRADE.
+  Nada à leitura por município, em que `count(*)` não lê coluna.
+- Nada muda no dbt: as cinco tabelas pré-agregadas já tinham a coluna. O merge não dispara a
+  reconstrução da base analítica.
+- A estimativa perde o fator `valueShare`, que valia sempre 1 desde que a v1.45.0 o tirou de
+  `_shares`.
+- O contrato está em `docs/frontend_data_contract.md` (§3.3, §3.5 e §3.6) e em
+  `frontend/src/ui/contracts.js`.
+
+### Testes
+- vitest, 30 testes novos:
+  - `frontend/src/ui/rowsInView.test.js`, novo, com 20. Uma base analítica em miniatura (4
+    municípios em 2 UFs, 4 anos, o açaí só no Pará e só a partir de 2015, uma célula com duas
+    linhas) é contada à mão, e cada caminho de `applyFilters` é conferido contra ela: sem filtro,
+    cesta, período, UFs, cesta × UF (carregado, aguardando, em falha), mesorregião, dois
+    municípios, a origem do PEVS. A seleção de qualidade não muda a contagem. Dão `null`: uma
+    resposta sem `rows`, um ponto sem contagem, o recorte carregando ou em falha, e um filtro de UF
+    sem a grade por UF.
+  - `frontend/src/ui/MainScreen.cov.test.jsx`, 10 novos, e 4 que passam a esperar a estimativa
+    marcada: o número contado e a dica, 0 e 1 (no singular), a estimativa com "≈", "…" e "—" na
+    espera e na falha do cubo da cesta × UF, e o recorte abaixo da UF contado.
+- pytest, 11 novos em `tests/test_source_rows.py`: cada leitor só conta quando pedido (desligado,
+  SQL e parâmetros iguais aos de antes); a contagem convive com o mês-base; as cinco tabelas
+  pré-agregadas que o `gateway` lê contam as linhas da base analítica (derivadas dos registros do
+  `gateway`, não listadas à mão); o serializador; e o `seam` pede a contagem nas duas leituras de
+  cubo. Os testes do resumo em `tests/test_webapi_seam.py` e `tests/test_product_ts_by_uf.py`
+  conferem que ele também a pede.
+- Contraprova: com o código do `main`, os 20 testes de `rowsInView.test.js` falham, e 12 dos 14
+  novos ou alterados de `MainScreen.cov.test.jsx`. Os 2 que passam são os casos que não podiam
+  mudar: "—" sem total, e "…" enquanto um recorte abaixo da UF carrega. Com o `src/` do `main`, 18
+  dos 19 testes de pytest novos ou alterados falham; o que passa é a guarda das tabelas
+  pré-agregadas, que lê o SQL do dbt, que esta versão não muda.
+- pytest: 2614 passando (15 pulados no Windows, que só rodam no Linux). vitest: 1954 passando em
+  105 arquivos.
+
+### Notas
+- **"Anos cobertos" ainda conta os anos do período, não os anos com linhas.** Com o açaí do PAM e o
+  período 1990–2000, "Seleção ativa" lê "Linhas 0" ao lado de "Anos cobertos 11 / 52". Fica para
+  uma próxima versão.
+
 ## [1.108.5] - 2026-11-23
 
 **Sob um filtro de origem do IBGE PEVS, as contagens de produtos e de linhas passam a ser as da

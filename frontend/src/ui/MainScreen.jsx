@@ -436,33 +436,54 @@ function MainScreen({ filters, view = 'overview', database = 'ibge_pevs', infoPa
   // The registry prov no longer fabricates a row count, so the only source is the
   // live snapshot's quality-flag sum; show "—" until it resolves (never a fake total).
   const totalRows = _liveRows || prov.totalRows;
-  // Clamp the filtered estimate to the total: the per-dimension shares are heuristic
-  // (no real backend COUNT), so a share slightly >1 must never render "more filtered
-  // rows than the total" (defense in depth atop the dataFilters share fixes — M1).
-  const rowsAfter = totalRows ? Math.min(totalRows, Math.round(
+  // The rows of the recorte, COUNTED (v1.108.10): every read behind the screen's series
+  // returns the Gold rows each of its points sums, and applyFilters adds them over exactly
+  // what the series sums (`rowsInView`). Until then this was an estimate — the total times
+  // shares of the selection — and PAM's açaí over 1990–2000, a period it has no row in, read
+  // thousands of rows.
+  //
+  // The quality selection does NOT enter, counted or estimated. This counter describes the
+  // rows the panel is SHOWING, and the quality selection cuts no series: no serving mart
+  // carries `data_quality_flag`. With flagShare in the product, ticking only "Valor
+  // problemático" made the header read "20 de 1,4 mi linhas" while every chart kept drawing
+  // 1,4 mi — the counter claimed a recorte that does not exist. Same reason
+  // `valueShareForRange` left in v1.45.0 (its multiplier stayed here, always 1, until
+  // v1.108.10).
+  // `_shares.flagShare` stays exposed: as a NUMBER it is honest ("this fraction of the Gold
+  // rows carries the ticked flags"), it is just not a recorte of the screen.
+  const rowsCounted = (_f && Number.isFinite(_f.rowsInView)) ? _f.rowsInView : null;
+  // Only when the count did not come (a payload from before v1.108.10, or a UF subset the
+  // series cannot honour) does the old estimate stand in, and the label says it is one.
+  // Clamped to the total: the shares are heuristic, and a share slightly >1 must never
+  // render "more filtered rows than the total" (M1). Under a sub-UF recorte the selection
+  // is a set of MUNICÍPIOS (muniShare): the whole-state fraction counted Portel and Breves
+  // as all of Pará (v1.108.2).
+  const rowsEstimate = (rowsCounted == null && totalRows) ? Math.min(totalRows, Math.round(
     totalRows *
     (_shares.productShare ?? 1) *
-    (_shares.valueShare   ?? 1) *
     (_shares.yearShare    ?? 1) *
-    // flagShare NÃO entra. Este contador descreve as linhas que o dashboard está
-    // MOSTRANDO, e a seleção de qualidade não recorta série alguma: nenhum mart de
-    // serving carrega `data_quality_flag`. Com ela no produto, marcar só "Valor
-    // problemático" fazia o cabeçalho ler "20 de 1,4 mi linhas" enquanto todos os
-    // gráficos seguiam desenhando 1,4 mi — o contador afirmava um recorte que não
-    // existe. Mesmo motivo pelo qual `valueShareForRange` saiu daqui na v1.45.0.
-    // `_shares.flagShare` continua exposto: como NÚMERO ele é honesto ("esta fração
-    // das linhas do Gold carrega as flags marcadas"), só não é um recorte da tela.
-    // Under a sub-UF recorte the selection is a set of MUNICÍPIOS (muniShare): the
-    // whole-state fraction counted Portel and Breves as all of Pará (v1.108.2).
     (_shares.muniShare ?? _shares.stateShare ?? 1)
   )) : null;
   const fmtRows = window.fmtRows;  // shared compact mi/mil counter (data.js)
   const rowsTotalLabel = totalRows ? fmtRows(totalRows) : '—';
-  // A sub-UF recorte on its way, or failed, has no selection to size yet: same marks and
-  // tooltip as "UFs cobertas" below, never the whole-state estimate in the meantime.
-  const rowsAfterLabel = (_f && _f.subUfLoadError) ? '—'
-    : (_f && _f.subUfLoading) ? '…'
-    : rowsAfter != null ? fmtRows(rowsAfter) : '—';
+  // A geography on its way, or failed — a sub-UF recorte, or the basket × UF cross whose
+  // cube the series waits for — has no selection to count yet: same marks and tooltip as
+  // "UFs cobertas" below, never a count or an estimate of something else in the meantime.
+  const rowsFailed = !!(_f && (_f.subUfLoadError || _f.geoComboLoadError));
+  const rowsLoading = !rowsFailed && !!(_f && (_f.subUfLoading || _f.geoComboPending));
+  const rowsAfterLabel = rowsFailed ? '—'
+    : rowsLoading ? '…'
+    : rowsCounted != null ? fmtRows(rowsCounted)
+    : rowsEstimate != null ? `≈ ${fmtRows(rowsEstimate)}`
+    : '—';
+  // The compact label rounds ("61 mil"); the tooltip carries the count in full.
+  const rowsTitle = rowsFailed ? 'Não foi possível carregar o recorte geográfico escolhido.'
+    : rowsLoading ? 'O recorte geográfico escolhido ainda está carregando.'
+    : rowsCounted != null
+      ? `${rowsCounted.toLocaleString('pt-BR')} ${rowsCounted === 1 ? 'linha' : 'linhas'} da base analítica neste recorte.`
+    : rowsEstimate != null
+      ? 'Estimativa: a contagem exata deste recorte não está disponível, e o número vem da proporção de produtos, anos e território selecionados.'
+    : undefined;
 
   // ---- Data views ----
   const ViewComponent = window.viewComponent(view) || window.ViewOverview;
@@ -511,7 +532,7 @@ function MainScreen({ filters, view = 'overview', database = 'ibge_pevs', infoPa
             <div className="meta-group-head">Seleção ativa</div>
             <div className="meta-row">
               <span className="meta-label">Linhas</span>
-              <span className="meta-val tnum" title={ufsCoveredTitle}>
+              <span className="meta-val tnum" title={rowsTitle}>
                 <strong>{rowsAfterLabel}</strong> <small>de {rowsTotalLabel}</small>
               </span>
             </div>
