@@ -519,10 +519,12 @@ def _products(df: pd.DataFrame | None) -> list[dict]:
     return out
 
 
-# The per-family quantity column of the per-product series and its display scale: massa → mil t,
-# volume → mi m³, contagem → mi un (millions of head / eggs). energia/area/desconhecida have no
-# display convention, so they have no track and their q is None (absent rather than mis-scaled).
-_QTY_TRACK = {"massa": ("q_mass", 1e3), "volume": ("q_vol", 1e6), "contagem": ("q_count", 1e6)}
+# The per-family track of the per-product series and the display scale of its quantity: massa →
+# mil t, volume → mi m³, contagem → mi un (millions of head / eggs). The suffix names the track's
+# three SQL columns (sql._QTY_TRACKS): ``q_<s>``, ``priced_value_<s>`` and ``priced_qty_<s>``.
+# energia/area/desconhecida have no display convention, so they have no track and their
+# quantities are None (absent rather than mis-scaled).
+_QTY_TRACK = {"massa": ("mass", 1e3), "volume": ("vol", 1e6), "contagem": ("count", 1e6)}
 
 
 def _product_families(products: pd.DataFrame | None) -> dict[str, str]:
@@ -556,6 +558,15 @@ def _product_ts(df: pd.DataFrame | None, products: pd.DataFrame | None = None) -
     HEADCOUNT (PPM's herd, the defining content of that banco) and egg counts — without
     its own track it would be invisible in every quantity chart. A year with no quantity
     in the product's unit has ``q`` None, never 0 (see :func:`_measure`).
+
+    ``vPriced`` and ``qPriced`` are the two halves of the year's implied price, in the
+    scales of ``v`` and ``q`` (v1.108.10): the value and the quantity of the rows that have
+    both measures in the product's track (``sql._priced_sums``). The price is
+    ``vPriced ÷ qPriced``, never ``v ÷ q``: ``v`` adds every row of the year, ``q`` only
+    those with a quantity in the product's unit, and in UN Comtrade the difference is the
+    value of the rows in another unit or with none (200919 in 2002, Brazil as reporter:
+    US$ 69,906/t against US$ 5,649/t). ``vPriced ÷ v`` is how much of the year's value
+    stands behind the price, which the screen names below 90%.
     """
     if _empty(df):
         return {}
@@ -565,7 +576,13 @@ def _product_ts(df: pd.DataFrame | None, products: pd.DataFrame | None = None) -
         code = str(r.code)
         fam_raw = families.get(code) or getattr(r, "family", "")
         track = _QTY_TRACK.get(fam_raw)
-        q = _measure_scaled(getattr(r, track[0], None), track[1]) if track else None
+        if track:
+            suffix, divisor = track
+            q = _measure_scaled(getattr(r, f"q_{suffix}", None), divisor)
+            v_priced = _measure_scaled(getattr(r, f"priced_value_{suffix}", None), 1e6)
+            q_priced = _measure_scaled(getattr(r, f"priced_qty_{suffix}", None), divisor)
+        else:
+            q = v_priced = q_priced = None
         out.setdefault(code, []).append(
             {
                 "y": int(r.reference_year),
@@ -573,6 +590,8 @@ def _product_ts(df: pd.DataFrame | None, products: pd.DataFrame | None = None) -
                 # currency does not reach is a gap in the line, never a zero.
                 "v": _measure_scaled(r.total_value, 1e6),
                 "q": q,
+                "vPriced": v_priced,
+                "qPriced": q_priced,
                 "family": _fam(fam_raw),
                 **_source_rows(r),
             }

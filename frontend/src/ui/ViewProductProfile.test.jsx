@@ -10,10 +10,14 @@
 //   * a crop with no value in the window reached the stock cards, which called
 //     formatCountQty whatever the family: ×1e6 instead of ×1e3, labelled "un".
 //
+// Since v1.108.10 the price divides the value and the quantity of the SAME rows (vPriced ÷
+// qPriced), and a year whose price rests on less than 90% of its value says so; the last
+// describe locks it.
+//
 // Unlike ViewProductProfile.cov.test.jsx, which stubs every helper to drive branches, this
 // file runs the REAL unit modules (data.js, MetricConventions.jsx, UnitFamily.jsx,
-// countUnits.js, seriesUtils.js), so the strings asserted are the ones the screen prints.
-// Only the composed widgets, applyFilters and fetch are stubbed.
+// countUnits.js, seriesUtils.js, CollapsingNameList.jsx), so the strings asserted are the
+// ones the screen prints. Only the composed widgets, applyFilters and fetch are stubbed.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render } from '@testing-library/react';
@@ -29,8 +33,11 @@ function stubWidgets(filtered) {
     const msgs = note ? Object.values(note).filter(Boolean) : [];
     return msgs.length ? <div className="na-note">{msgs.join(' ')}</div> : null;
   };
-  window.KpiCardSpark = ({ label, value }) => (
-    <div className="kpi"><span className="kpi-label">{label}</span><span className="kpi-value">{value}</span></div>
+  window.KpiCardSpark = ({ label, value, sub }) => (
+    <div className="kpi">
+      <span className="kpi-label">{label}</span><span className="kpi-value">{value}</span>
+      <span className="kpi-sub">{sub}</span>
+    </div>
   );
   window.SectionHeader = ({ overline, title }) => (
     <div className="sh"><span className="sh-overline">{overline}</span><span className="sh-title">{title}</span></div>
@@ -60,7 +67,11 @@ const conv = (units = {}) => ({
 
 // One product alone in the basket, with the series the serializer sends: `v` in mi of the
 // currency, `q` in the family's internal scale (mil t · mi m³ · mi of ONE of the thing
-// counted — Σ qty_base, the seed unit_family_conversions' to_base).
+// counted — Σ qty_base, the seed unit_family_conversions' to_base), and the priced pair
+// `vPriced`/`qPriced` in those same scales: the value and the quantity of the rows that carry
+// BOTH measures, which is what the price divides (v1.108.10).
+// Every row of the IBGE products below carries both, so the pair is the whole year.
+const inteiro = (ts) => ts.map((p) => ({ ...p, vPriced: p.v, qPriced: p.q }));
 const profileOf = (product, series) => ({
   products: [product],
   selectedProducts: [product.code],
@@ -76,10 +87,15 @@ const renderProfile = (product, series, c = conv(), database = 'ibge_ppm') => {
   stubWidgets(profileOf(product, series));
   return render(<window.ViewProductProfile summary={{}} database={database} conventions={c} />).container;
 };
+const kpiCard = (c, label) => [...c.querySelectorAll('.kpi')]
+  .find((k) => k.querySelector('.kpi-label').textContent === label);
 const kpi = (c, label) => {
-  const card = [...c.querySelectorAll('.kpi')]
-    .find((k) => k.querySelector('.kpi-label').textContent === label);
+  const card = kpiCard(c, label);
   return card ? card.querySelector('.kpi-value').textContent : undefined;
+};
+const kpiSub = (c, label) => {
+  const card = kpiCard(c, label);
+  return card ? card.querySelector('.kpi-sub').textContent : undefined;
 };
 const ficha = (c, termo) => {
   const dts = [...c.querySelectorAll('.pp-spec dt')];
@@ -97,11 +113,11 @@ const nuas = (c) => impressos(c).filter((t) => UNIDADE_NUA.test(t));
 
 // PPM tabela 74: ovos de galinha, published in "Mil dúzias" (to_base 12.000 → ovos).
 const OVOS = { code: '2685', name: 'Ovos de galinha', family: 'count', unit: 'un', measure_kind: 'flow', unit_native: 'Mil dúzias' };
-const OVOS_TS = [{ y: 2022, v: 20000, q: 50000 }, { y: 2023, v: 24000, q: 60000 }]; // 60 bi ovos, R$ 24 bi
+const OVOS_TS = inteiro([{ y: 2022, v: 20000, q: 50000 }, { y: 2023, v: 24000, q: 60000 }]); // 60 bi ovos, R$ 24 bi
 // PAM: abacaxi, published in "Mil frutos" (pam_count_unit_products) and carrying no measure_kind.
 const ABACAXI = { code: '2696', name: 'Abacaxi', family: 'count', unit: 'un', unit_native: 'Mil frutos' };
-const ABACAXI_TS = [{ y: 2022, v: 2800, q: 1400 }, { y: 2023, v: 3000, q: 1500 }]; // 1,5 bi frutos, R$ 3 bi
-// PPM: the herd, a value-less stock in "Cabeças".
+const ABACAXI_TS = inteiro([{ y: 2022, v: 2800, q: 1400 }, { y: 2023, v: 3000, q: 1500 }]); // 1,5 bi frutos, R$ 3 bi
+// PPM: the herd, a value-less stock in "Cabeças" — no row has a value, so no priced pair.
 const BOVINO = { code: '2670', name: 'Bovino', family: 'count', unit: 'un', measure_kind: 'stock', unit_native: 'Cabeças' };
 const BOVINO_TS = [{ y: 2022, v: 0, q: 230 }, { y: 2023, v: 0, q: 234 }];
 
@@ -164,7 +180,7 @@ describe('ViewProductProfile — a count is named by what the product counts', (
 
 describe('ViewProductProfile — mass and volume keep the strip’s unit, and the price follows it', () => {
   const SOJA = { code: '2713', name: 'Soja', family: 'mass', unit: 't', unit_native: 'Toneladas' };
-  const SOJA_TS = [{ y: 2022, v: 280000, q: 140000 }, { y: 2023, v: 300000, q: 150000 }]; // 150 mi t, R$ 300 bi
+  const SOJA_TS = inteiro([{ y: 2022, v: 280000, q: 140000 }, { y: 2023, v: 300000, q: 150000 }]); // 150 mi t, R$ 300 bi
 
   it('under t, the price is per t', () => {
     const c = renderProfile(SOJA, SOJA_TS, conv(), 'ibge_pam');
@@ -190,5 +206,56 @@ describe('ViewProductProfile — mass and volume keep the strip’s unit, and th
     expect(kpi(c, 'Pico histórico')).toBe('150.000.000 t');
     expect([...c.querySelectorAll('.pp-spec dd')].map((d) => d.textContent)).toContain('150.000.000 t');
     expect(nuas(c)).toEqual([]);
+  });
+});
+
+describe('ViewProductProfile — the price divides the value and the quantity of the SAME rows (v1.108.10)', () => {
+  // UN Comtrade publishes rows with a value and no quantity in the product's unit: in another
+  // unit, or none at all. The year's `v` adds them every one; the price must not. Measured on
+  // prod: 200919 in 2002, Brazil as reporter, read US$ 69,906/t as v ÷ q, while the rows with
+  // both measures give US$ 5,649/t and hold 8.08% of the year's value. The same shape, rounded:
+  const SUCO = { code: '200919', name: 'Suco de laranja', family: 'mass', unit: 't', unit_native: 'kg' };
+  const SUCO_TS = [
+    { y: 2001, v: 500, q: 100, vPriced: 500, qPriced: 100 }, // every row priced
+    { y: 2002, v: 1000, q: 20, vPriced: 100, qPriced: 20 },  // 10% of the value behind the price
+  ];
+  const precos = () => lineCharts.find((p) => p.label === 'R$/t').data.map((d) => d.v);
+  const notaParcial = (c) => [...c.querySelectorAll('.caption')]
+    .map((e) => e.textContent).find((t) => t.startsWith('Preço apoiado em parte do valor'));
+
+  it('the KPI and the series divide vPriced by qPriced: R$ 5.000/t, never the R$ 50.000/t of v ÷ q', () => {
+    const c = renderProfile(SUCO, SUCO_TS, conv(), 'un_comtrade');
+    expect(kpi(c, 'Preço médio implícito')).toBe('R$ 5.000 /t');
+    expect(precos()).toEqual([5000, 5000]);
+  });
+
+  it('a year whose price rests on less than 90% of its value is named, with its share', () => {
+    const c = renderProfile(SUCO, SUCO_TS, conv(), 'un_comtrade');
+    expect(kpiSub(c, 'Preço médio implícito')).toBe('valor ÷ quantidade · apoiado em 10,0% do valor');
+    const nota = notaParcial(c);
+    expect(nota).toContain('Preço apoiado em parte do valor: 2002 (10,0%).');
+    expect(nota).not.toContain('2001');
+  });
+
+  it('at 90% nothing is named, and a year with a value and no priced row is a gap, never a zero', () => {
+    const TS = [
+      { y: 2001, v: 1000, q: 100, vPriced: 900, qPriced: 100 },    // exactly the threshold
+      { y: 2002, v: 1000, q: null, vPriced: null, qPriced: null }, // a value, no quantity in t
+    ];
+    const c = renderProfile(SUCO, TS, conv(), 'un_comtrade');
+    expect(precos()).toEqual([9000, null]);
+    expect(kpi(c, 'Preço médio implícito')).toBe('—');
+    expect(kpiSub(c, 'Preço médio implícito')).toBe('valor ÷ quantidade');
+    expect(notaParcial(c)).toBeUndefined();
+  });
+
+  it('a tiny share keeps its first significant digit: 0,03%, never "0,0%"', () => {
+    // 440310 in 2022, every reporter (prod, 2026-11-23): US$ 193 mi in the year, 0.03% of it
+    // in rows with a quantity in m³. One decimal would say nothing stands behind the price.
+    const MADEIRA = { code: '440310', name: 'Madeira tratada', family: 'volume', unit: 'm³', unit_native: 'm³' };
+    const TS = [{ y: 2022, v: 193.3, q: 0.0035, vPriced: 0.058, qPriced: 0.0035 }];
+    const c = renderProfile(MADEIRA, TS, conv(), 'un_comtrade');
+    expect(kpiSub(c, 'Preço médio implícito')).toBe('valor ÷ quantidade · apoiado em 0,03% do valor');
+    expect(notaParcial(c)).toContain('Preço apoiado em parte do valor: 2022 (0,03%).');
   });
 });

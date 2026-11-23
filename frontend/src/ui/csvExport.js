@@ -149,6 +149,29 @@ import './countUnits.js';
       const abs = window.scalePresent(v, escala);
       return abs == null ? '' : Math.round(dispV(abs));
     };
+    // The QUANTITY follows the same rule (v1.108.10). A year with no quantity in the product's
+    // unit (in UN Comtrade, that year's rows are in another unit or carry none) was written as
+    // 0: `(d.q || 0)` put a measurement nobody made into the file.
+    const celulaQtd = (q, escala) => {
+      const abs = window.scalePresent(q, escala);
+      return abs == null ? '' : Math.round(abs);
+    };
+    // The per-product price, computed as the Perfil do produto computes it (v1.108.10): the
+    // value and the quantity of the rows that have BOTH measures, per unit of the `unidade`
+    // column. Dividing `valor` by `quantidade` in the file would redo the defect the screen
+    // fixed: the value adds every row of the year, the quantity only those in the product's unit.
+    const celulaPreco = (d, escala) => {
+      const num = window.scalePresent(d.vPriced, 1e6);
+      const den = window.scalePresent(d.qPriced, escala);
+      const p = window.ratioPresent(num == null ? null : dispV(num), den);
+      return p == null ? '' : p.toLocaleString('pt-BR', { maximumFractionDigits: 4, useGrouping: false });
+    };
+    // How much of the year's value stands behind that price — what the screen names below 90%.
+    // fmtPctSig, not toFixed(2): a share of 0.003% would be written "0,00%", a zero.
+    const celulaParcela = (d) => {
+      const c = window.ratioPresent(d.vPriced, d.v);
+      return c == null ? '' : window.fmtPctSig(c, 2);
+    };
     // One count column per group the basket holds, named by what it counts
     // (window.countColumn: efetivo_cabecas, qtd_ovos, qtd_frutos…). Until v1.108.0 a single
     // qtd_contagem_un column carried the herd's heads plus a year's eggs. A group whose
@@ -204,7 +227,8 @@ import './countUnits.js';
         // volume — scaling both by 1e3 (the old code) mixed t and mil m³ under one
         // unitless "quantidade" header. Scale per family to its base unit (mass→t,
         // volume→m³) and emit the unit explicitly so the column is unambiguous.
-        const headers = ['ano', 'codigo', 'produto', `valor_${conv.currency}`, 'quantidade', 'unidade', 'familia', 'abrangencia_geografica'];
+        const headers = ['ano', 'codigo', 'produto', `valor_${conv.currency}`, 'quantidade', 'unidade',
+          `preco_implicito_${conv.currency}`, 'parcela_do_valor_no_preco', 'familia', 'abrangencia_geografica'];
         // Per-family base unit + multiplier: mass mil t→t, volume mi m³→m³, count mi un→ONE
         // of the thing counted. The old binary (volume?1e6:1e3 / m³:t) mislabelled a livestock
         // headcount as TONNES and scaled it 1000× wrong; map by family so the column is always
@@ -221,8 +245,10 @@ import './countUnits.js';
           series.forEach(d => rows.push([
             d.y, code, nameOf(code),
             celulaValor(d.v, 1e6),
-            Math.round((d.q || 0) * qMul),
+            celulaQtd(d.q, qMul),
             qUnit,
+            celulaPreco(d, qMul),
+            celulaParcela(d),
             fam,
             abrangencia,
           ]));

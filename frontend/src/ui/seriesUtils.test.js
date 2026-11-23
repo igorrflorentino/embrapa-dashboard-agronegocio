@@ -323,3 +323,28 @@ describe('roundPresent — Math.round(null) é 0, e isso apagava a ausência', (
     expect(window.numBR(Math.round(null), 0)).toBe('0'); // o que a tela mostrava antes
   });
 });
+
+describe('pricedShareLow / fmtPctSig — the share of the value behind a price (v1.108.10)', () => {
+  it('names a share below 0,9, never one at it, and never one nobody knows', () => {
+    expect(window.pricedShareLow(0.8999)).toBe(true);
+    expect(window.pricedShareLow(0.9)).toBe(false);
+    // `null < 0.9` is true in JS: an UNKNOWN share must not read as a low one.
+    expect(window.pricedShareLow(null)).toBe(false);
+    expect(window.pricedShareLow(undefined)).toBe(false);
+    expect(window.pricedShareLow(NaN)).toBe(false);
+  });
+
+  it('keeps one significant digit below 1%: 0,03% is not "0,0%"', () => {
+    // 440310 in 2022, every reporter (prod, 2026-11-23): 0.03% of the value behind the price.
+    expect(window.fmtPct(0.0003)).toBe('0,0%'); // what fmtPct alone would print
+    expect(window.fmtPctSig(0.0003)).toBe('0,03%');
+    expect(window.fmtPctSig(0.0027)).toBe('0,3%');
+    expect(window.fmtPctSig(0.00004)).toBe('0,004%');
+    // At and above 1% it is fmtPct: one decimal on screen, the floor the caller asks for.
+    expect(window.fmtPctSig(0.1)).toBe('10,0%');
+    expect(window.fmtPctSig(0.1, 2)).toBe('10,00%');
+    expect(window.fmtPctSig(0.0003, 2)).toBe('0,03%');
+    expect(window.fmtPctSig(0)).toBe('0,0%');
+    expect(window.fmtPctSig(null)).toBe('—');
+  });
+});

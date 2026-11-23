@@ -103,7 +103,8 @@ function ViewConcentration({ summary, conventions, database }) {
   const anyValue = realUf.some(u => u.value > 0)
     || prodPoints.some(p => p.v > 0);
   const countGroups = filtered.countGroups || [];
-  const lastQ = (code) => (prodPoints.find(p => p.code === code) || {}).q || 0;
+  // Only ever compared with `> 0` below, which answers false for an absent quantity too.
+  const lastQ = (code) => (prodPoints.find(p => p.code === code) || {}).q;
   const countGroup = anyValue ? null
     : (window.countGroupWithData(countGroups, realUf)
       || countGroups.find(g => !g.mixed && g.products.some(p => lastQ(p.code) > 0))
@@ -117,7 +118,9 @@ function ViewConcentration({ summary, conventions, database }) {
     c => (filtered.products.find(p => p.code === c) || {}).measure_kind === 'stock');
   const measureLabel = onCount ? countGroup.plural : 'valor';
   const ufMeasure   = u => (onCount ? (u[countGroup.key] || 0) : u.value);
-  const prodMeasure = pt => (onCount ? (pt.q || 0) : pt.v);
+  // The quantity as it came: an absent one is dropped by the `> 0` filter below, exactly as the
+  // value is, instead of standing in as a counted zero.
+  const prodMeasure = pt => (onCount ? pt.q : pt.v);
 
   const ufValues = realUf.map(ufMeasure).filter(v => v > 0);
   // Override `value` with the active measure so every downstream consumer (bars,

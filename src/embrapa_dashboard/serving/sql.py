@@ -471,8 +471,8 @@ def _reporter(
         params.append(bigquery.ScalarQueryParameter("reporter", "STRING", reporter_value))
 
 
-def _value_sum(value_column: str, has_measure_kind: bool) -> str:
-    """SQL for the value aggregation.
+def _value_expr(value_column: str, has_measure_kind: bool) -> str:
+    """SQL for ONE row's value, as every value aggregation of a reader reads it.
 
     For a source carrying the stock|flow ``measure_kind`` discriminator (PPM),
     value is FLOW-only by contract — herd STOCK rows (efetivo, cabeças) have no
@@ -485,8 +485,44 @@ def _value_sum(value_column: str, has_measure_kind: bool) -> str:
     ``value_column`` is caller-validated against ALLOWED_VALUE_COLUMNS.
     """
     if has_measure_kind:
-        return f"sum(case when measure_kind = 'flow' then {value_column} end)"
-    return f"sum({value_column})"
+        return f"case when measure_kind = 'flow' then {value_column} end"
+    return value_column
+
+
+def _value_sum(value_column: str, has_measure_kind: bool) -> str:
+    """SQL for the value aggregation: the sum of :func:`_value_expr`."""
+    return f"sum({_value_expr(value_column, has_measure_kind)})"
+
+
+# The per-family quantity tracks of a per-product series: Gold's family, and the suffix of its
+# columns (``q_mass``, ``priced_value_mass``, ``priced_qty_mass``). A count, energy, area or
+# unknown family has no track: it has no display scale (see :func:`product_timeseries`).
+_QTY_TRACKS = (("massa", "mass"), ("volume", "vol"), ("contagem", "count"))
+
+
+def _priced_sums(value_expr: str) -> str:
+    """The two halves of a per-product price, per family track, over the SAME rows.
+
+    A price is one division, and its two halves must add the same rows (the fourth rule of
+    the reading layer, ``tests/test_ratio_same_rows_guard.py``). The series' ``total_value``
+    adds every row of the year and ``q_<track>`` only the rows of that family with a
+    quantity, so ``total_value ÷ q_<track>`` overstated the price by the value of the rows
+    without a quantity in the product's unit: UN Comtrade 200919 in 2002, Brazil as reporter,
+    read US$ 69,906/t where the rows that have both measures give US$ 5,649/t (8.08% of the
+    year's value; measured on prod 2026-11-23). Each half here keeps a row only when it has
+    BOTH a quantity in the track's family and a value under the chosen convention, so the
+    division of the two is a price, and ``priced_value ÷ total_value`` is how much of the
+    year's value stands behind it.
+    """
+    both = f"qty_base is not null and ({value_expr}) is not null"
+    lines = []
+    for family, suffix in _QTY_TRACKS:
+        when = f"family = '{family}' and {both}"
+        lines.append(
+            f"sum(case when {when} then {value_expr} end) as priced_value_{suffix},\n"
+            f"            sum(case when {when} then qty_base end) as priced_qty_{suffix},"
+        )
+    return "\n            ".join(lines)
 
 
 def _count_split(has_measure_kind: bool) -> str:
@@ -1990,6 +2026,17 @@ def product_timeseries(
     the snapshot can never mis-scale a non-mass/volume quantity nor blend units
     for a mixed-unit code.
 
+    ``priced_value_<track>`` and ``priced_qty_<track>`` are the two halves of the implied
+    price in each family track (:func:`_priced_sums`): the value and the quantity of the rows
+    with BOTH measures, so their ratio is a price over one set of rows (v1.108.10). Until then
+    the screen divided ``total_value`` (every row) by ``q_<track>`` (the rows with a quantity
+    in that family), and in UN Comtrade, where a code's rows mix units, the price carried the
+    value of the rows in another unit or with no quantity at all. In PEVS, PAM, PPM and COMEX
+    the two forms give the same number today (measured on prod 2026-11-23: 0 code-years
+    differ under the nominal, IPCA and IGP-DI columns), so there the change is one of
+    construction. They read no column the sums above do not already read: the bytes billed
+    do not change.
+
     ``family`` is the year's family by the rule :func:`products` ranks families with
     (:data:`_FAMILY_RANK`), over the year's rows inside the filters: deterministic, and, in
     every year with a row in a known unit, the family :func:`products` names, for the 100
@@ -2070,6 +2117,7 @@ def product_timeseries(
             sum(case when family = 'massa' then qty_base end)  as q_mass,
             sum(case when family = 'volume' then qty_base end) as q_vol,
             sum(case when family = 'contagem' then qty_base end) as q_count,
+            {_priced_sums(_value_expr(value_column, has_measure_kind))}
             array_agg(family order by {_FAMILY_RANK} limit 1)[offset(0)] as family{base}
         from (
             select

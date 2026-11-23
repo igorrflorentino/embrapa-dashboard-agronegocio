@@ -22,12 +22,10 @@ const _PARTNER_METRICS = [
   { id: 'price',  label: 'Preço médio', field: 'price',  additive: false },
 ];
 
-// Abaixo desta cobertura a nota nomeia o parceiro. O preço divide só o valor das linhas
-// que TÊM peso (o COMTRADE publica linhas com valor e sem quantidade), então ele descreve
-// uma parte do que o parceiro comercia — e 90% é onde a distribuição afina: medido em
-// produção 2026-09-07 sobre os 247 parceiros com peso material, 75,3% ficam acima de 95%
-// de cobertura e a cauda desce até 56%.
-const _COBERTURA_MINIMA = 0.9;
+// Below window.PRICED_SHARE_MIN of coverage the note names the partner (seriesUtils.js, where
+// the calibration lives). The price divides only the value of the rows that HAVE a weight
+// (COMTRADE publishes rows with a value and no quantity), so it describes part of what the
+// partner trades. The threshold is shared with the per-product price (v1.108.10).
 
 // '—' for a value that is not there, never a formatted "0": `Number(v || 0)` turned the
 // absence into a measurement before any caller could refuse it.
@@ -63,12 +61,9 @@ function ViewPartners({ summary, conventions, database }) {
   const partners = data.partners || [];
   // Só no ranking de PREÇO: nos aditivos (capital, volume) a soma cobre tudo o que o
   // parceiro comercia, e não há parte nenhuma de fora para enunciar.
-  const parcial = metric !== 'price' ? [] : partners.filter((p) => {
-    // `< 0.9` sozinho aceitaria null (null < 0.9 é true em JS) e nomearia como
-    // "cobertura baixa" justamente o parceiro de quem não sabemos a cobertura.
-    const c = p && p.pricedShare;
-    return typeof c === 'number' && c < _COBERTURA_MINIMA;
-  });
+  // pricedShareLow refuses an unknown share: `null < 0.9` is true in JS, and would name as
+  // "low coverage" exactly the partner whose coverage we do not know.
+  const parcial = metric !== 'price' ? [] : partners.filter((p) => window.pricedShareLow(p && p.pricedShare));
   const valOf = (p) => (p && p[spec.field]) || 0; // price null → 0 (bar/scale only)
   const max = Math.max(...partners.map(valOf), spec.id === 'price' ? 0.0001 : 1);
   const top = partners[0];
