@@ -106,12 +106,13 @@ a série já lia.
   alteradas, 100% (`diff-cover`). vitest: 1.998 passando, em 106 arquivos.
 
 ### Notas
-- **O que esta versão não muda: os preços do cruzamento de fontes.** O preço de porteira
-  (Diferença de preço) e o preço FOB do Cruzamento de fontes também dividem valor por quantidade,
-  por agrupamento e ano, sobre o PEVS, a PAM e o COMEX. Ali as duas metades cobrem as mesmas
-  linhas por dado, não por construção: nenhuma linha do IBGE tem valor sem quantidade, e nenhuma
-  do COMEX tem valor sem peso (medido em 2026-11-23). Passá-los ao par fica para uma versão
-  própria.
+- **O que esta versão não muda: os preços da Análise cruzada.** Os dois preços de "Preço: porteira
+  vs. FOB" e o preço de exportação do Cruzamento entre fontes também dividem valor por
+  quantidade, por agrupamento e ano, sobre o PEVS, a PAM e o COMEX. Cada pesquisa já entra com as
+  duas metades ou com nenhuma (`tests/test_gate_price_pairs_halves.py`). Dentro dela, porém, as
+  duas metades cobrem as mesmas linhas por dado, não por construção: nenhuma linha do IBGE tem
+  valor sem quantidade, e nenhuma do COMEX tem valor sem peso (medido em 2026-11-23). Passá-los
+  ao par fica para uma versão própria.
 - **Um preço apoiado em pouco valor aparece, nomeado.** 440310 em 2022 tem preço sobre 0,03% do
   valor do ano. A tela mostra o preço e diz a porcentagem; a série de preço por produto não tem
   piso de materialidade, como tem o ranking de preço de Parceiros.
