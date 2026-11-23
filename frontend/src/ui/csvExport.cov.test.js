@@ -339,10 +339,11 @@ describe('exportActiveTableCSV — per-product series with per-family units', ()
   const FILTERED = {
     products: PRODUCTS,
     productTS: {
-      P1: [{ y: 2020, v: 1.0, q: 2.0 }], // mass → t, mul 1e3
-      P2: [{ y: 2020, v: 1.0, q: 2.0 }], // volume → m³, mul 1e6
-      P3: [{ y: 2020, v: 1.0, q: 2.0 }], // count → ONE of the thing (cabeças), mul 1e6
-      P9: [{ y: 2020, v: 1.0, q: undefined }], // no family → mass fallback; q || 0
+      // vPriced/qPriced: the value and the quantity of the rows with BOTH measures (v1.108.10).
+      P1: [{ y: 2020, v: 1.0, q: 2.0, vPriced: 1.0, qPriced: 2.0 }], // mass → t, mul 1e3
+      P2: [{ y: 2020, v: 1.0, q: 2.0, vPriced: 1.0, qPriced: 2.0 }], // volume → m³, mul 1e6
+      P3: [{ y: 2020, v: 1.0, q: 2.0 }], // count → ONE of the thing (cabeças), mul 1e6; no pair
+      P9: [{ y: 2020, v: 1.0, q: undefined }], // no family → mass fallback; no quantity
     },
   };
 
@@ -351,16 +352,66 @@ describe('exportActiveTableCSV — per-product series with per-family units', ()
     window.exportActiveTableCSV({ view: 'product_compare', summary: {}, database: 'ibge_pevs' });
     expect(lastCsv).toBeTruthy();
     const lines = lastCsv.replace('﻿', '').split('\n');
-    expect(lines[0]).toBe('ano;codigo;produto;valor_BRL;quantidade;unidade;familia;abrangencia_geografica;correcao_monetaria');
+    expect(lines[0]).toBe('ano;codigo;produto;valor_BRL;quantidade;unidade;preco_implicito_BRL;'
+      + 'parcela_do_valor_no_preco;familia;abrangencia_geografica;correcao_monetaria');
     const body = lines.slice(1);
-    // mass row: q*1e3 = 2000, unit t
-    expect(body).toContain(`2020;P1;Açaí;1000000;2000;t;mass;Brasil;${CORRECAO_CSV}`);
-    // volume row: q*1e6 = 2000000, unit m³
-    expect(body).toContain(`2020;P2;Madeira;1000000;2000000;m³;volume;Brasil;${CORRECAO_CSV}`);
-    // count row: q*1e6, named by what it counts (until v1.108.7 every count said "un")
-    expect(body).toContain(`2020;P3;Bovino;1000000;2000000;cabeças;count;Brasil;${CORRECAO_CSV}`);
-    // missing-family row falls back to mass (mul 1e3) and q||0 → 0
-    expect(body.some((l) => l.startsWith('2020;P9;Sem família;1000000;0;t;'))).toBe(true);
+    // mass row: q*1e3 = 2000 t, price 1e6 ÷ 2000 = 500 per t, on all of the value
+    // (a cell with a decimal comma is quoted by toCSV's esc — the same as the share column)
+    expect(body).toContain(`2020;P1;Açaí;1000000;2000;t;500;"100,00%";mass;Brasil;${CORRECAO_CSV}`);
+    // volume row: q*1e6 = 2000000 m³, price 0,5 per m³
+    expect(body).toContain(`2020;P2;Madeira;1000000;2000000;m³;"0,5";"100,00%";volume;Brasil;${CORRECAO_CSV}`);
+    // count row: q*1e6, named by what it counts (until v1.108.7 every count said "un"); with
+    // no priced pair the price and its share are empty cells
+    expect(body).toContain(`2020;P3;Bovino;1000000;2000000;cabeças;;;count;Brasil;${CORRECAO_CSV}`);
+    // missing-family row falls back to mass; its absent quantity is an EMPTY cell — until
+    // v1.108.10 `(d.q || 0)` wrote a 0, a measurement nobody made
+    expect(body.some((l) => l.startsWith('2020;P9;Sem família;1000000;;t;;;'))).toBe(true);
+  });
+
+  // ── v1.108.10: the price in the file is the screen's, over the SAME rows ──────────────
+  it('the price divides the value and the quantity of the same rows, and says how much of the value that is', () => {
+    // 200919 in 2002 (UN Comtrade, Brazil as reporter) in round numbers: the year's value is
+    // 10 mi, the rows with a quantity in t hold 1 mi of it. valor ÷ quantidade would give 5.000.
+    stubRegistry({
+      products: PRODUCTS,
+      productTS: { P1: [{ y: 2002, v: 10.0, q: 2.0, vPriced: 1.0, qPriced: 2.0 }] },
+    });
+    window.exportActiveTableCSV({ view: 'product_profile', summary: {}, database: 'un_comtrade' });
+    const [cabecalho, linha] = lastCsv.replace('﻿', '').split('\n');
+    // No cell here holds a ';', so a split is exact; the quotes esc puts around a decimal
+    // comma are the CSV's, not the value's.
+    const celula = (nome) => linha.split(';')[cabecalho.split(';').indexOf(nome)].replace(/^"(.*)"$/, '$1');
+    expect(celula('valor_BRL')).toBe('10000000');
+    expect(celula('quantidade')).toBe('2000');
+    expect(celula('preco_implicito_BRL')).toBe('500');
+    expect(celula('parcela_do_valor_no_preco')).toBe('10,00%');
+  });
+
+  it('a year with a value and no quantity in the product’s unit leaves quantity, price and share empty', () => {
+    stubRegistry({
+      products: PRODUCTS,
+      productTS: { P1: [{ y: 2002, v: 10.0, q: null, vPriced: null, qPriced: null }] },
+    });
+    window.exportActiveTableCSV({ view: 'product_profile', summary: {}, database: 'un_comtrade' });
+    const [cabecalho, linha] = lastCsv.replace('﻿', '').split('\n');
+    // No cell here holds a ';', so a split is exact; the quotes esc puts around a decimal
+    // comma are the CSV's, not the value's.
+    const celula = (nome) => linha.split(';')[cabecalho.split(';').indexOf(nome)].replace(/^"(.*)"$/, '$1');
+    expect(celula('valor_BRL')).toBe('10000000');
+    expect(celula('quantidade')).toBe('');
+    expect(celula('preco_implicito_BRL')).toBe('');
+    expect(celula('parcela_do_valor_no_preco')).toBe('');
+  });
+
+  it('a tiny share keeps its first significant digit, never "0,00%"', () => {
+    stubRegistry({
+      products: PRODUCTS,
+      productTS: { P1: [{ y: 2022, v: 193.3, q: 2.0, vPriced: 0.0058, qPriced: 2.0 }] },
+    });
+    window.exportActiveTableCSV({ view: 'product_profile', summary: {}, database: 'un_comtrade' });
+    const [cabecalho, linha] = lastCsv.replace('﻿', '').split('\n');
+    const celula = (nome) => linha.split(';')[cabecalho.split(';').indexOf(nome)].replace(/^"(.*)"$/, '$1');
+    expect(celula('parcela_do_valor_no_preco')).toBe('0,003%'); // 0,0058 ÷ 193,3
   });
 
   it('neutralizes spreadsheet formula injection in editable product names (CWE-1236)', () => {

@@ -43,7 +43,8 @@ function ViewRebanho({ summary, conventions, database }) {
   // Focused species (drives the KPIs + the per-UF map) — default = largest by latest
   // headcount. Hooks sit ABOVE the early return so their order is stable (Rules of Hooks).
   const defaultCode = available
-    .map(c => ({ c, q: filtered.allProductTS[c].slice(-1)[0]?.q || 0 }))
+    // `?? null`: an absent headcount sorts as 0 here, and only decides which species opens.
+    .map(c => ({ c, q: filtered.allProductTS[c].slice(-1)[0]?.q ?? null }))
     .sort((a, b) => b.q - a.q)[0]?.c || null;
   const [focus, setFocus] = useRbState(defaultCode);
   const activeFocus = (focus && available.includes(focus)) ? focus : defaultCode;
@@ -135,12 +136,14 @@ function ViewRebanho({ summary, conventions, database }) {
     latestByCode[c] = s.length ? s[s.length - 1] : null;
   });
   // Idem: rebanho todo zerado não é "0% de cada espécie", é ausência de composição.
+  // scalePresent: a species with no headcount in the latest year adds nothing to the total and
+  // has no share, rather than a counted zero.
   const totalLatest = window.sumPresent(
-    available.map(c => (latestByCode[c]?.q || 0) * qtyMul));
+    available.map(c => window.scalePresent(latestByCode[c]?.q, qtyMul)));
   const compData = !totalLatest ? [] : available
     .map((c, i) => {
       const p = filtered.products.find(x => x.code === c);
-      const q = (latestByCode[c]?.q || 0) * qtyMul;
+      const q = window.scalePresent(latestByCode[c]?.q, qtyMul);
       return { name: p.name, color: PALETTE[i % PALETTE.length],
                share: window.ratioPresent(q, totalLatest), q };
     })
@@ -156,7 +159,8 @@ function ViewRebanho({ summary, conventions, database }) {
       color: PALETTE[i % PALETTE.length],
       data: filtered.allProductTS[c]
         .filter(d => d.y >= yearStart && d.y <= yearEnd)
-        .map(d => ({ y: d.y, v: (d.q || 0) * qtyMul })),
+        // A year with no headcount is a gap in the line, never a herd of zero.
+        .map(d => ({ y: d.y, v: window.scalePresent(d.q, qtyMul) })),
     };
   });
 

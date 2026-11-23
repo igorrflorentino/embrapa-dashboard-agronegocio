@@ -1316,6 +1316,51 @@ def test_product_timeseries_sums_value_and_native_quantity():
     assert by_name["year_start"].value == 2000
 
 
+_PRICE_TRACKS = (("massa", "mass"), ("volume", "vol"), ("contagem", "count"))
+
+
+@pytest.mark.parametrize(
+    ("table", "has_measure_kind", "value"),
+    [
+        ("p.serving.serving_comtrade_annual", False, "val_yearfx_usd"),
+        # PPM: a herd row (stock) has no value; the price reads the flow rows' value only, the
+        # same expression the series' own value sum reads.
+        (
+            "p.serving.serving_ppm_annual",
+            True,
+            "case when measure_kind = 'flow' then val_yearfx_usd end",
+        ),
+    ],
+    ids=["comtrade", "ppm_flow_only"],
+)
+def test_product_timeseries_prices_value_and_quantity_over_the_same_rows(
+    table, has_measure_kind, value
+):
+    """The two halves of the implied price cover the SAME rows (v1.108.10): per family track,
+    the value and the quantity of the rows that carry BOTH measures, under ONE condition.
+
+    The screen divided ``total_value`` (every row) by ``q_<track>`` (the rows with a quantity
+    in that family). In UN Comtrade a code's rows mix units, and 200919 in 2002 with Brazil
+    as reporter read US$ 69,906/t where the rows with both measures give US$ 5,649/t (8.08%
+    of the year's value behind it). The strings are spelled out here rather than rebuilt with
+    the helper, so a change to the helper cannot carry the test along with it."""
+    query, _ = sql.product_timeseries(
+        table,
+        code_column="cmd_code",
+        value_column="val_yearfx_usd",
+        has_measure_kind=has_measure_kind,
+    )
+    for family, suffix in _PRICE_TRACKS:
+        both = f"family = '{family}' and qty_base is not null and ({value}) is not null"
+        assert f"sum(case when {both} then {value} end) as priced_value_{suffix}," in query
+        assert f"sum(case when {both} then qty_base end) as priced_qty_{suffix}," in query
+    # The series' own value is untouched: every row of the code-year, whatever its unit.
+    assert f"sum({value}) as total_value," in query
+    # The family tracks the price does not have (energia/área/desconhecida) get no pair.
+    assert query.count("as priced_value_") == len(_PRICE_TRACKS)
+    assert query.count("as priced_qty_") == len(_PRICE_TRACKS)
+
+
 def test_product_timeseries_applies_flow_filter_for_trade():
     """A trade source's per-product series narrows to one direction so it stays
     consistent with a flow-filtered overview (the mart carries `flow` in its grain)."""

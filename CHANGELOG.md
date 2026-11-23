@@ -7,6 +7,118 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.108.10] - 2026-11-23
+
+**O preço implícito por produto passa a dividir o valor e a quantidade das mesmas linhas, e o CSV
+por produto deixa vazia a quantidade que não existe.** Fecha as duas pendências das Notas da
+v1.108.8. No UN COMTRADE, o valor de um ano soma todas as linhas do código, e a quantidade, só as
+que estão na unidade do produto. O Perfil do produto dividia um pelo outro, então, num ano que
+mistura unidades, o preço carregava o valor de linhas em outra unidade ou sem quantidade alguma.
+Medido na produção em 2026-11-23, só leitura, com o SQL que o próprio painel monta (exportação +
+importação, US$ nominal):
+
+| produto-ano | país reporter | antes | agora | parte do valor por trás do preço |
+|---|---|---|---|---|
+| 200919 em 2002 | Brasil | US$ 69.906/t | US$ 5.649/t | 8,08% |
+| 440332 em 2000 | todos | US$ 362/m³ | US$ 49/m³ | 13,56% |
+| 440333 em 2001 | todos | US$ 27.726/m³ | US$ 75/m³ | 0,27% |
+| 440334 em 2000 | todos | US$ 46.298/m³ | US$ 147/m³ | 0,32% |
+| 440310 em 2022 | todos | US$ 52.514/m³ | US$ 17/m³ | 0,03% |
+| 440311, de 2018 a 2021 | EUA | US$ 226 a 618/m³ | US$ 138 a 322/m³ | 48% a 61% |
+
+Com o Brasil, 15 dos 1.401 produto-anos com preço passavam de 1,5× o preço das linhas com as duas
+medidas, e 38 passavam de 1,1× (2,11% do valor). Com todos os países, 81 de 1.760 passavam de
+1,5× e 227 de 1,1× (7,09% do valor). As Notas da v1.108.8 citavam 200919, os três anos de
+madeira em tora e 440311 com os EUA; o pior caso com todos os países, 440310 em 2022 (3.158×), não
+estava nelas.
+
+### Corrigido
+- **O preço implícito por produto (`sql.product_timeseries`, Perfil do produto).** A série por
+  produto passa a trazer, em cada família de unidade, as duas metades do preço sobre as mesmas
+  linhas: o valor e a quantidade das linhas que têm as duas medidas na unidade do produto
+  (`priced_value_<família>` e `priced_qty_<família>`, sob uma só condição). O servidor as entrega
+  em cada ponto como `vPriced` e `qPriced`, e o Perfil do produto divide uma pela outra no
+  indicador "Preço médio implícito" e na série de preço. O valor do ano continua somando todas as
+  linhas, e a série de valor não muda. A regra vale para os cinco bancos: no PEVS, na PAM, na PPM
+  e no COMEX as duas formas dão hoje o mesmo número (nenhum produto-ano difere sob as colunas
+  nominal, IPCA e IGP-DI, medido em 2026-11-23), e ali a mudança é de construção.
+- **A tela diz quanto do valor sustenta o preço, quando é pouco.** Abaixo de 90%, o indicador diz
+  "apoiado em X% do valor", e uma nota sob a série de preço nomeia os anos, com a porcentagem de
+  cada um; acima de 10 anos a lista recolhe, como em Parceiros. O limiar é o de Parceiros e passa
+  a morar num lugar só (`window.PRICED_SHARE_MIN`). Ficam abaixo de 90% 36 produto-anos com o
+  Brasil e 218 com todos os países. Uma porcentagem pequena guarda o primeiro algarismo
+  significativo: 0,03% não sai "0,0%", que diria que nada sustenta o preço.
+- **O CSV por produto.** Um ano sem quantidade na unidade do produto sai com a célula `quantidade`
+  vazia, nunca 0: `(d.q || 0)` escrevia um zero que ninguém mediu. O arquivo ganha duas colunas,
+  `preco_implicito_<moeda>`, calculado como na tela, e `parcela_do_valor_no_preco`, a parte do
+  valor do ano que sustenta esse preço. Dividir `valor` por `quantidade` no próprio arquivo
+  refaria o erro que a tela deixou de cometer.
+- **A varredura de ausência não via o `q`.** A lista de campos que podem chegar nulos ao painel é
+  derivada do Python (`tests/test_absence_contract_fields.py`), e a derivação só reconhecia a
+  forma `"chave": função(...)`. A série por produto escreve `"q": q`, com o `q` calculado duas
+  linhas acima; ele pode ser nulo desde a v1.108.8, e o `(d.q || 0)` do CSV passou pela varredura
+  sem ser visto. A derivação passa a ler a árvore do código e a seguir a variável local até a
+  chamada, e acrescenta `q`, `vPriced`, `qPriced` e `shareV` à lista. Com eles, a varredura das
+  telas apontou mais 7 pontos além do CSV, todos corrigidos:
+  - Valor × Volume: no UN COMTRADE, um ano sem quantidade na unidade do produto (3 com o Brasil,
+    27 com todos os países) entrava no empilhamento como zero (`null × fator` vale 0 em JS);
+  - Rebanho (a série por espécie, o total e a composição) e Concentração (a medida por produto):
+    uma quantidade ausente valia zero. Nos bancos do IBGE nenhum produto-ano tem quantidade vazia
+    (medido na v1.108.8), então ali a mudança é de construção.
+
+### Alterado
+- `window.PRICED_SHARE_MIN`, `window.pricedShareLow` e `window.fmtPctSig` (novos, em
+  `seriesUtils.js`). Parceiros passa a ler o limiar dali, em vez de uma cópia local.
+- Contrato em `docs/frontend_data_contract.md` §3.3: o par `vPriced`/`qPriced`, a medição e as
+  colunas novas do CSV, no lugar da lacuna registrada na v1.108.8. O comentário de `productTS` em
+  `frontend/src/ui/contracts.js` acompanha.
+
+### Custo (BigQuery)
+Medido em 2026-11-23 por `--dry_run`, que não fatura, com o SQL que o gateway monta, antes e agora:
+a série por produto processa exatamente os mesmos bytes nos cinco bancos e no UN COMTRADE com
+todos os países, de 0,45 MB (PEVS) a 152,74 MB (UN COMTRADE com o Brasil). O par lê só colunas que
+a série já lia.
+
+### Testes
+- pytest, 8 casos novos e 2 ajustados:
+  - `tests/test_serving.py`: as duas metades do preço sob a mesma condição, em cada família, no
+    UN COMTRADE e na PPM (que lê só o valor dos fluxos); o valor do ano continua somando todas as
+    linhas;
+  - `tests/test_webapi_serializers.py`: o ponto traz o par da família do produto (num ano de
+    teste de 440311, com números ilustrativos, o preço sai US$ 18,57/m³, não os US$ 41,78/m³ de
+    `v ÷ q`); o par sai ausente sem linha com as duas medidas, sem as colunas e numa família sem
+    escala; o formato completo do ponto no `snapshot`;
+  - `tests/test_absence_contract_fields.py`: a derivação segue a variável local até a chamada e
+    não toma uma lista pelo que ela contém.
+- vitest, 9 casos novos e 1 ajustado; os dados de 7 casos do Perfil do produto ganham o par:
+  - Perfil do produto: o preço é `vPriced ÷ qPriced`; o indicador e a nota nomeiam o ano abaixo de
+    90%, com a porcentagem; 90% não é nomeado; um ano sem o par é lacuna; 0,03% sai "0,03%";
+  - CSV por produto: o cabeçalho, o preço e a parcela, a célula vazia, "0,003%";
+  - `seriesUtils`: `pricedShareLow` recusa uma parcela desconhecida; `fmtPctSig`.
+- Contraprova, com as fontes do `main` no lugar e os testes desta versão:
+  - Python (`sql.py` e `serializers.py`): 9 falham. São 6 dos 8 novos (os outros 2 testam a
+    própria derivação, que mora no arquivo de teste), o ajustado do `snapshot`, a âncora nova da
+    derivação e a paridade com a lista do JS. A derivação antiga (regex), rodada sobre este ramo,
+    não enxerga `q`, `vPriced`, `qPriced` nem `shareV`;
+  - JS (as 8 fontes alteradas): 12 falham, os 9 novos, o ajustado e as duas varreduras de
+    ausência, que apontam exatamente os 8 pontos corrigidos.
+- pytest: 2640 passando (15 pulados no Windows). Cobertura total de 99,32%; das 20 linhas
+  alteradas, 100% (`diff-cover`). vitest: 1.998 passando, em 106 arquivos.
+
+### Notas
+- **O que esta versão não muda: os preços da Análise cruzada.** Os dois preços de "Preço: porteira
+  vs. FOB" e o preço de exportação do Cruzamento entre fontes também dividem valor por
+  quantidade, por agrupamento e ano, sobre o PEVS, a PAM e o COMEX. Cada pesquisa já entra com as
+  duas metades ou com nenhuma (`tests/test_gate_price_pairs_halves.py`). Dentro dela, porém, as
+  duas metades cobrem as mesmas linhas por dado, não por construção: nenhuma linha do IBGE tem
+  valor sem quantidade, e nenhuma do COMEX tem valor sem peso (medido em 2026-11-23). Passá-los
+  ao par fica para uma versão própria.
+- **Um preço apoiado em pouco valor aparece, nomeado.** 440310 em 2022 tem preço sobre 0,03% do
+  valor do ano. A tela mostra o preço e diz a porcentagem; a série de preço por produto não tem
+  piso de materialidade, como tem o ranking de preço de Parceiros.
+- **Um ano isolado não desenha linha.** 440333 com todos os países só tem preço em 2001, e o
+  gráfico de linha não desenha um ponto sozinho, antes e agora. O indicador e a nota dão o número.
+
 ## [1.108.9] - 2026-11-23
 
 **"Linhas", em "Seleção ativa", passa a contar as linhas do recorte, em vez de estimá-las.** Fecha

@@ -133,9 +133,14 @@ const TOTAL_MASCARADO = /\b(?:const|let|var)\s+\w+\s*=[^;\n]*\|\|\s*1\s*;/;
 // Os campos que os serializers emitem por uma função ANULÁVEL. A lista é derivada do
 // Python em tests/test_absence_contract_fields.py, que falha se ela divergir — assim ela
 // não apodrece quando um serializer novo emitir outro campo anulável.
+// `q`, `vPriced` and `qPriced` (the per-product series) reach their dict through a local
+// variable, a form the derivation recognizes only since v1.108.10: `q` was nullable since
+// v1.108.8, and the per-product CSV's `(d.q || 0)` went through this sweep unseen. `shareV`
+// (Valor agregado) came in the same way; its function returns null whole before it could emit
+// it null, and listing it only makes the sweep check who reads it.
 const CAMPOS_ANULAVEIS = [
-  'coefPct', 'markup', 'price', 'pricedShare', 'share', 'v', 'value', 'valueShare',
-  'yieldKgHa',
+  'coefPct', 'markup', 'price', 'pricedShare', 'q', 'qPriced', 'share', 'shareV', 'v',
+  'vPriced', 'value', 'valueShare', 'yieldKgHa',
 ];
 const _campos = CAMPOS_ANULAVEIS.join('|');
 

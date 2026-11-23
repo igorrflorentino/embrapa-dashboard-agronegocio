@@ -45,6 +45,9 @@ def test_serialize_snapshot_shapes_and_scales():
                     "total_qty_native": 5_000_000,
                     "q_mass": 5_000_000,  # massa CASE column (PEVS: native == base, t)
                     "q_vol": float("nan"),
+                    # the price's halves, over the rows with both measures (v1.108.10)
+                    "priced_value_mass": 2_000_000_000,
+                    "priced_qty_mass": 5_000_000,
                     "family": "massa",
                 },
                 # volume: 6_000_000 m³ (q_vol) → 6 mi m³
@@ -101,7 +104,14 @@ def test_serialize_snapshot_shapes_and_scales():
 
     # productTS: grouped by code, v in millions, q per-family scaled
     mass = out["productTS"]["001"][0]
-    assert mass == {"y": 2020, "v": 2000.0, "q": 5000.0, "family": "mass"}
+    assert mass == {
+        "y": 2020,
+        "v": 2000.0,
+        "q": 5000.0,
+        "vPriced": 2000.0,  # same scale as v (mi)
+        "qPriced": 5000.0,  # same scale as q (mil t)
+        "family": "mass",
+    }
     vol = out["productTS"]["777"][0]
     assert vol["family"] == "volume" and vol["q"] == 6.0  # m³ ÷1e6
 
@@ -319,6 +329,51 @@ def test_product_ts_year_without_quantity_in_the_products_unit_is_absent(ano):
     assert ponto["q"] is None
     assert ponto["family"] == "volume"
     assert ponto["v"] == pytest.approx(9.0)
+
+
+def _pares(**override) -> dict:
+    """The priced pair of each family track of the 440311/USA year (v1.108.10): the value and
+    the quantity of the rows with BOTH measures, in US$ and in the track's base unit."""
+    pares = {
+        "priced_value_mass": float("nan"),
+        "priced_qty_mass": float("nan"),
+        "priced_value_vol": 4_000_000,  # the rows in m³ with a value: 4 of the year's 9 mi
+        "priced_qty_vol": 215_400,
+        "priced_value_count": 5_000_000,  # the rows in items: not this product's unit
+        "priced_qty_count": 36_141,
+    }
+    pares.update(override)
+    return pares
+
+
+def test_product_ts_point_carries_the_priced_pair_of_the_products_track():
+    """The price's two halves come from the PRODUCT's track, like ``q``: the m³ rows with a
+    value, never the items. ``v`` stays the year's whole value — the price is vPriced ÷
+    qPriced (US$ 18,57/m³ here), not v ÷ q (US$ 41,78/m³)."""
+    (ponto,) = _serie(_ano_440311_eua(**_pares()), _LISTA_440311, "440311")
+    assert ponto["vPriced"] == pytest.approx(4.0)  # US$ mi
+    assert ponto["qPriced"] == pytest.approx(0.2154)  # mi m³, the scale of q
+    assert ponto["v"] == pytest.approx(9.0)
+    assert ponto["q"] == pytest.approx(0.2154)
+
+
+@pytest.mark.parametrize(
+    ("ano", "lista"),
+    [
+        # No row of the year carries both measures in m³.
+        (_pares(priced_value_vol=float("nan"), priced_qty_vol=float("nan")), _LISTA_440311),
+        # A reader that does not select the pair (or a frame from before it): absent, no error.
+        ({}, _LISTA_440311),
+        # A product whose family has no display scale has no track, so no pair either.
+        (_pares(), _LISTA_440311.assign(family="desconhecida")),
+    ],
+    ids=["nenhuma_linha_com_as_duas", "sem_as_colunas", "familia_sem_escala"],
+)
+def test_product_ts_priced_pair_is_absent_never_zero(ano, lista):
+    """No pair is ``None`` on both halves — absent, not a zero price nor a zero share."""
+    (ponto,) = _serie(_ano_440311_eua(**ano), lista, "440311")
+    assert ponto["vPriced"] is None
+    assert ponto["qPriced"] is None
 
 
 def test_snapshot_series_and_list_name_the_same_family():
