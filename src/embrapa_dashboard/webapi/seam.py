@@ -1377,6 +1377,16 @@ def product_ts_by_uf_available(banco_id: str) -> bool:
     return bool(banco) and "geo" in banco.provides
 
 
+def product_list(banco_id: str) -> pd.DataFrame | None:
+    """The banco's product list, the one the snapshot reads (``gateway.fetch_products``,
+    cached), for a route that serializes a per-product series apart from the snapshot:
+    each point of the series carries its product's family (``serializers._product_ts``,
+    v1.108.8). ``None`` for a banco that is not live."""
+    if banco_id not in _LIVE_SOURCES:
+        return None
+    return gateway.fetch_products(banco_id)
+
+
 def product_ts_by_uf(banco_id: str, conv: dict, summary: dict | None = None) -> pd.DataFrame | None:
     """Annual per-product series summed over the SELECTED UFs only (v1.108.3).
 

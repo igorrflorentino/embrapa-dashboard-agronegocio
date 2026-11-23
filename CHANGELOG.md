@@ -7,6 +7,130 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.108.8] - 2026-11-23
+
+**No UN COMTRADE, a família e a unidade de cada produto passam a sair de uma regra fixa e de uma
+só linha.** Fecha a pendência das Notas da v1.108.0, que citava quatro códigos (080119, 080520,
+440311, 440399). O alcance era maior. Na tabela pré-agregada do UN COMTRADE, 99 dos 100 códigos
+têm linhas em mais de uma unidade, quase sempre a unidade real ao lado de "Sem unidade (N/A)", e
+20 têm duas unidades reais. A lista de produtos escolhia a família, a unidade e a unidade de
+origem com três `any_value` independentes, que pulam o vazio e devolvem a linha que o BigQuery ler
+primeiro. Medido na produção em 2026-11-23, com três leituras idênticas da lista, sem reaproveitar
+resultados (`use_query_cache=False`):
+
+| | antes | agora |
+|---|---|---|
+| códigos cuja resposta mudou entre as três leituras | 6 | 0 |
+| códigos com uma combinação de família e unidade que nenhuma linha deles tem (1ª leitura) | 9 | 0 |
+
+Todos são madeira. Em 440331, 440332, 440333, 440334 e 440723, a lista dizia família
+"desconhecida" com unidade m³, também em duas leituras seguintes: a família vinha das linhas sem
+unidade, e a unidade, das linhas em m³. Sem família conhecida, o painel não desenhava a
+quantidade desses produtos; agora desenha, em m³. Os quatro códigos das Notas saíram iguais nas
+três leituras (080119 e 080520 em toneladas, 440311 e 440399 em m³) pela ordem em que o BigQuery
+lia as linhas, não por uma regra. Agora saem assim por construção.
+
+### Corrigido
+- **A regra (`sql.products`).** A família, a unidade e a unidade de origem saem juntas, de uma só
+  linha (`array_agg(struct(family, base_unit, unit_native) order by … limit 1)`), nesta ordem:
+  1. família conhecida antes da desconhecida: uma linha em "Sem unidade (N/A)" não tem quantidade
+     e não diz como o código é medido (em 440331–440334 elas são a maioria);
+  2. a família com mais linhas (440311: 7.038 em m³ contra 107 em "Número de itens");
+  3. o nome da família;
+  4. dentro dela, a unidade com mais linhas; por fim, a unidade e a unidade de origem.
+
+  As linhas são agrupadas pelas três colunas antes da escolha, então dois candidatos sempre
+  diferem em alguma delas e não há empate: a resposta é a mesma em toda leitura por construção,
+  não por amostra. A contagem de linhas foi preferida ao valor porque existe em todo banco (o
+  rebanho não tem valor) e porque, nos 20 códigos com duas unidades reais, as duas apontam a mesma
+  unidade. No COMEX e nos bancos do IBGE cada código tem uma unidade só (medido), e nada muda.
+- **Cada ponto da série por produto passa a ter a família do produto.** Cada ano trazia a família
+  do próprio ano, por outro `any_value`, e um ano pode misturar unidades. Os efeitos possíveis
+  eram dois:
+  - num ano com linhas na unidade e linhas sem unidade (180 dos 1.404 produto-anos com o Brasil
+    como país reporter, que é o padrão), o ano podia sair como "desconhecida" e perder a
+    quantidade;
+  - num ano em outra unidade que o produto, a quantidade podia sair na unidade errada. Com os EUA
+    como país reporter, 440311 (m³ na lista) tem mais linhas em "Número de itens" do que em m³ de
+    2018 a 2021. O Perfil do produto rotula o eixo pela família do produto e desenha a quantidade
+    de cada ponto, então esses anos podiam aparecer como itens no eixo de m³. O total nacional
+    (`applyFilters`) soma a quantidade pela família do ponto, e os punha na contagem.
+
+  Agora o servidor dá a cada ponto a família da lista de produtos, no `snapshot` e em
+  `/api/product-ts`, e a quantidade é a das linhas nessa unidade: as linhas em outra unidade não
+  somam nada a ela (`q_mass`, `q_vol` e `q_count` já eram separados). Numa prévia local contra a
+  produção (só leitura), 440311 com os EUA mostra 140.351, 234.044, 215.400 e 199.139 m³ de 2018
+  a 2021, no eixo de m³; e os quatro códigos das Notas, com o Brasil, com os EUA e com todos os
+  países, têm em todo ponto a família da lista. O mesmo vale para o que já se nomeava pelo
+  produto: a coluna `unidade` do CSV por produto e, desde a v1.108.7, a unidade do preço no Perfil
+  do produto ("por m³", "por ovo"). Agora a quantidade de todo ano está na unidade que esses
+  rótulos dizem.
+- **A família do ano segue a mesma ordem da lista** (`sql.product_timeseries`), contada sobre as
+  linhas que a série soma. Ela só vale para um código que a lista não traz.
+- **Um ano sem quantidade na unidade do produto sai ausente ("—"), nunca 0.** Esta regra não muda
+  nenhum número com o Brasil nem com todos os países: os anos sem linha na unidade do produto (3
+  com o Brasil, 27 com todos os países) só têm linhas sem unidade e já saíam sem quantidade. Ela
+  protege um filtro que deixe num ano só linhas de outra unidade, como outro país reporter ou um
+  fluxo. Nos bancos do IBGE e no COMEX, nenhum produto-ano tem quantidade vazia, nacional ou por
+  UF.
+
+### Alterado
+- `seam.product_list` (novo) devolve a lista de produtos que o `snapshot` lê
+  (`gateway.fetch_products`, guardada em memória), e a rota `/api/product-ts` a pede só quando há
+  série.
+- Contrato em `docs/frontend_data_contract.md`: §3.1 (a regra da unidade) e §3.3 (a família e a
+  quantidade de cada ponto, e o que `v ÷ q` não é). O comentário de `productTS` em
+  `frontend/src/ui/contracts.js` acompanha (uma linha).
+
+### Custo (BigQuery)
+Medido em 2026-11-23 por `--dry_run`, que não fatura, com o SQL que o gateway monta, antes e
+agora: as 13 leituras medidas (lista de produtos e série por produto nos cinco bancos; no UN
+COMTRADE, também todos os países, EUA e exportação desde 2010) processam exatamente os mesmos
+bytes, de 0,45 MB (série do PEVS) a 350,78 MB (lista do UN COMTRADE). A escolha ordenada e a
+contagem por família leem só colunas que a consulta já lia.
+
+### Testes
+- pytest, 18 casos novos e 2 ajustados:
+  - `tests/test_serving.py`: a família e as unidades saem de um único `struct` nos quatro formatos
+    da lista (UN COMTRADE, COMEX, PEVS com tabela, PPM com `measure_kind`); a ordem da escolha é a
+    da regra e termina nas três colunas; a família do ano usa as mesmas chaves da lista;
+  - `tests/test_webapi_serializers.py`: o ponto leva a família do produto, não a do ano (440311
+    com os EUA em 2020: 215.400 m³ e 36.141 itens saem como 0,2154 mi m³); um ano sem quantidade
+    na unidade sai ausente, sem linha na unidade ou com linhas sem quantidade; a série e a lista do
+    `snapshot` dizem a mesma família;
+  - `tests/test_product_ts_by_uf.py`: o serializador por UF e `/api/product-ts` dão a cada ponto a
+    família da lista; `seam.product_list` é a mesma leitura do `snapshot`.
+- Contraprova: com `sql.py`, `serializers.py`, `seam.py` e `routes.py` do `main` no lugar, 18
+  casos falham nos três arquivos: os 16 novos que descrevem o comportamento novo e os 2 ajustados.
+  Os 2 casos novos que passam dos dois lados são os que não podem mudar: sem lista de produtos, o
+  ponto mantém a família do ano, e a rota sem série não lê a lista.
+- pytest: 2621 passando (15 pulados no Windows). Cobertura total de 99,32%; das 24 linhas
+  alteradas, 100% (`diff-cover`).
+
+### Notas
+- **O que esta versão não conserta: o preço implícito por produto no UN COMTRADE.** O valor de um
+  ano soma todas as linhas; a quantidade, só as que estão na unidade do produto. O Perfil do
+  produto divide um pelo outro, então, num ano que mistura unidades, divide o valor de mais linhas
+  do que a quantidade cobre: o caso que o CLAUDE.md chama de "as duas metades de uma razão".
+  Medido na produção (exportação + importação):
+  - com o Brasil, 15 dos 1.401 produto-anos com preço passam de 1,5×. O pior é 200919 em 2002,
+    12,4×, com 91,9% do valor em linhas sem a unidade do produto;
+  - com todos os países, 81 de 1.760 passam de 1,5× e 227 de 1,1×, somando 7,09% do valor. Nos
+    227, a maior parte do excesso vem de linhas sem a unidade do produto, e não de linhas nela sem
+    quantidade.
+
+  Esta versão faz o problema aparecer em três produto-anos que antes não tinham eixo de
+  quantidade, só com todos os países: 440332 em 2000 (7,4×), 440333 em 2001 (367×) e 440334 em
+  2000 (315×). E mostra 440311 com os EUA em m³ de 2018 a 2021, com o preço 1,6–2,1× acima do das
+  linhas em m³ (antes esses anos podiam sair em itens no eixo de m³). O conserto é o numerador
+  condicionado, o valor só das linhas com quantidade na unidade do produto, como `pricedShare` já
+  faz em Parceiros. Ele pede uma coluna nova na série e uma mudança no Perfil do produto, e fica
+  para uma versão própria. A v1.108.7 mudou o nome da unidade do preço, não a conta.
+- **O CSV por produto ainda escreve 0 num ano sem quantidade** (`(d.q || 0)` em `csvExport.js`). O
+  arquivo não muda com esta versão, porque esses anos já saíam sem quantidade ou com 0; mas o
+  certo é a célula vazia. A v1.108.7 alterou `csvExport.js` (a unidade das contagens), mas não
+  essa linha.
+
 ## [1.108.7] - 2026-11-23
 
 **Nas perspectivas por produto e no CSV por produto, a contagem se nomeia pelo que o produto
