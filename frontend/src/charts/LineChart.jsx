@@ -4,10 +4,15 @@
 //   data: [{ y, [valueKey] }]
 
 import { Plot, baseLayout, ptBrLinearAxis, resolveColor, seriesMax, withAlpha, yearAxis } from './_base';
+import { withIsolatedPoints } from './isolatedPoints';
 
 function LineChart({ data = [], height = 200, color = 'var(--viz-1)', label = '', valueKey = 'v', trend = false }) {
   const c = resolveColor(color);
-  const traces = [
+  // A point with no present neighbour is a one-point run of the line, which Plotly draws as
+  // nothing (no stroke, a fill of zero area): it gets a marker of its own, drawn last
+  // (isolatedPoints.js), and the year axis keeps the lines' range around it. This chart has
+  // no legend, so there is nothing to link it to.
+  const { lines, markers, xaxis: xClip } = withIsolatedPoints([
     {
       x: data.map((d) => d.y),
       y: data.map((d) => d[valueKey]),
@@ -19,7 +24,8 @@ function LineChart({ data = [], height = 200, color = 'var(--viz-1)', label = ''
       hovertemplate: '<b>%{x}</b>  %{y:,.2f}<extra></extra>',
       name: label,
     },
-  ];
+  ]);
+  const traces = [...lines];
   // Optional linear (OLS) trend overlay — a thin dashed line of the fitted slope.
   const fit = trend && window.linearFit ? window.linearFit(data, valueKey) : null;
   if (fit) {
@@ -35,6 +41,7 @@ function LineChart({ data = [], height = 200, color = 'var(--viz-1)', label = ''
       showlegend: false,
     });
   }
+  traces.push(...markers);
   // pt-BR magnitude ticks ("15 bi" not the SI "15G") so a value axis matches the
   // dashboard's "R$ bi/mi/mil" labels and is consistent across cards (FINDING #9).
   // Falls back to Plotly's SI `~s` when the data has no usable positive max.
@@ -46,7 +53,7 @@ function LineChart({ data = [], height = 200, color = 'var(--viz-1)', label = ''
   const layout = baseLayout({
     margin: { l: 56, r: 12, t: 18, b: 28 },
     yaxis,
-    xaxis: yearAxis(),
+    xaxis: yearAxis(xClip),
   });
   return <Plot traces={traces} layout={layout} height={height} />;
 }
