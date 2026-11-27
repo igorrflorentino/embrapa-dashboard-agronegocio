@@ -111,8 +111,8 @@ const FLOW_FIXTURE = {
     ],
   },
   products: [
-    { code: 'P1', name: 'Açaí', family: 'mass', unit: 't' },
-    { code: 'P2', name: 'Castanha', family: 'mass', unit: 't' },
+    { code: 'P1', name: 'Açaí', family: 'mass', unit: 't', unit_native: 'Toneladas' },
+    { code: 'P2', name: 'Castanha', family: 'mass', unit: 't', unit_native: 'Toneladas' },
   ],
   ufDataFull: [{ uf: 'PA', value: 5, real: true }],
   qualityByProduct: [{ code: 'P1', OK: 0.97, MISSING_VALUE: 0.01 }],
@@ -219,9 +219,12 @@ describe('ViewProductProfile — flow product render', () => {
     expect(kpiLabels.some((l) => l.includes('Preço médio implícito'))).toBe(true);
     expect(kpiLabels.some((l) => l.includes('Participação na cesta'))).toBe(true);
 
-    // The ficha técnica uses the banco's code label.
+    // The ficha técnica uses the banco's code label, and names the unit as the source
+    // publishes it (v1.108.19), not the family's base "t (toneladas)".
     expect(container.textContent).toContain('Código IBGE');
-    expect(container.textContent).toContain('toneladas');
+    const nativa = [...container.querySelectorAll('.pp-spec dt')]
+      .find((d) => d.textContent === 'Unidade nativa');
+    expect(nativa.nextElementSibling.textContent).toBe('Toneladas');
     // qaRow present → the quality pair is rendered. NOT "Linhas íntegras": since
     // v1.49.0 'OK' means EXAMINED by the implied-price detector and cleared, and on a
     // PEVS produto that share is ~18% — the old label read as "82% of this produto is
@@ -247,10 +250,11 @@ describe('ViewProductProfile — flow product render', () => {
     // `(last.q * qtyMul).toLocaleString(...)`, e `null * fator === 0` em JS: a tela
     // afirmaria "0" para uma quantidade que ninguém sabe exprimir.
     //
-    // LATENTE, não vivo: medido em produção 2026-09-08, os 142 produtos dos quatro
-    // bancos são todos massa/volume/contagem, e nenhum cai nessas famílias. O
-    // serializer as antecipa explicitamente, então a guarda vale — mas não há defeito
-    // na tela hoje, e este teste é o que impede que passe a haver.
+    // Measured on prod 2026-09-08, none of the 142 products of the four bancos then fell in
+    // those families. On 2026-11-27 one did: UN Comtrade serves 440335 as 'desconhecida' (its
+    // rows publish no unit), and the profile threw on the family before reaching this card.
+    // ViewProductProfile.test.jsx draws that product with the real registry; this test keeps
+    // the card's own guard.
     stubGlobals({
       ...FLOW_FIXTURE,
       allProductTS: { P1: [{ y: 2019, v: 5, q: null }, { y: 2020, v: 8, q: null }] },

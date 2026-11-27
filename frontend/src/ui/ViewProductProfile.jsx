@@ -116,6 +116,12 @@ function ViewProductProfile({ families, summary, database, conventions }) {
 
   const prod   = filtered.products.find(p => p.code === activeCode);
   const family = prod.family;
+  // The family as the registry knows it, or undefined. UN Comtrade serves 'desconhecida' for a
+  // code whose rows publish no unit (440335, "Sem unidade (N/A)", measured 2026-11-27), and
+  // every `UNIT_FAMILIES[family].x` here threw on it: the perspective gave way to "Cannot read
+  // properties of undefined (reading 'long')". data.js's familiesInBasket filters it for the
+  // same reason.
+  const famInfo = window.UNIT_FAMILIES[family];
   // Family-aware axis + multiplier + formatter (mass→t, volume→m³, count→what the product
   // counts). The old binary "mass ? … : volume" would label a livestock headcount in m³, and
   // until v1.108.7 a count read the convention's bare unit: "un" beside a herd, the eggs and
@@ -124,7 +130,10 @@ function ViewProductProfile({ families, summary, database, conventions }) {
   const AXIS_FN = { mass: window.massAxisLabel, volume: window.volumeAxisLabel, count: (c) => countUnit(c) };
   const QMUL_FN = { mass: window.massQtyMul,    volume: window.volumeQtyMul,    count: window.countQtyMul };
   const FAM_COLOR = { mass: 'var(--viz-2)', volume: 'var(--viz-4)', count: 'var(--viz-9)' };
-  const unitAx = (AXIS_FN[family] || window.massAxisLabel)(conv);
+  // A family with no axis has no unit to name, and the screen says so, as it does for a count
+  // whose unit nobody recognised. It borrowed the mass axis, and a product with no quantity at
+  // all had its price and its quantity series labelled in t.
+  const unitAx = AXIS_FN[family] ? AXIS_FN[family](conv) : window.COUNT_UNKNOWN;
   const qtyMul = (QMUL_FN[family] || window.massQtyMul)(conv);
   const qColor = FAM_COLOR[family] || 'var(--viz-2)';
   // A quantity written out, in the unit the axis names. The stock cards below called
@@ -141,12 +150,22 @@ function ViewProductProfile({ families, summary, database, conventions }) {
   // The family tag beside a quantity names a count by what it counts ("Contagem · ovos");
   // mass and volume keep the convention's unit, which the tag reads on its own.
   const famUnit = family === 'count' ? unitAx : undefined;
-  // The unit as the source publishes it. prod.unit is the family's base, 'un' for every
-  // count; a count reads unit_native instead ("Mil dúzias", "Cabeças", "Mil frutos"), and one
-  // whose unit is not recognised says so rather than show a label nobody checked.
+  // The tag beside a quantity's label. UnitFamilyTag reads the registry, so a family it does
+  // not know is named by its axis's words instead.
+  const famTag = famInfo
+    ? <window.UnitFamilyTag family={family} conv={conv} unit={famUnit}/>
+    : unitAx;
+  // The unit as the source publishes it: unit_native, word for word ("Toneladas" from SIDRA,
+  // "QUILOGRAMA LIQUIDO" from MDIC, "Peso em quilogramas" from UN Comtrade). Until v1.108.19 a
+  // mass or a volume printed the family's BASE unit here, prod.unit with the family's long
+  // name: "t (toneladas)" for every product MDIC and UN Comtrade publish in kg, "m³ (metros
+  // cúbicos)" for the milk the PPM publishes in "Mil litros". The quantities on screen stay in
+  // the convention's unit, which each card and axis names; this line says what the source
+  // measures in. A count keeps its v1.108.7 rule: a unit the screen cannot name says so rather
+  // than show a label nobody checked. A missing unit_native is an absence, never the base.
   const unidadeNativa = family === 'count'
     ? (window.countNounOf(prod) ? prod.unit_native : window.COUNT_UNKNOWN)
-    : `${prod.unit} (${window.UNIT_FAMILIES[family].long})`;
+    : (prod.unit_native || '—');
 
   // Per-product series (PRODUCT_TS.v in base-currency mi, .q in family display unit)
   const raw = filtered.allProductTS[activeCode];
@@ -302,7 +321,7 @@ function ViewProductProfile({ families, summary, database, conventions }) {
       <div className="kpi-row">
         {isStock ? (
           <window.KpiCardSpark
-            label={<>Efetivo · <window.UnitFamilyTag family={family} conv={conv} unit={famUnit}/></>}
+            label={<>Efetivo · {famTag}</>}
             value={fmtQty(last.q)}
             delta={window.fmtSigned(deltaQ)}
             deltaPositive={window.deltaUp(deltaQ)}
@@ -334,7 +353,7 @@ function ViewProductProfile({ families, summary, database, conventions }) {
           />
         ) : (
           <window.KpiCardSpark
-            label={<>Quantidade · <window.UnitFamilyTag family={family} conv={conv} unit={famUnit}/></>}
+            label={<>Quantidade · {famTag}</>}
             value={lastQtyScaled == null
               ? '—'
               : lastQtyScaled.toLocaleString('pt-BR', { maximumFractionDigits: 0 }) + ' ' + unitAx}
@@ -376,7 +395,7 @@ function ViewProductProfile({ families, summary, database, conventions }) {
           <div className="grid-2">
             <div className="card">
               <window.SectionHeader
-                overline={<>Série do efetivo · <window.UnitFamilyTag family={family} conv={conv} unit={famUnit}/></>}
+                overline={<>Série do efetivo · {famTag}</>}
                 title={`${prod.name} · efetivo (${qtyScaled.label})`}
               />
               <window.LineChart data={qtyScaled.data} label={qtyScaled.label} valueKey="q" color={qColor} height={230} trend />
@@ -408,7 +427,7 @@ function ViewProductProfile({ families, summary, database, conventions }) {
             </div>
             <div className="card">
               <window.SectionHeader
-                overline={<>Série de quantidade · <window.UnitFamilyTag family={family} conv={conv} unit={famUnit}/></>}
+                overline={<>Série de quantidade · {famTag}</>}
                 title={`${prod.name} · quantidade (${qtyScaled.label})`}
               />
               <window.LineChart data={qtyScaled.data} label={qtyScaled.label} valueKey="q" color={qColor} height={230} />
@@ -498,7 +517,7 @@ function ViewProductProfile({ families, summary, database, conventions }) {
           <dl className="pp-spec">
             <dt>{codeLabel}</dt><dd className="tnum">{prod.code}</dd>
             <dt>Unidade nativa</dt><dd>{unidadeNativa}</dd>
-            <dt>Família de unidade</dt><dd>{window.UNIT_FAMILIES[family].label}</dd>
+            <dt>Família de unidade</dt><dd>{famInfo ? famInfo.label : 'não identificada'}</dd>
             {isStock && <><dt>Tipo de medida</dt><dd>Estoque (efetivo)</dd></>}
             <dt>Cobertura temporal</dt><dd className="tnum">{yearStart}–{yearEnd}</dd>
             {isStock

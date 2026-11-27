@@ -7,6 +7,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.108.19] - 2026-11-27
+
+**A ficha técnica do Perfil do produto diz a unidade em que a fonte publica o produto, e o produto
+do UN COMTRADE sem unidade não derruba mais o Perfil nem o Comparativo entre produtos.** Fecha a
+segunda pendência das Notas da v1.108.7. Para um produto de massa ou de volume, a linha "Unidade
+nativa" mostrava a unidade-base da família com o nome longo dela, "t (toneladas)" ou "m³ (metros
+cúbicos)", qualquer que fosse a unidade da fonte. O produto já chega com `unit_native`, o rótulo
+da fonte, e a ficha passa a mostrá-lo como a fonte o escreve.
+
+Medido na produção em 2026-11-27, só leitura, pela lista de produtos que o próprio painel recebe
+(`products` de `/api/snapshot`):
+
+| banco | produtos | a fonte publica em | a ficha dizia |
+|---|---|---|---|
+| COMEX | 55 | QUILOGRAMA LIQUIDO | t (toneladas) |
+| COMEX | 8 | TONELADA METRICA LIQUIDA | t (toneladas) |
+| COMEX | 55 | METRO CUBICO | m³ (metros cúbicos) |
+| UN COMTRADE | 50 | Peso em quilogramas | t (toneladas) |
+| UN COMTRADE | 49 | Volume em metros cúbicos | m³ (metros cúbicos) |
+| UN COMTRADE | 1 (440335) | Sem unidade (N/A) | a perspectiva quebrava |
+| PPM | 3 (casulos do bicho-da-seda, lã, mel de abelha) | Quilogramas | t (toneladas) |
+| PPM | 1 (leite) | Mil litros | m³ (metros cúbicos) |
+| PEVS | 5 | Toneladas | t (toneladas) |
+| PEVS | 5 | Metros cúbicos | m³ (metros cúbicos) |
+| PAM | 12 | Toneladas | t (toneladas) |
+
+Em 109 dos 243 produtos de massa ou de volume, a fonte publica em outra unidade (quilogramas ou
+mil litros); nos outros 134, a unidade é a mesma, dita com outras palavras. As 12 contagens (10 da PPM,
+2 da PAM) já mostravam o rótulo da fonte desde a v1.108.7 e não mudam.
+
+### Corrigido
+- **Unidade nativa.** A linha mostra `unit_native` como a fonte o escreve: "QUILOGRAMA LIQUIDO" na
+  mandioca do COMEX (07141000), "Mil litros" no leite da PPM. As quantidades na tela continuam na
+  unidade escolhida nas convenções métricas, que cada cartão e cada eixo nomeia: a mandioca de 2026
+  segue "244 t", ou "243.954 kg" com kg escolhido, e a ficha diz a unidade da fonte nos dois casos.
+  Um produto que chegue sem `unit_native` mostra "—", nunca a unidade-base. As contagens mantêm a
+  regra da v1.108.7: uma unidade que a tela não sabe nomear aparece como "unidade não
+  identificada".
+- **Produto com família de unidade desconhecida.** No UN COMTRADE, as linhas do 440335 (toras de
+  tiama, mansonia, ilomba, dibetou, limba e azobé) não publicam unidade, e o produto chega com a
+  família `desconhecida`, que o registro de famílias do painel não tem. Com ele na cesta (todos os
+  países declarantes, valor em 2000–2005), o Perfil inteiro dava lugar a "Cannot read properties of
+  undefined (reading 'long')", erro na leitura da própria linha "Unidade nativa", e o Comparativo
+  a "… (reading 'label')", na coluna Família. Agora:
+  - a ficha mostra "Unidade nativa: Sem unidade (N/A)" e "Família de unidade: não identificada", e
+    a coluna Família do Comparativo diz "não identificada";
+  - a quantidade e o preço, que não existem para esse produto, mostram "—" com o rótulo "unidade
+    não identificada", e não mais "t", que o Perfil tomava emprestado da família de massa.
+
+### Testes
+- `ViewProductProfile.test.jsx`: 6 testes novos, com os produtos e os números que a produção serve
+  (a mandioca do COMEX, o leite e o mel da PPM, o 440335 do UN COMTRADE), e o teste da soja passa a
+  esperar "Toneladas".
+- `ViewProductCompare.cov.test.jsx`: 1 teste novo, a família desconhecida na coluna Família.
+- `ViewProductProfile.cov.test.jsx`: a ficha do produto de fluxo passa a conferir "Toneladas", e o
+  comentário que dava a família desconhecida como latente agora registra o 440335.
+- Contraprova: com as duas perspectivas do `main` no lugar, os 9 testes novos ou alterados
+  reprovam, os da família desconhecida pela mesma falha da prévia, e os outros 50 dos três arquivos
+  passam.
+
+### Notas
+- A primeira pendência das Notas da v1.108.7 (um produto sem valor na janela é desenhado como
+  rebanho) está em outra mudança, porque a causa é outra.
+- Visto de passagem, fora dos arquivos desta mudança: o `UnitFamilyTag` (`UnitFamily.jsx`) supõe
+  que toda família está no registro. As outras telas o chamam com uma família fixa (massa, volume,
+  contagem, rendimento), então só o Perfil o chamava com a família de um produto, e a correção foi
+  na chamada.
+
 ## [1.108.18] - 2026-11-27
 
 **Um produto sem valor na janela continua sendo o que é: no Perfil do produto e no Comparativo

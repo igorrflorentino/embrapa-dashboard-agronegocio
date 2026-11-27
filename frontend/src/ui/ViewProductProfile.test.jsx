@@ -186,6 +186,84 @@ describe('ViewProductProfile — a count is named by what the product counts', (
   });
 });
 
+describe('ViewProductProfile — the ficha técnica names the unit the source publishes (v1.108.19)', () => {
+  // Until v1.108.19 a mass or a volume read "Unidade nativa: t (toneladas)" or "m³ (metros
+  // cúbicos)": the family's BASE unit (prod.unit), whatever the source publishes. Measured on
+  // prod 2026-11-27, the source's unit is a different one in 109 of the 243 mass and volume
+  // products: kg in 55 COMEX ("QUILOGRAMA LIQUIDO"), 50 UN Comtrade ("Peso em quilogramas") and
+  // 3 PPM ("Quilogramas"), and "Mil litros" in the PPM's milk. The products below and their
+  // last two years are as the API serves them.
+  const MANDIOCA = {
+    code: '07141000', name: 'Raízes de mandioca, frescas, refrigeradas, congeladas ou secas',
+    family: 'mass', unit: 't', unit_native: 'QUILOGRAMA LIQUIDO',
+  };
+  const MANDIOCA_TS = inteiro([{ y: 2025, v: 0.360454, q: 0.267598 }, { y: 2026, v: 0.326007, q: 0.243954 }]);
+  const LEITE = { code: '2682', name: 'Leite', family: 'volume', unit: 'm³', measure_kind: 'flow', unit_native: 'Mil litros' };
+  const LEITE_TS = inteiro([{ y: 2024, v: 87478.594, q: 35.722204 }, { y: 2025, v: 89486.968, q: 36.684313 }]);
+  const MEL = { code: '2687', name: 'Mel de abelha', family: 'mass', unit: 't', measure_kind: 'flow', unit_native: 'Quilogramas' };
+  const MEL_TS = inteiro([{ y: 2024, v: 1026.889, q: 68.235733 }, { y: 2025, v: 1216.929, q: 71.32902 }]);
+
+  it('COMEX: MDIC publishes the mandioca in kg, and the quantity stays in the strip’s t', () => {
+    const c = renderProfile(MANDIOCA, MANDIOCA_TS, conv(), 'mdic_comex');
+    expect(ficha(c, 'Unidade nativa')).toBe('QUILOGRAMA LIQUIDO');
+    expect(ficha(c, 'Família de unidade')).toBe('Massa');
+    expect(kpi(c, 'Quantidade · Massa · t')).toBe('244 t'); // 0,243954 mil t
+  });
+
+  it('the native unit does not follow the strip: under kg the quantity changes, the ficha does not', () => {
+    const c = renderProfile(MANDIOCA, MANDIOCA_TS, conv({ mass: 'kg' }), 'mdic_comex');
+    expect(kpi(c, 'Quantidade · Massa · kg')).toBe('243.954 kg');
+    expect(ficha(c, 'Unidade nativa')).toBe('QUILOGRAMA LIQUIDO');
+  });
+
+  it('PPM: the milk in "Mil litros" and the honey in "Quilogramas", as IBGE publishes them', () => {
+    const leite = renderProfile(LEITE, LEITE_TS);
+    expect(ficha(leite, 'Unidade nativa')).toBe('Mil litros');
+    expect(kpi(leite, 'Quantidade · Volume · m³')).toBe('36.684.313 m³');
+    cleanup();
+    const mel = renderProfile(MEL, MEL_TS);
+    expect(ficha(mel, 'Unidade nativa')).toBe('Quilogramas');
+    expect(kpi(mel, 'Quantidade · Massa · t')).toBe('71.329 t');
+  });
+
+  it('a product served without a native unit shows the absence mark, never the family’s base', () => {
+    const c = renderProfile({ ...MANDIOCA, unit_native: undefined }, MANDIOCA_TS, conv(), 'mdic_comex');
+    expect(ficha(c, 'Unidade nativa')).toBe('—');
+  });
+});
+
+describe('ViewProductProfile — a product whose unit family is unknown is drawn, and claims no unit (v1.108.19)', () => {
+  // UN Comtrade, every reporter, measured on prod 2026-11-27: the rows of 440335 publish no
+  // unit ("Sem unidade (N/A)"), so the API serves family 'desconhecida' and no quantity at all.
+  // The registry has no such family, and the screen threw on its first lookup: "Cannot read
+  // properties of undefined (reading 'long')" in place of the whole perspective.
+  const TORAS = {
+    code: '440335', name: 'Toras de Tiama, Mansonia, Ilomba, Dibetou, Limba e Azobé',
+    family: 'desconhecida', unit: null, unit_native: 'Sem unidade (N/A)', tabela: 'hs',
+  };
+  const soValor = (y, v) => ({ y, v, q: null, vPriced: null, qPriced: null });
+  const TORAS_TS = [soValor(2000, 0.003843248), soValor(2001, 0.020038311), soValor(2003, 0.559437),
+    soValor(2004, 0.091174), soValor(2005, 0.283469727)];
+
+  it('the ficha shows the source’s own words, and the family as not identified', () => {
+    const c = renderProfile(TORAS, TORAS_TS, conv(), 'un_comtrade');
+    expect(ficha(c, 'Unidade nativa')).toBe('Sem unidade (N/A)');
+    expect(ficha(c, 'Família de unidade')).toBe('não identificada');
+  });
+
+  it('the quantity and the price have no number and borrow no unit: never "t"', () => {
+    const c = renderProfile(TORAS, TORAS_TS, conv(), 'un_comtrade');
+    expect(kpi(c, 'Quantidade · unidade não identificada')).toBe('—');
+    expect(kpi(c, 'Preço médio implícito')).toBe('—');
+    expect(titulos(c)).toContain('R$ por unidade não identificada · 2000–2005');
+    expect(titulos(c)).toContain(`${TORAS.name} · quantidade (unidade não identificada)`);
+    const rotulos = [...new Set(lineCharts.map((p) => p.label))];
+    expect(rotulos).toEqual(expect.arrayContaining(['unidade não identificada', 'R$/unidade não identificada']));
+    expect(rotulos).not.toContain('t');
+    expect(rotulos).not.toContain('R$/t');
+  });
+});
+
 describe('ViewProductProfile — mass and volume keep the strip’s unit, and the price follows it', () => {
   const SOJA = { code: '2713', name: 'Soja', family: 'mass', unit: 't', unit_native: 'Toneladas' };
   const SOJA_TS = inteiro([{ y: 2022, v: 280000, q: 140000 }, { y: 2023, v: 300000, q: 150000 }]); // 150 mi t, R$ 300 bi
@@ -193,7 +271,7 @@ describe('ViewProductProfile — mass and volume keep the strip’s unit, and th
   it('under t, the price is per t', () => {
     const c = renderProfile(SOJA, SOJA_TS, conv(), 'ibge_pam');
     expect(kpi(c, 'Preço médio implícito')).toBe('R$ 2.000 /t');
-    expect(ficha(c, 'Unidade nativa')).toBe('t (toneladas)');
+    expect(ficha(c, 'Unidade nativa')).toBe('Toneladas'); // SIDRA's own label (v1.108.19)
   });
 
   it('under kg, the price is per kg — it read "/t" over a number computed per kg', () => {

@@ -182,6 +182,25 @@ describe('ViewProductCompare — smoke + default top-3 selection', () => {
     );
     expect(container.textContent).toContain('mistura famílias');
   });
+
+  it('a unit family the registry does not know is named "não identificada", and the screen stands', () => {
+    // UN Comtrade, every reporter (measured on prod 2026-11-27): the rows of 440335 publish no
+    // unit, the API serves family 'desconhecida', and UNIT_FAMILIES[family].label threw —
+    // "Cannot read properties of undefined (reading 'label')" in place of the perspective.
+    const fx = flowFixture();
+    fx.products = [
+      { code: 'P1', name: 'Toras de Tiama, Mansonia, Ilomba, Dibetou, Limba e Azobé', family: 'desconhecida' },
+      { code: 'P2', name: 'Madeira em bruto, tratada', family: 'volume' },
+      { code: 'P3', name: 'Pó de carnaúba', family: 'mass' },
+    ];
+    stubGlobals(fx);
+    const { container } = render(
+      <ViewProductCompare summary={{}} conventions={{}} database="un_comtrade" />
+    );
+    const familias = [...container.querySelectorAll('table')[0].querySelectorAll('tbody tr')]
+      .map((r) => r.cells[r.cells.length - 1].textContent);
+    expect(familias).toEqual(['não identificada', 'Volume', 'Massa']);
+  });
 });
 
 describe('ViewProductCompare — selection toggling', () => {
