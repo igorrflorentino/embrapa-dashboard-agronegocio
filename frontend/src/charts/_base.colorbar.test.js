@@ -87,9 +87,9 @@ describe('colorbarAnchors — rótulos', () => {
   });
 });
 
-// ── The unit of a VERTICAL colour bar (v1.108.12) ─────────────────────────────
+// ── The unit of a VERTICAL colour bar (v1.108.16) ─────────────────────────────
 //
-// Until v1.108.12 the unit was the bar's own title, and its box ran 2.1 px down into the
+// Until v1.108.16 the unit was the bar's own title, and its box ran 2.1 px down into the
 // top tick label's (measured 2026-11-27, Plotly 4.3.0, after document.fonts.ready): "R$ mi"
 // sat glued onto "79 mi". No Plotly attribute parts the two, so the unit is now a layout
 // annotation, and keeping it clear is arithmetic over VERTICAL_COLORBAR plus three box

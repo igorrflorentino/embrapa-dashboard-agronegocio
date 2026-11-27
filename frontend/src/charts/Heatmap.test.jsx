@@ -386,7 +386,7 @@ describe('Heatmap — geometry invariants over 1..15 rows', () => {
     }
   });
 
-  // And on the vertical bar, the title is what ran into the top tick label (v1.108.12): no
+  // And on the vertical bar, the title is what ran into the top tick label (v1.108.16): no
   // orientation is titled any more, and the unit is an annotation in both.
   it('never titles the bar, in either orientation', () => {
     for (const n of SPAN) {
@@ -491,7 +491,7 @@ describe('Heatmap — a short heatmap draws at every row count (1..6)', () => {
     expect(cb.title.text).toBe('');
     expect(layout().annotations.map((a) => a.text)).toEqual(['R$']);
     const m = layout().margin;
-    expect(plotHeight(container) - m.t - m.b).toBe(130); // 24 × 6 − 14, as before v1.108.12
+    expect(plotHeight(container) - m.t - m.b).toBe(130); // 24 × 6 − 14, as before v1.108.16
   });
 
   it('with no unit, there is nothing to annotate and still no title', () => {

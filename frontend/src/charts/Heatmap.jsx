@@ -96,7 +96,7 @@ function Heatmap({ rows = [], valueKey = 'v', valueLabel = '', height }) {
   //
   // The threshold is measured, not guessed: the bar's drawn height tracks the plotting
   // area, and at 4 rows that came out at 44px — three ~12px labels stacked into 44px,
-  // legible but touching. At 6 rows it is 90px (measured with the v1.108.12 inset, 92px
+  // legible but touching. At 6 rows it is 90px (measured with the v1.108.16 inset, 92px
   // before it), which lets them breathe. Below that the bar goes horizontal, where a
   // one-row heatmap has width to spare (see the short-layout note above for how the unit
   // travels with it).

@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
-## [1.108.12] - 2026-11-27
+## [1.108.16] - 2026-11-27
 
 **Na barra de cor vertical, a unidade deixa de invadir o rótulo de cima.** Fecha o achado das
 Notas da v1.108.6. Nos mapas de calor com barra vertical (o da Geografia, de 6 linhas em diante, e

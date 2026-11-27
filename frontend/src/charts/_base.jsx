@@ -124,7 +124,7 @@ export function colorbarAnchors(min, max) {
 //
 // Both heatmaps (Geografia from 6 rows on, and Sazonalidade e tendências, always) put
 // the unit ABOVE a vertical colour bar: beside it, Plotly rotates the title 90° into the
-// gradient. Until v1.108.12 the unit was the bar's own title, side 'top', and its box ran
+// gradient. Until v1.108.16 the unit was the bar's own title, side 'top', and its box ran
 // into the top tick label's. Measured 2026-11-27 (Plotly 4.3.0, after document.fonts.ready,
 // 1280 px viewport): 1.8 px down at 1:1 pixels (2.1 px in the app's browser pane, at 1.5),
 // and across by as much as the unit reaches over the label column, from 5.5 px for "US$"
