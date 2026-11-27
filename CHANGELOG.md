@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
-## [1.108.12] - 2026-11-27
+## [1.108.19] - 2026-11-27
 
 **A ficha técnica do Perfil do produto diz a unidade em que a fonte publica o produto, e o produto
 do UN COMTRADE sem unidade não derruba mais o Perfil nem o Comparativo entre produtos.** Fecha a

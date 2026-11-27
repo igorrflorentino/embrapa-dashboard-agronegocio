@@ -151,7 +151,7 @@ function ViewProductProfile({ families, summary, database, conventions }) {
     ? <window.UnitFamilyTag family={family} conv={conv} unit={famUnit}/>
     : unitAx;
   // The unit as the source publishes it: unit_native, word for word ("Toneladas" from SIDRA,
-  // "QUILOGRAMA LIQUIDO" from MDIC, "Peso em quilogramas" from UN Comtrade). Until v1.108.12 a
+  // "QUILOGRAMA LIQUIDO" from MDIC, "Peso em quilogramas" from UN Comtrade). Until v1.108.19 a
   // mass or a volume printed the family's BASE unit here, prod.unit with the family's long
   // name: "t (toneladas)" for every product MDIC and UN Comtrade publish in kg, "m³ (metros
   // cúbicos)" for the milk the PPM publishes in "Mil litros". The quantities on screen stay in

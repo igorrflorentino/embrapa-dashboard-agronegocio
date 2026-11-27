@@ -178,8 +178,8 @@ describe('ViewProductProfile — a count is named by what the product counts', (
   });
 });
 
-describe('ViewProductProfile — the ficha técnica names the unit the source publishes (v1.108.12)', () => {
-  // Until v1.108.12 a mass or a volume read "Unidade nativa: t (toneladas)" or "m³ (metros
+describe('ViewProductProfile — the ficha técnica names the unit the source publishes (v1.108.19)', () => {
+  // Until v1.108.19 a mass or a volume read "Unidade nativa: t (toneladas)" or "m³ (metros
   // cúbicos)": the family's BASE unit (prod.unit), whatever the source publishes. Measured on
   // prod 2026-11-27, the source's unit is a different one in 109 of the 243 mass and volume
   // products: kg in 55 COMEX ("QUILOGRAMA LIQUIDO"), 50 UN Comtrade ("Peso em quilogramas") and
@@ -224,7 +224,7 @@ describe('ViewProductProfile — the ficha técnica names the unit the source pu
   });
 });
 
-describe('ViewProductProfile — a product whose unit family is unknown is drawn, and claims no unit (v1.108.12)', () => {
+describe('ViewProductProfile — a product whose unit family is unknown is drawn, and claims no unit (v1.108.19)', () => {
   // UN Comtrade, every reporter, measured on prod 2026-11-27: the rows of 440335 publish no
   // unit ("Sem unidade (N/A)"), so the API serves family 'desconhecida' and no quantity at all.
   // The registry has no such family, and the screen threw on its first lookup: "Cannot read
@@ -263,7 +263,7 @@ describe('ViewProductProfile — mass and volume keep the strip’s unit, and th
   it('under t, the price is per t', () => {
     const c = renderProfile(SOJA, SOJA_TS, conv(), 'ibge_pam');
     expect(kpi(c, 'Preço médio implícito')).toBe('R$ 2.000 /t');
-    expect(ficha(c, 'Unidade nativa')).toBe('Toneladas'); // SIDRA's own label (v1.108.12)
+    expect(ficha(c, 'Unidade nativa')).toBe('Toneladas'); // SIDRA's own label (v1.108.19)
   });
 
   it('under kg, the price is per kg — it read "/t" over a number computed per kg', () => {

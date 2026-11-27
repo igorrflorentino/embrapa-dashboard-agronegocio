@@ -220,7 +220,7 @@ describe('ViewProductProfile — flow product render', () => {
     expect(kpiLabels.some((l) => l.includes('Participação na cesta'))).toBe(true);
 
     // The ficha técnica uses the banco's code label, and names the unit as the source
-    // publishes it (v1.108.12), not the family's base "t (toneladas)".
+    // publishes it (v1.108.19), not the family's base "t (toneladas)".
     expect(container.textContent).toContain('Código IBGE');
     const nativa = [...container.querySelectorAll('.pp-spec dt')]
       .find((d) => d.textContent === 'Unidade nativa');
