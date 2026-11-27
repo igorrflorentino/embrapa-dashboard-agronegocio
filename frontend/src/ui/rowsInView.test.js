@@ -11,6 +11,9 @@
 // DERIVADAS dela como o servidor as deriva: a série por produto, a grade UF × ano, o cubo da
 // cesta e o cubo por município, cada ponto com a sua contagem. Toda expectativa é um
 // `count(*)` sobre GOLD com o recorte — a mesma conta que se faz na produção para conferir.
+//
+// "Anos cobertos" sai das mesmas contagens (v1.108.12): `yearsWithRows`, os anos da série que
+// levam linhas, conferidos contra `count(distinct year)` sobre GOLD (os blocos do fim).
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -48,10 +51,13 @@ for (const c of CIDADES) {
 const anoDe = (d) => (d ? Number(String(d).slice(0, 4)) : null);
 
 // count(*) sobre GOLD com o recorte: o oráculo de cada teste.
-function contarGold({ codes, y0 = -Infinity, y1 = Infinity, ufs = null, cities = null }) {
+function linhasGold({ codes, y0 = -Infinity, y1 = Infinity, ufs = null, cities = null }) {
   return GOLD.filter((r) => codes.includes(r.code) && r.year >= y0 && r.year <= y1
-    && (!ufs || ufs.includes(r.uf)) && (!cities || cities.includes(r.city))).length;
+    && (!ufs || ufs.includes(r.uf)) && (!cities || cities.includes(r.city)));
 }
+const contarGold = (recorte) => linhasGold(recorte).length;
+// count(distinct year) sobre GOLD com o recorte, em ordem: o oráculo de "Anos cobertos".
+const anosGold = (recorte) => [...new Set(linhasGold(recorte).map((r) => r.year))].sort((a, b) => a - b);
 
 function agrupar(linhas, chave) {
   const m = new Map();
@@ -319,5 +325,176 @@ describe('rowsInView — sob uma origem do PEVS, as linhas da metade escolhida',
     const f = (await carregar(snap))({ tabela: '291' }, 'ibge_pevs');
     expect(f.selectedProducts).toEqual(['S1']);
     expect(f.rowsInView).toBe(contarGold({ codes: ['MILHO'] }));
+  });
+});
+
+// ── "Anos cobertos": os anos com linhas, das mesmas contagens (v1.108.12) ────────────────────
+// Até a v1.108.11 o contador de anos era `ts.length`: a série tem um ponto para cada ano do
+// banco dentro do período, com linhas ou sem. Na produção, o açaí da PAM em 1990–2000 lia
+// "Linhas 0" ao lado de "Anos cobertos 11 / 52". `yearsWithRows` são os anos dos pontos que
+// levam linhas, lidos das mesmas contagens que `rowsInView` soma.
+describe('yearsWithRows — os anos com linhas, das contagens de "Linhas"', () => {
+  it('sem filtro algum, todo ano em que o banco tem linhas', async () => {
+    const f = (await carregar(snapshot()))({}, 'ibge_pam');
+    expect(f.yearsWithRows).toEqual(anosGold({ codes: TODOS }));
+    expect(f.yearsWithRows).toEqual(ANOS);
+  });
+
+  it('o açaí antes de existir: nenhum ano, e o período tem dois', async () => {
+    const f = (await carregar(snapshot()))(
+      { basket: ['ACAI'], startDate: '2013-01-01', endDate: '2014-12-01' }, 'ibge_pam');
+    expect(f.yearsWithRows).toEqual([]);
+    expect(anosGold({ codes: ['ACAI'], y0: 2013, y1: 2014 })).toEqual([]);
+    expect(f.rowsInView).toBe(0);
+    // Contraprova: a série tem os dois anos do período, e o tamanho dela era a contagem de antes.
+    expect(f.ts.map((d) => d.y)).toEqual([2013, 2014]);
+  });
+
+  it('um período que pega o açaí pela metade: só os anos em que ele tem linhas', async () => {
+    const f = (await carregar(snapshot()))({ basket: ['ACAI'] }, 'ibge_pam');
+    expect(f.yearsWithRows).toEqual([2015, 2016]);
+    expect(f.yearsWithRows).toEqual(anosGold({ codes: ['ACAI'] }));
+    expect(f.ts).toHaveLength(ANOS.length);
+  });
+
+  it('um ano sem linhas no meio da série fica de fora (milho em Belém, sem 2014)', async () => {
+    const f = (await carregar(snapshot()))({ basket: ['MILHO'], munis: ['c3'] }, 'ibge_pam');
+    expect(f.yearsWithRows).toEqual([2013, 2015, 2016]);
+    expect(f.yearsWithRows).toEqual(anosGold({ codes: ['MILHO'], cities: ['c3'] }));
+  });
+
+  it('UFs: a grade do snapshot, nos anos em que as UFs escolhidas têm linhas', async () => {
+    const f = (await carregar(snapshot()))(
+      { states: ['SP'], startDate: '2014-01-01', endDate: '2016-12-01' }, 'ibge_pam');
+    expect(f.yearsWithRows).toEqual(anosGold({ codes: TODOS, ufs: ['SP'], y0: 2014, y1: 2016 }));
+  });
+
+  it('cesta × UF com o cubo carregado: os anos da cesta nas UFs, e nenhum onde ela não está', async () => {
+    const applyFilters = await carregar(snapshot());
+    expect(applyFilters({ basket: ['ACAI'], states: ['PA'] }, 'ibge_pam').yearsWithRows)
+      .toEqual(anosGold({ codes: ['ACAI'], ufs: ['PA'] }));
+    const semAcai = applyFilters({ basket: ['ACAI'], states: ['SP'] }, 'ibge_pam');
+    expect(semAcai.yearsWithRows).toEqual([]);
+    expect(semAcai.rowsInView).toBe(0);
+  });
+
+  it('uma mesorregião: os anos dos municípios dela', async () => {
+    const f = (await carregar(snapshot()))({ mesos: ['M1'], basket: ['ACAI'] }, 'ibge_pam');
+    expect(f.yearsWithRows).toEqual(anosGold({ codes: ['ACAI'], cities: ['c1', 'c2'] }));
+  });
+
+  it('nenhum produto selecionado: nenhum ano, qualquer que seja a geografia', async () => {
+    const applyFilters = await carregar(snapshot());
+    expect(applyFilters({ basket: [] }, 'ibge_pam').yearsWithRows).toEqual([]);
+    // Com UFs a série soma a grade de todos os produtos, que tem linhas em todo ano.
+    const comUf = applyFilters({ basket: [], states: ['PA'] }, 'ibge_pam');
+    expect(comUf.ts.some((d) => d.rows > 0)).toBe(true);
+    expect(comUf.yearsWithRows).toEqual([]);
+  });
+
+  it('sob a origem Silvicultura do PEVS, os anos dos produtos dela', async () => {
+    const pevs = [
+      { code: 'X1', name: 'Açaí (fruto)', family: 'mass', unit: 't', tabela: '289' },
+      { code: 'S1', name: 'Madeira em tora', family: 'mass', unit: 't', tabela: '291' },
+    ];
+    const snap = snapshot();
+    snap.products = pevs;
+    snap.productTS = { S1: snap.productTS.ACAI }; // a série da silvicultura, e só ela
+    snap.qualityByProduct = pevs.map((p) => ({ code: p.code, tabela: p.tabela, OK: 1, rows: 10 }));
+    const f = (await carregar(snap))({ tabela: '291' }, 'ibge_pevs');
+    expect(f.yearsWithRows).toEqual(anosGold({ codes: ['ACAI'] }));
+  });
+});
+
+// Onde "Linhas" não tem número, "Anos cobertos" também não tem: os anos de uma contagem
+// desconhecida são desconhecidos, nunca os do período.
+describe('yearsWithRows — sem contagem, sem anos', () => {
+  it('cesta × UF com o cubo a caminho ou em falha', async () => {
+    instalarCubos({ cubo: 'carregando' });
+    let f = (await carregar(snapshot()))({ basket: ['ACAI'], states: ['PA'] }, 'ibge_pam');
+    expect(f.geoComboPending).toBe(true);
+    expect(f.yearsWithRows).toBeNull();
+    instalarCubos({ cubo: 'falha' });
+    f = (await carregar(snapshot()))({ basket: ['ACAI'], states: ['PA'] }, 'ibge_pam');
+    expect(f.geoComboLoadError).toBe('HTTP 503');
+    expect(f.yearsWithRows).toBeNull();
+  });
+
+  it('um recorte abaixo da UF a caminho ou em falha', async () => {
+    instalarCubos({ municipios: 'carregando' });
+    let f = (await carregar(snapshot()))({ mesos: ['M1'] }, 'ibge_pam');
+    expect(f.subUfLoading).toBe(true);
+    expect(f.yearsWithRows).toBeNull();
+    instalarCubos({ municipios: 'falha' });
+    f = (await carregar(snapshot()))({ mesos: ['M1'] }, 'ibge_pam');
+    expect(f.subUfLoadError).toBe('HTTP 503');
+    expect(f.yearsWithRows).toBeNull();
+  });
+
+  it('UFs sem grade UF × ano no snapshot', async () => {
+    const f = (await carregar(snapshot({ semGradeUf: true })))({ states: ['PA'] }, 'ibge_pam');
+    expect(f.yearsWithRows).toBeNull();
+  });
+
+  it('uma resposta de antes da v1.108.9, sem contagem em ponto algum', async () => {
+    instalarCubos({ semLinhas: true });
+    const applyFilters = await carregar(snapshot({ semLinhas: true }));
+    for (const summary of [{}, { basket: ['MILHO'] }, { states: ['PA'] }, { mesos: ['M1'] }]) {
+      expect(applyFilters(summary, 'ibge_pam').yearsWithRows).toBeNull();
+    }
+  });
+
+  it('um único ponto sem contagem: os outros anos não bastam', async () => {
+    // O ponto sem contagem pode ser de um ano sem nenhuma outra linha; contar os demais daria
+    // um número menor que o verdadeiro, com cara de contado.
+    const snap = snapshot();
+    delete snap.productTS.MILHO[0].rows;
+    const f = (await carregar(snap))({}, 'ibge_pam');
+    expect(f.yearsWithRows).toBeNull();
+  });
+});
+
+// Os dois contadores vêm da mesma série e não podem se contradizer, em recorte nenhum: os
+// anos são nulos exatamente quando as linhas são, nenhum ano exatamente quando nenhuma linha,
+// e as linhas dos anos contados somam a contagem inteira.
+describe('yearsWithRows e rowsInView nunca se contradizem', () => {
+  const RECORTES = [
+    {},
+    { basket: ['ACAI'] },
+    { basket: ['ACAI'], startDate: '2013-01-01', endDate: '2014-12-01' },
+    { basket: ['MILHO'], startDate: '2014-01-01', endDate: '2014-12-01' },
+    { basket: [] },
+    { basket: [], states: ['SP'] },
+    { states: ['PA'] },
+    { states: ['SP'], startDate: '2016-01-01', endDate: '2016-12-01' },
+    { basket: ['ACAI'], states: ['PA'] },
+    { basket: ['ACAI'], states: ['SP'] },
+    { mesos: ['M1'] },
+    { munis: ['c3'], basket: ['MILHO'] },
+    { munis: ['c4'], basket: ['ACAI'] },
+    { mesos: ['M1', 'M3'], states: ['PA'] },
+  ];
+  const CENARIOS = [
+    { nome: 'cubos prontos', cubos: {}, snap: {} },
+    { nome: 'cubo da cesta a caminho', cubos: { cubo: 'carregando' }, snap: {} },
+    { nome: 'cubo por município em falha', cubos: { municipios: 'falha' }, snap: {} },
+    { nome: 'resposta sem contagem', cubos: { semLinhas: true }, snap: { semLinhas: true } },
+    { nome: 'snapshot sem grade UF', cubos: {}, snap: { semGradeUf: true } },
+  ];
+
+  it.each(CENARIOS)('$nome', async ({ cubos, snap }) => {
+    instalarCubos(cubos);
+    const applyFilters = await carregar(snapshot(snap));
+    for (const summary of RECORTES) {
+      const f = applyFilters(summary, 'ibge_pam');
+      expect(f.yearsWithRows === null, JSON.stringify(summary)).toBe(f.rowsInView === null);
+      if (f.rowsInView === null) continue;
+      expect(f.yearsWithRows.length === 0, JSON.stringify(summary)).toBe(f.rowsInView === 0);
+      // Sem produto a série pode somar outros produtos (a grade por UF); ali os dois são zero.
+      if (!f.selectedProducts.length) continue;
+      const linhasDosAnos = f.ts.filter((d) => f.yearsWithRows.includes(d.y))
+        .reduce((s, d) => s + d.rows, 0);
+      expect(linhasDosAnos, JSON.stringify(summary)).toBe(f.rowsInView);
+    }
   });
 });

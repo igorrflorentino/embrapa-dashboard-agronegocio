@@ -409,8 +409,6 @@ function MainScreen({ filters, view = 'overview', database = 'ibge_pevs', infoPa
   const ufsTotalReal = _f
     ? Math.min(27, _f.ufDataFull.filter(_isRealUf).length || 27)
     : 27;
-  // Years inside the active period window.
-  const yearsCovered = _f ? _f.ts.length : prov.yearsTotal;
   // Approximate selection counts from current filters. basket == null means
   // "no filter" (all); an explicit (possibly empty) basket counts literally —
   // zero selected products must read 0, never fall back to the total.
@@ -484,6 +482,25 @@ function MainScreen({ filters, view = 'overview', database = 'ibge_pevs', infoPa
     : rowsEstimate != null
       ? 'Estimativa: a contagem exata deste recorte não está disponível, e o número vem da proporção de produtos, anos e território selecionados.'
     : undefined;
+  // "Anos cobertos" counts the years WITH ROWS (v1.108.12): the years of the screen's series
+  // that carry at least one of the rows "Linhas" counts (applyFilters' `yearsWithRows`), so
+  // the two never disagree. Until then it counted the period's years, rows or not: PAM's açaí
+  // over 1990–2000 read "Linhas 0" beside "Anos cobertos 11 / 52". It holds where "Linhas"
+  // holds, with the same marks and tooltip. Where "Linhas" can only estimate, it says it
+  // does not know ("—"): no share gives a year, and the period's years were the overstatement.
+  const yearsWithRows = (_f && Array.isArray(_f.yearsWithRows)) ? _f.yearsWithRows : null;
+  const nYears = yearsWithRows ? yearsWithRows.length : null;
+  const yearsLabel = rowsFailed ? '—'
+    : rowsLoading ? '…'
+    : nYears != null ? nYears
+    : '—';
+  // The first and last of them, which the period alone does not tell: açaí over 2010–2020
+  // has rows from 2015 on.
+  const yearsTitle = (rowsFailed || rowsLoading) ? rowsTitle
+    : nYears == null ? 'A contagem dos anos deste recorte não está disponível.'
+    : nYears === 0 ? 'Nenhum ano com linhas da base analítica neste recorte.'
+    : nYears === 1 ? `1 ano com linhas da base analítica neste recorte: ${yearsWithRows[0]}.`
+    : `${nYears} anos com linhas da base analítica neste recorte, entre ${yearsWithRows[0]} e ${yearsWithRows[nYears - 1]}.`;
 
   // ---- Data views ----
   const ViewComponent = window.viewComponent(view) || window.ViewOverview;
@@ -546,7 +563,7 @@ function MainScreen({ filters, view = 'overview', database = 'ibge_pevs', infoPa
             </div>
             <div className="meta-row">
               <span className="meta-label">Anos cobertos</span>
-              <span className="meta-val tnum">{yearsCovered ?? '—'} / {metaProv.yearsTotal ?? '—'}</span>
+              <span className="meta-val tnum" title={yearsTitle}>{yearsLabel} / {metaProv.yearsTotal ?? '—'}</span>
             </div>
           </div>
         </div>

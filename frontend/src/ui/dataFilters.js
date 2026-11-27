@@ -725,6 +725,17 @@ import './productOrigin.js';
     const rowsInView = !selectedProducts.length ? 0
       : rowsCountable ? ts.reduce((acc, d) => addCount(acc, d.rows), 0)
       : null;
+    // ── Years with rows (for hero "SELEÇÃO ATIVA · Anos cobertos") ────
+    // The years of `ts` whose point carries at least one Gold row, read off the very counts
+    // rowsInView adds (v1.108.12), so the two counters cannot disagree: no row is no year, and
+    // where the rows are unknown the years are too (null). `ts` has a point for EVERY year of
+    // the banco inside the period, rows or not, and its length was the counter until then:
+    // PAM's açaí over 1990–2000 read "Linhas 0" beside "Anos cobertos 11 / 52", and a COMEX
+    // code with one row in 2010 read "30 / 30". Ascending, as `ts` is; [] with no product
+    // selected, whatever the geography (as rowsInView, `ts` sums every product there).
+    const yearsWithRows = rowsInView == null ? null
+      : !selectedProducts.length ? []
+      : ts.filter((d) => d.rows > 0).map((d) => d.y);
     // The shares below survive only as the FALLBACK estimate of that count.
     const flagShare  = flagSet
       ? filteredFlags.reduce((s, f) => s + f.share, 0)
@@ -878,6 +889,9 @@ import './productOrigin.js';
       // The Gold rows of the recorte, counted (see the Row counter above); null when they
       // could not be. `_shares` only backs the estimate MainScreen shows in that case.
       rowsInView,
+      // The years of the series that carry those rows, ascending — null exactly when
+      // rowsInView is (see Years with rows above).
+      yearsWithRows,
       _shares: { productShare, flagShare, yearShare, stateShare, muniShare },
     };
   };
