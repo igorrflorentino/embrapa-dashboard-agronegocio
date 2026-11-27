@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
-## [1.108.12] - 2026-11-27
+## [1.108.15] - 2026-11-27
 
 **"Anos cobertos", em "Seleção ativa", passa a contar os anos com linhas do recorte, das mesmas
 contagens que "Linhas" soma.** Fecha a pendência das Notas da v1.108.9. O contador contava os anos

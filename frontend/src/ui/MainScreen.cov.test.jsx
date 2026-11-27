@@ -359,7 +359,7 @@ describe('MainScreen — "Linhas" conta as linhas do recorte', () => {
   });
 });
 
-// "Anos cobertos" counts the years WITH ROWS (v1.108.12): the years of the screen's series that
+// "Anos cobertos" counts the years WITH ROWS (v1.108.15): the years of the screen's series that
 // carry the rows "Linhas" counts (applyFilters' `yearsWithRows`). It read `ts.length`, a point
 // for every year of the banco inside the period, rows or not: in production PAM's açaí over
 // 1990–2000 read "Linhas 0" beside "Anos cobertos 11 / 52", and a COMEX code with one row

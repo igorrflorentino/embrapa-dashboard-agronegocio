@@ -482,7 +482,7 @@ function MainScreen({ filters, view = 'overview', database = 'ibge_pevs', infoPa
     : rowsEstimate != null
       ? 'Estimativa: a contagem exata deste recorte não está disponível, e o número vem da proporção de produtos, anos e território selecionados.'
     : undefined;
-  // "Anos cobertos" counts the years WITH ROWS (v1.108.12): the years of the screen's series
+  // "Anos cobertos" counts the years WITH ROWS (v1.108.15): the years of the screen's series
   // that carry at least one of the rows "Linhas" counts (applyFilters' `yearsWithRows`), so
   // the two never disagree. Until then it counted the period's years, rows or not: PAM's açaí
   // over 1990–2000 read "Linhas 0" beside "Anos cobertos 11 / 52". It holds where "Linhas"

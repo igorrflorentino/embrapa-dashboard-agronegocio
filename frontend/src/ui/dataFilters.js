@@ -727,7 +727,7 @@ import './productOrigin.js';
       : null;
     // ── Years with rows (for hero "SELEÇÃO ATIVA · Anos cobertos") ────
     // The years of `ts` whose point carries at least one Gold row, read off the very counts
-    // rowsInView adds (v1.108.12), so the two counters cannot disagree: no row is no year, and
+    // rowsInView adds (v1.108.15), so the two counters cannot disagree: no row is no year, and
     // where the rows are unknown the years are too (null). `ts` has a point for EVERY year of
     // the banco inside the period, rows or not, and its length was the counter until then:
     // PAM's açaí over 1990–2000 read "Linhas 0" beside "Anos cobertos 11 / 52", and a COMEX

@@ -12,7 +12,7 @@
 // cesta e o cubo por município, cada ponto com a sua contagem. Toda expectativa é um
 // `count(*)` sobre GOLD com o recorte — a mesma conta que se faz na produção para conferir.
 //
-// "Anos cobertos" sai das mesmas contagens (v1.108.12): `yearsWithRows`, os anos da série que
+// "Anos cobertos" sai das mesmas contagens (v1.108.15): `yearsWithRows`, os anos da série que
 // levam linhas, conferidos contra `count(distinct year)` sobre GOLD (os blocos do fim).
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -328,7 +328,7 @@ describe('rowsInView — sob uma origem do PEVS, as linhas da metade escolhida',
   });
 });
 
-// ── "Anos cobertos": os anos com linhas, das mesmas contagens (v1.108.12) ────────────────────
+// ── "Anos cobertos": os anos com linhas, das mesmas contagens (v1.108.15) ────────────────────
 // Até a v1.108.11 o contador de anos era `ts.length`: a série tem um ponto para cada ano do
 // banco dentro do período, com linhas ou sem. Na produção, o açaí da PAM em 1990–2000 lia
 // "Linhas 0" ao lado de "Anos cobertos 11 / 52". `yearsWithRows` são os anos dos pontos que
