@@ -10,6 +10,8 @@ import './RecorteNote.jsx';
 import './countUnits.js';
 // window.CollapsingNameList — names the years whose price rests on part of the value.
 import './CollapsingNameList.jsx';
+// window.valueGapMotivo — WHY a year has no value in the chosen convention.
+import './MonetaryNotes.jsx';
 
 const { useState: usePPState } = React;
 
@@ -129,6 +131,9 @@ function ViewProductProfile({ families, summary, database, conventions }) {
   // formatCountQty whatever the family, so a crop that reached them (a window with no value,
   // see isStock) was multiplied as a count and labelled "un".
   const fmtQty = (q) => window.formatProductQty(prod, q, conv);
+  // A sparkline draws an absent point as a zero (Sparkline.jsx reads `Math.min(null, …)` as
+  // 0), so each card gets only the points that exist; with fewer than two, no line at all.
+  const presentes = (serie, chave) => serie.filter(d => Number.isFinite(d[chave]));
   // The price's denominator: ONE of the unit the quantity is shown in — "R$ por ovo", "R$/kg".
   // It was the family's base unit (prod.unit), so every count read "/un", and with kg chosen
   // in the conventions a price computed per kg read "/t".
@@ -149,10 +154,14 @@ function ViewProductProfile({ families, summary, database, conventions }) {
   const win = raw.filter(d => d.y >= yearStart && d.y <= yearEnd);
 
   // A herd headcount (PPM measure_kind='stock') is a STOCK with NO monetary value —
-  // value / implicit price / market-share-by-value are meaningless for it. Detect via
-  // the explicit discriminator when present, else fall back to "no positive value in
-  // the window" so a value-less series is never shown a fabricated R$ 0 price.
-  const isStock = prod.measure_kind ? prod.measure_kind === 'stock' : !win.some(d => d.v > 0);
+  // value / implicit price / market-share-by-value are meaningless for it. What a measure IS
+  // comes from the data, never from a missing value: only PPM sends measure_kind, and only
+  // its herd is a 'stock'. Until v1.108.12 a product with no measure_kind fell back to "no
+  // positive value in the window", so soybean in 1974–1979 under IPCA (the index starts in
+  // 1980) was laid out as a herd: "Efetivo", "Pico histórico", "Onde Soja é criado", and a
+  // zero for every UF. A crop with no value in the window is still a crop; what it lacks is
+  // the value, and the cards below say why.
+  const isStock = prod.measure_kind === 'stock';
 
   // Basket totals per year: VALUE (flow share) and same-family QUANTITY (stock share).
   // The efetivo share of a STOCK is among OTHER STOCKS only — egg/milk count-FLOWS are
@@ -204,7 +213,22 @@ function ViewProductProfile({ families, summary, database, conventions }) {
   // último par: a mesma recusa do Visão geral (deltaPctIn), com o motivo no subtítulo.
   const eraBreaks = window.valueEraBreaksFor ? window.valueEraBreaksFor(database) : [];
   const deltaV = window.deltaPctIn({ y: prev.y, v: prevValAbs }, { y: last.y, v: lastValAbs }, eraBreaks);
-  const deltaVMoeda = window.spanComparable(prev.y, last.y, eraBreaks);
+  // WHY the value card has no number, or no variation. The snapshot knows which years the
+  // convention does not reach and which other correction does (valueGap.coveredBy), and the
+  // card says it in the words of the "Variação acumulada" refusal (deltaWhyNot): "sem valor em
+  // 1979 nesta convenção — a série do IPCA não alcança esse ano (o IGP-DI alcança)". With no
+  // value in the last year the reason is that year's — deltaWhyNot asked about the year alone,
+  // so the wording stays in one place; with a value, it is the variation's (a currency reform
+  // between the two years, or no value in the year before), and null when the variation stands.
+  const motivo = window.valueGapMotivo(window.valueGapFor(database), conv);
+  // No value in the last year, no variation to show: the card drops its '—' badge and the
+  // subtitle carries the reason.
+  const semValorNoUltimo = lastValAbs == null;
+  const porQueV = semValorNoUltimo
+    ? window.deltaWhyNot({ y: last.y, v: null }, { y: last.y, v: null }, null, motivo)
+    : window.deltaWhyNot({ y: prev.y, v: prevValAbs }, { y: last.y, v: lastValAbs }, eraBreaks, motivo);
+  const subValor = semValorNoUltimo ? porQueV
+    : porQueV ? `${last.y} vs. ${prev.y} · ${porQueV}` : `${last.y} vs. ${prev.y}`;
   const deltaQ = window.deltaPct(prev.q, last.q);
   // scalePresent, não `last.q * qtyMul`: em JS `null * fator === 0`, e a quantidade
   // AUSENTE (janela sem ponto algum — `last` cai no fallback `{v: null, q: null}`)
@@ -220,10 +244,24 @@ function ViewProductProfile({ families, summary, database, conventions }) {
   // Top-10 producing/raising UFs from the REAL per-UF ranking. A value-less stock ranks
   // by headcount (q_count) instead of an all-zero value; the bar measure (_m) is value
   // for a flow, or the family-scaled quantity for a stock.
-  const ufMeasure = isStock ? 'q_count' : 'value';
-  const ufRows = (ufRank.rows || []).slice()
-    .sort((a, b) => (b[ufMeasure] || 0) - (a[ufMeasure] || 0)).slice(0, 10)
-    .map(u => ({ ...u, _m: isStock ? (u.q_count || 0) * qtyMul : u.value }));
+  // Only a UF WITH the measure is a bar: one with no value in this convention is not a bar of
+  // length zero. The serializer keeps a missing value null (`_measure`, not `_num`), and the
+  // `|| 0` that stood here turned it back into a zero; the UFs left out are named under the chart.
+  const ufMedida = (u) => (isStock ? u.q_count : u.value);
+  const ufLidas = ufRank.rows || [];
+  const ufSemValor = ufLidas.filter(u => !Number.isFinite(ufMedida(u)));
+  const ufRows = ufLidas.filter(u => Number.isFinite(ufMedida(u)))
+    .sort((a, b) => ufMedida(b) - ufMedida(a)).slice(0, 10)
+    .map(u => ({ ...u, _m: isStock ? u.q_count * qtyMul : u.value }));
+  const periodo = yearStart === yearEnd ? String(yearStart) : `${yearStart}–${yearEnd}`;
+  // A flow with no value in ANY year of the window: the value, price and share charts would be
+  // empty plots with an axis that measures nothing ("0 a 4 R$"). Each card says so instead.
+  const semValorNaJanela = !isStock && !win.some(d => Number.isFinite(d.v));
+  const graficoSemValor = (
+    <p className="caption" style={{ padding: '40px 4px', textAlign: 'center' }}>
+      Nenhum ano de {periodo} tem valor nesta convenção.
+    </p>
+  );
   const ufScaled = window.scaleSeries(
     ufRows, Math.max(...ufRows.map(u => u._m), 0), conv, '_m', isStock ? unitAx : fx.symbol,
   );
@@ -269,7 +307,7 @@ function ViewProductProfile({ families, summary, database, conventions }) {
             delta={window.fmtSigned(deltaQ)}
             deltaPositive={window.deltaUp(deltaQ)}
             sub={`${last.y} vs. ${prev.y}`}
-            spark={win.slice(-12).map(d => ({ y: d.y, q: d.q }))}
+            spark={presentes(win.slice(-12).map(d => ({ y: d.y, q: d.q })), 'q')}
             sparkKey="q"
             sparkColor={qColor}
           />
@@ -277,10 +315,10 @@ function ViewProductProfile({ families, summary, database, conventions }) {
           <window.KpiCardSpark
             label={`Valor · ${monLabel}`}
             value={window.formatValue(window.scalePresent(last.v, 1e6), conv)}
-            delta={window.fmtSigned(deltaV)}
+            delta={semValorNoUltimo ? null : window.fmtSigned(deltaV)}
             deltaPositive={window.deltaUp(deltaV)}
-            sub={deltaVMoeda ? `${last.y} vs. ${prev.y} · ${deltaVMoeda}` : `${last.y} vs. ${prev.y}`}
-            spark={win.slice(-12).map(d => ({ y: d.y, v: d.v }))}
+            sub={subValor}
+            spark={presentes(win.slice(-12).map(d => ({ y: d.y, v: d.v })), 'v')}
             sparkKey="v"
             sparkColor="var(--viz-1)"
           />
@@ -290,7 +328,7 @@ function ViewProductProfile({ families, summary, database, conventions }) {
             label="Pico histórico"
             value={fmtQty(peak.q)}
             sub={`em ${peak.y}`}
-            spark={win.slice(-12).map(d => ({ y: d.y, q: d.q }))}
+            spark={presentes(win.slice(-12).map(d => ({ y: d.y, q: d.q })), 'q')}
             sparkKey="q"
             sparkColor="var(--viz-7)"
           />
@@ -303,7 +341,7 @@ function ViewProductProfile({ families, summary, database, conventions }) {
             delta={window.fmtSigned(deltaQ)}
             deltaPositive={window.deltaUp(deltaQ)}
             sub={`${last.y} vs. ${prev.y}`}
-            spark={win.slice(-12).map(d => ({ y: d.y, q: d.q }))}
+            spark={presentes(win.slice(-12).map(d => ({ y: d.y, q: d.q })), 'q')}
             sparkKey="q"
             sparkColor={qColor}
           />
@@ -317,7 +355,7 @@ function ViewProductProfile({ families, summary, database, conventions }) {
             sub={window.pricedShareLow(lastParcela)
               ? `valor ÷ quantidade · apoiado em ${window.fmtPctSig(lastParcela)} do valor`
               : 'valor ÷ quantidade'}
-            spark={priceSeries.slice(-12)}
+            spark={presentes(priceSeries.slice(-12), 'v')}
             sparkKey="v"
             sparkColor="var(--viz-7)"
           />
@@ -326,7 +364,7 @@ function ViewProductProfile({ families, summary, database, conventions }) {
           label={isStock ? 'Participação no efetivo' : 'Participação na cesta'}
           value={window.fmtPct(window.scalePresent(lastShare, 0.01))}
           sub={`${filtered.selectedProducts.length} ${filtered.selectedProducts.length === 1 ? 'produto' : 'produtos'} na cesta`}
-          spark={shareSeries.slice(-12)}
+          spark={presentes(shareSeries.slice(-12), 'v')}
           sparkKey="v"
           sparkColor="var(--viz-5)"
         />
@@ -365,7 +403,8 @@ function ViewProductProfile({ families, summary, database, conventions }) {
                 overline={`Série de valor · ${monLabel}`}
                 title={`${prod.name} · valor (${valScaled.label})`}
               />
-              <window.LineChart data={valScaled.data} label={valScaled.label} valueKey="v" color="var(--viz-1)" height={230} />
+              {semValorNaJanela ? graficoSemValor
+                : <window.LineChart data={valScaled.data} label={valScaled.label} valueKey="v" color="var(--viz-1)" height={230} />}
             </div>
             <div className="card">
               <window.SectionHeader
@@ -383,7 +422,8 @@ function ViewProductProfile({ families, summary, database, conventions }) {
                 overline="Preço médio implícito · valor ÷ quantidade"
                 title={`${fx.symbol} por ${perUnit} · ${yearStart}–${yearEnd}`}
               />
-              <window.LineChart data={priceSeries} label={fx.symbol + '/' + perUnit} valueKey="v" color="var(--viz-7)" height={220} trend />
+              {semValorNaJanela ? graficoSemValor
+                : <window.LineChart data={priceSeries} label={fx.symbol + '/' + perUnit} valueKey="v" color="var(--viz-7)" height={220} trend />}
               {/* The price stands on the rows with both measures; a year where they hold too
                   little of the value says so, by name, as Parceiros does for a partner. */}
               <window.CollapsingNameList
@@ -404,7 +444,8 @@ function ViewProductProfile({ families, summary, database, conventions }) {
                 overline="Participação na cesta · % do valor total"
                 title={`Participação de ${prod.name} na cesta`}
               />
-              <window.LineChart data={shareSeries} label="% da cesta" valueKey="v" color="var(--viz-5)" height={220} />
+              {semValorNaJanela ? graficoSemValor
+                : <window.LineChart data={shareSeries} label="% da cesta" valueKey="v" color="var(--viz-5)" height={220} />}
             </div>
           </div>
         </>
@@ -428,7 +469,20 @@ function ViewProductProfile({ families, summary, database, conventions }) {
               Não foi possível carregar a distribuição por UF. Tente novamente.
             </p>
           ) : ufRows.length ? (
-            <window.BarChart data={ufScaled.data} valueKey="_m" color={isStock ? qColor : 'var(--viz-2)'} height={320} />
+            <>
+              <window.BarChart data={ufScaled.data} valueKey="_m" color={isStock ? qColor : 'var(--viz-2)'} height={320} />
+              <window.CollapsingNameList
+                titulo="Sem valor nesta convenção"
+                itens={ufSemValor.map(u => u.uf)}
+                substantivo="UFs"
+                regra={`Não têm valor nesta convenção em ${periodo}, por isso não entram no ranking por valor.`} />
+            </>
+          ) : ufSemValor.length ? (
+            // Rows came back, none with a value: the data exists, the convention does not reach
+            // it. "Sem dados por UF" would say the product has no distribution at all.
+            <p className="caption" style={{ padding: '40px 4px', textAlign: 'center' }}>
+              Nenhuma UF tem valor nesta convenção em {periodo}, e o ranking é pelo valor.
+            </p>
           ) : (
             <p className="caption" style={{ padding: '40px 4px', textAlign: 'center' }}>
               Sem dados por UF para este produto.

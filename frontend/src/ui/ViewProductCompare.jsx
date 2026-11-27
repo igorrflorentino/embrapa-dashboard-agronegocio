@@ -5,6 +5,8 @@
 
 // window.recorteNaoSeAplica — imported for real, so the view's tests load it on their own.
 import './RecorteNote.jsx';
+// window.CollapsingNameList — names the products with no value in the window.
+import './CollapsingNameList.jsx';
 
 const { useState: usePCState } = React;
 
@@ -63,14 +65,24 @@ function ViewProductCompare({ summary, conventions, database }) {
   const items = activeSel.map((code, i) => {
     const prod = filtered.products.find(p => p.code === code);
     const win = filtered.allProductTS[code].filter(d => d.y >= yearStart && d.y <= yearEnd);
-    const isStock = prod.measure_kind === 'stock' || !win.some(d => d.v > 0);
+    // What a measure IS comes from the data — measure_kind, sent only by PPM, 'stock' only
+    // for the herd —, never from a missing value. Until v1.108.12 a flow with no value in the
+    // window was taken for a stock too: soybean in 1974–1979 under IPCA was indexed on its
+    // tonnage under the title "Evolução relativa do efetivo (cabeças)", and the table said
+    // the selection mixed stock and flow.
+    const isStock = prod.measure_kind === 'stock';
     const mkey = isStock ? 'q' : 'v';
+    // A flow with NO value in the window stays a flow, and has nothing to index: it leaves
+    // the chart, the base year and the correlation (which would otherwise go blank for every
+    // product — commonBaseYear needs a value in EACH series), keeps '—' in the table, and is
+    // named under the chart.
+    const semValor = !isStock && !win.some(d => Number.isFinite(d.v));
     // Sem `|| 0`: a AUSÊNCIA de medida tem de sobreviver até fmtSigned/formatValue, que
     // já a renderizam como '—'. Zerar aqui era o que fazia a tabela afirmar "R$ 0" e
     // "+0%" para um ano que a convenção escolhida não cobre.
     const pT = win[win.length - 1];
     return {
-      code, prod, win, isStock, mkey,
+      code, prod, win, isStock, mkey, semValor,
       color: COLORS[i % COLORS.length],
       pT, mT: pT ? pT[mkey] : null,
       vT: pT ? pT.v : null,
@@ -88,7 +100,7 @@ function ViewProductCompare({ summary, conventions, database }) {
 
   // Normalized series (base 100) — on each product's own measure, so a value-less herd
   // traces real growth instead of a flat-zero line. O ano-base é o primeiro ano em que
-  // TODAS as séries têm medida (window.commonBaseYear), não `yearStart` às cegas: quando
+  // TODAS as séries desenhadas têm medida (window.commonBaseYear), não `yearStart` às cegas: quando
   // a convenção escolhida não alcança o início da janela (IPCA só cobre a PAM desde
   // 1980), indexar por yearStart achatava TODAS as séries em zero.
   //
@@ -98,20 +110,24 @@ function ViewProductCompare({ summary, conventions, database }) {
   // cruzados e reais. As séries de VALOR partem do primeiro ano da moeda atual
   // (window.currentEraStart) e a tela diz por quê; as de cabeças não têm moeda e ficam
   // inteiras, mas o ano-base é comum, então ele acompanha o corte quando há valor.
+  //
+  // The products the chart draws: every one with its measure somewhere in the window.
+  const desenhados = items.filter(it => !it.semValor);
+  const semValorNomes = items.filter(it => it.semValor).map(it => it.label);
   const eraBreaks = window.valueEraBreaksFor ? window.valueEraBreaksFor(database) : [];
-  const eraStart = items.some(it => it.mkey === 'v')
+  const eraStart = desenhados.some(it => it.mkey === 'v')
     ? window.currentEraStart(yearStart, yearEnd, eraBreaks) : null;
   const inEra = (pts) => (eraStart == null ? pts : pts.filter(d => d.y >= eraStart));
   const normPontos = items.map(it => {
     const pts = it.win.map(d => ({ y: d.y, v: d[it.mkey] }));
     return it.mkey === 'v' ? inEra(pts) : pts;
   });
-  const baseYear = window.commonBaseYear(normPontos);
-  const normSeries = items.map((it, i) => ({
+  const baseYear = window.commonBaseYear(normPontos.filter((_, i) => !items[i].semValor));
+  const normSeries = items.flatMap((it, i) => (it.semValor ? [] : [{
     name: it.label,
     color: it.color,
     data: window.indexTo100(normPontos[i], baseYear),
-  }));
+  }]));
 
   // A tabela mede a partir do MESMO ano-base do gráfico. Medir de `win[0]` enquanto o
   // gráfico indexa em `baseYear` produzia a contradição de um gráfico mostrando abacaxi
@@ -132,12 +148,15 @@ function ViewProductCompare({ summary, conventions, database }) {
 
   // Pairwise Pearson correlation on YoY growth, aligned BY YEAR (not array index): a
   // product with an internal year gap would otherwise correlate mismatched years.
-  // Correlate on headcount for an all-herd basket, on value otherwise.
-  const corrKey = items.every(it => it.isStock) ? 'q' : 'v';
+  // Correlate on headcount for an all-herd basket, on value otherwise. A product with no
+  // value in the window has no value growth to correlate: its cells are '—', never its
+  // tonnage correlated in the value's place.
+  const corrKey = desenhados.every(it => it.isStock) ? 'q' : 'v';
   // Na correlação de VALOR, o crescimento que atravessa uma reforma mede a troca de moeda,
   // não a produção: a mesma era do gráfico vale aqui.
   const corrWin = (it) => (corrKey === 'v' ? inEra(it.win) : it.win);
-  const corrMatrix = items.map(a => items.map(b => window.pearsonByYear(corrWin(a), corrWin(b), corrKey)));
+  const corrMatrix = items.map(a => items.map(b => (a.semValor || b.semValor
+    ? null : window.pearsonByYear(corrWin(a), corrWin(b), corrKey))));
   const corrColor = window.corrColor;
 
   // Indexing makes mixed families / stock+flow comparable as growth, but their ABSOLUTE
@@ -145,8 +164,8 @@ function ViewProductCompare({ summary, conventions, database }) {
   const mixedBasis = new Set(items.map(it => it.prod.family)).size > 1
     || new Set(items.map(it => it.isStock)).size > 1;
   // The normalized series indexes value for flows, but headcount for an all-herd basket —
-  // so label it honestly instead of hardcoding "do valor".
-  const allStock = items.length > 0 && items.every(it => it.isStock);
+  // so label it honestly instead of hardcoding "do valor". Over what the chart DRAWS.
+  const allStock = desenhados.length > 0 && desenhados.every(it => it.isStock);
   const indexBasis = allStock ? 'do efetivo (cabeças)' : 'do valor';
 
   return (
@@ -187,15 +206,30 @@ function ViewProductCompare({ summary, conventions, database }) {
           title={`Evolução relativa ${indexBasis}`}
           action={<span className="caption">{items.length} produtos</span>}
         />
-        <window.MultiLineChart series={normSeries} label={`índice (${baseYear ?? '—'}=100)`} valueKey="v" height={300} showLegend={false} />
-        <div className="pc-legend">
-          {items.map(it => (
-            <span key={it.code} className="pc-legend-item">
-              <span className="pc-legend-dot" style={{ background: it.color }}></span>
-              {it.label}
-            </span>
-          ))}
-        </div>
+        {/* With no product to draw, no empty axes: the note below names them and says why. */}
+        {desenhados.length > 0 && (
+          <>
+            <window.MultiLineChart series={normSeries} label={`índice (${baseYear ?? '—'}=100)`} valueKey="v" height={300} showLegend={false} />
+            <div className="pc-legend">
+              {desenhados.map(it => (
+                <span key={it.code} className="pc-legend-item">
+                  <span className="pc-legend-dot" style={{ background: it.color }}></span>
+                  {it.label}
+                </span>
+              ))}
+            </div>
+          </>
+        )}
+        {/* The products left out of the chart, by name. The reason the convention has no value
+            in those years (an index that does not reach them, and which one does) is the note at
+            the top of the screen (ValueGapNote, MainScreen); this one says WHO and what it costs. */}
+        <window.CollapsingNameList
+          titulo="Sem valor nesta convenção"
+          itens={semValorNomes}
+          substantivo="produtos"
+          regra={semValorNomes.length === 1
+            ? 'Nenhum ano da janela selecionada tem valor nesta convenção para ele, por isso fica fora do índice, da variação acumulada, do CAGR e da correlação, que medem o valor.'
+            : 'Nenhum ano da janela selecionada tem valor nesta convenção para eles, por isso ficam fora do índice, da variação acumulada, do CAGR e da correlação, que medem o valor.'} />
         {eraStart != null && (
           <p className="caption" style={{ margin: '8px 2px 0' }}>
             Sem correção pela inflação, os anos antes de {eraStart} estão em outra moeda e não se
@@ -236,9 +270,9 @@ function ViewProductCompare({ summary, conventions, database }) {
                     <span className="pc-row-dot" style={{ background: it.color }}></span>
                     {it.label}
                   </td>
-                  {/* A row ranked on quantity shows it in its own unit: a herd in cabeças, a
-                      crop with no value in the window in t. formatCountQty with no unit put
-                      "un" beside every herd, and multiplied a crop's mil t as a count. */}
+                  {/* A herd is measured on its headcount, in its own unit (cabeças): formatCountQty
+                      with no unit put "un" beside every herd. A flow is measured on its value, and
+                      one with no value in the window reads '—' — never its tonnage in its place. */}
                   <td className="num tnum">{it.isStock ? window.formatProductQty(it.prod, it.qT, conv) : window.formatValue(window.scalePresent(it.vT, 1e6), conv)}</td>
                   {/* `null >= 0` é true em JS: sem o teste de ausência, um '—' saía
                       pintado de verde, como se fosse crescimento. */}
