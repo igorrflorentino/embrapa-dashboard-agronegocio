@@ -18,6 +18,7 @@ instead of serving a stale one for its whole process lifetime.
 from __future__ import annotations
 
 import logging
+from typing import NamedTuple
 
 import pandas as pd
 
@@ -117,3 +118,75 @@ def _xyear(metric: str, codes: tuple, uf_codes: tuple = ()) -> dict:
     df = gateway.fetch_cross_series(metric, codes=codes, uf_codes=uf_codes)
     out = {int(r.reference_year): measures.present(r.value) for r in df.itertuples()}
     return {y: v for y, v in out.items() if v is not None}
+
+
+class PricedYear(NamedTuple):
+    """One year of a price whose two halves add the SAME rows (``sql._priced_pair``).
+
+    ``price`` is ``priced_value ÷ priced_qty`` in the caller's unit. ``priced_value ÷
+    total_value`` is the share of the year's value that stands behind it: the coverage a
+    screen names when it falls short (``pricedShare``). Each is None when absent: a year in
+    which no row carries both measures has no price, never a price of 0.
+    """
+
+    price: float | None
+    priced_value: float | None
+    total_value: float | None
+
+
+@cache.memoize()
+def _export_price_halves(
+    codes: tuple, uf_codes: tuple, year_start: int | None, year_end: int | None
+) -> pd.DataFrame:
+    """Per year, the COMEX export value and the two halves of its price (US$ ÷ kg) over the
+    same shipments: ``total_value``, ``priced_value``, ``priced_qty`` (``sql.cross_price_annual``).
+
+    The export price used to divide two separate cross series, ``exp_value`` ÷ ``exp_weight``,
+    each adding its own rows, so a shipment with a value and no net weight entered the
+    numerator alone and raised the price by its value. No COMEX row lacks a weight today
+    (measured on prod 2026-11-23, every year and both flows), which is immunity by DATA; one
+    query over the pair makes it hold by construction.
+
+    The declared US$ is the convention of both prices built on this read, by design: each is
+    compared within its own year, where inflation cancels, and customs only exists in declared
+    US$ — the column the ``exp_value`` series beside it reads. Keyed on normalized tuples, like
+    the gateway's cross reader.
+    """
+    settings = get_settings()
+    table = sqlbuild.table_ref(settings, "bq_serving_dataset", "serving_comex_annual")
+    sql, params = sqlbuild.cross_price_annual(
+        table,
+        value_column="val_yearfx_usd",
+        qty_column="net_weight_kg",
+        flow="export",
+        code_column="ncm_code",
+        codes=codes,
+        year_start=year_start,
+        year_end=year_end,
+        uf_codes=uf_codes,
+    )
+    return gateway.run_query(sql, params)
+
+
+def _export_price_by_year(
+    codes: tuple = (),
+    uf_codes: tuple = (),
+    year_start: int | None = None,
+    year_end: int | None = None,
+) -> dict[int, PricedYear]:
+    """``{year: PricedYear}`` for the COMEX export price in US$/kg — the FOB side of Preço:
+    porteira vs. FOB and the ``exp_price`` series of Cruzamento entre fontes.
+
+    ``codes`` narrows to an agrupamento's NCMs; empty means the WHOLE banco, which is what
+    ``exp_price`` asks for and what a price-spread caller must never pass by accident (its
+    own guard, ``tests/test_cross_empty_codes_guard.py``).
+    """
+    df = _export_price_halves(tuple(codes), tuple(uf_codes), year_start, year_end)
+    return {
+        int(r.reference_year): PricedYear(
+            measures.ratio_present(r.priced_value, r.priced_qty),
+            measures.present(r.priced_value),
+            measures.present(r.total_value),
+        )
+        for r in df.itertuples()
+    }
