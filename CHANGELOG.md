@@ -114,6 +114,317 @@ COMEX com uma única linha, em 2010, lia "30 / 30".
 - **O contrato (`docs/frontend_data_contract.md`, §3.5) ainda não descreve "Anos cobertos".** O
   arquivo tem outra mudança em andamento nesta rodada; a descrição entra depois dos merges.
 
+## [1.108.14] - 2026-11-27
+
+**No CSV por produto, a coluna `familia` passa a trazer o nome que o painel dá à família de
+unidade, e a coluna `unidade` só diz a unidade que se sabe.** Fecha a pendência das Notas da
+v1.108.7 sobre esse arquivo, o do Perfil do produto e do Comparativo entre produtos. A terceira
+parte dela, a quantidade ausente gravada como `0`, já tinha saído na v1.108.10. Mudam duas coisas:
+- A coluna `familia` trazia os nomes internos do código, em inglês (`mass`, `volume`, `count`), ou
+  o identificador cru da base analítica (`desconhecida`). Passa a trazer os nomes que o painel
+  mostra: Massa, Volume, Contagem.
+- Um produto de família sem escala na série por produto era tratado como massa, e a coluna
+  `unidade` dizia `t`, um palpite. A série só traz quantidade para massa, volume e contagem. Nas
+  outras famílias (energia, área e a que a fonte deixou sem unidade, `desconhecida`), a quantidade
+  chega sempre vazia. Agora a unidade fica vazia também, e a família fica vazia quando o painel não
+  tem nome para ela.
+
+Medido na produção em 2026-11-27, só leitura, pela prévia local, com as leituras que o próprio
+painel faz: dos 256 produtos dos cinco bancos, um só está fora das três famílias com escala.
+
+| banco | produtos | massa | volume | contagem | fora das três |
+|---|---|---|---|---|---|
+| IBGE PEVS | 10 | 5 | 5 | 0 | 0 |
+| IBGE PAM | 14 | 12 | 0 | 2 | 0 |
+| IBGE PPM | 14 | 3 | 1 | 10 | 0 |
+| MDIC COMEX | 118 | 63 | 55 | 0 | 0 |
+| UN COMTRADE | 100 | 50 | 49 | 0 | 1 |
+
+O de fora é o 440335 (toras de tiama, mansonia, ilomba, dibetou, limba e azobé), que a fonte publica
+"Sem unidade (N/A)". Com o Brasil como país reporter, ele não tem série; com todos os países, tem
+valor em 5 anos (2000, 2001 e de 2003 a 2005) e nenhuma quantidade. Eram essas 5 linhas que saíam em
+`t`. O nome da família em inglês saía em toda linha de todo CSV por produto.
+
+### Corrigido
+- **A coluna `familia` do CSV por produto** lê o nome em `window.UNIT_FAMILIES`, o registro de onde a
+  faixa de convenções e a ficha técnica do Perfil do produto tiram o nome da família, sem guardar
+  cópia: uma família renomeada ali muda também no arquivo. Uma família sem nome no registro
+  (`desconhecida`) deixa a célula vazia, porque nenhuma tela tem nome para ela.
+- **A coluna `unidade`** diz a unidade em que o arquivo traz a quantidade do produto: t, m³ ou a
+  coisa contada (cabeças, ovos, frutos, desde a v1.108.7). Numa família sem escala, ficam vazias a
+  unidade, a quantidade, o preço implícito e a parcela do valor no preço, mesmo que uma quantidade
+  chegasse: com o multiplicador da massa, ela viraria um número numa unidade que ninguém mediu. O
+  valor continua no arquivo.
+- **A janela de confirmação do CSV listava o `t` do palpite.** Ela lista as unidades lidas das linhas
+  montadas (v1.108.7). Com o 440335 e uma madeira em m³ (440320), de 2000 a 2005 e com todos os
+  países, dizia "Unidades: m³ · t" para um arquivo sem tonelada nenhuma; agora diz "m³". Uma célula
+  vazia não entra na lista.
+
+### Testes
+- vitest, 5 casos novos e 1 reescrito, em `csvExport.cov.test.js`:
+  - a família pelo nome do painel, igual ao rótulo de `window.UNIT_FAMILIES` (o registro real,
+    carregado por `vitest.setup.js`);
+  - o 440335 medido: valor presente; quantidade, unidade, preço, parcela e família vazios;
+  - uma quantidade que chegue numa família sem escala não é escrita;
+  - energia e área: o nome que o painel dá (Energia, Área) e a unidade vazia;
+  - a lista de unidades da janela de confirmação, sem o palpite;
+  - o caso reescrito: as três famílias com os nomes do painel, e o produto sem família, que saía
+    `;;t;;;` e agora traz só o valor.
+- Contraprova: com o `csvExport.js` do `main` e os testes desta versão, os 6 reprovam, cada um pelo
+  motivo que testa (`mass` no lugar de `Massa`, `t` no lugar da célula vazia, `5000` na escala do
+  palpite, `energia` cru, `['t', 'm³']` na lista).
+- Na prévia local, com dados de produção, o CSV por produto saiu da janela de confirmação com o
+  código de cada lado (o do `main` e o deste ramo), e o arquivo foi lido no navegador antes de
+  chegar ao disco:
+  - UN COMTRADE, com todos os países, 440320, 440335 e 080121 (castanha-do-pará com casca), de 2000
+    a 2005: as 17 linhas mudam só na coluna `familia` e, nas 5 do 440335, na coluna `unidade`;
+    valores, quantidades e preços não mudam;
+  - IBGE PPM, com bovino, ovos de galinha, leite e mel de abelha, de 2022 a 2024: as 12 linhas
+    mudam só na coluna `familia` (Contagem, Volume, Massa).
+- vitest: 2003 passando em 106 arquivos (1998 na v1.108.11, mais os 5 novos), com a cobertura
+  acima dos mínimos. pytest: 2640 passando (15 pulados no Windows, que só rodam no Linux).
+
+### Notas
+- **Achado no caminho, fora do escopo desta versão: a coluna `abrangencia_geografica` do CSV por
+  produto diz "Brasil" com outro país reporter.** No UN COMTRADE, a série por produto é a dos países
+  reporter escolhidos, e a coluna só olha o filtro de UF. Com todos os países, ou com um país que não
+  é o Brasil, o arquivo traz a série desse conjunto e diz "Brasil" em cada linha. Visto na prévia,
+  na exportação de teste desta versão: com todos os países, as 17 linhas do 440320, do 440335 e do
+  080121 dizem "Brasil", e o 440335 nem tem série com o Brasil.
+- **A unidade de uma família sem escala fica vazia, e não a unidade da fonte.** Em toda linha, a
+  coluna `unidade` diz a unidade em que o arquivo traz a quantidade, que nem sempre é a da fonte: a
+  castanha do UN COMTRADE sai em `t`, e a fonte publica "Peso em quilogramas". Pôr a unidade da fonte
+  (`unit_native`) só onde não há quantidade daria dois sentidos à mesma coluna.
+
+## [1.108.13] - 2026-11-27
+
+**Os preços da Análise cruzada passam a dividir o valor e a quantidade das mesmas linhas, por
+construção, e a tela diz quanto do valor sustenta cada preço quando é pouco.** Fecha a pendência
+das Notas da v1.108.10. Os dois preços de "Preço: porteira vs. FOB" e o preço de exportação do
+Cruzamento entre fontes (`mdic_comex:exp_price`) dividiam duas somas independentes, cada uma sobre
+as próprias linhas: uma linha com valor e sem quantidade entrava só no numerador. Hoje nenhuma
+linha assim existe nas tabelas que esses preços leem, e por isso **nenhum número publicado muda**:
+medido na produção, com o código antigo e o novo sobre o mesmo build, 3.225 valores comparados e
+3.225 idênticos. A mudança é de construção: a próxima linha de valor sem quantidade não altera mais
+um preço em silêncio.
+
+### Corrigido
+- **Preço FOB e preço de exportação.** Até a v1.108.11, os dois liam duas séries anuais do COMEX,
+  o valor de todas as exportações e o peso de todas, e dividiam uma pela outra; um embarque com
+  valor e sem peso líquido entrava só no numerador. Agora uma leitura só (`sql.cross_price_annual`)
+  traz, por ano, o valor e o peso dos embarques que têm as duas medidas, sob uma única condição
+  (`sql._priced_pair`), e o valor de todos os embarques do ano, base da cobertura. No teste, um
+  embarque de US$ 500 sem peso, ao lado de US$ 1.300 com 130 kg, fazia o preço sair US$ 13,85/kg;
+  agora sai US$ 10,00/kg.
+- **Preço na porteira.** Somava, em cada pesquisa de produção (PEVS e PAM), o valor de todas as
+  linhas e a quantidade de todas, cada soma sobre as próprias linhas. Agora lê o par da família de
+  massa que a série por produto já calcula desde a v1.108.10 (`priced_value_mass` e
+  `priced_qty_mass`): o valor e a massa das mesmas linhas. A diferença de preço só existe para um
+  agrupamento todo em massa (`_is_mass_basis`), então o par de massa é o lado inteiro da produção.
+  A regra entre as pesquisas continua: cada uma entra com as duas metades ou com nenhuma. No teste,
+  uma linha de US$ 40 mil sem quantidade levava o preço de US$ 2,00/kg a US$ 2,20/kg; agora não
+  leva.
+- **A tela diz quanto do valor sustenta o preço, quando é pouco.** Abaixo de 90%
+  (`window.PRICED_SHARE_MIN`, o limiar do Perfil do produto e de Parceiros), o indicador do preço
+  FOB ou do preço na porteira diz "apoiado em X% do valor" no último ano, e uma nota sob o gráfico
+  "Onde o valor é capturado" nomeia os anos, com o lado e a porcentagem de cada um: "2019 (FOB
+  82,0%), 2022 (FOB 86,0% · porteira 74,0%)". Acima de 10 anos a lista recolhe. Hoje nenhum ano
+  fica abaixo de 90% (a cobertura é de 100% nos 1.392 pontos medidos), então nada aparece.
+
+### Alterado
+- `sql._priced_pair` (novo): as duas metades de um preço sob uma só condição. `sql._priced_sums`
+  passa a montá-lo por família, e o SQL da série por produto sai idêntico, caractere por caractere
+  (conferido).
+- `sql.cross_price_annual` (novo): o par por ano no COMEX. `seam_base._export_price_by_year` o lê
+  (memoizado em `_export_price_halves`) e devolve o preço, o valor por trás dele e o valor do ano.
+- A resposta de "Preço: porteira vs. FOB" ganha `fobPricedShare` e `gatePricedShare` em cada ano, e
+  os pontos de `exp_price` ganham `pricedShare`. Contrato em `docs/frontend_data_contract.md` §5 e
+  em `frontend/src/ui/contracts.js`; os três campos entram na lista de campos que podem chegar
+  nulos (`absenceGuard.test.js`, derivada do Python).
+
+### Medição na produção (só leitura)
+- **Nenhuma linha desemparelhada.** Linha a linha, em todos os anos e fluxos, nas três tabelas
+  pré-agregadas que os preços leem (`serving_comex_annual`, `serving_pevs_annual`,
+  `serving_pam_annual`) e nas três da base analítica de onde elas vêm (`gold_comex_flows`,
+  `gold_pevs_production`, `gold_pam_production`): zero linhas com valor e sem quantidade (no COMEX,
+  sem peso líquido) e zero com peso e sem valor. Linhas com quantidade e sem valor em dólar só
+  existem nos anos do IBGE anteriores a 1994 (PEVS 1986–1993, PAM 1974–1993), em que nenhuma linha
+  tem valor em dólar; ali as duas formas não dão preço, e esses anos não chegam à tela, que cruza
+  com o COMEX a partir de 1997. Sem linha desemparelhada, as somas emparelhadas são iguais às somas
+  simples em qualquer recorte de código, UF e ano.
+- **Os mesmos números, antes e agora.** O código do `main` (fe1aa51) e o deste ramo, um logo após o
+  outro, chamando as funções que o painel chama, contra a mesma produção: "Preço: porteira vs. FOB"
+  no Brasil para os 12 agrupamentos de massa com lado aduaneiro e de produção, e em 13 recortes por
+  UF de 5 deles (25 séries, 611 pontos); o preço de exportação no Brasil e em cada uma das 27 UFs
+  (28 séries, 781 pontos). Dos 3.225 valores comparados (FOB, porteira, diferença, multiplicador e
+  preço de exportação), os 3.225 são idênticos, sem nem o ruído de ponto flutuante. O catálogo e o
+  índice de famílias foram lidos uma vez e dados aos dois códigos, e a data de modificação das
+  tabelas é a mesma antes e depois das duas rodadas.
+- Medido duas vezes, com os mesmos resultados: em 2026-11-23, sobre o build das 22:51 UTC, e em
+  2026-11-27, sobre o build de 2026-11-26, 20:24 UTC.
+
+### Custo (BigQuery)
+O preço FOB e o preço de exportação passam de duas consultas (a série de valor e a de peso) a uma,
+que processa menos que as duas somadas: no Brasil, 4,08 MB contra 6,12 MB; soja em Mato Grosso,
+5,86 MB contra 9,68 MB (por `--dry_run`, que não fatura). Como cada consulta fatura no mínimo
+10 MB, ler um desses preços custa a metade. O preço na porteira lê o mesmo SQL de antes.
+
+### Testes
+- pytest:
+  - `tests/test_cross_prices_same_rows.py` (novo, 5 casos): o código de produção inteiro (leitores,
+    memoização, costura) sobre um sqlite que executa o SQL que os próprios construtores montam, com
+    uma linha de valor sem quantidade em cada tabela: o preço FOB, o da porteira e o de exportação,
+    a cobertura de cada um, e um ano sem nenhuma linha completa, que fica sem preço;
+  - `tests/test_ratio_same_rows_guard.py`: regra estrutural nova sobre o SQL GERADO por cada
+    construtor (a lista deles é derivada do código): uma coluna `priced_value…` exige a
+    `priced_qty…` de mesmo sufixo, sob a mesma condição, e a condição exige as duas medidas;
+  - `tests/test_monetary_conventions_guard.py`: a regra 2 passa a ver também a coluna que uma
+    costura passa a um construtor (`sqlbuild.<construtor>(value_column=...)`), onde o preço novo
+    escolhe o dólar declarado;
+  - `tests/test_cov_sql_cross.py`, `tests/test_gate_price_pairs_halves.py`,
+    `tests/test_webapi_seam.py` e `tests/test_cross_empty_codes_guard.py` acompanham o leitor novo
+    (o último, com a barreira no leitor das metades).
+- vitest: 2 casos novos em `ViewsMultiSource.cov.test.jsx` (a nota nomeia os anos por lado e o
+  indicador diz a porcentagem; a partir de 90%, nada aparece), e `absenceGuard.test.js` com os três
+  campos.
+- Contraprova: o arquivo de testes novo contra o `src/` do `main` (fe1aa51) falha nos 5 casos (FOB
+  de US$ 13,85/kg em vez de 10; porteira de 2,2 em vez de 2,0; exportação de 13,85; e a cobertura,
+  que não existia); contra este ramo, os 5 passam. Quebrar `_priced_pair` (uma condição em cada
+  metade) faz a regra nova da guarda reprovar todos os pares.
+- pytest: 2.656 passando (15 pulados no Windows). Cobertura total de 99,33%; das 53 linhas
+  alteradas, 100% (`diff-cover`). vitest: 2.000 passando, em 106 arquivos.
+
+### Notas
+- **A cobertura do preço de exportação ainda não aparece na tela.** Os pontos de `exp_price` trazem
+  `pricedShare`, mas a perspectiva Cruzamento entre fontes os lê como `{y, v}`. A cobertura é hoje
+  de 100% nos 781 pontos medidos; nomeá-la ali fica para uma versão própria (`ViewCrossSource.jsx`).
+- **O preço do Valor agregado tem a forma antiga.** O preço de exportação por nível de
+  industrialização divide a série de valor pela de peso (`seam_attribute_engineering`), como faziam
+  o FOB e o preço de exportação até esta versão. Está imune hoje pelo mesmo dado; fica para uma
+  versão própria.
+- **O par vale sobre as tabelas pré-agregadas.** Elas somam valor e quantidade da base analítica,
+  cada um sobre as próprias linhas, e uma linha da base com valor e sem quantidade ficaria escondida
+  dentro da soma. A medição acima conferiu a base analítica também (zero linhas); levar o par para
+  dentro das tabelas pré-agregadas é mudança de dbt, fora desta versão.
+- **Peso zero é medida, não ausência.** O COMEX registra o peso em quilos inteiros, e 618 linhas de
+  exportação têm valor e 0 kg: embarques de menos de meio quilo. Elas entram nas duas metades,
+  antes e agora, como devem: o valor é real e o peso, quase nulo. Pesam no máximo 0,19% do valor
+  de um agrupamento-ano no Brasil e 1,6% do valor de uma UF-ano no preço de exportação.
+- **No recorte por UF, a diferença de preço sai de bases mínimas.** Soja no Ceará em 2022: US$ 2.139
+  exportados no ano inteiro, 60% deles em embarques de 0 kg, e US$ 6,90/kg no porto contra
+  US$ 0,55/kg na porteira. Em Alagoas, no mesmo ano, US$ 48,73/kg contra US$ 0,36/kg (135 vezes);
+  em Pernambuco em 2021, US$ 138/kg contra US$ 0,37/kg (372 vezes). A diferença de preço não tem
+  piso de materialidade (a regra de `materialityFloor` no CLAUDE.md); é anterior a esta versão,
+  igual nas duas formas, e fica para uma versão própria.
+- **No Cruzamento entre fontes, a série do COMEX termina em 2024.** O registro declara a cobertura
+  das métricas do COMEX como `[1997, 2024]` (`webapi/registries.py`), embora 2025 esteja completo, e
+  "Preço: porteira vs. FOB" vá até 2025. Vale conferir se a janela fixa é intencional.
+
+## [1.108.12] - 2026-11-27
+
+Reúne num PR só os nove PRs que o Dependabot abriu em 23/11 (#582 a #590), e entram todos. No lock
+do Python, 6 pacotes sobem e nenhum desce, entra ou sai. No do painel, a única mudança que chega ao
+navegador é o maplibre 6.18 → 6.19, que traz uma dependência nova (`zustand`); o resto é ferramenta
+de teste. Cinco das atualizações são de versão principal, e as que rodam em produção foram conferidas
+pelo que fazem, não pelo CI: o gunicorn 27 nas duas imagens de produção, lado a lado; o pyarrow 26 na
+sonda de execução dos dois locks; o maplibre 6.19 no painel, contra o build do `main`. Fica de fora o
+#528 (`source-map-js` 1.2.2): o `main` já tem essa versão desde o #565.
+
+### Alterado
+- **Python** (`uv.lock`):
+  - `gunicorn` 26.2.0 → 27.0.1 (#590), o servidor HTTP da imagem do painel;
+  - `pyarrow` 25.0.1 → 26.0.1 (#588), que grava o Parquet do Bronze bruto (`land_raw`);
+  - `pydantic` 2.14.3 → 2.14.4, com o `pydantic-core` 2.50.4 → 2.50.5 (#587);
+  - ferramentas: `ruff` 0.17.5 → 0.17.6 (#587, nenhum ajuste de código) e `diff-cover` 10.5.1 →
+    11.0.4 (#589), a cobertura das linhas alteradas que o CI exige de cada PR.
+- **Painel** (`frontend/`):
+  - `maplibre-gl` 6.18.0 → 6.19.0 (#584), os dois mapas da Geografia. A câmera do mapa passou a
+    guardar o próprio estado com o `zustand` 5.1.0, dependência nova (licença MIT, sem nenhuma
+    dependência obrigatória). Os arquivos do mapa, baixados só quando a Geografia abre, somam 28 KB a
+    mais (1,62 → 1,65 MB sem compressão). O arquivo principal do painel muda só no `package.json`
+    que ele embute e nos nomes dos arquivos do mapa.
+  - testes: `jsdom` 30.1.0 → 31.0.1 (#585), `@babel/parser` 7.29.9 → 8.1.3 (#586) e `vitest` com
+    `@vitest/coverage-v8` 5.1.0 → 5.1.1 (#582, no mesmo grupo, porque um exige a versão exata do
+    outro).
+    - O jsdom 31 deixa de depender da pilha de CSS de terceiros: saem do lock `css-tree`,
+      `mdn-data`, `@csstools/*`, `@asamuzakjp/*` e `@bramus/specificity` (12 entradas), e entram
+      seis pacotes pequenos (`bcp-47`, `bcp-47-match`, `is-alphabetical`, `is-alphanumerical`,
+      `is-decimal` e `parse5-parser-stream`). O resto da árvore dele sobe junto (`whatwg-url` 17,
+      `parse5` 8.1 e outros).
+    - O Babel 8 entra só na varredura editorial (`editorialGuard.test.js`), o único arquivo que
+      importa o `@babel/parser` diretamente. O build (`@babel/core`), o ESLint e os demais seguem na
+      7.29.15, cada um com a sua cópia (seis cópias aninhadas novas no lock).
+- **CI** (`.github/workflows/`): `astral-sh/setup-uv` 10.3.3 → 10.4.0 (#583), nos quatro arquivos
+  que instalam o uv (`ci.yml`, `dbt-build-prod.yml`, `dbt-source-freshness.yml` e `release.yml`),
+  fixado pelo SHA do commit da tag (`1db35dd8`, conferido na API do GitHub). A versão traz correções
+  e um parâmetro opcional novo (`require-checksums`) que nenhum workflow usa; o uv instalado continua
+  sendo a última versão.
+
+### Validação (antes do merge)
+- **Os locks.** O deste PR é exatamente a união dos nove, pacote a pacote, nos dois sentidos.
+  - Python: 6 sobem; nenhum desce, entra ou sai.
+  - Painel: 17 sobem, 16 entram e 12 saem; nenhum desce. Das 45 mudanças, só duas chegam ao
+    navegador (`maplibre-gl` e `zustand`).
+  - `uv lock --check` sem divergência e `npm ci` limpo.
+- **gunicorn 27.** As duas imagens de produção construídas do mesmo `Dockerfile` (uma com os locks
+  do `main`, outra com os deste PR), lado a lado, contra os dados de produção:
+  - as 67 rotas da sonda de execução: mesmo status (200), mesmo corpo byte a byte (igual também ao do
+    cliente de teste do Flask) e os mesmos cabeçalhos;
+  - o HTML do painel, os arquivos estáticos, a rota inexistente (404), a conexão reaproveitada
+    (*keep-alive*, 5 pedidos) e 48 pedidos de 32 clientes simultâneos (6,78 s contra 6,79 s):
+    iguais;
+  - desligamento: com um pedido em andamento, o `podman stop` espera a resposta, e o processo sai
+    com código 0 nas duas.
+  - **O que muda é a leitura de pedido malformado, mais estrita no 27.** Uma linha de pedido acima
+    de ~4 KB recebe 414 (era 400); um caractere não ASCII cru no caminho ou na consulta recebe 400
+    (era 200); um `Transfer-Encoding` que não termina em `chunked` recebe 400 (era 200). Nenhum
+    navegador manda isso: ele codifica o endereço (`a%C3%A7a%C3%AD` continua 200), a lista longa de
+    municípios já vai no corpo de um POST, e o painel não distingue 400 de 414.
+- **pyarrow 26 e pydantic 2.14.4.** A sonda de execução nos dois locks (receita em
+  `docs/testing.md`), com saídas idênticas:
+  - as 67 rotas da API, pelo próprio app, contra os dados de produção;
+  - a trilha do Bronze bruto do BCB no GCS (câmbio e inflação): lista, metadados e bytes;
+  - o Parquet que o `land_raw` grava, ida e volta, em quatro casos (câmbio, inflação, um CSV do
+    COMEX e uma tabela sintética): o mesmo conteúdo; só muda a versão do pyarrow que o próprio
+    arquivo registra (`created_by`);
+  - a carga de um Bronze de teste pelo `load_dataframe` num dataset de dev (442 linhas, mesmo
+    esquema e mesma partição), lida de volta pelo gateway.
+- **diff-cover 11.** Os mesmos relatórios do 10.5.1 sobre quatro trechos reais do histórico do
+  `main`, e a mesma falha, com o mesmo código de saída, quando a cobertura fica abaixo do piso.
+- **Babel 8.** A varredura editorial extrai o mesmo texto com as duas versões: 3.308 linhas de 84
+  arquivos, idênticas.
+- **jsdom 31 e vitest 5.1.1.** A suíte do painel passa inteira nas duas árvores, com os mesmos
+  testes: 1.998 testes em 106 arquivos.
+- **maplibre 6.19.** No painel servido pelo Flask com dados de produção (só leitura), a Geografia do
+  IBGE PAM com o build do `main` (6.18) e com o deste PR (6.19), na mesma janela (1366 × 900):
+  - o enquadramento inicial (zoom 2,264671), a posição em pixels de seis pontos de teste e o estado
+    que cada um acerta, as cores dos estados, e o texto e a posição da caixa que aparece ao passar o
+    mouse;
+  - o clique em Pernambuco, que seleciona o Nordeste e reenquadra o mapa (zoom 3,561683), e o clique
+    no oceano, que volta ao Brasil;
+  - tudo idêntico até a sexta casa decimal. Com o 6.19, o mapa por município de Pernambuco também
+    abre: 185 municípios, o valor de Petrolina na caixa e o console sem erro.
+  - **Limite:** a janela da prévia estava oculta, e assim o navegador não chama
+    `requestAnimationFrame`; nas duas versões ele foi trocado por um temporizador de 16 ms. Ficou
+    medido o estado em que cada animação termina, não a animação quadro a quadro.
+- **Verificações completas neste PR:** `ruff` 0.17.6 limpo; 2.640 testes Python passando, com os
+  mesmos 15 pulados de antes, e cobertura de 99,32% (o piso é 98%); `diff-cover` sem linha de Python
+  a cobrir; ESLint limpo; 1.998 testes do painel passando; `npm run build` sem erro.
+
+### Notas
+- O merge publica o painel e o Job de ingestão (os gatilhos de publicação olham `frontend/**` e
+  `uv.lock`) e **dispara um build de produção do dbt**: o `dbt-build-prod.yml` está entre os
+  arquivos alterados, e a impressão digital do build (v1.97.0) conta o próprio workflow, então este
+  push não é pulado. É o mesmo build de todo merge em `dbt/**`; o dbt e o adaptador não mudam de
+  versão.
+- `npm audit` acusa um aviso de gravidade alta, anterior a este PR e só de desenvolvimento: o `zod`
+  4.4.3 (GHSA-mrhx-c7xc-m3w5, corrigido no 4.6.6), que chega pelo `eslint-plugin-react-hooks`. O
+  alerta do GitHub (#34) foi descartado automaticamente por ser de desenvolvimento, e por isso o
+  Dependabot não abre PR para ele. Nas dependências de produção, `npm audit --omit=dev` não acusa
+  nada.
+
+---
+
 ## [1.108.11] - 2026-11-23
 
 **Os testes dos dois mapas carregam o componente uma vez, antes do primeiro teste, e a espera pelo

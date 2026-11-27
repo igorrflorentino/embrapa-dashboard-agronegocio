@@ -234,29 +234,43 @@ import './countUnits.js';
         // headcount as TONNES and scaled it 1000× wrong; map by family so the column is always
         // correct. A count's unit is what the product counts (countNameOf: "cabeças", "ovos",
         // "frutos", or "unidade não identificada"): until v1.108.7 every count said "un".
+        // These are the three families the per-product series carries a quantity for (the
+        // serializer's _QTY_TRACK). Any other family arrives without one: energia and área, which
+        // the series has no scale for, and a family the source left unidentified ('desconhecida':
+        // UN COMTRADE 440335, published "Sem unidade (N/A)"). The file then has no number to write
+        // and no unit to name. Until v1.108.14 such a product fell back to mass, and its
+        // `unidade` said `t`, a guess: the unit is the one the file's quantity is in, or empty.
         const FAM_Q = { mass: { mul: 1e3, unit: () => 't' }, volume: { mul: 1e6, unit: () => 'm³' },
                         count: { mul: 1e6, unit: (p) => window.countNameOf(p) } };
+        // The family by the name the panel gives it (window.UNIT_FAMILIES: Massa, Volume,
+        // Contagem…), since the file is read by the researcher; until v1.108.14 the column carried
+        // the internal ids (mass, volume, count). A family the registry has no name for, like
+        // 'desconhecida', has none on any screen either: its cell stays empty.
+        const familiaDe = (fam) => ((window.UNIT_FAMILIES || {})[fam] || {}).label || '';
         const rows = [];
         Object.entries(f.productTS).forEach(([code, series]) => {
           const prod = PRODS.find(p => p.code === code) || {};
-          const fam = prod.family;
-          const { mul: qMul, unit: unitFor } = FAM_Q[fam] || FAM_Q.mass;
-          const qUnit = unitFor(prod);
+          const escala = FAM_Q[prod.family] || null;
+          const qUnit = escala ? escala.unit(prod) : '';
+          const familia = familiaDe(prod.family);
+          // With no scale, a quantity that did arrive is not written either: under a guessed
+          // multiplier it would be a number in no known unit, and the price and its share with it.
           series.forEach(d => rows.push([
             d.y, code, nameOf(code),
             celulaValor(d.v, 1e6),
-            celulaQtd(d.q, qMul),
+            escala ? celulaQtd(d.q, escala.mul) : '',
             qUnit,
-            celulaPreco(d, qMul),
-            celulaParcela(d),
-            fam,
+            escala ? celulaPreco(d, escala.mul) : '',
+            escala ? celulaParcela(d) : '',
+            familia,
             abrangencia,
           ]));
         });
         // The units the file's rows are in, for the confirmation window: this file carries
         // them in a column, where the other files carry them in the header (qtd_massa_t).
+        // An empty cell names no unit, so it is not listed.
         const iUnidade = headers.indexOf('unidade');
-        const unidades = [...new Set(rows.map((r) => r[iUnidade]))];
+        const unidades = [...new Set(rows.map((r) => r[iUnidade]).filter(Boolean))];
         return { headers, rows, subject: 'series_por_produto', unidades };
       }
       case 'territory_compare': {

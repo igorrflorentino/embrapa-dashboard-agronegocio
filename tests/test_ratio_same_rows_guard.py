@@ -21,6 +21,13 @@ uma regra estrutural guarda o que ainda não foi escrito:
 * **Numerador condicionado** — o numerador anula o que o denominador não alcança
   (``sum(if(peso is null, null, valor)) / sum(peso)``). É a correção da v1.70.0.
 
+Uma terceira forma divide FORA do SQL: o leitor devolve as duas metades e o Python as divide
+(o preço por produto da v1.108.10; os preços da Análise cruzada da v1.108.13). Não há
+``safe_divide`` para ler, e a regra vira outra: as metades ``priced_value<S>`` e
+``priced_qty<S>`` vêm sob UMA condição que exige as duas medidas, e nenhuma metade de
+quantidade existe sem a de valor. A segunda metade deste arquivo confere isso no SQL que os
+construtores GERAM, não no molde da f-string: só no gerado a condição tem nome de coluna.
+
 O lado Python desta regra não é textual e mora em ``tests/test_gate_price_pairs_halves.py``:
 lá duas somas LENIENTES independentes (``sumPresent`` soma os presentes de propósito, e
 está certo num total) viravam as metades de uma razão.
@@ -28,10 +35,13 @@ está certo num total) viravam as metades de uma razão.
 
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path
 
 import pytest
+
+from embrapa_dashboard.serving import sql
 
 _RAIZ = Path(__file__).resolve().parents[1]
 
@@ -209,3 +219,194 @@ def test_a_divisao_POR_LINHA_fica_de_fora():
     """
     assert razoes_de("safe_divide(val_real_ipca_brl, brl_per_usd_current)") == []
     assert razoes_de("safe_divide(safe.ln(value), qty)") == []
+
+
+# ── Os pares de metades: a razão que o Python divide (v1.108.10, v1.108.13) ────────────
+
+_ALIAS_DO_PAR = re.compile(r"\s+as\s+(priced_(?:value|qty)\w*)", re.I)
+
+
+def _fecha(texto: str, abre: int) -> int:
+    """O índice logo depois do ')' que fecha o '(' em `abre`."""
+    prof = 0
+    for i in range(abre, len(texto)):
+        if texto[i] == "(":
+            prof += 1
+        elif texto[i] == ")":
+            prof -= 1
+            if prof == 0:
+                return i + 1
+    raise ValueError("parêntese sem par")
+
+
+def _condicao_e_expressao(soma: str) -> tuple[str, str] | None:
+    """``sum(case when C then X end)`` → (C, X); None em qualquer outra forma.
+
+    O ``then`` que separa é o primeiro FORA de parênteses: a condição embrulha a expressão de
+    valor entre parênteses (``(case when … then … end) is not null``), e o ``then`` dela fica
+    num nível mais fundo.
+    """
+    m = re.fullmatch(r"sum\(\s*case\s+when\s+(.*)\s+end\s*\)", soma, re.I | re.S)
+    if not m:
+        return None
+    corpo, prof = m.group(1), 0
+    for i, ch in enumerate(corpo):
+        if ch == "(":
+            prof += 1
+        elif ch == ")":
+            prof -= 1
+        elif prof == 0 and re.match(r"\sthen\s", corpo[i : i + 6], re.I):
+            return corpo[:i].strip(), corpo[i + 6 :].strip()
+    return None
+
+
+def pares_de(sql_gerado: str) -> dict[str, dict[str, str]]:
+    """Sufixo → {'value': soma, 'qty': soma} de toda metade ``priced_value<S>``/``priced_qty<S>``
+    do SQL, sem os comentários ``--``."""
+    plano = " ".join(linha.split("--")[0] for linha in sql_gerado.splitlines())
+    plano = " ".join(plano.split())
+    pares: dict[str, dict[str, str]] = {}
+    for m in re.finditer(r"\bsum\s*\(", plano, re.I):
+        fim = _fecha(plano, m.end() - 1)
+        alias = _ALIAS_DO_PAR.match(plano, fim)
+        if not alias:
+            continue
+        nome = alias.group(1).lower()
+        if nome.startswith("priced_value"):
+            lado, sufixo = "value", nome.removeprefix("priced_value")
+        else:
+            lado, sufixo = "qty", nome.removeprefix("priced_qty")
+        pares.setdefault(sufixo, {})[lado] = plano[m.start() : fim]
+    return pares
+
+
+def par_coerente(soma_valor: str, soma_qtd: str) -> bool:
+    """As duas metades somam as mesmas linhas: a MESMA condição, e ela exige as duas medidas."""
+    valor, qtd = _condicao_e_expressao(soma_valor), _condicao_e_expressao(soma_qtd)
+    if valor is None or qtd is None:
+        return False  # uma soma sem condição percorre todas as linhas que a sua coluna tem
+    (cond_v, expr_v), (cond_q, expr_q) = valor, qtd
+    if cond_v != cond_q:
+        return False
+
+    def exige(expr: str) -> bool:
+        return f"({expr}) is not null" in cond_v or f"{expr} is not null" in cond_v
+
+    return exige(expr_v) and exige(expr_q)
+
+
+def _construtores_do_par() -> set[str]:
+    """As funções PÚBLICAS do sql.py que emitem o par, direta ou indiretamente — lidas da
+    árvore do código, para que um construtor novo não escape da varredura."""
+    arvore = ast.parse(Path(sql.__file__).read_text(encoding="utf-8"))
+    chama = {
+        f.name: {
+            no.func.id
+            for no in ast.walk(f)
+            if isinstance(no, ast.Call) and isinstance(no.func, ast.Name)
+        }
+        for f in arvore.body
+        if isinstance(f, ast.FunctionDef)
+    }
+    emitem = {"_priced_pair"}
+    while True:
+        novos = {nome for nome, alvos in chama.items() if alvos & emitem} - emitem
+        if not novos:
+            break
+        emitem |= novos
+    return {nome for nome in emitem if not nome.startswith("_")}
+
+
+# O SQL de cada construtor do par, nas variações que mudam a expressão de valor.
+_GERADO = {
+    "product_timeseries": [
+        sql.product_timeseries(
+            "p.d.t", code_column="product_code", value_column=coluna, has_measure_kind=estoque
+        )[0]
+        for coluna in ("val_yearfx_usd", "val_real_ipca_brl")
+        for estoque in (False, True)
+    ],
+    "cross_price_annual": [
+        sql.cross_price_annual(
+            "p.d.t",
+            value_column="val_yearfx_usd",
+            qty_column="net_weight_kg",
+            flow="export",
+            code_column="ncm_code",
+            codes=("08012200",),
+            uf_codes=("PA",),
+            year_start=1997,
+            year_end=2026,
+        )[0]
+    ],
+}
+
+
+@pytest.mark.parametrize("construtor", sorted(_GERADO))
+def test_todo_par_de_metades_soma_as_mesmas_linhas(construtor):
+    for sql_gerado in _GERADO[construtor]:
+        pares = pares_de(sql_gerado)
+        orfas = sorted(s for s, lados in pares.items() if "value" not in lados)
+        assert not orfas, (
+            f"{construtor}: metade de quantidade sem a de valor ({orfas}) — o preço dividiria "
+            "um valor que soma outras linhas"
+        )
+        culpados = [
+            s
+            for s, lados in pares.items()
+            if "qty" in lados and not par_coerente(lados["value"], lados["qty"])
+        ]
+        assert not culpados, (
+            f"{construtor}: as metades do preço {culpados} não estão sob a mesma condição, "
+            "ou ela não exige as duas medidas"
+        )
+
+
+def test_a_varredura_de_pares_cobre_todo_construtor():
+    """Guarda do instrumento: a lista de construtores sai da árvore do sql.py, e cada um tem
+    o seu SQL gerado aqui — com pelo menos um par inteiro dentro."""
+    assert _construtores_do_par() == set(_GERADO), (
+        "construtor que emite o par sem SQL gerado nesta varredura, ou o contrário"
+    )
+    for construtor, gerados in _GERADO.items():
+        for sql_gerado in gerados:
+            inteiros = [s for s, lados in pares_de(sql_gerado).items() if len(lados) == 2]
+            assert inteiros, f"{construtor}: o analisador não achou par nenhum"
+    # Âncora à mão: as três trilhas da série por produto e o par do preço de exportação.
+    assert set(pares_de(_GERADO["product_timeseries"][0])) == {"_mass", "_vol", "_count"}
+    assert set(pares_de(_GERADO["cross_price_annual"][0])) == {""}
+
+
+def test_a_varredura_de_pares_REPROVA_as_formas_defeituosas():
+    """As metades soltas (a forma que dividia ``exp_value`` por ``exp_weight`` até a
+    v1.108.11, cada série somando as próprias linhas), a condição que só exige uma medida, a
+    condição que difere entre as metades, e a metade de quantidade órfã."""
+    soltas = "sum(val_yearfx_usd) as priced_value, sum(net_weight_kg) as priced_qty"
+    lados = pares_de(soltas)[""]
+    assert not par_coerente(lados["value"], lados["qty"])
+    meia = (
+        "sum(case when net_weight_kg is not null then val_yearfx_usd end) as priced_value, "
+        "sum(case when net_weight_kg is not null then net_weight_kg end) as priced_qty"
+    )
+    lados = pares_de(meia)[""]
+    assert not par_coerente(lados["value"], lados["qty"]), (
+        "uma linha com peso e sem valor entraria só no denominador"
+    )
+    desiguais = (
+        "sum(case when a is not null and b is not null then a end) as priced_value_x, "
+        "sum(case when b is not null then b end) as priced_qty_x"
+    )
+    lados = pares_de(desiguais)["_x"]
+    assert not par_coerente(lados["value"], lados["qty"])
+    orfa = pares_de("sum(case when b is not null then b end) as priced_qty_y")
+    assert "value" not in orfa["_y"]
+
+
+def test_a_varredura_de_pares_APROVA_o_par_escrito_a_mao():
+    """E aprova a forma certa escrita sem o construtor — a regra é a forma, não a origem."""
+    certo = (
+        "sum(case when peso is not null and (valor) is not null then valor end) as priced_value, "
+        "sum(case when peso is not null and (valor) is not null then peso end) as priced_qty"
+    )
+    lados = pares_de(certo)[""]
+    assert par_coerente(lados["value"], lados["qty"])
