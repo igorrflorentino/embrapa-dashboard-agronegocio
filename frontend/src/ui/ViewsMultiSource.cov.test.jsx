@@ -347,6 +347,44 @@ describe('ViewPriceSpread', () => {
     // After the change, the producer is re-invoked with ['PA'].
     expect(calls.some((s) => Array.isArray(s) && s[0] === 'PA')).toBe(true);
   });
+
+  // v1.108.13: each price divides the value and the quantity of the same rows, and the share
+  // of the value behind it travels with the point. Below window.PRICED_SHARE_MIN the screen
+  // names it, by year and by side, as the Perfil do produto does.
+  it('names the years whose price stands on part of the value, by side', () => {
+    window.fmtPct = (n, d = 1) => (n == null ? '—' : (n * 100).toFixed(d).replace('.', ',') + '%');
+    window.priceSpread = () => ({
+      incompatible: false,
+      series: [
+        { y: 2010, fob: 2.0, gate: 0.8, markup: 2.5, spread: 1.2, fobPricedShare: 0.72, gatePricedShare: 1 },
+        { y: 2015, fob: 2.5, gate: 0.9, markup: 2.8, spread: 1.6, fobPricedShare: 0.99, gatePricedShare: 0.97 },
+        { y: 2020, fob: 3.0, gate: 1.0, markup: 3.0, spread: 2.0, fobPricedShare: 0.8, gatePricedShare: 0.85 },
+      ],
+    });
+    const { container } = render(<ViewPriceSpread />);
+    expect(container.textContent).toContain('Preço apoiado em parte do valor');
+    expect(container.textContent).toContain('2010 (FOB 72,0%), 2020 (FOB 80,0% · porteira 85,0%)');
+    expect(container.textContent).not.toContain('2015 (');
+    const sub = (label) => container.querySelector(`[data-label="${label}"] .kpi-sub`).textContent;
+    expect(sub('Preço FOB atual')).toBe('2020 · no porto · apoiado em 80,0% do valor');
+    expect(sub('Preço na porteira')).toBe('na produção · apoiado em 85,0% do valor');
+  });
+
+  it('says nothing when every price stands on 90% or more of the value, or the share is unknown', () => {
+    // goodSpread() has no share at all (a payload from before v1.108.13): `null < 0.9` is
+    // true in JS, and pricedShareLow must not read an unknown share as a low one.
+    for (const series of [
+      goodSpread().series,
+      goodSpread().series.map((d) => ({ ...d, fobPricedShare: 0.95, gatePricedShare: 0.9 })),
+      // A share with no price is moot: the year has no price to qualify.
+      [{ y: 2020, fob: 3.0, gate: null, markup: null, spread: null, fobPricedShare: 1, gatePricedShare: null }],
+    ]) {
+      window.priceSpread = () => ({ incompatible: false, series });
+      const { container } = render(<ViewPriceSpread />);
+      expect(container.textContent).not.toContain('apoiado em');
+      cleanup();
+    }
+  });
 });
 
 // ── ViewMirror ──────────────────────────────────────────────────────────────
