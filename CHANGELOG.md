@@ -81,8 +81,9 @@ valor em 5 anos (2000, 2001 e de 2003 a 2005) e nenhuma quantidade. Eram essas 5
 - **Achado no caminho, fora do escopo desta versão: a coluna `abrangencia_geografica` do CSV por
   produto diz "Brasil" com outro país reporter.** No UN COMTRADE, a série por produto é a dos países
   reporter escolhidos, e a coluna só olha o filtro de UF. Com todos os países, ou com um país que não
-  é o Brasil, o arquivo traz a série desse conjunto e diz "Brasil" em cada linha. O arquivo de
-  exemplo do UN COMTRADE desta versão mostra isso.
+  é o Brasil, o arquivo traz a série desse conjunto e diz "Brasil" em cada linha. Visto na prévia,
+  na exportação de teste desta versão: com todos os países, as 17 linhas do 440320, do 440335 e do
+  080121 dizem "Brasil", e o 440335 nem tem série com o Brasil.
 - **A unidade de uma família sem escala fica vazia, e não a unidade da fonte.** Em toda linha, a
   coluna `unidade` diz a unidade em que o arquivo traz a quantidade, que nem sempre é a da fonte: a
   castanha do UN COMTRADE sai em `t`, e a fonte publica "Peso em quilogramas". Pôr a unidade da fonte
