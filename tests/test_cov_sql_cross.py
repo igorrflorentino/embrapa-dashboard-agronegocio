@@ -188,19 +188,33 @@ def test_gate_price_by_year_soma_as_duas_pesquisas_de_producao(monkeypatch):
     """
     seam_cross = _cross()
 
+    def linha(v, q):
+        # Every row carries both measures, so the mass track's priced halves equal the totals.
+        return pd.DataFrame(
+            [
+                {
+                    "reference_year": 2020,
+                    "total_value": v,
+                    "total_qty_native": q,
+                    "priced_value_mass": v,
+                    "priced_qty_mass": q,
+                }
+            ]
+        )
+
     def fake(banco, **k):
-        v, q = {"ibge_pevs": (100.0, 1.0), "ibge_pam": (900.0, 9.0)}[banco]
-        return pd.DataFrame([{"reference_year": 2020, "total_value": v, "total_qty_native": q}])
+        return linha(*{"ibge_pevs": (100.0, 1.0), "ibge_pam": (900.0, 9.0)}[banco])
 
     monkeypatch.setattr(seam_cross.gateway, "fetch_product_timeseries", fake)
     # (100 + 900) US$ ÷ ((1 + 9) t × 1000) = US$ 0,10/kg — e NÃO a média dos dois preços
     # (0,10 e 0,10 coincidem aqui de propósito só na soma; ver o caso assimétrico abaixo).
-    assert seam_cross._gate_price_by_year(("3404",), ("40143",)) == {2020: pytest.approx(0.1)}
+    preco = seam_cross._gate_price_by_year(("3404",), ("40143",))
+    assert list(preco) == [2020]
+    assert preco[2020].price == pytest.approx(0.1)
 
     def fake_assimetrico(banco, **k):
-        v, q = {"ibge_pevs": (100.0, 1.0), "ibge_pam": (100.0, 9.0)}[banco]
-        return pd.DataFrame([{"reference_year": 2020, "total_value": v, "total_qty_native": q}])
+        return linha(*{"ibge_pevs": (100.0, 1.0), "ibge_pam": (100.0, 9.0)}[banco])
 
     monkeypatch.setattr(seam_cross.gateway, "fetch_product_timeseries", fake_assimetrico)
     # 200 ÷ 10.000 = 0,02 — a média dos preços (0,10 e 0,011) daria 0,0556, outro número.
-    assert seam_cross._gate_price_by_year(("3404",), ("40143",)) == {2020: pytest.approx(0.02)}
+    assert seam_cross._gate_price_by_year(("3404",), ("40143",))[2020].price == pytest.approx(0.02)

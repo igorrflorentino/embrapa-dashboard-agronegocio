@@ -139,8 +139,8 @@ const TOTAL_MASCARADO = /\b(?:const|let|var)\s+\w+\s*=[^;\n]*\|\|\s*1\s*;/;
 // (Valor agregado) came in the same way; its function returns null whole before it could emit
 // it null, and listing it only makes the sweep check who reads it.
 const CAMPOS_ANULAVEIS = [
-  'coefPct', 'markup', 'price', 'pricedShare', 'q', 'qPriced', 'share', 'shareV', 'v',
-  'vPriced', 'value', 'valueShare', 'yieldKgHa',
+  'coefPct', 'fobPricedShare', 'gatePricedShare', 'markup', 'price', 'pricedShare', 'q',
+  'qPriced', 'share', 'shareV', 'v', 'vPriced', 'value', 'valueShare', 'yieldKgHa',
 ];
 const _campos = CAMPOS_ANULAVEIS.join('|');
 
