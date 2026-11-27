@@ -248,7 +248,9 @@ function ViewProductCompare({ summary, conventions, database }) {
                   <td className="num tnum" style={{ color: window.deltaColor(it.cagr) }}>
                     {window.fmtSigned(it.cagr, 1)}
                   </td>
-                  <td className="num">{window.UNIT_FAMILIES[it.prod.family].label}</td>
+                  {/* UN Comtrade's 'desconhecida' (a code whose rows publish no unit, 440335)
+                      is not in the registry: the lookup threw and took the whole perspective. */}
+                  <td className="num">{window.UNIT_FAMILIES[it.prod.family]?.label ?? 'não identificada'}</td>
                 </tr>
               ))}
             </tbody>
