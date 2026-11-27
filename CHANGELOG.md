@@ -7,6 +7,112 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.108.17] - 2026-11-27
+
+**Um ponto sem vizinho passa a aparecer nos gráficos de linha.** Fecha a pendência das Notas da
+v1.108.10, "Um ano isolado não desenha linha". Os três gráficos de linha (`LineChart`,
+`MultiLineChart` e `DualAxisLineChart`) desenham só a linha, e o Plotly desenha cada trecho de
+pontos consecutivos com valor como um caminho que vai de um ponto ao seguinte. Um trecho de um
+ponto só é um caminho sem segmento: não aparece nada, e o preenchimento sob a linha fecha uma área
+zero. A dica ao passar o mouse mostrava o valor, e o cartão ficava em branco. Medido em 2026-11-27
+no Perfil do produto, UN COMTRADE com todos os países, código 440333: a quantidade em m³ e o preço
+implícito só existem em 2001, e os dois cartões desenhavam os caminhos `M579,9.15` e `M579,8.65`,
+e nada mais.
+
+### Corrigido
+- **Um ponto com valor e sem vizinho com valor ganha um marcador**, na cor da série e no eixo dela,
+  desenhado depois das linhas e da tendência (`frontend/src/charts/isolatedPoints.js`, novo).
+  Vizinho é a entrada ao lado no vetor de dados, não o ano ao lado no calendário, porque é isso que
+  o Plotly liga: um ano que falta no vetor (em vez de vir nulo) é atravessado pela linha, e os
+  pontos dos dois lados aparecem. O zero é um valor. O resto não muda:
+  - a linha continua com o mesmo modo, preenchimento, dica e tendência, e uma lacuna continua
+    aberta: o marcador só vai onde a linha não desenha nada, e nada é desenhado entre dois pontos
+    que a linha não liga;
+  - o marcador não responde à dica (`hoverinfo: 'skip'`): a linha já responde naquele ano, e uma
+    segunda resposta repetiria o valor na caixa. Medido no navegador: no preço de 440333, a caixa
+    de 2001 traz uma entrada só, "2001  177,45";
+  - um gráfico sem ponto isolado recebe as mesmas séries e o mesmo leiaute de antes, objeto a
+    objeto.
+- **A legenda.** Com a legenda do Plotly à mostra (o padrão do `MultiLineChart` e do
+  `DualAxisLineChart`), a série e os seus marcadores dividem um grupo de legenda: esconder a série
+  na legenda esconde os pontos também. Qualquer grupo muda a ordem padrão da legenda do Plotly
+  para `'grouped'`, que espaça grupo a grupo a legenda e a caixa da dica, que copia a ordem dela;
+  por isso a legenda pede `traceorder: 'normal'`, a ordem de antes. Sem a legenda do Plotly
+  (`showLegend={false}`, e o `LineChart`, que não tem legenda), nada é agrupado.
+- **O eixo dos anos fica onde estava.** O Plotly deixa uma margem em volta de marcadores, 5% do
+  eixo mais o raio, e não em volta de uma linha, então um marcador no primeiro ou no último ano
+  alargava aquela ponta do eixo dos anos em cerca de 6%: no 440392 com todos os países, o cartão
+  da quantidade passava a ir de 2000 a 2025,44, e o do valor, logo acima, ficava em 2000 a 2024.
+  O eixo passa a ser recortado de volta aos anos das próprias linhas
+  (`autorangeoptions.clipmin`/`clipmax`), e o marcador é desenhado inteiro na borda
+  (`cliponaxis: false`); num zoom, o Plotly continua escondendo o marcador cujo ano fica de fora.
+  Medido no navegador, os cartões de 440333 vão de 2000 a 2001 e os de 440392 de 2000 a 2024, como
+  no `main`. O eixo dos valores mantém a reserva do marcador: quando o ponto isolado é o extremo
+  da série, aquela ponta anda 3,75 px (no 440333, o ponto de 2001 desceu de 9,15 px para 12,9 px
+  do topo na quantidade, e de 8,65 px para 12,4 px no preço), e os rótulos do eixo não mudam,
+  porque `ptBrLinearAxis` os fixa pelo dado. Quando o ponto isolado não é o extremo, nada anda: o
+  preço de 2024 de 440392 fica a 16,73 px do topo antes e agora.
+
+### Medido na produção
+Em 2026-11-27, só leitura, pela prévia local: em cada banco, as três séries que o Perfil do produto
+desenha para cada produto (valor, quantidade e preço implícito), no recorte nacional (no UN
+COMTRADE, com o Brasil e com todos os países como país reporter), em R$ nominal e no período
+inteiro, contadas com a regra do gráfico. Cada célula diz quantas séries têm um ponto isolado e,
+entre parênteses, quantas delas não desenhavam nada, porque todos os seus pontos eram isolados:
+
+| banco | produtos | valor | quantidade | preço |
+|---|---|---|---|---|
+| IBGE PEVS | 10 | 0 | 0 | 0 |
+| IBGE PAM | 14 | 0 | 0 | 0 |
+| IBGE PPM | 14 (6 com valor) | 0 | 0 | 0 |
+| MDIC COMEX | 118 | 7 (7) | 7 (7) | 11 (5) |
+| UN COMTRADE, Brasil | 90 | 7 (7) | 7 (6) | 7 (6) |
+| UN COMTRADE, todos os países | 100 | 0 | 5 (4) | 5 (4) |
+
+São 56 séries, cada uma com um ponto isolado, e 46 delas eram um cartão em branco. Exemplos: no
+COMEX, 44032300 só tem valor e quantidade em 2018, e o preço de 08011900 (cocos frescos) tem 29
+anos, com 1997 isolado; no UN COMTRADE com todos os países, 440331, 440332, 440333 e 440334 têm
+quantidade e preço num ano só, e 440392 tem quantidade e preço de 2000 a 2017 e, depois, só em
+2024.
+
+### Testes
+- vitest, 40 casos novos:
+  - `isolatedPoints.test.js` (novo, 24): o que o Plotly desenha (o zero é valor; nulo, `NaN`,
+    infinito e texto em branco são lacuna); quais pontos ficam sem vizinho (o vetor, não o
+    calendário; um `x` nulo também quebra o trecho; vale o menor de `x` e `y`); o formato exato do
+    marcador; o grupo de legenda só com legenda, em cópias, sem alterar o objeto de quem chama; o
+    recorte do eixo dos anos, que cobre todas as linhas, conta o ano sem valor e não existe com um
+    ano só;
+  - `LineChart.test.jsx` (novo, 8): o caso de 440333, o ponto único, as lacunas abertas, o zero, o
+    `valueKey`, o traço e o eixo idênticos quando nada fica isolado, a tendência intacta e o
+    marcador por último;
+  - `MultiLineChart.test.jsx` (5) e `DualAxisLineChart.test.jsx` (3): cor e eixo do marcador, a
+    ordem (linhas, tendências, marcadores), o grupo e a ordem normal com legenda, nada agrupado
+    sem ela, nada acrescentado (séries, legenda e eixo) quando todo ponto tem vizinho.
+- Contraprova, com os três gráficos do `main` no lugar e os testes desta versão: 11 dos 25 casos
+  dos três arquivos de gráfico falham, todos porque não há marcador ou grupo; os 14 que passam
+  são os 9 que já existiam e os 5 novos que conferem o que não muda (a série vazia, nada agrupado
+  sem legenda, nada acrescentado quando todo ponto tem vizinho).
+
+### Notas
+- **Um ano que falta no vetor é atravessado pela linha.** O gráfico liga entradas consecutivas do
+  vetor; um ano sem linha nenhuma na base (em vez de um ano com valor nulo) não está no vetor, e a
+  linha passa reto por cima dele, como se houvesse um valor ali (no 440392 com todos os países,
+  2022). Medido na mesma rodada, na série de valor: no COMEX, 26 séries com 43 anos atravessados;
+  no UN COMTRADE com o Brasil, 17 séries com 32; com todos os países, 6 com 6; no IBGE, nenhum.
+  Quem monta a série sabe se o ano ausente é "sem registro" ou "fora do período"; o gráfico não, e
+  por isso esta versão não mexe nisso.
+- **O preenchimento sob a linha atravessa as lacunas.** No `LineChart`, o Plotly junta os trechos
+  do preenchimento até o zero (`fill: 'tozeroy'`) num polígono só, ignorando as lacunas da linha:
+  entre dois trechos, a área fica sob uma reta que liga o fim de um ao começo do outro. A tarefa
+  desta versão pedia o preenchimento intocado, e ele não mudou.
+- **Rótulos de ano repetidos num eixo curto.** Num eixo de 2000 a 2001, o Plotly escolhe um passo
+  de fração de ano, e o formato inteiro (`tickformat: 'd'`, em `yearAxis`, `_base.jsx`) imprime
+  "2000 2000 2000 2001 2001". Vale para todo gráfico de anos com poucos anos, antes e agora.
+- **O que a medição não cobriu.** Só as séries nacionais de cada produto no Perfil do produto (e,
+  no UN COMTRADE, as de todos os países). Séries por UF, por parceiro e as das outras perspectivas
+  não foram contadas; a correção vale para todas, porque mora nos três gráficos.
+
 ## [1.108.16] - 2026-11-27
 
 **Na barra de cor vertical, a unidade deixa de invadir o rótulo de cima.** Fecha o achado das
