@@ -7,6 +7,113 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.108.15] - 2026-11-27
+
+**"Anos cobertos", em "Seleção ativa", passa a contar os anos com linhas do recorte, das mesmas
+contagens que "Linhas" soma.** Fecha a pendência das Notas da v1.108.9. O contador contava os anos
+do período, com linhas ou sem elas. Com o açaí do PAM e o período 1990–2000, a tela lia "Linhas 0"
+ao lado de "Anos cobertos 11 / 52", e o açaí não tem nenhuma linha antes de 2015. Um código do
+COMEX com uma única linha, em 2010, lia "30 / 30".
+
+### Corrigido
+- **O contador conta os anos da série da tela cujo ponto soma ao menos uma linha da base
+  analítica.** A série que a tela desenha tem um ponto para cada ano do banco dentro do período,
+  com linhas ou sem elas, e o contador era o número de pontos. Desde a v1.108.9, cada ponto traz
+  quantas linhas da base analítica ele soma, e "Linhas" é a soma dessas contagens. `applyFilters`
+  (`frontend/src/ui/dataFilters.js`) passa a devolver também os anos dos pontos com contagem maior
+  que zero (`yearsWithRows`), e "Anos cobertos" é quantos eles são. Os dois contadores saem das
+  mesmas contagens e não se contradizem: sem linha, nenhum ano; e onde as linhas não são
+  conhecidas, os anos também não são.
+
+  Medido numa prévia local contra a produção (só leitura), em 2026-11-27, e conferido em cada caso
+  com `count(distinct reference_year)` na base analítica, sem os produtos ocultos pelo ciclo de
+  vida, como toda leitura do painel.
+
+  | recorte | antes | agora | anos com linhas na base analítica | linhas |
+  |---|---|---|---|---|
+  | PAM · açaí · 1990–2000 | 11 / 52 | 0 / 52 | nenhum | 0 |
+  | PAM · açaí · 2010–2020 | 11 / 52 | 6 / 52 | de 2015 a 2020 | 33.024 |
+  | PAM · açaí · Pará · 2010–2020 | 11 / 52 | 6 / 52 | de 2015 a 2020 | 847 |
+  | COMEX · 08013100 (castanha de caju com casca) · todo o período | 30 / 30 | 25 / 30 | de 1997 a 2026, sem 1998, 2001 e 2003 a 2005 | 1.382 |
+  | COMEX · 44039200 (madeira de faia em bruto) · todo o período | 30 / 30 | 1 / 30 | 2010 | 1 |
+  | PEVS · Portel + Breves (PA) · silvicultura (291) | 40 / 40 | 0 / 40 | nenhum | 0 |
+  | PAM · abertura, sem filtro | 52 / 52 | 52 / 52 | os 52 | 3.349.171 |
+  | PEVS · Pará · 2010–2020 | 11 / 40 | 11 / 40 | os 11 | 11.170 |
+  | PEVS · Portel + Breves (PA) · todos os anos | 40 / 40 | 40 / 40 | os 40 | 560 |
+
+- **A dica do número diz quais são esses anos**, o que o período sozinho não diz: o açaí de 2010 a
+  2020 só tem linhas a partir de 2015. A dica lê "6 anos com linhas da base analítica neste
+  recorte, entre 2015 e 2020."; com um ano só, "1 ano com linhas da base analítica neste recorte:
+  2010."; sem nenhum, "Nenhum ano com linhas da base analítica neste recorte."
+- **Onde "Linhas" espera, "Anos cobertos" espera junto; onde "Linhas" só estima, "Anos cobertos"
+  diz que não sabe.**
+  - Enquanto o território carrega (um recorte abaixo da UF, ou o cubo da cesta × UF), os dois
+    mostram "…"; depois de uma falha, os dois mostram "—", com as mesmas dicas.
+  - Sem contagem (uma resposta de antes da v1.108.9, ou um filtro de UF num banco cujo resumo não
+    traz a grade por UF), "Linhas" mostra a estimativa marcada com "≈", e "Anos cobertos" mostra
+    "— / 52", com a dica "A contagem dos anos deste recorte não está disponível.". Nenhuma
+    proporção dá um ano, e os anos do período eram justamente a contagem a mais.
+- **Sem produto escolhido, nenhum ano**, como "Linhas" lê 0. A série desse caso soma todos os
+  produtos do banco, e contar os anos dela afirmaria anos de produtos que ninguém escolheu.
+- O denominador não muda: os anos do banco inteiro, que vêm da fonte (`/api/source-meta`).
+
+### Alterado
+- `applyFilters` devolve `yearsWithRows`: os anos com linhas, em ordem crescente; uma lista vazia
+  sem produto escolhido; e `null` exatamente quando `rowsInView` é `null`.
+- Nada muda na API, no BFF nem no dbt: a contagem de cada ponto já chegava desde a v1.108.9. O
+  merge não dispara a reconstrução da base analítica.
+
+### Testes
+- vitest, 27 testes novos:
+  - `frontend/src/ui/rowsInView.test.js`, 19 novos. A base analítica em miniatura da v1.108.9 passa
+    a ser conferida também pelos anos distintos das suas linhas (`count(distinct year)`, contado à
+    mão), e cada caminho de `applyFilters` é conferido contra ela:
+    - 9 com anos: sem filtro; o açaí num período anterior às suas linhas (nenhum ano, com dois
+      pontos na série); o açaí; o milho num município; um período com UFs; cesta × UF, inclusive a
+      UF sem linha do produto (nenhum ano, e "Linhas" 0); mesorregião; nenhum produto escolhido; a
+      origem do PEVS;
+    - 5 sem contagem, e portanto sem anos: o cubo da cesta carregando ou em falha; o recorte abaixo
+      da UF carregando ou em falha; sem a grade por UF; respostas sem `rows`; um único ponto sem
+      contagem;
+    - 5 cenários (cubos prontos, cubo da cesta carregando, cubo por município em falha, respostas
+      sem contagem, resumo sem a grade por UF), cada um sobre os mesmos 14 recortes, conferem que
+      os dois contadores nunca se contradizem: `null` nos dois ao mesmo tempo, nenhum ano
+      exatamente quando "Linhas" é 0, e as linhas dos anos contados somando "Linhas".
+  - `frontend/src/ui/MainScreen.cov.test.jsx`, 8 novos, na tela: "0 / 52", "6 / 52" e "1 / 52",
+    com as dicas; "— / 52" sem contagem, ao lado da estimativa de "Linhas"; "…" e "—" na espera e
+    na falha do cubo da cesta × UF e do recorte abaixo da UF.
+- Contraprova: com o `MainScreen.jsx` e o `dataFilters.js` do `main`, os 27 testes novos falham, e
+  os 69 que já existiam nos dois arquivos passam. Com o código do `main`, os 8 testes da tela leem
+  "11 / 52".
+- vitest: 2025 passando em 106 arquivos, 27 a mais que na v1.108.11, com a cobertura acima dos
+  mínimos. Na primeira rodada completa, com o pytest rodando ao mesmo tempo, 4 testes da matriz da
+  citação ABNT em `AppShell.cov.test.jsx` falharam por tempo limite. Rodado sozinho, o arquivo
+  passou inteiro (79 testes), e a segunda rodada completa passou sem falha. pytest: 2640 passando
+  (15 pulados no Windows, que só rodam no Linux).
+
+### Notas
+- **Uma linha da base analítica pode ter produção zero, e "Anos cobertos" conta o ano dela.** As
+  células vazias da pesquisa municipal chegam à base analítica como linhas, e "Linhas" já as conta
+  desde a v1.108.9. "Anos cobertos" segue a mesma base, por decisão: os dois contadores falam das
+  mesmas linhas. Ano com linha, porém, não é o mesmo que ano com produção, e a diferença foi medida
+  na produção. Das combinações de produto, UF e ano com linhas, as que só têm linhas sem produção
+  são:
+  - PAM: 2.215 de 18.158 (12,2%);
+  - PEVS: 3.727 de 9.891 (37,7%);
+  - PPM: 2.752 de 19.628 (14,0%).
+
+  O açaí tem, em 11 UFs, 11 anos com linhas e nenhum com produção. No Rio Grande do Sul, em todo o
+  período, a tela lê "Linhas 5 mil" (5.455 na dica), "UFs cobertas 0 / 27" e "Anos cobertos
+  11 / 52"; o código do `main` leria "52 / 52". Contar os anos com produção seria outro contador,
+  e uma decisão à parte.
+- **"UFs cobertas" segue outro critério.** Conta as UFs com valor maior que zero na grade do mapa,
+  que é a do último ano do período, e não as UFs com linhas. E só espera o recorte abaixo da UF,
+  não o cubo da cesta: na primeira leitura do açaí de 1990 a 2000, no `main`, chegou a mostrar
+  "27 / 27" antes de assentar em "0 / 27". Alinhar esse contador aos outros dois fica para uma
+  próxima versão.
+- **O contrato (`docs/frontend_data_contract.md`, §3.5) ainda não descreve "Anos cobertos".** O
+  arquivo tem outra mudança em andamento nesta rodada; a descrição entra depois dos merges.
+
 ## [1.108.14] - 2026-11-27
 
 **No CSV por produto, a coluna `familia` passa a trazer o nome que o painel dá à família de
