@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
-## [1.108.12] - 2026-11-27
+## [1.108.18] - 2026-11-27
 
 **Um produto sem valor na janela continua sendo o que é: no Perfil do produto e no Comparativo
 entre produtos, a lavoura não vira rebanho, e a tela diz por que falta o valor.** Fecha a primeira

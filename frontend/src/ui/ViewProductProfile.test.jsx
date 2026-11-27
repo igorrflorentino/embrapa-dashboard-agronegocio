@@ -14,7 +14,7 @@
 // qPriced), and a year whose price rests on less than 90% of its value says so; a describe
 // locks it.
 //
-// Since v1.108.12 what a measure IS comes from the data (measure_kind), never from a missing
+// Since v1.108.18 what a measure IS comes from the data (measure_kind), never from a missing
 // value: soybean in 1974–1979 under IPCA was laid out as a herd, with a zero for every UF. The
 // last describe locks the crop that stays a crop, the card that says why it has no value, and
 // the absences that are no longer drawn as zeros.
@@ -256,7 +256,7 @@ describe('ViewProductProfile — the price divides the value and the quantity of
   });
 });
 
-describe('ViewProductProfile — a product with no value in the window is still what it is (v1.108.12)', () => {
+describe('ViewProductProfile — a product with no value in the window is still what it is (v1.108.18)', () => {
   // Measured on prod 2026-11-27 (/api/snapshot?banco=ibge_pam&currency=BRL&correction=IPCA):
   // soybean, in mil t and mi R$. IPCA reaches PAM only from 1980, and the snapshot's valueGap
   // says so, naming the index that does reach 1974–1979.

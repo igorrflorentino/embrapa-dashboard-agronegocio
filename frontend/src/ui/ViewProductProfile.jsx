@@ -156,7 +156,7 @@ function ViewProductProfile({ families, summary, database, conventions }) {
   // A herd headcount (PPM measure_kind='stock') is a STOCK with NO monetary value —
   // value / implicit price / market-share-by-value are meaningless for it. What a measure IS
   // comes from the data, never from a missing value: only PPM sends measure_kind, and only
-  // its herd is a 'stock'. Until v1.108.12 a product with no measure_kind fell back to "no
+  // its herd is a 'stock'. Until v1.108.18 a product with no measure_kind fell back to "no
   // positive value in the window", so soybean in 1974–1979 under IPCA (the index starts in
   // 1980) was laid out as a herd: "Efetivo", "Pico histórico", "Onde Soja é criado", and a
   // zero for every UF. A crop with no value in the window is still a crop; what it lacks is

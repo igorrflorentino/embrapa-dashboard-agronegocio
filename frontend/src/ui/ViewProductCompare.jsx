@@ -66,7 +66,7 @@ function ViewProductCompare({ summary, conventions, database }) {
     const prod = filtered.products.find(p => p.code === code);
     const win = filtered.allProductTS[code].filter(d => d.y >= yearStart && d.y <= yearEnd);
     // What a measure IS comes from the data — measure_kind, sent only by PPM, 'stock' only
-    // for the herd —, never from a missing value. Until v1.108.12 a flow with no value in the
+    // for the herd —, never from a missing value. Until v1.108.18 a flow with no value in the
     // window was taken for a stock too: soybean in 1974–1979 under IPCA was indexed on its
     // tonnage under the title "Evolução relativa do efetivo (cabeças)", and the table said
     // the selection mixed stock and flow.

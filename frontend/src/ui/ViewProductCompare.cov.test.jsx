@@ -282,7 +282,7 @@ describe('ViewProductCompare — single-product + value-less herd branches', () 
   });
 
   // v1.108.7: the magnitude cell called formatCountQty with no unit, so every herd read "un".
-  // Each row is formatted as its own product. v1.108.12: a crop with no value in the window
+  // Each row is formatted as its own product. v1.108.18: a crop with no value in the window
   // was ranked on its tonnage like a herd; it is measured on its value, which is absent (the
   // stubbed formatter echoes the null it was given — the real one prints '—').
   it('a herd is measured on its headcount, in its own unit; a crop with no value, on its absent value', () => {
@@ -308,7 +308,7 @@ describe('ViewProductCompare — single-product + value-less herd branches', () 
   });
 });
 
-// ── Um fluxo sem valor na janela continua fluxo (v1.108.12) ──────────────────────────────
+// ── Um fluxo sem valor na janela continua fluxo (v1.108.18) ──────────────────────────────
 // A natureza da medida vem de measure_kind, nunca da falta de valor. No main, a soja de
 // 1974–1979 sob o IPCA (a PAM só tem IPCA desde 1980) era tomada por rebanho: indexada pela
 // tonelagem sob o título "Evolução relativa do efetivo (cabeças)", e a tabela dizia que a
