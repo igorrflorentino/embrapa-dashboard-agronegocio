@@ -120,6 +120,68 @@ export function colorbarAnchors(min, max) {
   return null;
 }
 
+// ── The unit of a VERTICAL colour bar ──────────────────────────────────────────
+//
+// Both heatmaps (Geografia from 6 rows on, and Sazonalidade e tendências, always) put
+// the unit ABOVE a vertical colour bar: beside it, Plotly rotates the title 90° into the
+// gradient. Until v1.108.12 the unit was the bar's own title, side 'top', and its box ran
+// into the top tick label's. Measured 2026-11-27 (Plotly 4.3.0, after document.fonts.ready,
+// 1280 px viewport): 1.8 px down at 1:1 pixels (2.1 px in the app's browser pane, at 1.5),
+// and across by as much as the unit reaches over the label column, from 5.5 px for "US$"
+// over "10 bi" (Sazonalidade, COMEX) to 17.7 px for "US$ mi" over "271" (Geografia,
+// 7 UFs). A wide unit sat glued onto the label.
+//
+// No attribute reaches the cause (colorbar/draw.js). Plotly writes the title's baseline
+// `ypad + 3 + 0.75 × size` below the top of the bar's span, lowers the bar's top end by
+// the title's height plus a fixed 5 px ("TODO: configurable" in the source), and centres
+// the top tick label on that end, so the label rises 6 px into a 5 px buffer that the
+// title's descent already half fills. ypad, len and y move the title and the bar
+// TOGETHER. Only an empty title lets them be placed apart.
+//
+// So the unit is a layout annotation, and the bar is inset from the plot's top and bottom
+// edges by `ypad` (symmetric: Plotly has no top-only inset that does not depend on the
+// plot's height). In px from the FIGURE's top, with today's values:
+//
+//    0        figure top
+//    2–27.3   the modebar band (Plotly's buttons: on hover, and ALWAYS on a touch screen,
+//             which is why the unit stays below it)
+//   30–43     the unit's box: topMargin − unitYShift, then 13 px of 11 px text
+//   32        plot top (topMargin)
+//   46–58     the top tick label, centred on the bar's top end
+//   52        the bar's top end (topMargin + ypad); its bottom end is ypad px above the
+//             plot's bottom edge
+//
+// Measured on the fix, in both heatmaps: 3.5 px between the unit and the top label, and
+// 2.7 px between the modebar band and the unit (3.1 px on a 375 px touch screen).
+// _base.colorbar.test.js keeps that arithmetic, with these box sizes. The annotation has
+// no padding or border, so its box IS the text's; xshift = xpad puts the unit's first
+// letter on the bar's left edge, where the title used to start.
+export const VERTICAL_COLORBAR = Object.freeze({
+  x: 1.02,         // paper: Plotly's own default for a vertical bar, just right of the plot
+  xpad: 10,        // Plotly's default; the unit starts on the bar's left edge
+  ypad: 20,        // the bar's ends, inset from the plot's top and bottom edges
+  topMargin: 32,   // the figure's top margin: the modebar band plus the unit's top
+  unitYShift: 2,   // the unit's box rises this far above the plot's top edge
+  unitFontSize: 11,
+});
+
+/** The unit of a vertical colour bar, as a list of layout annotations: one, or none
+ *  when there is no unit to show (an empty annotation still takes a box). Pair it with
+ *  `title.text: ''` and `ypad: VERTICAL_COLORBAR.ypad` on the bar, and
+ *  `margin.t: VERTICAL_COLORBAR.topMargin` on the layout. */
+export function verticalColorbarUnit(unit) {
+  if (!unit) return [];
+  const cb = VERTICAL_COLORBAR;
+  return [{
+    text: unit,
+    xref: 'paper', x: cb.x, xanchor: 'left', xshift: cb.xpad,
+    yref: 'paper', y: 1, yanchor: 'top', yshift: cb.unitYShift,
+    borderpad: 0, borderwidth: 0,
+    showarrow: false,
+    font: { size: cb.unitFontSize },
+  }];
+}
+
 /** The value-axis tick props to spread onto ANY chart's y/x value axis, so every
  *  value axis in the app reads pt-BR magnitude words ("15 bi") instead of d3's SI
  *  letters ("15G") — the single contract that kills the "15G vs 15 bi" mismatch

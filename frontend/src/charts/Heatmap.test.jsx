@@ -238,14 +238,17 @@ describe('Heatmap — colorbar anchors', () => {
   });
 
   it('places the unit ABOVE the bar in both orientations, where it cannot be read as a value', () => {
-    // Vertical: the bar's title, on top. Beside the bar, Plotly rotates the title 90° and
-    // "R$" landed sideways in the gradient, between two tick labels, looking like one of them.
+    // Vertical: an annotation over the bar's column, at the plot's top edge. Beside the bar,
+    // Plotly rotates a title 90° and "R$" landed sideways in the gradient, between two tick
+    // labels, looking like one of them; as the bar's title on top, its box ran into the top
+    // label's (the "clears its top tick label" block below).
     const tall = Array.from({ length: 8 }, (_, i) => ({
       id: `U${i}`, label: `U${i}`, values: [{ y: 2019, v: i + 1 }],
     }));
     render(<Heatmap rows={tall} valueKey="v" valueLabel="R$" />);
-    expect(trace().colorbar.title).toEqual({ text: 'R$', side: 'top', font: { size: 11 } });
-    expect(layout().annotations ?? []).toEqual([]);
+    expect(trace().colorbar.title).toEqual({ text: '', side: 'top', font: { size: 11 } });
+    expect(layout().annotations.map((a) => [a.text, a.xref, a.x, a.yref, a.y, a.yanchor]))
+      .toEqual([['R$', 'paper', 1.02, 'paper', 1, 'top']]);
     cleanup();
     // Horizontal: an annotation just above the bar, and NEVER the bar's own title. A title
     // on this container-anchored bar is what drove the plot's height negative — the
@@ -383,8 +386,21 @@ describe('Heatmap — geometry invariants over 1..15 rows', () => {
     }
   });
 
-  it('shows the unit exactly once, as the vertical title or as the annotation', () => {
-    // Moving the unit out of the horizontal bar must neither lose it nor print it twice.
+  // And on the vertical bar, the title is what ran into the top tick label (v1.108.12): no
+  // orientation is titled any more, and the unit is an annotation in both.
+  it('never titles the bar, in either orientation', () => {
+    for (const n of SPAN) {
+      render(<Heatmap rows={rowsFor(n)} valueKey="v" valueLabel="R$" />);
+      const cb = trace().colorbar;
+      expect(`${n}:${cb.orientation} title '${cb.title.text}'`)
+        .toBe(`${n}:${n <= 5 ? 'h' : 'v'} title ''`);
+      cleanup();
+    }
+  });
+
+  it('shows the unit exactly once, at every row count', () => {
+    // Moving the unit out of either bar must neither lose it nor print it twice. The title
+    // is still counted, so a unit put back on the bar AND left in an annotation fails here.
     for (const n of SPAN) {
       render(<Heatmap rows={rowsFor(n)} valueKey="v" valueLabel="R$" />);
       const shown = (trace().colorbar.title.text === 'R$' ? 1 : 0)
@@ -467,15 +483,15 @@ describe('Heatmap — a short heatmap draws at every row count (1..6)', () => {
     }
   });
 
-  it('from 6 rows on, the bar is vertical and the unit is its title again', () => {
+  it('from 6 rows on, the bar is vertical and the unit an annotation above it', () => {
     const { container } = render(<Heatmap rows={rowsFor(6)} valueKey="v" valueLabel="R$" />);
     const cb = trace().colorbar;
     expect(cb.orientation).toBe('v');
     expect(cb.yref).toBe('paper');
-    expect(cb.title).toEqual({ text: 'R$', side: 'top', font: { size: 11 } });
-    expect(layout().annotations ?? []).toEqual([]);
+    expect(cb.title.text).toBe('');
+    expect(layout().annotations.map((a) => a.text)).toEqual(['R$']);
     const m = layout().margin;
-    expect(plotHeight(container) - m.t - m.b).toBe(130); // 44 + 24 × 6 − (22 + 36)
+    expect(plotHeight(container) - m.t - m.b).toBe(130); // 24 × 6 − 14, as before v1.108.12
   });
 
   it('with no unit, there is nothing to annotate and still no title', () => {
@@ -485,5 +501,89 @@ describe('Heatmap — a short heatmap draws at every row count (1..6)', () => {
       expect(layout().annotations ?? []).toEqual([]);
       cleanup();
     }
+  });
+});
+
+// ── The vertical bar's unit has to clear its top tick label ──────────────────
+//
+// Reported in the v1.108.6 notes. Measured 2026-11-27 (Plotly 4.3.0, after
+// document.fonts.ready, the Geografia card at 1280 px), with the unit as the TITLE of the
+// vertical bar, side 'top': its box ran down into the top tick label's (1.8 px at 1:1
+// pixels, 2.1 px in the app's browser pane at 1.5), and across by as much as the unit
+// reaches over the label column. A wide unit sat glued onto the label:
+//
+//   unit over label      across  (1:1 pixels)
+//   "R$ mi" over "543"   14.3 px  PEVS extração, 7 UFs
+//   "US$ mi" over "271"  17.7 px  the same in US$
+//   "R$ bi" over "150"    9.2 px  PAM, 6 UFs
+//
+// Plotly lowers the bar's top end by the title's height plus a fixed 5 px and centres the
+// label on that end; ypad, len and y move the title and the bar together, so no attribute
+// parts them (_base.jsx walks through colorbar/draw.js). The unit is now an annotation and
+// the bar's ends are inset by ypad: 3.5 px between unit and label, measured in all three.
+// The arithmetic that keeps them apart is tested in _base.colorbar.test.js; these tests pin
+// that the heatmap uses it at every vertical row count, and that the rows did not pay for
+// it.
+
+describe("Heatmap — the vertical bar's unit clears its top tick label (6..15 rows)", () => {
+  const TALL = Array.from({ length: 10 }, (_, i) => i + 6);
+  const rowsFor = (n) => Array.from({ length: n }, (_, i) => ({
+    id: `U${i}`, label: `U${i}`, values: [{ y: 2019, v: i + 1 }, { y: 2020, v: (i + 1) * 3 }],
+  }));
+  const plotHeight = (container) => parseFloat(container.firstChild.style.height);
+
+  it('draws the unit as ONE annotation over the bar, at every row count', () => {
+    for (const n of TALL) {
+      render(<Heatmap rows={rowsFor(n)} valueKey="v" valueLabel="R$ mi" />);
+      expect(layout().annotations).toEqual([{
+        text: 'R$ mi',
+        xref: 'paper', x: 1.02, xanchor: 'left', xshift: 10,
+        yref: 'paper', y: 1, yanchor: 'top', yshift: 2,
+        borderpad: 0, borderwidth: 0,
+        showarrow: false,
+        font: { size: 11 },
+      }]);
+      cleanup();
+    }
+  });
+
+  it("insets the bar's ends by 20 px, on the column the unit starts on", () => {
+    for (const n of TALL) {
+      render(<Heatmap rows={rowsFor(n)} valueKey="v" valueLabel="R$ mi" />);
+      const cb = trace().colorbar;
+      expect(`${n}: x ${cb.x} xpad ${cb.xpad} ypad ${cb.ypad}`)
+        .toBe(`${n}: x 1.02 xpad 10 ypad 20`);
+      cleanup();
+    }
+  });
+
+  it('keeps the plot at 24 × rows − 14 px under the 32 px top margin', () => {
+    // The figure grows by the 10 px the top margin took past its former 22, so every row
+    // keeps its 24 px. The bar is 2 px shorter (measured 116 → 114 px at 7 rows).
+    for (const n of TALL) {
+      const { container } = render(<Heatmap rows={rowsFor(n)} valueKey="v" valueLabel="R$ mi" />);
+      const m = layout().margin;
+      const fig = plotHeight(container);
+      expect(`${n}: margin ${m.t}/${m.b} figure ${fig} plot ${fig - m.t - m.b}`)
+        .toBe(`${n}: margin 32/36 figure ${54 + 24 * n} plot ${24 * n - 14}`);
+      cleanup();
+    }
+  });
+
+  it('with no unit, no annotation and still no title', () => {
+    for (const n of [6, 12]) {
+      render(<Heatmap rows={rowsFor(n)} valueKey="v" valueLabel="" />);
+      expect(trace().colorbar.title.text).toBe('');
+      expect(layout().annotations ?? []).toEqual([]);
+      cleanup();
+    }
+  });
+
+  it('a caller-fixed height gets the same unit, above the same inset bar', () => {
+    render(<Heatmap rows={rowsFor(3)} valueKey="v" valueLabel="R$" height={400} />);
+    const cb = trace().colorbar;
+    expect(`${cb.orientation} title '${cb.title.text}' ypad ${cb.ypad}`).toBe("v title '' ypad 20");
+    expect(layout().annotations.map((a) => a.text)).toEqual(['R$']);
+    expect(layout().margin.t).toBe(32);
   });
 });

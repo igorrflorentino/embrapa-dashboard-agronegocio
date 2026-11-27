@@ -3,7 +3,9 @@
 // unchanged — now with zoom/pan/hover (the point of the Plotly migration).
 //   rows: [{ id, label, values: [{ y, v }] }]
 
-import { Plot, baseLayout, colorbarAnchors, resolveColor, yearAxis } from './_base';
+import {
+  Plot, VERTICAL_COLORBAR, baseLayout, colorbarAnchors, resolveColor, verticalColorbarUnit, yearAxis,
+} from './_base';
 
 // The design-system heat ramp (--heat-1…--heat-7), resolved to concrete colors
 // and mapped onto a Plotly colorscale (normalized stops 0→1).
@@ -45,7 +47,9 @@ function heatColorscale() {
 // end at 22 px; the unit's text sits at 46–59 px; the bar's top is at 67 px, which is
 // CB_BAR_TOP px above the card's bottom edge.
 const SHORT_MARGIN = { l: 120, r: 16, t: 8, b: 108 };
-const TALL_MARGIN = { l: 120, r: 92, t: 22, b: 36 };
+// The tall layout's top margin holds the modebar's band and the unit of the vertical bar
+// (VERTICAL_COLORBAR, in _base.jsx). It was 22 px while the unit was the bar's title.
+const TALL_MARGIN = { l: 120, r: 92, t: VERTICAL_COLORBAR.topMargin, b: 36 };
 // px from the container's bottom edge to the top of the horizontal bar (measured 40.7).
 const CB_BAR_TOP = 41;
 // px between the unit annotation's box and the bar, so the unit reads as the bar's.
@@ -92,9 +96,10 @@ function Heatmap({ rows = [], valueKey = 'v', valueLabel = '', height }) {
   //
   // The threshold is measured, not guessed: the bar's drawn height tracks the plotting
   // area, and at 4 rows that came out at 44px — three ~12px labels stacked into 44px,
-  // legible but touching. At 6 rows it is ~100px, which lets them breathe. Below that
-  // the bar goes horizontal, where a one-row heatmap has width to spare (see the
-  // short-layout note above for how the unit travels with it).
+  // legible but touching. At 6 rows it is 90px (measured with the v1.108.12 inset, 92px
+  // before it), which lets them breathe. Below that the bar goes horizontal, where a
+  // one-row heatmap has width to spare (see the short-layout note above for how the unit
+  // travels with it).
   const autoHeight = 22 + rows.length * 24 + 22;
   const shortPlot = !height && rows.length <= 5;
 
@@ -124,17 +129,18 @@ function Heatmap({ rows = [], valueKey = 'v', valueLabel = '', height }) {
         thickness: 12,
         thicknessmode: 'pixels',
         // The unit sits ABOVE the bar in both orientations, where it cannot be mistaken
-        // for a value.
-        //   vertical   → the bar's title, side 'top'. Beside the bar, Plotly rotates the
-        //                text 90°, which landed "R$" sideways in the middle of the
-        //                gradient, between two tick labels, reading as if it were one.
-        //   horizontal → EMPTY. The unit is the `unitAnnotation` below instead: a title
-        //                on this bar is what drove the plot's height negative (the
-        //                short-layout note at the top of this file).
+        // for a value, and in both it is a layout annotation, never the bar's own title:
+        //   vertical   → verticalColorbarUnit (_base.jsx). As the title, side 'top', its
+        //                box ran into the top tick label's ("R$ mi" glued onto "543"),
+        //                and Plotly offers no attribute to part them. Beside the bar
+        //                (side 'right'), Plotly rotates the text 90° into the gradient,
+        //                where "R$" read as one of the tick labels.
+        //   horizontal → the `unitAnnotation` below: a title on this bar is what drove the
+        //                plot's height negative (the short-layout note at the top).
         // With no text Plotly draws no title at all, whatever the side: measured, the
         // horizontal bar lands on the same pixels with 'top' and with 'bottom'.
         title: {
-          text: shortPlot ? '' : valueLabel,
+          text: '',
           side: 'top',
           font: { size: 11 },
         },
@@ -149,16 +155,20 @@ function Heatmap({ rows = [], valueKey = 'v', valueLabel = '', height }) {
         // bar 7px, straight into the year labels, and the unit landed on top of "2005".
         // Against the container the placement is the same handful of pixels from the
         // card's bottom edge no matter how short the band above it is.
+        //
+        // The paddings are Plotly's defaults (10 px) on the horizontal bar, declared only
+        // because the vertical one sets its own: VERTICAL_COLORBAR insets the bar's ends
+        // from the plot's edges to leave the unit its room above the top label.
         ...(shortPlot
           ? {
               orientation: 'h',
-              x: 0.5, xanchor: 'center', xref: 'paper',
-              y: 0, yanchor: 'bottom', yref: 'container',
+              x: 0.5, xanchor: 'center', xref: 'paper', xpad: 10,
+              y: 0, yanchor: 'bottom', yref: 'container', ypad: 10,
             }
           : {
               orientation: 'v',
-              x: 1.02, xanchor: 'left', xref: 'paper',
-              y: 0.5, yanchor: 'middle', yref: 'paper',
+              x: VERTICAL_COLORBAR.x, xanchor: 'left', xref: 'paper', xpad: VERTICAL_COLORBAR.xpad,
+              y: 0.5, yanchor: 'middle', yref: 'paper', ypad: VERTICAL_COLORBAR.ypad,
             }),
       },
       hovertemplate: `<b>%{y}</b> · %{x}<br>%{z:,.2f} ${valueLabel}<extra></extra>`,
@@ -170,16 +180,20 @@ function Heatmap({ rows = [], valueKey = 'v', valueLabel = '', height }) {
   // placed inside the same 108 px strip. Annotations take no 'container' reference,
   // which is why the anchor is the plot's edge and not the card's. Being part of the
   // figure, the unit also travels with the modebar's PNG download.
-  const unitAnnotation = shortPlot && valueLabel
-    ? [{
-        text: valueLabel,
-        xref: 'paper', x: 0.5, xanchor: 'center',
-        yref: 'paper', y: 0, yanchor: 'bottom',
-        yshift: SHORT_UNIT_YSHIFT,
-        showarrow: false,
-        font: { size: 11 },
-      }]
-    : [];
+  // The vertical bar's unit comes from verticalColorbarUnit, shared with the month × year
+  // heatmap, so the two legends cannot drift apart.
+  const unitAnnotation = !shortPlot
+    ? verticalColorbarUnit(valueLabel)
+    : valueLabel
+      ? [{
+          text: valueLabel,
+          xref: 'paper', x: 0.5, xanchor: 'center',
+          yref: 'paper', y: 0, yanchor: 'bottom',
+          yshift: SHORT_UNIT_YSHIFT,
+          showarrow: false,
+          font: { size: 11 },
+        }]
+      : [];
 
   const layout = baseLayout({
     // Room for the colorbar in whichever direction it sits: to the right when vertical
@@ -201,7 +215,11 @@ function Heatmap({ rows = [], valueKey = 'v', valueLabel = '', height }) {
 
   // Fall back to a row-count-aware height when none is supplied.
   // The extra height on a short plot is the horizontal colorbar's strip, not taller
-  // cells — the data band keeps its 24px row.
+  // cells — the data band keeps its 24px row. The tall plot keeps 24 × rows − 14 px as
+  // well: its figure grows by what the top margin grew past its former 22 px, the room
+  // the vertical bar's unit took over from the bar's title.
+  const figureHeight = height
+    || (shortPlot ? autoHeight + 64 : autoHeight + TALL_MARGIN.t - 22);
   //
   // The `key` forces a REMOUNT whenever the plot's GEOMETRY changes, and it is
   // load-bearing on both counts.
@@ -223,10 +241,10 @@ function Heatmap({ rows = [], valueKey = 'v', valueLabel = '', height }) {
   // one re-plot when the researcher changes what they are looking at.
   return (
     <Plot
-      key={`${shortPlot ? 'h' : 'v'}-${height || autoHeight}`}
+      key={`${shortPlot ? 'h' : 'v'}-${figureHeight}`}
       traces={traces}
       layout={layout}
-      height={height || (shortPlot ? autoHeight + 64 : autoHeight)}
+      height={figureHeight}
     />
   );
 }
