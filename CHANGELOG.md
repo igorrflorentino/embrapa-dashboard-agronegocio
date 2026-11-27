@@ -7,6 +7,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.108.18] - 2026-11-27
+
+**Um produto sem valor na janela continua sendo o que é: no Perfil do produto e no Comparativo
+entre produtos, a lavoura não vira rebanho, e a tela diz por que falta o valor.** Fecha a primeira
+pendência das Notas da v1.108.7. As duas perspectivas decidiam se um produto era estoque (o
+efetivo dos rebanhos) pelo valor: sem valor positivo na janela, era rebanho. Só a PPM informa a
+natureza da medida (`measure_kind`), e só o efetivo é estoque; toda lavoura, toda extração e
+silvicultura e todo código de comércio são fluxo. Bastava uma janela inteira dentro da lacuna da
+convenção para a soja de 1974–1979 sob o IPCA aparecer com "Efetivo", "Pico histórico" e "Onde
+Soja (em grão) é criado", com um zero para cada UF, e para o Comparativo indexar soja, milho e
+arroz pela tonelagem sob o título "Evolução relativa do efetivo (cabeças)".
+
+Onde isso acontecia, medido na produção em 2026-11-27, só leitura, pela lacuna que o próprio
+painel recebe (`valueGap` de `/api/snapshot`):
+
+| banco | convenção | anos sem valor | correção que alcança esses anos |
+|---|---|---|---|
+| PAM (14 produtos, nenhum com `measure_kind`) | R$ · IPCA | 1974–1979 | IGP-DI |
+| PAM | R$ · IGP-M | 1974–1989 | IGP-DI |
+| PAM | US$, nominal e CPI | 1974–1993 | — |
+| PAM | €, nominal e HICP | 1974–1998 | — |
+| PEVS (10 produtos, nenhum com `measure_kind`) | R$ · IGP-M | 1986–1989 | IPCA e IGP-DI |
+| PEVS | US$, nominal e CPI | 1986–1993 | — |
+| PEVS | €, nominal e HICP | 1986–1998 | — |
+| COMEX (118 produtos, nenhum com `measure_kind`) | €, nominal e HICP | 1997–1998 | — |
+
+Uma janela toda dentro de uma dessas faixas bastava. O UN COMTRADE não tem lacuna em R$ nem em €.
+Na PPM os 14 produtos trazem a natureza da medida (8 rebanhos, 6 fluxos), e o Perfil a lia
+primeiro; o Comparativo não, e um produto da PPM que não é rebanho, numa janela sem valor, também
+era indexado como efetivo.
+
+### Corrigido
+- **Perfil do produto.** A natureza da medida vem só de `measure_kind`. Um fluxo sem valor na
+  janela mostra os cartões de um fluxo:
+  - o cartão "Valor" mostra "—" e diz por quê, com a frase da "Variação acumulada"
+    (`deltaWhyNot`): "sem valor em 1979 nesta convenção — a série do IPCA não alcança esse ano (o
+    IGP-DI alcança)". Com valor no último ano e sem valor no anterior, a variação é recusada com o
+    mesmo motivo ("1980 vs. 1979 · sem valor em 1979 nesta convenção — …"); até aqui o subtítulo
+    só explicava a recusa por reforma monetária;
+  - a quantidade segue em t, nunca multiplicada como contagem (a trava da v1.108.7 continua);
+  - os gráficos de valor, de preço e de participação dizem "Nenhum ano de 1974–1979 tem valor
+    nesta convenção." em vez de desenhar um eixo vazio de 0 a 4 "R$";
+  - no ranking por UF, uma UF sem valor nesta convenção não é mais uma barra de zero: o `|| 0` da
+    ordenação e da medida a trazia de volta. Sem nenhuma UF com valor, o cartão diz "Nenhuma UF tem
+    valor nesta convenção em 1974–1979, e o ranking é pelo valor." em vez de "Sem dados por UF
+    para este produto."; com só algumas, as que ficam de fora são nomeadas sob o gráfico;
+  - a ficha técnica perde a linha "Tipo de medida: Estoque (efetivo)".
+- **Comparativo entre produtos.** A mesma regra. Um fluxo sem valor na janela fica fora do
+  índice, do ano-base, da correlação e da legenda, mostra "—" na tabela e é nomeado sob o gráfico
+  ("Sem valor nesta convenção: …", com o que isso custa). Ele sai da lista ANTES do cálculo do
+  ano-base: `commonBaseYear` precisa de valor em cada série que recebe, e um único produto sem
+  valor apagaria o índice de todos os outros. Sem nenhum produto para desenhar, o cartão não
+  desenha eixos. A correlação de um produto sem valor é "—", nunca a da tonelagem no lugar da do
+  valor.
+- **O minigráfico dos cartões do Perfil.** Ele desenhava um ano ausente como zero
+  (`Sparkline.jsx` lê `Math.min(null, …)` como 0). Cada cartão passa a receber só os anos com a
+  medida, e com menos de dois anos não há traço.
+
+### Testes
+- `ViewProductProfile.test.jsx`: 7 testes, com os números da soja medidos na produção (1978–1981
+  sob o IPCA). Um deles substitui o teste da v1.108.7 que aceitava o leiaute de rebanho para a
+  lavoura sem valor, e mantém a trava dele: a quantidade em t.
+- `ViewProductCompare.cov.test.jsx`: 2 testes novos e 1 reescrito, pelo mesmo motivo.
+- Contraprova: com as duas perspectivas do `main` no lugar, os 10 testes novos ou reescritos
+  reprovam, e os outros 50 dos três arquivos passam.
+
+### Notas
+- A segunda pendência das Notas da v1.108.7, a "Unidade nativa" da ficha técnica, segue em
+  outra mudança, porque a causa é outra.
+- Visto de passagem, fora dos arquivos desta mudança:
+  - o minigráfico (`Sparkline.jsx`) desenha ausência como zero também nas outras perspectivas
+    que o usam (Visão geral, Produtividade, Rebanho); aqui a correção foi nas chamadas;
+  - com a soja de 1974–1979 sob o IPCA, o cabeçalho diz "UFs cobertas 0 / 27";
+  - a ficha técnica mostra "Valor ausente 0,0%" ao lado de "Valor (1979) —": a primeira linha é a
+    marca de qualidade da fonte (o IBGE publicou o valor), a segunda é a convenção escolhida.
+
 ## [1.108.17] - 2026-11-27
 
 **Um ponto sem vizinho passa a aparecer nos gráficos de linha.** Fecha a pendência das Notas da

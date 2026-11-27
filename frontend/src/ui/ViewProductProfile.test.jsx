@@ -11,8 +11,13 @@
 //     formatCountQty whatever the family: ×1e6 instead of ×1e3, labelled "un".
 //
 // Since v1.108.10 the price divides the value and the quantity of the SAME rows (vPriced ÷
-// qPriced), and a year whose price rests on less than 90% of its value says so; the last
-// describe locks it.
+// qPriced), and a year whose price rests on less than 90% of its value says so; a describe
+// locks it.
+//
+// Since v1.108.18 what a measure IS comes from the data (measure_kind), never from a missing
+// value: soybean in 1974–1979 under IPCA was laid out as a herd, with a zero for every UF. The
+// last describe locks the crop that stays a crop, the card that says why it has no value, and
+// the absences that are no longer drawn as zeros.
 //
 // Unlike ViewProductProfile.cov.test.jsx, which stubs every helper to drive branches, this
 // file runs the REAL unit modules (data.js, MetricConventions.jsx, UnitFamily.jsx,
@@ -20,9 +25,10 @@
 // ones the screen prints. Only the composed widgets, applyFilters and fetch are stubbed.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render } from '@testing-library/react';
+import { cleanup, render, waitFor } from '@testing-library/react';
 
 let lineCharts;
+let barCharts;
 
 function stubWidgets(filtered) {
   window.applyFilters = () => filtered;
@@ -33,8 +39,9 @@ function stubWidgets(filtered) {
     const msgs = note ? Object.values(note).filter(Boolean) : [];
     return msgs.length ? <div className="na-note">{msgs.join(' ')}</div> : null;
   };
-  window.KpiCardSpark = ({ label, value, sub }) => (
-    <div className="kpi">
+  // The spark rides along as data: the real Sparkline draws an absent point as a zero.
+  window.KpiCardSpark = ({ label, value, sub, spark }) => (
+    <div className="kpi" data-spark={JSON.stringify(spark ?? null)}>
       <span className="kpi-label">{label}</span><span className="kpi-value">{value}</span>
       <span className="kpi-sub">{sub}</span>
     </div>
@@ -43,11 +50,12 @@ function stubWidgets(filtered) {
     <div className="sh"><span className="sh-overline">{overline}</span><span className="sh-title">{title}</span></div>
   );
   window.LineChart = (props) => { lineCharts.push(props); return <div className="line-chart" />; };
-  window.BarChart = () => <div className="bar-chart" />;
+  window.BarChart = (props) => { barCharts.push(props); return <div className="bar-chart" />; };
 }
 
 beforeEach(async () => {
   lineCharts = [];
+  barCharts = [];
   await import('./data.js');               // UNIT_FAMILIES, unitToBase, fmtPct, fmtSigned
   await import('./seriesUtils.js');        // scalePresent, ratioPresent, deltaPct…
   await import('./MetricConventions.jsx'); // DEFAULT_CONVENTIONS, formatProductQty, *QtyMul
@@ -195,18 +203,6 @@ describe('ViewProductProfile — mass and volume keep the strip’s unit, and th
     expect(lineCharts.map((p) => p.label)).toContain('R$/kg');
   });
 
-  it('a crop with no value in the window is shown in t, not multiplied as a count', () => {
-    // PAM before 1980 under IPCA: the quantity exists, the corrected value does not. The
-    // screen lays it out with the stock cards (no value to show), and those cards called
-    // formatCountQty: 150.000 mil t became "150.000.000.000 un".
-    const SEM_VALOR = [{ y: 1978, v: null, q: 140000 }, { y: 1979, v: null, q: 150000 }];
-    const c = renderProfile(SOJA, SEM_VALOR, conv(), 'ibge_pam');
-    // The number and its unit only: that a crop is laid out as a herd ("Efetivo") is a
-    // separate defect, left for its own change.
-    expect(kpi(c, 'Pico histórico')).toBe('150.000.000 t');
-    expect([...c.querySelectorAll('.pp-spec dd')].map((d) => d.textContent)).toContain('150.000.000 t');
-    expect(nuas(c)).toEqual([]);
-  });
 });
 
 describe('ViewProductProfile — the price divides the value and the quantity of the SAME rows (v1.108.10)', () => {
@@ -257,5 +253,104 @@ describe('ViewProductProfile — the price divides the value and the quantity of
     const c = renderProfile(MADEIRA, TS, conv(), 'un_comtrade');
     expect(kpiSub(c, 'Preço médio implícito')).toBe('valor ÷ quantidade · apoiado em 0,03% do valor');
     expect(notaParcial(c)).toContain('Preço apoiado em parte do valor: 2022 (0,03%).');
+  });
+});
+
+describe('ViewProductProfile — a product with no value in the window is still what it is (v1.108.18)', () => {
+  // Measured on prod 2026-11-27 (/api/snapshot?banco=ibge_pam&currency=BRL&correction=IPCA):
+  // soybean, in mil t and mi R$. IPCA reaches PAM only from 1980, and the snapshot's valueGap
+  // says so, naming the index that does reach 1974–1979.
+  const SOJA = { code: '40124', name: 'Soja (em grão)', family: 'mass', unit: 't', unit_native: 'Toneladas', tabela: '5457' };
+  const S1978 = { y: 1978, v: null, q: 9540.577, vPriced: null, qPriced: null };
+  const S1979 = { y: 1979, v: null, q: 10240.306, vPriced: null, qPriced: null };
+  const S1980 = { y: 1980, v: 33417.87, q: 15155.804, vPriced: 33417.87, qPriced: 15155.804 };
+  const S1981 = { y: 1981, v: 31466.44, q: 15007.367, vPriced: 31466.44, qPriced: 15007.367 };
+  const GAP = {
+    years: [1974, 1975, 1976, 1977, 1978, 1979], partial: [], months: {}, share: null,
+    valuedRange: [1980, 2025], coveredBy: ['IGP-DI'],
+  };
+  const IPCA = () => ({ ...conv(), currency: 'BRL', correction: 'IPCA' });
+  const VALOR = 'Valor · BRL · IPCA';
+  const POR_QUE = 'sem valor em 1979 nesta convenção — a série do IPCA não alcança esse ano (o IGP-DI alcança)';
+  const rotulos = (c) => [...c.querySelectorAll('.kpi-label')].map((e) => e.textContent);
+  const spark = (c, label) => JSON.parse(kpiCard(c, label).getAttribute('data-spark'));
+  const ufRows = (rows) => {
+    global.fetch = vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ uf: rows }) }));
+  };
+  const uf = (sigla, value) => ({ uf: sigla, name: sigla, region: 'S', value, q_mass: 3.5, q_vol: 0, q_count: 0 });
+
+  beforeEach(() => { window.dataStore = { get: () => ({ valueGap: GAP }) }; });
+  afterEach(() => { delete window.dataStore; });
+
+  it('soybean in 1978–1979 under IPCA keeps the cards of a crop, in t — never the herd’s', () => {
+    const c = renderProfile(SOJA, [S1978, S1979], IPCA(), 'ibge_pam');
+    expect(rotulos(c)).toEqual([VALOR, 'Quantidade · Massa · t', 'Preço médio implícito', 'Participação na cesta']);
+    expect(kpi(c, VALOR)).toBe('—');
+    // The v1.108.7 lock, kept: the quantity in t, never multiplied as a count.
+    expect(kpi(c, 'Quantidade · Massa · t')).toBe('10.240.306 t');
+    expect(kpi(c, 'Preço médio implícito')).toBe('—');
+    expect(ficha(c, 'Tipo de medida')).toBeUndefined();
+    expect(ficha(c, 'Valor (1979)')).toBe('—');
+    expect(titulos(c)).toContain('Onde Soja (em grão) é produzido');
+    expect(titulos(c).filter((t) => /efetivo|criado/.test(t))).toEqual([]);
+    expect(c.textContent).not.toContain('O efetivo dos rebanhos');
+    expect(nuas(c)).toEqual([]);
+  });
+
+  it('the value card says WHY it has no number, and draws no line of zeros', () => {
+    const c = renderProfile(SOJA, [S1978, S1979], IPCA(), 'ibge_pam');
+    expect(kpiSub(c, VALOR)).toBe(POR_QUE);
+    expect(spark(c, VALOR)).toEqual([]);
+  });
+
+  it('the value, price and share charts say there is no value, instead of an empty axis', () => {
+    // The labels drawn, once each: the UF read re-renders the screen.
+    const desenhados = () => [...new Set(lineCharts.map((p) => p.label))];
+    const c = renderProfile(SOJA, [S1978, S1979], IPCA(), 'ibge_pam');
+    // Only the quantity is drawn; the three value charts would be empty plots under "R$".
+    expect(desenhados()).toEqual(['t']);
+    const avisos = [...c.querySelectorAll('.caption')]
+      .filter((e) => e.textContent === 'Nenhum ano de 1978–1979 tem valor nesta convenção.');
+    expect(avisos).toHaveLength(3);
+    // One year with a value is enough for the charts to draw it.
+    cleanup();
+    lineCharts = [];
+    renderProfile(SOJA, [S1979, S1980], IPCA(), 'ibge_pam');
+    expect(desenhados()).toEqual(['R$', 't', 'R$/t', '% da cesta']);
+  });
+
+  it('a value in the last year and none the year before: the variation is refused, with the reason', () => {
+    const c = renderProfile(SOJA, [S1979, S1980], IPCA(), 'ibge_pam');
+    expect(kpi(c, VALOR)).not.toBe('—');
+    expect(kpiSub(c, VALOR)).toBe(`1980 vs. 1979 · ${POR_QUE}`);
+  });
+
+  it('a sparkline carries only the years that have the measure: an absence is not drawn as a zero', () => {
+    const c = renderProfile(SOJA, [S1978, S1979, S1980, S1981], IPCA(), 'ibge_pam');
+    expect(spark(c, VALOR).map((d) => d.y)).toEqual([1980, 1981]);
+    expect(spark(c, 'Preço médio implícito').map((d) => d.y)).toEqual([1980, 1981]);
+    expect(spark(c, 'Participação na cesta').map((d) => d.y)).toEqual([1980, 1981]);
+    // The quantity exists in every year, and its line keeps all four.
+    expect(spark(c, 'Quantidade · Massa · t').map((d) => d.y)).toEqual([1978, 1979, 1980, 1981]);
+  });
+
+  it('no UF has a value in the window: no bar of zero, and the card says the ranking is by value', async () => {
+    // On main the crop read as a herd, ranked the UFs on q_count — 0 for a crop — and drew
+    // "PR 0, RS 0" under "Onde Soja (em grão) é criado".
+    ufRows([uf('PR', null), uf('RS', null)]);
+    const c = renderProfile(SOJA, [S1978, S1979], IPCA(), 'ibge_pam');
+    await waitFor(() => expect(c.textContent)
+      .toContain('Nenhuma UF tem valor nesta convenção em 1978–1979, e o ranking é pelo valor.'));
+    expect(barCharts).toEqual([]);
+    expect(c.textContent).not.toContain('Sem dados por UF');
+  });
+
+  it('a UF with no value is left out of the bars and named, never a bar of zero', async () => {
+    ufRows([uf('PR', 3000), uf('AC', null), uf('RS', 2000)]);
+    const c = renderProfile(SOJA, [S1980, S1981], IPCA(), 'ibge_pam');
+    await waitFor(() => expect(barCharts.length).toBeGreaterThan(0));
+    expect(barCharts[barCharts.length - 1].data.map((d) => d.uf)).toEqual(['PR', 'RS']);
+    expect(c.textContent).toContain(
+      'Sem valor nesta convenção: AC. Não têm valor nesta convenção em 1980–1981, por isso não entram no ranking por valor.');
   });
 });
