@@ -674,7 +674,7 @@ magnitude**.
 | `mdic_comex:exp_value` | gold_comex_flows | `SUM(val_yearfx_usd WHERE flow='export')` ÷1e9 | `US$ bi` |
 | `mdic_comex:imp_value` | gold_comex_flows | import ÷1e9 | `US$ bi` |
 | `mdic_comex:exp_weight` | gold_comex_flows | `SUM(net_weight_kg WHERE flow='export')` ÷1e6 | `mil t` |
-| `mdic_comex:exp_price` | derived | `exp_value / exp_weight` (same window) | `US$/kg` |
+| `mdic_comex:exp_price` | serving_comex_annual | `SUM(val_yearfx_usd)` ÷ `SUM(net_weight_kg)` over the export rows with BOTH (one condition, `sql.cross_price_annual`) | `US$/kg` |
 | `un_comtrade:exp_value` | gold_comtrade_flows | `SUM(val_yearfx_usd WHERE flow='export')` ÷1e9 | `US$ bi` |
 | `un_comtrade:imp_value` | gold_comtrade_flows | import ÷1e9 | `US$ bi` |
 | `un_comtrade:world_exp` | gold_comtrade_flows | **see below** | `US$ bi` |
@@ -687,8 +687,29 @@ FROM gold.gold_comtrade_flows
 WHERE flow = 'export'          -- (filter cmd to the commodity for market share)
 GROUP BY reference_year
 ```
-This is the denominator for `cross_market_share` (Brazil ÷ world). `exp_price` is
-derived (value ÷ weight), kept internally consistent with `exp_value`/`exp_weight`.
+This is the denominator for `cross_market_share` (Brazil ÷ world).
+
+**The cross-source prices divide the value and the quantity of the SAME rows** (v1.108.12).
+`exp_price` and the two prices of Preço: porteira vs. FOB (`priceSpread`) are value ÷
+quantity per year, and until v1.108.11 each half was a sum over its own rows: `exp_price`
+and the FOB price divided the `exp_value` series by the `exp_weight` series, and the
+farm-gate price divided the production value by the native quantity of PEVS + PAM. A row
+with a value and no quantity entered the numerator alone. Now both halves come from one
+condition (`sql._priced_pair`: the row has the quantity AND the value): the COMEX side reads
+`sql.cross_price_annual` (`total_value`, `priced_value`, `priced_qty` per year), and the
+farm-gate side reads the mass track of the per-product series (`priced_value_mass`,
+`priced_qty_mass`, §3.3), summed over PEVS and PAM before the division. With the data of
+2026-11-23 no published number moves: no COMEX row has a value without a weight, and no
+IBGE row a value without a quantity — the halves agreed by data, and now agree by
+construction (`tests/test_cross_prices_same_rows.py` runs the real SQL with an unpaired row).
+
+The share of the value behind each price travels with it, nullable (null when the year has
+no price, or no value to divide): `exp_price` points are `{y, v, pricedShare}`, and each
+`priceSpread.series` point carries `fobPricedShare` and `gatePricedShare`. Below 0,9
+(`window.PRICED_SHARE_MIN`, shared with §3.3 and the partners' `pricedShare`, §4.2) Preço:
+porteira vs. FOB names the year and the side, and its KPI says "apoiado em X% do valor".
+`exp_price`'s `pricedShare` is not drawn yet in Cruzamento entre fontes (that view reads
+the points as `{y, v}`).
 
 **Each PEVS metric is ONE half of the survey** (v1.106.0): `prod_*` is native-forest
 extraction (SIDRA 289) and `silv_*` is planted-forest silviculture (SIDRA 291). The

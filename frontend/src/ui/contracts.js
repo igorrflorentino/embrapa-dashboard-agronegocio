@@ -159,7 +159,7 @@
 // @property {string}  family             currency | mass | volume | ratio | area | rendimento
 // @property {boolean} preview
 // @property {[number,number]} coverage
-// @property {{y:number,v:number}[]} points
+// @property {{y:number,v:(number|null),pricedShare?:(number|null)}[]} points  `pricedShare` only on `mdic_comex:exp_price` (v1.108.12): the price divides the value and the weight of the SAME export rows, and this is how much of the year's value they hold (null when the year has no price). v is null for a year with no row carrying both.
 // @property {(PriceBase|null)} [priceBase]  Only a corrected series has one (today the two PEVS value series, `prod_value` and `silv_value`, in IPCA); the legend and the picker's hint name its month.
 //
 // ── Cross analytics (src/data/producers.js) ──────────────────────────────
@@ -180,7 +180,7 @@
 // @typedef {Object} PriceSpread         window.priceSpread(productCode)
 // @property {boolean} preview
 // @property {string}  unit
-// @property {{y:number,gate:number,fob:number,spread:number,markup:number}[]} series
+// @property {{y:number,gate:(number|null),fob:number,spread:(number|null),markup:(number|null),fobPricedShare:(number|null),gatePricedShare:(number|null)}[]} series  US$/kg nominal. Each price divides the value and the quantity of the SAME rows (v1.108.12): the FOB, export rows with a value AND a net weight; the farm gate, PEVS + PAM rows with a value AND a mass, summed before the division. `fobPricedShare`/`gatePricedShare` are how much of each side's value those rows hold (null when the side has no price that year); below window.PRICED_SHARE_MIN the view names the year and the side. A year appears only when it has a FOB price.
 //
 // @typedef {Object} TradeMirror         window.tradeMirror(productCode)
 // @property {boolean} preview

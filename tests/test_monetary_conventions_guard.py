@@ -16,7 +16,10 @@ Esta varredura deriva do CÓDIGO as três ligações e reprova a que faltar:
 2. **seam → gateway** — toda chamada a um leitor que aceita ``value_column`` passa uma
    coluna EXPLÍCITA, e uma coluna monetária literal só com motivo escrito. O padrão do
    leitor (``val_yearfx_usd``) é justamente o nominal silencioso. Uma coluna de QUANTIDADE
-   literal (``qty_base``) é legítima: não há moeda nela para a faixa contradizer.
+   literal (``qty_base``) é legítima: não há moeda nela para a faixa contradizer. Vale também
+   para o seam que monta o SQL direto, ``sqlbuild.<construtor>(value_column=…)``, sem passar
+   pelo gateway (as metades do preço de exportação, v1.108.12): a coluna chega ao SQL do
+   mesmo jeito.
 3. **rota → seam** — toda rota que chama um seam que resolve a convenção
    (``effective_value_column``) lê ``currency``/``correction`` e as repassa.
 
@@ -70,6 +73,11 @@ _LITERAL_POR_DESENHO = {
     ),
     ("seam_cross.py", "_mass_by_year", "fetch_product_timeseries"): (
         "Só lê a massa (`total_qty_native`), o denominador do coeficiente de exportação."
+    ),
+    ("seam_base.py", "_export_price_halves", "cross_price_annual"): (
+        "Preço de exportação (Cruzamento entre fontes) e preço FOB (Preço: porteira vs. FOB), "
+        "em US$/kg: o mesmo US$ declarado da série `exp_value` ao lado, e o FOB se compara "
+        "com a porteira dentro do ano, onde a inflação se cancela."
     ),
 }
 
@@ -255,9 +263,24 @@ def _leitores_com_coluna() -> set[str]:
     }
 
 
-def chamadas_sem_coluna(fonte: str, arquivo: str, leitores: set[str]) -> list[str]:
-    """Chamadas ``gateway.<leitor>(…)`` que não passam ``value_column``, ou passam uma
-    coluna MONETÁRIA literal — fora das exceções escritas."""
+def _construtores_com_coluna() -> set[str]:
+    """Os construtores do sql.py que recebem ``value_column`` — o caminho do seam que monta o
+    SQL sem passar por um leitor do gateway."""
+    arvore = ast.parse(_SQL_PY.read_text(encoding="utf-8"))
+    return {
+        f.name
+        for f in arvore.body
+        if isinstance(f, ast.FunctionDef)
+        and any(a.arg == "value_column" for a in f.args.args + f.args.kwonlyargs)
+    }
+
+
+def chamadas_sem_coluna(
+    fonte: str, arquivo: str, leitores: set[str], modulo: str = "gateway"
+) -> list[str]:
+    """Chamadas ``<modulo>.<leitor>(…)`` que não passam ``value_column``, ou passam uma
+    coluna MONETÁRIA literal — fora das exceções escritas. ``modulo`` é ``gateway`` (os
+    leitores) ou ``sqlbuild`` (os construtores de SQL, quando o seam monta a consulta)."""
     achadas = []
     for f in ast.walk(ast.parse(fonte)):
         if not isinstance(f, ast.FunctionDef):
@@ -267,7 +290,7 @@ def chamadas_sem_coluna(fonte: str, arquivo: str, leitores: set[str]) -> list[st
                 isinstance(no, ast.Call)
                 and isinstance(no.func, ast.Attribute)
                 and isinstance(no.func.value, ast.Name)
-                and no.func.value.id == "gateway"
+                and no.func.value.id == modulo
                 and no.func.attr in leitores
             ):
                 continue
@@ -275,25 +298,28 @@ def chamadas_sem_coluna(fonte: str, arquivo: str, leitores: set[str]) -> list[st
             coluna = {k.arg: k.value for k in no.keywords}.get("value_column")
             if coluna is None:
                 if chave not in _SEM_COLUNA_POR_DESENHO:
-                    achadas.append(f"{arquivo}:{f.name} → gateway.{no.func.attr} sem value_column")
+                    achadas.append(f"{arquivo}:{f.name} → {modulo}.{no.func.attr} sem value_column")
             elif (
                 isinstance(coluna, ast.Constant)
                 and _MONETARIA.fullmatch(str(coluna.value))  # `qty_base` é quantidade
                 and chave not in _LITERAL_POR_DESENHO
             ):
                 achadas.append(
-                    f"{arquivo}:{f.name} → gateway.{no.func.attr}"
+                    f"{arquivo}:{f.name} → {modulo}.{no.func.attr}"
                     f"(value_column={coluna.value!r}) literal"
                 )
     return achadas
 
 
 def test_todo_leitor_monetario_recebe_a_coluna_explicita():
-    leitores = _leitores_com_coluna()
+    caminhos = {"gateway": _leitores_com_coluna(), "sqlbuild": _construtores_com_coluna()}
     culpadas = [
         c
         for arquivo in _SEAMS
-        for c in chamadas_sem_coluna(arquivo.read_text(encoding="utf-8"), arquivo.name, leitores)
+        for modulo, alvos in caminhos.items()
+        for c in chamadas_sem_coluna(
+            arquivo.read_text(encoding="utf-8"), arquivo.name, alvos, modulo
+        )
     ]
     assert not culpadas, (
         "o padrão do leitor é o US$ nominal silencioso — passe a coluna que "
@@ -321,6 +347,33 @@ def test_a_varredura_do_seam_acha_os_leitores():
         assert nome in leitores, f"{nome} deixou de aceitar value_column"
 
 
+def test_a_varredura_do_seam_acha_os_construtores(monkeypatch):
+    """Guarda do instrumento do caminho direto: sem a exceção escrita, a varredura APONTA a
+    chamada real do seam que monta o SQL das metades do preço de exportação."""
+    construtores = _construtores_com_coluna()
+    assert {"cross_price_annual", "product_timeseries"} <= construtores
+    chave = ("seam_base.py", "_export_price_halves", "cross_price_annual")
+    monkeypatch.delitem(_LITERAL_POR_DESENHO, chave)
+    fonte = (_WEBAPI / "seam_base.py").read_text(encoding="utf-8")
+    achadas = chamadas_sem_coluna(fonte, "seam_base.py", construtores, "sqlbuild")
+    assert achadas == [
+        "seam_base.py:_export_price_halves → sqlbuild.cross_price_annual"
+        "(value_column='val_yearfx_usd') literal"
+    ]
+
+
+def test_a_varredura_do_seam_REPROVA_o_construtor_com_moeda_literal():
+    """O caminho direto sem motivo escrito: a mesma reprovação do leitor do gateway."""
+    direto = (
+        "def preco():\n"
+        "    return sqlbuild.cross_price_annual('t', value_column='val_yearfx_usd', "
+        "qty_column='net_weight_kg')\n"
+    )
+    assert chamadas_sem_coluna(direto, "x.py", {"cross_price_annual"}, "sqlbuild")
+    qtd = "def f():\n    return sqlbuild.cross_price_annual('t', value_column='qty_base')\n"
+    assert chamadas_sem_coluna(qtd, "x.py", {"cross_price_annual"}, "sqlbuild") == []
+
+
 @pytest.mark.parametrize(
     "chave", [*_LITERAL_POR_DESENHO, *_SEM_COLUNA_POR_DESENHO], ids=lambda c: f"{c[1]}→{c[2]}"
 )
@@ -331,7 +384,7 @@ def test_as_excecoes_do_seam_ainda_existem(chave):
     corpos = {
         f.name: ast.unparse(f) for f in ast.walk(ast.parse(fonte)) if isinstance(f, ast.FunctionDef)
     }
-    assert funcao in corpos and f"gateway.{leitor}(" in corpos[funcao], (
+    assert funcao in corpos and f".{leitor}(" in corpos[funcao], (
         f"{arquivo}:{funcao} → {leitor} não existe mais — tire-o das exceções"
     )
 

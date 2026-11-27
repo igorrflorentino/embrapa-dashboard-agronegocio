@@ -4,7 +4,8 @@ The comparable cross-metric series + the four crosswalk-joined analytical
 perspectives (market share, export coefficient, price spread, trade mirror). They
 map the SAME commodity across PEVS / NCM / HS6 via gold_produto_agrupamento, then
 compose existing ``serving.gateway`` readers filtered to that commodity's codes —
-pure composition, no new BFF SQL beyond the crosswalk read (in ``seam_base``).
+composition, with no BFF SQL of their own beyond the crosswalk read and the export price
+halves (both in ``seam_base``).
 
 Imports only ``seam_base`` (the shared commodity toolkit) + the gateway, never
 ``seam`` itself, so the import graph stays acyclic. ``seam`` re-exports the public
@@ -12,6 +13,8 @@ builders so ``seam.market_share`` etc. keep working unchanged.
 """
 
 from __future__ import annotations
+
+from typing import NamedTuple
 
 from embrapa_dashboard.config import get_settings
 from embrapa_dashboard.serving import gateway
@@ -185,24 +188,18 @@ def _pevs_cross_points(
 
 
 def _exp_price_cross_points(y0: int, y1: int, uf_codes: tuple = ()) -> list[dict]:
-    """Derived COMEX export price: value(US$) ÷ weight(kg) = US$/kg."""
-    val = gateway.fetch_cross_series(
-        "mdic_comex:exp_value", year_start=y0, year_end=y1, uf_codes=uf_codes
-    )
-    wt = gateway.fetch_cross_series(
-        "mdic_comex:exp_weight", year_start=y0, year_end=y1, uf_codes=uf_codes
-    )
-    wmap = {int(r.reference_year): r.value for r in wt.itertuples()}
-    # A year with no (or zero) weight has no defined price: emit None (a gap
-    # in the chart) — NEVER divide by 1, which would plot the year's raw
-    # total US$ value as a 'US$/kg' point. Nor with no VALUE: that used to read
-    # `float(r.value or 0) / w`, a price of US$ 0/kg for a year nobody measured.
+    """COMEX export price, US$/kg, from the value and the weight of the SAME shipments.
+
+    It used to divide the ``exp_value`` series by the ``exp_weight`` series, two sums over
+    their own rows; now both halves come from one query under one condition
+    (:func:`seam_base._export_price_by_year`). A year with no shipment carrying both measures
+    has no price: ``v`` is None (a gap in the chart), never a division by 1 that would plot
+    the year's whole US$ value as a 'US$/kg' point, nor US$ 0/kg for a year nobody measured.
+    ``pricedShare`` is the share of the year's export value behind the price.
+    """
     return [
-        {
-            "y": int(r.reference_year),
-            "v": measures.ratio_present(r.value, wmap.get(int(r.reference_year))),
-        }
-        for r in val.itertuples()
+        {"y": y, "v": p.price, "pricedShare": measures.ratio_present(p.priced_value, p.total_value)}
+        for y, p in sorted(seam_base._export_price_by_year((), uf_codes, y0, y1).items())
     ]
 
 
@@ -629,19 +626,44 @@ def _export_coef_national(by_uf: list[dict]) -> dict:
     }
 
 
-def _fob_price_by_year(ncms: tuple, uf_codes: tuple = ()) -> dict:
-    """FOB export unit price (US$/kg) = COMEX value ÷ weight, per common year."""
-    val = seam_base._xyear("mdic_comex:exp_value", ncms, uf_codes)
-    wt = seam_base._xyear("mdic_comex:exp_weight", ncms, uf_codes)
-    return {y: (val[y] / wt[y]) for y in (set(val) & set(wt)) if wt[y]}
+def _fob_price_by_year(ncms: tuple, uf_codes: tuple = ()) -> dict[int, seam_base.PricedYear]:
+    """FOB export unit price (US$/kg) per year, over the shipments that carry BOTH a value
+    and a net weight. A year with no such shipment has no FOB price and is left out, as the
+    price spread has always done (its years are those with both prices).
+
+    Empty ``ncms`` returns ``{}`` WITHOUT querying, like the gate side: to the reader an empty
+    list means the whole banco, which is ``exp_price``'s question, never an agrupamento's.
+    """
+    if not ncms:
+        return {}
+    return {
+        y: p
+        for y, p in seam_base._export_price_by_year(ncms, uf_codes).items()
+        if p.price is not None
+    }
+
+
+class _GateHalves(NamedTuple):
+    """One production banco's year: the price halves of its mass track and its whole value."""
+
+    priced_value: float | None  # US$ of the rows with a value AND a mass
+    priced_qty: float | None  # t, of the same rows
+    total_value: float | None  # US$ of every row: the base of the coverage
 
 
 def _gate_value_qty_by_year(banco: str, codes: tuple, uf_codes: tuple = ()) -> dict:
-    """``{ano: (valor US$, quantidade t)}`` para UM banco de produção.
+    """``{year: _GateHalves}`` for ONE production banco, in declared US$ and tonnes.
 
-    ``codes`` vazio devolve ``{}`` SEM consultar: uma lista vazia significa "sem filtro"
-    lá embaixo, e consultar assim somaria o banco INTEIRO — foi exatamente esse o defeito
-    que a v1.60.0 corrige (ver :func:`price_spread`).
+    The halves are the mass track's ``priced_value_mass`` / ``priced_qty_mass``
+    (``sql._priced_sums``): per product and year, the value and the quantity of the rows that
+    carry both, so they are absent together, and the two sums below cover the same products.
+    Until v1.108.12 this read ``total_value`` and ``total_qty_native``, each over its own
+    rows. The price spread only runs for an all-mass agrupamento (``_is_mass_basis``), so the
+    mass track is the whole production side, and its ``qty_base`` is in tonnes.
+
+    Empty ``codes`` returns ``{}`` WITHOUT querying: an empty list means "no filter" further
+    down, and querying so would sum the WHOLE banco — the defect v1.60.0 fixed (see
+    :func:`price_spread`).
     """
     if not codes:
         return {}
@@ -650,48 +672,57 @@ def _gate_value_qty_by_year(banco: str, codes: tuple, uf_codes: tuple = ()) -> d
     )
     if pts is None or pts.empty:
         return {}
-    # `min_count=1`: a soma de um grupo INTEIRAMENTE ausente é ausente, não zero. O
-    # padrão do pandas devolve 0.0 aí, e um valor 0.0 é indistinguível de um zero medido
-    # — a ausência morre neste ponto, antes de qualquer guarda a jusante poder vê-la.
+    # `min_count=1`: the sum of a group that is ENTIRELY absent is absent, not zero. Pandas
+    # returns 0.0 there by default, and a 0.0 cannot be told from a measured zero — the
+    # absence would die here, before any guard downstream could see it.
     g = pts.groupby("reference_year").agg(
-        v=("total_value", lambda col: col.sum(min_count=1)),
-        q=("total_qty_native", lambda col: col.sum(min_count=1)),
+        v=("priced_value_mass", lambda col: col.sum(min_count=1)),
+        q=("priced_qty_mass", lambda col: col.sum(min_count=1)),
+        total=("total_value", lambda col: col.sum(min_count=1)),
     )
-    return {int(y): (row.v, row.q) for y, row in g.iterrows()}
+    return {int(y): _GateHalves(row.v, row.q, row.total) for y, row in g.iterrows()}
 
 
-def _gate_price_by_year(pevs_codes: tuple, pam_codes: tuple, uf_codes: tuple = ()) -> dict:
-    """Preço de porteira implícito (US$/kg) = valor ÷ (quantidade × 1000), por ano.
+def _gate_price_by_year(
+    pevs_codes: tuple, pam_codes: tuple, uf_codes: tuple = ()
+) -> dict[int, seam_base.PricedYear]:
+    """Implied farm-gate price (US$/kg) = value ÷ (quantity × 1000), per year.
 
-    Soma as DUAS pesquisas de produção do IBGE — extração nativa (PEVS) e lavoura
-    plantada (PAM) — pelo mesmo motivo do coeficiente de exportação: o outro lado da
-    comparação é o preço FOB da alfândega, que não distingue origem produtiva.
+    Sums BOTH IBGE production surveys — native extraction (PEVS) and planted crop (PAM) —
+    for the same reason as the export coefficient: the other side of the comparison is the
+    customs FOB price, which cannot tell the productive origin apart. What is summed is the
+    value and the quantity, with the division afterwards: averaging the two prices answers
+    another question.
     """
     extractive = _gate_value_qty_by_year("ibge_pevs", pevs_codes, uf_codes)
     crop = _gate_value_qty_by_year("ibge_pam", pam_codes, uf_codes)
-    saida = {}
+    out = {}
     for y in set(extractive) | set(crop):
-        # Cada pesquisa entra com as DUAS metades ou com NENHUMA. `(ve or 0) + (vc or 0)`
-        # sobre `(qe or 0) + (qc or 0)` somava as metades independentemente: uma pesquisa
-        # com quantidade e sem valor entrava com 0 no numerador e com a quantidade
-        # inteira no denominador, e o que saía não era um preço — era um preço diluído
-        # pela produção que ninguém precificou. Hoje isso não chega à tela porque o
-        # recorte se cruza com o COMEX, que começa em 1997, e o vão do USD nominal do
-        # IBGE termina em 1993; é imunidade por DADO, não por construção.
-        # `_finite` recusa None e NaN de uma vez — a soma do pandas devolve NaN para o
-        # ano cujo valor não existe, e `NaN is not None` é verdadeiro.
-        pares = [
+        surveys = [s for s in (extractive.get(y), crop.get(y)) if s is not None]
+        # Each survey enters with BOTH halves or with NEITHER. Since v1.108.12 the halves are
+        # absent together by construction (one condition in the SQL); the pairing stays as
+        # the defense of the sum ACROSS surveys, which `(ve or 0) + (vc or 0)` over
+        # `(qe or 0) + (qc or 0)` once broke: a survey with a quantity and no value entered
+        # with 0 above and its whole quantity below, and the result was a price diluted by
+        # production nobody priced. `_finite` refuses None and NaN at once — pandas returns
+        # NaN for a year whose value does not exist, and `NaN is not None` is true.
+        pairs = [
             (fv, fq)
-            for par in (extractive.get(y), crop.get(y))
-            if par is not None
-            for fv, fq in [(measures._finite(par[0]), measures._finite(par[1]))]
+            for s in surveys
+            for fv, fq in [(measures._finite(s.priced_value), measures._finite(s.priced_qty))]
             if fv is not None and fq is not None
         ]
-        if not pares:
-            saida[y] = None
+        totals = [t for s in surveys if (t := measures._finite(s.total_value)) is not None]
+        if not pairs:
+            out[y] = seam_base.PricedYear(None, None, sum(totals) if totals else None)
             continue
-        saida[y] = measures.ratio_present(sum(v for v, _ in pares), sum(q for _, q in pares) * 1000)
-    return saida
+        priced_value = sum(v for v, _ in pairs)
+        out[y] = seam_base.PricedYear(
+            measures.ratio_present(priced_value, sum(q for _, q in pairs) * 1000),
+            priced_value,
+            sum(totals) if totals else None,
+        )
+    return out
 
 
 def price_spread(agrupamento_id: str | None, uf_codes: tuple = ()) -> dict:
@@ -727,12 +758,21 @@ def price_spread(agrupamento_id: str | None, uf_codes: tuple = ()) -> dict:
     series = [
         {
             "y": y,
-            "fob": fob[y],
-            "gate": gate[y],
+            "fob": fob[y].price,
+            "gate": gate[y].price,
             # Ambos podem ser None desde que os preços passaram a preservar ausência:
             # sem os dois lados não há diferença nem múltiplo a declarar.
-            "spread": (None if fob[y] is None or gate[y] is None else fob[y] - gate[y]),
-            "markup": measures.ratio_present(fob[y], gate[y]),
+            "spread": (
+                None
+                if fob[y].price is None or gate[y].price is None
+                else fob[y].price - gate[y].price
+            ),
+            "markup": measures.ratio_present(fob[y].price, gate[y].price),
+            # The share of each side's value that stands behind its price (v1.108.12). Each
+            # price divides the halves of the same rows; this is how much of the value those
+            # rows hold, and the screen names the years below window.PRICED_SHARE_MIN.
+            "fobPricedShare": measures.ratio_present(fob[y].priced_value, fob[y].total_value),
+            "gatePricedShare": measures.ratio_present(gate[y].priced_value, gate[y].total_value),
         }
         for y in sorted(set(fob) & set(gate))
     ]

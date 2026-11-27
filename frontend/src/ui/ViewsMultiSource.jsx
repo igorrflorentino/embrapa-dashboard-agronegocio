@@ -315,6 +315,20 @@ function ViewPriceSpread() {
     { name: 'Preço de exportação (FOB)', color: 'var(--viz-3)', data: data.series.map(d => ({ y: d.y, v: d.fob })) },
     { name: 'Preço na porteira (produção)', color: 'var(--viz-2)', data: data.series.map(d => ({ y: d.y, v: d.gate })) },
   ];
+  // Each price divides the value and the quantity of the SAME rows (v1.108.12), so a year
+  // whose rows with both measures hold too little of the value says so, by side, as the
+  // Perfil do produto does (window.PRICED_SHARE_MIN). No year falls below it today: no COMEX
+  // row has a value without a weight, and no IBGE row a value without a quantity.
+  const apoio = (parcela) => (window.pricedShareLow(parcela)
+    ? ` · apoiado em ${window.fmtPctSig(parcela)} do valor`
+    : '');
+  const precoParcial = data.series.flatMap(d => {
+    const lados = [
+      d.fob != null && window.pricedShareLow(d.fobPricedShare) && `FOB ${window.fmtPctSig(d.fobPricedShare)}`,
+      d.gate != null && window.pricedShareLow(d.gatePricedShare) && `porteira ${window.fmtPctSig(d.gatePricedShare)}`,
+    ].filter(Boolean);
+    return lados.length ? [`${d.y} (${lados.join(' · ')})`] : [];
+  });
 
   return (
     <>
@@ -326,8 +340,10 @@ function ViewPriceSpread() {
         {/* Os quatro podem chegar null desde que o backend parou de responder 0 a uma
             razão indefinida (measures.py). Sem a guarda sairia "US$ —/kg" e "×—" — um
             prefixo e um sufixo afirmando uma unidade sobre um valor que não existe. */}
-        <window.KpiCardSpark label="Preço FOB atual" value={msUnit(last?.fob, 'US$ ', '/kg', 2)} sub={`${last?.y ?? '—'} · no porto`} />
-        <window.KpiCardSpark label="Preço na porteira" value={msUnit(last?.gate, 'US$ ', '/kg', 2)} sub="na produção" />
+        <window.KpiCardSpark label="Preço FOB atual" value={msUnit(last?.fob, 'US$ ', '/kg', 2)}
+          sub={`${last?.y ?? '—'} · no porto${last?.fob != null ? apoio(last.fobPricedShare) : ''}`} />
+        <window.KpiCardSpark label="Preço na porteira" value={msUnit(last?.gate, 'US$ ', '/kg', 2)}
+          sub={`na produção${last?.gate != null ? apoio(last.gatePricedShare) : ''}`} />
         <window.KpiCardSpark label="Multiplicador de preço" value={msUnit(last?.markup, '×', '', 1)} sub="FOB ÷ porteira" />
         <window.KpiCardSpark label="Diferença de preço" value={msUnit(last?.spread, 'US$ ', '/kg', 2)} sub="valor agregado entre porteira e porto" />
       </div>
@@ -342,6 +358,18 @@ function ViewPriceSpread() {
           ))}
         </div>
         <window.NominalSeriesNote />
+        <window.CollapsingNameList
+          titulo="Preço apoiado em parte do valor"
+          itens={precoParcial}
+          substantivo="anos"
+          regra={
+            <>
+              Nesses anos, parte do valor está em registros sem quantidade: no porto, embarques
+              sem peso líquido; na porteira, produção sem quantidade em massa. Um preço só pode ser
+              calculado onde valor e quantidade existem juntos, e a porcentagem é quanto do valor
+              do ano sustenta o preço exibido.
+            </>
+          } />
       </div>
 
       <div className="card">

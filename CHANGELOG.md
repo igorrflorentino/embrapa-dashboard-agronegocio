@@ -7,6 +7,130 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.108.12] - 2026-11-27
+
+**Os preços da Análise cruzada passam a dividir o valor e a quantidade das mesmas linhas, por
+construção, e a tela diz quanto do valor sustenta cada preço quando é pouco.** Fecha a pendência
+das Notas da v1.108.10. Os dois preços de "Preço: porteira vs. FOB" e o preço de exportação do
+Cruzamento entre fontes (`mdic_comex:exp_price`) dividiam duas somas independentes, cada uma sobre
+as próprias linhas: uma linha com valor e sem quantidade entrava só no numerador. Hoje nenhuma
+linha assim existe nas tabelas que esses preços leem, e por isso **nenhum número publicado muda**:
+medido na produção, com o código antigo e o novo sobre o mesmo build, 3.225 valores comparados e
+3.225 idênticos. A mudança é de construção: a próxima linha de valor sem quantidade não altera mais
+um preço em silêncio.
+
+### Corrigido
+- **Preço FOB e preço de exportação.** Até a v1.108.11, os dois liam duas séries anuais do COMEX,
+  o valor de todas as exportações e o peso de todas, e dividiam uma pela outra; um embarque com
+  valor e sem peso líquido entrava só no numerador. Agora uma leitura só (`sql.cross_price_annual`)
+  traz, por ano, o valor e o peso dos embarques que têm as duas medidas, sob uma única condição
+  (`sql._priced_pair`), e o valor de todos os embarques do ano, base da cobertura. No teste, um
+  embarque de US$ 500 sem peso, ao lado de US$ 1.300 com 130 kg, fazia o preço sair US$ 13,85/kg;
+  agora sai US$ 10,00/kg.
+- **Preço na porteira.** Somava, em cada pesquisa de produção (PEVS e PAM), o valor de todas as
+  linhas e a quantidade de todas, cada soma sobre as próprias linhas. Agora lê o par da família de
+  massa que a série por produto já calcula desde a v1.108.10 (`priced_value_mass` e
+  `priced_qty_mass`): o valor e a massa das mesmas linhas. A diferença de preço só existe para um
+  agrupamento todo em massa (`_is_mass_basis`), então o par de massa é o lado inteiro da produção.
+  A regra entre as pesquisas continua: cada uma entra com as duas metades ou com nenhuma. No teste,
+  uma linha de US$ 40 mil sem quantidade levava o preço de US$ 2,00/kg a US$ 2,20/kg; agora não
+  leva.
+- **A tela diz quanto do valor sustenta o preço, quando é pouco.** Abaixo de 90%
+  (`window.PRICED_SHARE_MIN`, o limiar do Perfil do produto e de Parceiros), o indicador do preço
+  FOB ou do preço na porteira diz "apoiado em X% do valor" no último ano, e uma nota sob o gráfico
+  "Onde o valor é capturado" nomeia os anos, com o lado e a porcentagem de cada um: "2019 (FOB
+  82,0%), 2022 (FOB 86,0% · porteira 74,0%)". Acima de 10 anos a lista recolhe. Hoje nenhum ano
+  fica abaixo de 90% (a cobertura é de 100% nos 1.392 pontos medidos), então nada aparece.
+
+### Alterado
+- `sql._priced_pair` (novo): as duas metades de um preço sob uma só condição. `sql._priced_sums`
+  passa a montá-lo por família, e o SQL da série por produto sai idêntico, caractere por caractere
+  (conferido).
+- `sql.cross_price_annual` (novo): o par por ano no COMEX. `seam_base._export_price_by_year` o lê
+  (memoizado em `_export_price_halves`) e devolve o preço, o valor por trás dele e o valor do ano.
+- A resposta de "Preço: porteira vs. FOB" ganha `fobPricedShare` e `gatePricedShare` em cada ano, e
+  os pontos de `exp_price` ganham `pricedShare`. Contrato em `docs/frontend_data_contract.md` §5 e
+  em `frontend/src/ui/contracts.js`; os três campos entram na lista de campos que podem chegar
+  nulos (`absenceGuard.test.js`, derivada do Python).
+
+### Medição na produção (só leitura)
+- **Nenhuma linha desemparelhada.** Linha a linha, em todos os anos e fluxos, nas três tabelas
+  pré-agregadas que os preços leem (`serving_comex_annual`, `serving_pevs_annual`,
+  `serving_pam_annual`) e nas três da base analítica de onde elas vêm (`gold_comex_flows`,
+  `gold_pevs_production`, `gold_pam_production`): zero linhas com valor e sem quantidade (no COMEX,
+  sem peso líquido) e zero com peso e sem valor. Linhas com quantidade e sem valor em dólar só
+  existem nos anos do IBGE anteriores a 1994 (PEVS 1986–1993, PAM 1974–1993), em que nenhuma linha
+  tem valor em dólar; ali as duas formas não dão preço, e esses anos não chegam à tela, que cruza
+  com o COMEX a partir de 1997. Sem linha desemparelhada, as somas emparelhadas são iguais às somas
+  simples em qualquer recorte de código, UF e ano.
+- **Os mesmos números, antes e agora.** O código do `main` (fe1aa51) e o deste ramo, um logo após o
+  outro, chamando as funções que o painel chama, contra a mesma produção: "Preço: porteira vs. FOB"
+  no Brasil para os 12 agrupamentos de massa com lado aduaneiro e de produção, e em 13 recortes por
+  UF de 5 deles (25 séries, 611 pontos); o preço de exportação no Brasil e em cada uma das 27 UFs
+  (28 séries, 781 pontos). Dos 3.225 valores comparados (FOB, porteira, diferença, multiplicador e
+  preço de exportação), os 3.225 são idênticos, sem nem o ruído de ponto flutuante. O catálogo e o
+  índice de famílias foram lidos uma vez e dados aos dois códigos, e a data de modificação das
+  tabelas é a mesma antes e depois das duas rodadas.
+- Medido duas vezes, com os mesmos resultados: em 2026-11-23, sobre o build das 22:51 UTC, e em
+  2026-11-27, sobre o build de 2026-11-26, 20:24 UTC.
+
+### Custo (BigQuery)
+O preço FOB e o preço de exportação passam de duas consultas (a série de valor e a de peso) a uma,
+que processa menos que as duas somadas: no Brasil, 4,08 MB contra 6,12 MB; soja em Mato Grosso,
+5,86 MB contra 9,68 MB (por `--dry_run`, que não fatura). Como cada consulta fatura no mínimo
+10 MB, ler um desses preços custa a metade. O preço na porteira lê o mesmo SQL de antes.
+
+### Testes
+- pytest:
+  - `tests/test_cross_prices_same_rows.py` (novo, 5 casos): o código de produção inteiro (leitores,
+    memoização, costura) sobre um sqlite que executa o SQL que os próprios construtores montam, com
+    uma linha de valor sem quantidade em cada tabela: o preço FOB, o da porteira e o de exportação,
+    a cobertura de cada um, e um ano sem nenhuma linha completa, que fica sem preço;
+  - `tests/test_ratio_same_rows_guard.py`: regra estrutural nova sobre o SQL GERADO por cada
+    construtor (a lista deles é derivada do código): uma coluna `priced_value…` exige a
+    `priced_qty…` de mesmo sufixo, sob a mesma condição, e a condição exige as duas medidas;
+  - `tests/test_monetary_conventions_guard.py`: a regra 2 passa a ver também a coluna que uma
+    costura passa a um construtor (`sqlbuild.<construtor>(value_column=...)`), onde o preço novo
+    escolhe o dólar declarado;
+  - `tests/test_cov_sql_cross.py`, `tests/test_gate_price_pairs_halves.py`,
+    `tests/test_webapi_seam.py` e `tests/test_cross_empty_codes_guard.py` acompanham o leitor novo
+    (o último, com a barreira no leitor das metades).
+- vitest: 2 casos novos em `ViewsMultiSource.cov.test.jsx` (a nota nomeia os anos por lado e o
+  indicador diz a porcentagem; a partir de 90%, nada aparece), e `absenceGuard.test.js` com os três
+  campos.
+- Contraprova: o arquivo de testes novo contra o `src/` do `main` (fe1aa51) falha nos 5 casos (FOB
+  de US$ 13,85/kg em vez de 10; porteira de 2,2 em vez de 2,0; exportação de 13,85; e a cobertura,
+  que não existia); contra este ramo, os 5 passam. Quebrar `_priced_pair` (uma condição em cada
+  metade) faz a regra nova da guarda reprovar todos os pares.
+- pytest: 2.656 passando (15 pulados no Windows). Cobertura total de 99,33%; das 53 linhas
+  alteradas, 100% (`diff-cover`). vitest: 2.000 passando, em 106 arquivos.
+
+### Notas
+- **A cobertura do preço de exportação ainda não aparece na tela.** Os pontos de `exp_price` trazem
+  `pricedShare`, mas a perspectiva Cruzamento entre fontes os lê como `{y, v}`. A cobertura é hoje
+  de 100% nos 781 pontos medidos; nomeá-la ali fica para uma versão própria (`ViewCrossSource.jsx`).
+- **O preço do Valor agregado tem a forma antiga.** O preço de exportação por nível de
+  industrialização divide a série de valor pela de peso (`seam_attribute_engineering`), como faziam
+  o FOB e o preço de exportação até esta versão. Está imune hoje pelo mesmo dado; fica para uma
+  versão própria.
+- **O par vale sobre as tabelas pré-agregadas.** Elas somam valor e quantidade da base analítica,
+  cada um sobre as próprias linhas, e uma linha da base com valor e sem quantidade ficaria escondida
+  dentro da soma. A medição acima conferiu a base analítica também (zero linhas); levar o par para
+  dentro das tabelas pré-agregadas é mudança de dbt, fora desta versão.
+- **Peso zero é medida, não ausência.** O COMEX registra o peso em quilos inteiros, e 618 linhas de
+  exportação têm valor e 0 kg: embarques de menos de meio quilo. Elas entram nas duas metades,
+  antes e agora, como devem: o valor é real e o peso, quase nulo. Pesam no máximo 0,19% do valor
+  de um agrupamento-ano no Brasil e 1,6% do valor de uma UF-ano no preço de exportação.
+- **No recorte por UF, a diferença de preço sai de bases mínimas.** Soja no Ceará em 2022: US$ 2.139
+  exportados no ano inteiro, 60% deles em embarques de 0 kg, e US$ 6,90/kg no porto contra
+  US$ 0,55/kg na porteira. Em Alagoas, no mesmo ano, US$ 48,73/kg contra US$ 0,36/kg (135 vezes);
+  em Pernambuco em 2021, US$ 138/kg contra US$ 0,37/kg (372 vezes). A diferença de preço não tem
+  piso de materialidade (a regra de `materialityFloor` no CLAUDE.md); é anterior a esta versão,
+  igual nas duas formas, e fica para uma versão própria.
+- **No Cruzamento entre fontes, a série do COMEX termina em 2024.** O registro declara a cobertura
+  das métricas do COMEX como `[1997, 2024]` (`webapi/registries.py`), embora 2025 esteja completo, e
+  "Preço: porteira vs. FOB" vá até 2025. Vale conferir se a janela fixa é intencional.
+
 ## [1.108.11] - 2026-11-23
 
 **Os testes dos dois mapas carregam o componente uma vez, antes do primeiro teste, e a espera pelo
