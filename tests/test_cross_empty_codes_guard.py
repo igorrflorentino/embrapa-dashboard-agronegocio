@@ -23,6 +23,7 @@ um agrupamento sem código nenhum e exige que ela recuse, em vez de servir o tot
 
 from __future__ import annotations
 
+import pandas as pd
 import pytest
 
 from embrapa_dashboard.webapi import seam_attribute_engineering, seam_base, seam_cross
@@ -109,6 +110,17 @@ def gateway_que_recusa_escopo_vazio(monkeypatch):
 
     for mod in _MODULOS:
         monkeypatch.setattr(mod.seam_base, "_xyear", xyear, raising=False)
+
+    # As metades do preço de exportação (v1.108.13) também: uma consulta própria, fora dos
+    # fetch_ do gateway. Vazio aqui é legítimo só para `exp_price` (o banco inteiro), que
+    # não recebe agrupamento e por isso não está em ENTRADAS.
+    def metades(codes, uf_codes, year_start, year_end):
+        if len(tuple(codes)) == 0:
+            pytest.fail("_export_price_halves chamado com códigos VAZIOS")
+        chamadas.append("_export_price_halves")
+        return pd.DataFrame(columns=["reference_year", "total_value", "priced_value", "priced_qty"])
+
+    monkeypatch.setattr(seam_base, "_export_price_halves", metades)
     return chamadas
 
 
@@ -120,6 +132,7 @@ def gateway_que_recusa_escopo_vazio(monkeypatch):
 LEITORES = [
     ("_mass_by_year", lambda: seam_cross._mass_by_year("ibge_pevs", ())),
     ("_gate_price_by_year", lambda: seam_cross._gate_price_by_year((), ())),
+    ("_fob_price_by_year", lambda: seam_cross._fob_price_by_year(())),
     ("_production_by_uf", lambda: seam_cross._production_by_uf("ibge_pevs", (), 2000, 2024, ())),
 ]
 

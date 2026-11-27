@@ -936,22 +936,28 @@ def test_productivity_carries_the_unit_family_of_the_active_crop(monkeypatch):
 # ── exp_price: a year without weight is a gap (None), never value ÷ 1 ──────────
 
 
+def _export_price_halves(rows):
+    """A stand-in for ``seam_base._export_price_halves``: the frame the SQL returns, one row
+    per year — the value of every shipment and the two halves of the price, which exist
+    together or not at all (``sql._priced_pair``)."""
+    cols = ["reference_year", "total_value", "priced_value", "priced_qty"]
+    df = pd.DataFrame(rows, columns=cols)
+    return lambda codes, uf_codes, year_start, year_end: df
+
+
 def test_cross_points_exp_price_emits_none_when_weight_missing(monkeypatch):
     seam = _seam()
-    val = pd.DataFrame(
-        [
-            {"reference_year": 2020, "value": 5e9},
-            {"reference_year": 2021, "value": 6e9},
-        ]
+    # 2021: the shipments have a value and no weight, so no row carries both measures.
+    monkeypatch.setattr(
+        _base(),
+        "_export_price_halves",
+        _export_price_halves([(2020, 5e9, 5e9, 1e9), (2021, 6e9, None, None)]),
     )
-    wt = pd.DataFrame([{"reference_year": 2020, "value": 1e9}])  # 2021 missing
-
-    def fake_cross(metric, year_start=None, year_end=None, codes=(), uf_codes=()):
-        return val if metric == "mdic_comex:exp_value" else wt
-
-    monkeypatch.setattr(seam.gateway, "fetch_cross_series", fake_cross)
     pts, base = seam._cross_points("mdic_comex", "exp_price", 2020, 2021, "US$/kg")
-    assert pts == [{"y": 2020, "v": 5.0}, {"y": 2021, "v": None}]
+    assert pts == [
+        {"y": 2020, "v": 5.0, "pricedShare": 1.0},
+        {"y": 2021, "v": None, "pricedShare": None},
+    ]
     assert base is None  # a nominal price has no month to be at the prices of
 
 
@@ -962,16 +968,24 @@ def test_cross_points_exp_price_emits_none_when_weight_missing(monkeypatch):
 
 def test_exp_price_is_a_gap_when_the_value_is_absent(monkeypatch):
     seam = _seam()
-    val = pd.DataFrame([{"reference_year": 2020, "value": None}])
-    wt = pd.DataFrame([{"reference_year": 2020, "value": 1e9}])
-
-    def fake_cross(metric, year_start=None, year_end=None, codes=(), uf_codes=()):
-        return val if metric == "mdic_comex:exp_value" else wt
-
-    monkeypatch.setattr(seam.gateway, "fetch_cross_series", fake_cross)
+    # The weight exists and the value does not: no row carries both measures.
+    monkeypatch.setattr(
+        _base(), "_export_price_halves", _export_price_halves([(2020, None, None, None)])
+    )
     # Was {"v": 0.0}: a price of US$ 0/kg for a year with no measured value.
     pts, _ = seam._cross_points("mdic_comex", "exp_price", 2020, 2020, "US$/kg")
-    assert pts == [{"y": 2020, "v": None}]
+    assert pts == [{"y": 2020, "v": None, "pricedShare": None}]
+
+
+def test_exp_price_names_the_value_its_shipments_leave_out(monkeypatch):
+    """The year's price is over the shipments with both measures, and ``pricedShare`` says
+    how much of the year's value they hold: 3 of 4 US$ bi here, so 75%."""
+    seam = _seam()
+    monkeypatch.setattr(
+        _base(), "_export_price_halves", _export_price_halves([(2022, 4e9, 3e9, 1e9)])
+    )
+    pts, _ = seam._cross_points("mdic_comex", "exp_price", 2022, 2022, "US$/kg")
+    assert pts == [{"y": 2022, "v": 3.0, "pricedShare": 0.75}]
 
 
 def test_cross_series_point_is_a_gap_when_the_value_is_absent(monkeypatch):
@@ -1274,13 +1288,17 @@ def test_price_spread_le_a_PAM_quando_o_agrupamento_e_de_lavoura(monkeypatch):
     )
     vistos = {}
 
+    priced = _base().PricedYear
+
     def fake_gate(pevs_codes, pam_codes, uf_codes=()):
         vistos["pevs"] = tuple(pevs_codes)
         vistos["pam"] = tuple(pam_codes)
-        return {2020: 0.35}
+        return {2020: priced(0.35, 350.0, 350.0)}
 
     monkeypatch.setattr(_cross(), "_gate_price_by_year", fake_gate)
-    monkeypatch.setattr(_cross(), "_fob_price_by_year", lambda ncms, uf=(): {2020: 0.42})
+    monkeypatch.setattr(
+        _cross(), "_fob_price_by_year", lambda ncms, uf=(): {2020: priced(0.42, 84.0, 105.0)}
+    )
     out = seam.price_spread("soja")
     assert vistos == {"pevs": (), "pam": ("40124",)}
     assert out["series"] == [
@@ -1290,6 +1308,8 @@ def test_price_spread_le_a_PAM_quando_o_agrupamento_e_de_lavoura(monkeypatch):
             "gate": 0.35,
             "spread": pytest.approx(0.07),
             "markup": pytest.approx(1.2),
+            "fobPricedShare": pytest.approx(0.8),
+            "gatePricedShare": pytest.approx(1.0),
         }
     ]
 
@@ -2865,20 +2885,24 @@ def test_price_spread_happy_path_markup(monkeypatch):
             }
         },
     )
-    # FOB = 6e9 US$ / 2e9 kg = 3 US$/kg
+    # FOB = 6e9 US$ / 2e9 kg = 3 US$/kg, over shipments holding 6 of the year's 8 US$ bi.
     monkeypatch.setattr(
-        _base(),
-        "_xyear",
-        lambda metric, codes, uf_codes=(): (
-            {2022: 6e9} if metric.endswith("exp_value") else {2022: 2e9}
-        ),
+        _base(), "_export_price_halves", _export_price_halves([(2022, 8e9, 6e9, 2e9)])
     )
     # gate = value(US$) / (q(t) * 1000) = 2e6 / (1e3 * 1000) = 2 US$/kg
     monkeypatch.setattr(
         seam.gateway,
         "fetch_product_timeseries",
         lambda *a, **k: pd.DataFrame(
-            [{"reference_year": 2022, "total_value": 2e6, "total_qty_native": 1e3}]
+            [
+                {
+                    "reference_year": 2022,
+                    "total_value": 2e6,
+                    "total_qty_native": 1e3,
+                    "priced_value_mass": 2e6,
+                    "priced_qty_mass": 1e3,
+                }
+            ]
         ),
     )
     out = seam.price_spread("castanha")
@@ -2888,6 +2912,8 @@ def test_price_spread_happy_path_markup(monkeypatch):
     assert row["fob"] == pytest.approx(3.0) and row["gate"] == pytest.approx(2.0)
     assert row["spread"] == pytest.approx(1.0)
     assert row["markup"] == pytest.approx(1.5)
+    assert row["fobPricedShare"] == pytest.approx(0.75)
+    assert row["gatePricedShare"] == pytest.approx(1.0)
 
 
 def test_price_spread_incompatible_for_volume_basis(monkeypatch):

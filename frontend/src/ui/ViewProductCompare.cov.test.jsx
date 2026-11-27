@@ -300,10 +300,11 @@ describe('ViewProductCompare — single-product + value-less herd branches', () 
     expect(container.textContent).not.toContain('val:');
   });
 
-  // v1.108.7: the magnitude cell called formatCountQty with no unit, so every herd read "un",
-  // and a crop with no value in the window (ranked on quantity, like a herd) was multiplied
-  // as a count. Each row is now formatted as its own product.
-  it('the magnitude of a row ranked on quantity is its own product, in its own unit', () => {
+  // v1.108.7: the magnitude cell called formatCountQty with no unit, so every herd read "un".
+  // Each row is formatted as its own product. v1.108.18: a crop with no value in the window
+  // was ranked on its tonnage like a herd; it is measured on its value, which is absent (the
+  // stubbed formatter echoes the null it was given — the real one prints '—').
+  it('a herd is measured on its headcount, in its own unit; a crop with no value, on its absent value', () => {
     stubGlobals({
       selectedProducts: ['2670', '40124'],
       allProductTS: {
@@ -312,7 +313,7 @@ describe('ViewProductCompare — single-product + value-less herd branches', () 
       },
       products: [
         { code: '2670', name: 'Bovino', family: 'count', measure_kind: 'stock', unit_native: 'Cabeças' },
-        // PAM under IPCA before 1980: no value in the window, so it is ranked on quantity.
+        // PAM under IPCA before 1980: no value in the window.
         { code: '40124', name: 'Soja (em grão)', family: 'mass', unit_native: 'Toneladas' },
       ],
       yearStart: 1978,
@@ -322,7 +323,71 @@ describe('ViewProductCompare — single-product + value-less herd branches', () 
       <ViewProductCompare summary={{}} conventions={{}} database="ibge_pam" />);
     const cells = [...container.querySelectorAll('.pc-table tbody tr')]
       .map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent));
-    expect(cells.map((c) => c[1])).toEqual(['count:Cabeças:240', 'mass:Toneladas:10.2']);
+    expect(cells.map((c) => c[1])).toEqual(['count:Cabeças:240', 'val:null']);
+  });
+});
+
+// ── Um fluxo sem valor na janela continua fluxo (v1.108.18) ──────────────────────────────
+// A natureza da medida vem de measure_kind, nunca da falta de valor. No main, a soja de
+// 1974–1979 sob o IPCA (a PAM só tem IPCA desde 1980) era tomada por rebanho: indexada pela
+// tonelagem sob o título "Evolução relativa do efetivo (cabeças)", e a tabela dizia que a
+// seleção misturava estoque e fluxo.
+describe('ViewProductCompare — a flow with no value in the window stays a flow', () => {
+  const titulos = (c) => [...c.querySelectorAll('.sh-title')].map((n) => n.textContent);
+  const PAM_SEM_VALOR = {
+    selectedProducts: ['40124', '40122'],
+    allProductTS: {
+      40124: [{ y: 1978, v: null, q: 9.5 }, { y: 1979, v: null, q: 10.2 }],
+      40122: [{ y: 1978, v: null, q: 13.5 }, { y: 1979, v: null, q: 16.3 }],
+    },
+    products: [
+      { code: '40124', name: 'Soja (em grão)', family: 'mass', unit_native: 'Toneladas' },
+      { code: '40122', name: 'Milho (em grão)', family: 'mass', unit_native: 'Toneladas' },
+    ],
+    yearStart: 1978,
+    yearEnd: 1979,
+  };
+
+  it('two crops with no value: nothing is indexed on tonnage under a herd’s title, and both are named', () => {
+    stubGlobals(PAM_SEM_VALOR);
+    const { container } = render(
+      <ViewProductCompare summary={{}} conventions={{}} database="ibge_pam" />);
+    expect(titulos(container)).toContain('Evolução relativa do valor');
+    expect(container.textContent).not.toContain('efetivo');
+    // Nothing to draw, so no chart at all — never empty axes under an index.
+    expect(multiLineProps).toBeUndefined();
+    expect(container.querySelector('.pc-legend')).toBeNull();
+    expect(container.textContent).toContain(
+      'Sem valor nesta convenção: Soja (em grão), Milho (em grão). Nenhum ano da janela selecionada '
+      + 'tem valor nesta convenção para eles, por isso ficam fora do índice, da variação acumulada, '
+      + 'do CAGR e da correlação, que medem o valor.');
+    // Two flows of one family: there is no stock/flow mixture to warn about.
+    expect(container.textContent).not.toContain('mistura famílias ou estoque/fluxo');
+  });
+
+  it('one crop without value beside one with: the other keeps its index, and only the first is left out', () => {
+    stubGlobals({
+      ...PAM_SEM_VALOR,
+      allProductTS: {
+        ...PAM_SEM_VALOR.allProductTS,
+        40122: [{ y: 1978, v: 30, q: 13.5 }, { y: 1979, v: 36, q: 16.3 }],
+      },
+    });
+    const { container } = render(
+      <ViewProductCompare summary={{}} conventions={{}} database="ibge_pam" />);
+    // commonBaseYear needs a value in EVERY series it is given: with the crop without value
+    // in the list, no product would have an index at all.
+    expect(multiLineProps.series.map((s) => s.name)).toEqual(['Milho (em grão)']);
+    expect(container.querySelector('.sh-ov').textContent).toBe('Séries normalizadas · base 100 em 1978');
+    expect([...container.querySelectorAll('.pc-legend-item')].map((n) => n.textContent))
+      .toEqual(['Milho (em grão)']);
+    expect(container.textContent).toContain('Sem valor nesta convenção: Soja (em grão). Nenhum ano da janela '
+      + 'selecionada tem valor nesta convenção para ele, por isso fica fora do índice');
+    // Its correlation is '—', never its tonnage correlated in the value's place.
+    const corr = [...container.querySelectorAll('.pc-corr tbody tr')]
+      .map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent));
+    expect(corr).toEqual([['—', '—'], ['—', '—']]);
+    expect(container.textContent).not.toContain('mistura famílias ou estoque/fluxo');
   });
 });
 
