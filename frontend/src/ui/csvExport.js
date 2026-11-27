@@ -238,12 +238,12 @@ import './countUnits.js';
         // serializer's _QTY_TRACK). Any other family arrives without one: energia and área, which
         // the series has no scale for, and a family the source left unidentified ('desconhecida':
         // UN COMTRADE 440335, published "Sem unidade (N/A)"). The file then has no number to write
-        // and no unit to name. Until v1.108.12 such a product fell back to mass, and its
+        // and no unit to name. Until v1.108.14 such a product fell back to mass, and its
         // `unidade` said `t`, a guess: the unit is the one the file's quantity is in, or empty.
         const FAM_Q = { mass: { mul: 1e3, unit: () => 't' }, volume: { mul: 1e6, unit: () => 'm³' },
                         count: { mul: 1e6, unit: (p) => window.countNameOf(p) } };
         // The family by the name the panel gives it (window.UNIT_FAMILIES: Massa, Volume,
-        // Contagem…), since the file is read by the researcher; until v1.108.12 the column carried
+        // Contagem…), since the file is read by the researcher; until v1.108.14 the column carried
         // the internal ids (mass, volume, count). A family the registry has no name for, like
         // 'desconhecida', has none on any screen either: its cell stays empty.
         const familiaDe = (fam) => ((window.UNIT_FAMILIES || {})[fam] || {}).label || '';

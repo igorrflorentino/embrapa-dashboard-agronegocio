@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
-## [1.108.12] - 2026-11-27
+## [1.108.14] - 2026-11-27
 
 **No CSV por produto, a coluna `familia` passa a trazer o nome que o painel dá à família de
 unidade, e a coluna `unidade` só diz a unidade que se sabe.** Fecha a pendência das Notas da

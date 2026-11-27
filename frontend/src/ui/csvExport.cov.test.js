@@ -74,7 +74,7 @@ const PRODUCTS = [
   { code: 'P4', name: 'Ovos de galinha', family: 'count', unit_native: 'Mil dúzias' },
   { code: 'P5', name: 'Abacaxi', family: 'count', unit_native: 'Mil frutos' },
   { code: 'P6', name: 'Contagem sem unidade', family: 'count' },
-  { code: 'P9', name: 'Sem família' }, // no family → no unit and no family name (v1.108.12)
+  { code: 'P9', name: 'Sem família' }, // no family → no unit and no family name (v1.108.14)
 ];
 
 function stubRegistry(filtered) {
@@ -357,7 +357,7 @@ describe('exportActiveTableCSV — per-product series with per-family units', ()
     const body = lines.slice(1);
     // mass row: q*1e3 = 2000 t, price 1e6 ÷ 2000 = 500 per t, on all of the value
     // (a cell with a decimal comma is quoted by toCSV's esc — the same as the share column).
-    // The family by the panel's name (until v1.108.12 the internal id: mass, volume, count).
+    // The family by the panel's name (until v1.108.14 the internal id: mass, volume, count).
     expect(body).toContain(`2020;P1;Açaí;1000000;2000;t;500;"100,00%";Massa;Brasil;${CORRECAO_CSV}`);
     // volume row: q*1e6 = 2000000 m³, price 0,5 per m³
     expect(body).toContain(`2020;P2;Madeira;1000000;2000000;m³;"0,5";"100,00%";Volume;Brasil;${CORRECAO_CSV}`);
@@ -365,7 +365,7 @@ describe('exportActiveTableCSV — per-product series with per-family units', ()
     // no priced pair the price and its share are empty cells
     expect(body).toContain(`2020;P3;Bovino;1000000;2000000;cabeças;;;Contagem;Brasil;${CORRECAO_CSV}`);
     // A product with no family keeps its value, and nothing else is known: no quantity (until
-    // v1.108.10 `(d.q || 0)` wrote a 0), no unit (until v1.108.12 a fallback to mass wrote `t`)
+    // v1.108.10 `(d.q || 0)` wrote a 0), no unit (until v1.108.14 a fallback to mass wrote `t`)
     // and no family name.
     expect(body).toContain(`2020;P9;Sem família;1000000;;;;;;Brasil;${CORRECAO_CSV}`);
   });
@@ -476,14 +476,14 @@ describe('exportActiveTableCSV — per-product series with per-family units', ()
   });
 });
 
-// ── v1.108.12: a família pelo nome do painel, e só a unidade que se sabe ──────────────────
+// ── v1.108.14: a família pelo nome do painel, e só a unidade que se sabe ──────────────────
 // The `familia` column carried the internal ids (mass, volume, count), and the file is read by
 // the researcher: it carries the names the panel gives the families (window.UNIT_FAMILIES —
 // the REAL registry, loaded by vitest.setup.js). And a product of a family the per-product series
 // carries no quantity for fell back to mass and said `t`, a guess. Measured on prod (2026-11-27):
 // 1 of the 256 products of the five bancos, UN COMTRADE 440335, published "Sem unidade (N/A)",
 // with five years of value (2000–2005) under the world as reporter. The fixture is that code.
-describe('exportActiveTableCSV — per-product family names, and the unit that is known (v1.108.12)', () => {
+describe('exportActiveTableCSV — per-product family names, and the unit that is known (v1.108.14)', () => {
   const TORAS = {
     code: '440335', name: 'Toras de Tiama', family: 'desconhecida', unit: null,
     unit_native: 'Sem unidade (N/A)',
@@ -561,7 +561,7 @@ describe('exportActiveTableCSV — per-product family names, and the unit that i
       productTS: { P2: [{ y: 2003, v: 1.0, q: 2.0 }], 440335: [{ y: 2003, v: 1.0, q: null }] },
     });
     const p = window.prepareTableCSV({ view: 'product_profile', summary: {}, database: 'un_comtrade' });
-    expect(p.unidades).toEqual(['m³']); // until v1.108.12, ['m³', 't']: the guess was listed too
+    expect(p.unidades).toEqual(['m³']); // until v1.108.14, ['m³', 't']: the guess was listed too
   });
 });
 
