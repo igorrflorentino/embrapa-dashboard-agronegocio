@@ -7,6 +7,92 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.108.16] - 2026-11-27
+
+**Na barra de cor vertical, a unidade deixa de invadir o rótulo de cima.** Fecha o achado das
+Notas da v1.108.6. Nos mapas de calor com barra vertical (o da Geografia, de 6 linhas em diante, e
+o de "Sazonalidade e tendências", sempre), a caixa da unidade invadia a do rótulo do valor mais
+alto da escala, e uma unidade larga ficava colada sobre ele ("R$ mi" sobre "543", "US$ mi" sobre
+"271"). A barra horizontal do mapa de calor curto, corrigida na v1.108.6, não muda.
+
+### Corrigido
+- **A unidade da barra vertical passa a ser uma anotação acima da barra, e não mais o título
+  dela.** A causa foi medida numa prévia local contra a produção (só leitura), em 2026-11-27, com o
+  Plotly 4.3.0, a tela de 1280 px e as caixas lidas depois de `document.fonts.ready`. Com o título
+  no alto, o Plotly desce a ponta de cima da barra pela altura do título mais 5 px fixos
+  (`colorbar/draw.js`, onde o próprio código marca "TODO: configurable") e centra o rótulo de cima
+  nessa ponta: o rótulo sobe 6 px, e a parte de baixo das letras do título já ocupa metade desses 5
+  px. Os atributos `ypad`, `len` e `y` movem o título e a barra juntos; só com o título vazio dá
+  para posicionar os dois separadamente. A invasão no `main`, medida num Edge sem janela, em escala
+  1:1 (no navegador do app, em escala 1,5, a vertical é de 2,1 px, o número das Notas da v1.108.6):
+
+  | perspectiva | recorte | unidade sobre o rótulo | vertical | horizontal |
+  |---|---|---|---|---|
+  | Geografia | PEVS extração, 7 UFs | "R$ mi" sobre "543" | 1,8 px | 14,3 px |
+  | Geografia | o mesmo, em US$ | "US$ mi" sobre "271" | 1,8 px | 17,7 px |
+  | Geografia | PAM, 6 UFs | "R$ bi" sobre "150" | 1,8 px | 9,2 px |
+  | Geografia | PAM, 12 UFs | "R$ bi" sobre "150" | 1,8 px | 10 px |
+  | Sazonalidade e tendências | COMEX, US$ | "US$" sobre "10 bi" | 1,8 px | 5,5 px |
+
+- **A unidade fica entre a barra de ferramentas do gráfico e o rótulo de cima, e a barra se afasta
+  20 px das bordas de cima e de baixo do gráfico.** Com a correção, nos cinco casos da tabela: 3,5
+  px entre a unidade e o rótulo de cima, e 2,7 px entre a barra de ferramentas (zoom, download),
+  que aparece ao passar o mouse, e a unidade. Num celular (375 px, tela de toque), onde a barra de
+  ferramentas fica sempre visível: 3,5 px e 3,1 px. A unidade mais larga, "US$ mi", cabe na figura
+  com 28,5 px de sobra a 1280 px e 41,5 px a 375 px. O afastamento é o mesmo em cima e embaixo
+  porque o Plotly não oferece um afastamento só da ponta de cima que não dependa da altura do
+  gráfico.
+- **Os números ficam num lugar só.** `VERTICAL_COLORBAR` e `verticalColorbarUnit`, em
+  `frontend/src/charts/_base.jsx`, servem aos dois mapas de calor, que deixam de poder divergir; o
+  comentário ao lado traz a conta, pixel a pixel.
+- **As linhas mantêm a altura.** No mapa de calor da Geografia, a margem de cima passa de 22 para
+  32 px e a figura cresce os mesmos 10 px, então o gráfico continua com 24 × linhas − 14 px (130 px
+  com 6 UFs, 154 com 7, 274 com 12). No de Sazonalidade, a margem declarada passa de 30 para 32 px,
+  que é o que o Plotly já usava para caber os meses no alto, e o gráfico continua com 180 px. A
+  barra fica 2 px mais curta (6 UFs: 92 → 90 px; 7 UFs: 116 → 114; 12 UFs: 236 → 234;
+  Sazonalidade: 142 → 140) e passa a ficar centrada na altura do gráfico.
+- **A barra horizontal (até 5 linhas) não mudou.** Medida com o `main` e com a correção, nas mesmas
+  condições (PAM, 5 regiões), dá as mesmas caixas: figura, gráfico, barra, unidade e rótulos.
+
+### Testes
+- vitest, 19 testes novos e 2 reescritos, em 3 arquivos:
+  - `frontend/src/charts/_base.colorbar.test.js`, 5 novos (de 7 para 12): a conta das duas folgas,
+    com as alturas de caixa medidas no navegador (a unidade a pelo menos 3 px do rótulo de cima e a
+    pelo menos 2 px da barra de ferramentas); a forma da anotação; a unidade começando na borda
+    esquerda da barra; nenhuma anotação sem unidade.
+  - `frontend/src/charts/Heatmap.test.jsx`, 6 novos e 2 reescritos (de 31 para 37): na varredura de
+    1 a 15 linhas, nenhuma barra tem título, em nenhuma orientação; num bloco novo, de 6 a 15
+    linhas, a anotação, o afastamento de 20 px, a altura do gráfico sob a margem de 32 px, a falta
+    de unidade e a altura fixada por quem chama o componente. Os reescritos ("a unidade fica acima
+    da barra nas duas orientações" e "de 6 linhas em diante") descreviam a unidade como título da
+    barra vertical.
+  - `frontend/src/charts/MonthYearHeatmap.test.jsx`, arquivo novo, 8 testes: este mapa de calor não
+    tinha nenhum. Cinco tratam da unidade; três fixam o que não podia mudar (as três marcas da
+    escala; o ano mais recente no alto e o mês sem dado como "sem dado"; o gráfico vazio).
+- **O que esses testes não veem.** O Plotly é simulado nos testes e o jsdom não mede texto: eles
+  conferem a configuração que o painel envia e a conta das folgas, com as caixas medidas no
+  navegador. A prova de que a unidade não encosta mais no rótulo são as medições acima.
+- Contraprova: com os três arquivos de origem do `main`, 11 testes falham pelo motivo esperado (a
+  unidade como título da barra, `'R$'` e `'US$'` onde deveria estar vazio; a anotação ausente; o
+  afastamento ausente, `ypad` indefinido; as margens de 22 e 30 px), e `_base.colorbar.test.js` nem
+  carrega, porque `VERTICAL_COLORBAR` não existe no `main`. Os outros 34 passam: são comportamentos
+  que não podem mudar.
+- vitest: 2017 passando em 107 arquivos (eram 1998 em 106), com a cobertura acima dos mínimos.
+  pytest: 2640 passando (15 pulados no Windows, que só rodam no Linux). eslint, `vite build`, ruff e
+  `uv lock --check` sem erro.
+
+### Notas
+- As capturas de antes e depois (o canto da barra ampliado 4 vezes e o cartão inteiro, nos cinco
+  recortes da tabela e nas 5 regiões, com as medidas em JSON) estão na pasta de notas das sessões,
+  no computador local (`mapa-calor-unidade-screens/`).
+- **Achado no caminho, fora do escopo:** na Geografia, o console registra `maplibre error:
+  layers.uf-selected.paint.line-color: color expected, "var(--embrapa-green-darker, #003c1d)"
+  found`. O mapa do Brasil (`BrazilChoropleth.jsx`) passa uma variável CSS como cor do contorno da
+  UF selecionada, e o maplibre não lê variáveis CSS. Quando a validação falha, o `addLayer` do
+  maplibre 6.18 sai sem criar a camada, então o contorno da seleção não é desenhado (lido no código
+  do maplibre, não conferido na tela). O mapa municipal (`MunicipioChoropleth.jsx`) faz o mesmo com
+  o contorno do município selecionado. É anterior a esta versão e igual no `main`.
+
 ## [1.108.15] - 2026-11-27
 
 **"Anos cobertos", em "Seleção ativa", passa a contar os anos com linhas do recorte, das mesmas
