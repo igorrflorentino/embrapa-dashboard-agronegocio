@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
-## [1.108.12] - 2026-11-27
+## [1.108.17] - 2026-11-27
 
 **Um ponto sem vizinho passa a aparecer nos gráficos de linha.** Fecha a pendência das Notas da
 v1.108.10, "Um ano isolado não desenha linha". Os três gráficos de linha (`LineChart`,

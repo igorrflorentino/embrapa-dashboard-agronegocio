@@ -5,7 +5,7 @@
 // chart adds a marker for it — and ONLY for it: the line, its fill, its hover and the trend
 // are the traces they were, and a gap stays open. We capture the traces handed to Plotly;
 // plotlyBundle is mocked (jsdom cannot draw it), and the browser measurement is in the
-// v1.108.12 CHANGELOG entry.
+// v1.108.17 CHANGELOG entry.
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { cleanup, render } from '@testing-library/react';
