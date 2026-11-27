@@ -7,6 +7,88 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.108.14] - 2026-11-27
+
+**No CSV por produto, a coluna `familia` passa a trazer o nome que o painel dá à família de
+unidade, e a coluna `unidade` só diz a unidade que se sabe.** Fecha a pendência das Notas da
+v1.108.7 sobre esse arquivo, o do Perfil do produto e do Comparativo entre produtos. A terceira
+parte dela, a quantidade ausente gravada como `0`, já tinha saído na v1.108.10. Mudam duas coisas:
+- A coluna `familia` trazia os nomes internos do código, em inglês (`mass`, `volume`, `count`), ou
+  o identificador cru da base analítica (`desconhecida`). Passa a trazer os nomes que o painel
+  mostra: Massa, Volume, Contagem.
+- Um produto de família sem escala na série por produto era tratado como massa, e a coluna
+  `unidade` dizia `t`, um palpite. A série só traz quantidade para massa, volume e contagem. Nas
+  outras famílias (energia, área e a que a fonte deixou sem unidade, `desconhecida`), a quantidade
+  chega sempre vazia. Agora a unidade fica vazia também, e a família fica vazia quando o painel não
+  tem nome para ela.
+
+Medido na produção em 2026-11-27, só leitura, pela prévia local, com as leituras que o próprio
+painel faz: dos 256 produtos dos cinco bancos, um só está fora das três famílias com escala.
+
+| banco | produtos | massa | volume | contagem | fora das três |
+|---|---|---|---|---|---|
+| IBGE PEVS | 10 | 5 | 5 | 0 | 0 |
+| IBGE PAM | 14 | 12 | 0 | 2 | 0 |
+| IBGE PPM | 14 | 3 | 1 | 10 | 0 |
+| MDIC COMEX | 118 | 63 | 55 | 0 | 0 |
+| UN COMTRADE | 100 | 50 | 49 | 0 | 1 |
+
+O de fora é o 440335 (toras de tiama, mansonia, ilomba, dibetou, limba e azobé), que a fonte publica
+"Sem unidade (N/A)". Com o Brasil como país reporter, ele não tem série; com todos os países, tem
+valor em 5 anos (2000, 2001 e de 2003 a 2005) e nenhuma quantidade. Eram essas 5 linhas que saíam em
+`t`. O nome da família em inglês saía em toda linha de todo CSV por produto.
+
+### Corrigido
+- **A coluna `familia` do CSV por produto** lê o nome em `window.UNIT_FAMILIES`, o registro de onde a
+  faixa de convenções e a ficha técnica do Perfil do produto tiram o nome da família, sem guardar
+  cópia: uma família renomeada ali muda também no arquivo. Uma família sem nome no registro
+  (`desconhecida`) deixa a célula vazia, porque nenhuma tela tem nome para ela.
+- **A coluna `unidade`** diz a unidade em que o arquivo traz a quantidade do produto: t, m³ ou a
+  coisa contada (cabeças, ovos, frutos, desde a v1.108.7). Numa família sem escala, ficam vazias a
+  unidade, a quantidade, o preço implícito e a parcela do valor no preço, mesmo que uma quantidade
+  chegasse: com o multiplicador da massa, ela viraria um número numa unidade que ninguém mediu. O
+  valor continua no arquivo.
+- **A janela de confirmação do CSV listava o `t` do palpite.** Ela lista as unidades lidas das linhas
+  montadas (v1.108.7). Com o 440335 e uma madeira em m³ (440320), de 2000 a 2005 e com todos os
+  países, dizia "Unidades: m³ · t" para um arquivo sem tonelada nenhuma; agora diz "m³". Uma célula
+  vazia não entra na lista.
+
+### Testes
+- vitest, 5 casos novos e 1 reescrito, em `csvExport.cov.test.js`:
+  - a família pelo nome do painel, igual ao rótulo de `window.UNIT_FAMILIES` (o registro real,
+    carregado por `vitest.setup.js`);
+  - o 440335 medido: valor presente; quantidade, unidade, preço, parcela e família vazios;
+  - uma quantidade que chegue numa família sem escala não é escrita;
+  - energia e área: o nome que o painel dá (Energia, Área) e a unidade vazia;
+  - a lista de unidades da janela de confirmação, sem o palpite;
+  - o caso reescrito: as três famílias com os nomes do painel, e o produto sem família, que saía
+    `;;t;;;` e agora traz só o valor.
+- Contraprova: com o `csvExport.js` do `main` e os testes desta versão, os 6 reprovam, cada um pelo
+  motivo que testa (`mass` no lugar de `Massa`, `t` no lugar da célula vazia, `5000` na escala do
+  palpite, `energia` cru, `['t', 'm³']` na lista).
+- Na prévia local, com dados de produção, o CSV por produto saiu da janela de confirmação com o
+  código de cada lado (o do `main` e o deste ramo), e o arquivo foi lido no navegador antes de
+  chegar ao disco:
+  - UN COMTRADE, com todos os países, 440320, 440335 e 080121 (castanha-do-pará com casca), de 2000
+    a 2005: as 17 linhas mudam só na coluna `familia` e, nas 5 do 440335, na coluna `unidade`;
+    valores, quantidades e preços não mudam;
+  - IBGE PPM, com bovino, ovos de galinha, leite e mel de abelha, de 2022 a 2024: as 12 linhas
+    mudam só na coluna `familia` (Contagem, Volume, Massa).
+- vitest: 2003 passando em 106 arquivos (1998 na v1.108.11, mais os 5 novos), com a cobertura
+  acima dos mínimos. pytest: 2640 passando (15 pulados no Windows, que só rodam no Linux).
+
+### Notas
+- **Achado no caminho, fora do escopo desta versão: a coluna `abrangencia_geografica` do CSV por
+  produto diz "Brasil" com outro país reporter.** No UN COMTRADE, a série por produto é a dos países
+  reporter escolhidos, e a coluna só olha o filtro de UF. Com todos os países, ou com um país que não
+  é o Brasil, o arquivo traz a série desse conjunto e diz "Brasil" em cada linha. Visto na prévia,
+  na exportação de teste desta versão: com todos os países, as 17 linhas do 440320, do 440335 e do
+  080121 dizem "Brasil", e o 440335 nem tem série com o Brasil.
+- **A unidade de uma família sem escala fica vazia, e não a unidade da fonte.** Em toda linha, a
+  coluna `unidade` diz a unidade em que o arquivo traz a quantidade, que nem sempre é a da fonte: a
+  castanha do UN COMTRADE sai em `t`, e a fonte publica "Peso em quilogramas". Pôr a unidade da fonte
+  (`unit_native`) só onde não há quantidade daria dois sentidos à mesma coluna.
+
 ## [1.108.13] - 2026-11-27
 
 **Os preços da Análise cruzada passam a dividir o valor e a quantidade das mesmas linhas, por
