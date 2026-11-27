@@ -13,7 +13,9 @@ vi.mock('./plotlyBundle', () => ({
   default: { react: () => {}, purge: () => {}, Plots: { resize: () => {} } },
 }));
 
-import { colorbarAnchors, ptBrMagnitude } from './_base.jsx';
+import {
+  VERTICAL_COLORBAR, colorbarAnchors, ptBrMagnitude, verticalColorbarUnit,
+} from './_base.jsx';
 
 // The colorbar's three anchors (min / centro / max) exist so the reader can place any
 // colour on the scale. Three IDENTICAL labels defeat that: they assert the scale is flat
@@ -82,5 +84,59 @@ describe('colorbarAnchors — rótulos', () => {
     expect(ptBrMagnitude(1_500_000)).toBe('1,5 mi');
     expect(ptBrMagnitude(15_000_000)).toBe('15 mi');
     expect(ptBrMagnitude(0)).toBe('0');
+  });
+});
+
+// ── The unit of a VERTICAL colour bar (v1.108.16) ─────────────────────────────
+//
+// Until v1.108.16 the unit was the bar's own title, and its box ran 2.1 px down into the
+// top tick label's (measured 2026-11-27, Plotly 4.3.0, after document.fonts.ready): "R$ mi"
+// sat glued onto "79 mi". No Plotly attribute parts the two, so the unit is now a layout
+// annotation, and keeping it clear is arithmetic over VERTICAL_COLORBAR plus three box
+// sizes. jsdom lays nothing out, so those sizes are the browser's, measured on the fix in
+// the Geografia and Sazonalidade cards (1280 px, and 375 px on a touch screen). They depend
+// on the font sizes, not on the data or the card's width.
+
+describe('verticalColorbarUnit — the unit above a vertical bar', () => {
+  const UNIT_BOX = 13;          // the 11 px unit's box (no padding, no border): measured 12.7–13
+  const LABEL_HALF = 6;         // half the 10 px tick label's box, centred on the bar's top end
+  const MODEBAR_BOTTOM = 27.3;  // the modebar band's bottom edge: measured 26.9–27.3
+
+  // Positions in px from the FIGURE's top edge, the plot's top edge being at topMargin.
+  const cb = VERTICAL_COLORBAR;
+  const unitTop = cb.topMargin - cb.unitYShift;
+  const unitBottom = unitTop + UNIT_BOX;
+  const topLabelTop = cb.topMargin + cb.ypad - LABEL_HALF;
+
+  it('leaves a gap between the unit and the top tick label', () => {
+    // It was −2.1 px. The arithmetic gives 3 px; the browser measured 3.5 px, in every
+    // vertical case of both heatmaps.
+    expect(topLabelTop - unitBottom).toBeGreaterThanOrEqual(3);
+  });
+
+  it('keeps the unit below the modebar band, which a touch screen always shows', () => {
+    // 2.7 px by the arithmetic, 2.7 px measured at 1280 px and 3.1 px on a phone.
+    expect(unitTop - MODEBAR_BOTTOM).toBeGreaterThanOrEqual(2);
+  });
+
+  it("is one annotation on the bar's column, its box exactly the text's", () => {
+    expect(verticalColorbarUnit('R$ mi')).toEqual([{
+      text: 'R$ mi',
+      xref: 'paper', x: 1.02, xanchor: 'left', xshift: 10,
+      yref: 'paper', y: 1, yanchor: 'top', yshift: 2,
+      borderpad: 0, borderwidth: 0,
+      showarrow: false,
+      font: { size: 11 },
+    }]);
+  });
+
+  it("starts the unit on the bar's left edge, where the title used to start", () => {
+    // The bar is drawn xpad px right of x; xshift moves the unit by the same amount.
+    const [a] = verticalColorbarUnit('US$');
+    expect([a.x, a.xshift]).toEqual([cb.x, cb.xpad]);
+  });
+
+  it('draws nothing when there is no unit (an empty annotation still takes a box)', () => {
+    for (const unit of ['', null, undefined]) expect(verticalColorbarUnit(unit)).toEqual([]);
   });
 });

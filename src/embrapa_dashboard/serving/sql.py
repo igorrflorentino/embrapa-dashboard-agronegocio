@@ -500,29 +500,46 @@ def _value_sum(value_column: str, has_measure_kind: bool) -> str:
 _QTY_TRACKS = (("massa", "mass"), ("volume", "vol"), ("contagem", "count"))
 
 
+def _priced_pair(value_expr: str, qty_column: str, *, where: str = "", suffix: str = "") -> str:
+    """The two halves of a price, ``priced_value<suffix>`` and ``priced_qty<suffix>``, under ONE
+    condition: the row has a quantity AND a value (and meets ``where``, when given).
+
+    A price is one division, and its two halves must add the same rows (the fourth rule of
+    the reading layer). Two independent sums do not: ``sum(value)`` keeps a row with a value
+    and no quantity, ``sum(quantity)`` drops it, and the quotient is the price inflated by the
+    value nobody weighed. Here no row can reach one half without the other, so the quotient is
+    a price whatever the data holds, and ``priced_value ÷ sum(value)`` says how much of the
+    value stands behind it. ``tests/test_ratio_same_rows_guard.py`` holds every pair the SQL
+    emits to this shape — the sibling half, the same condition, both columns required.
+
+    No trailing comma: the caller places the pair in its select list.
+    """
+    when = f"{qty_column} is not null and ({value_expr}) is not null"
+    if where:
+        when = f"{where} and {when}"
+    return (
+        f"sum(case when {when} then {value_expr} end) as priced_value{suffix},\n"
+        f"            sum(case when {when} then {qty_column} end) as priced_qty{suffix}"
+    )
+
+
 def _priced_sums(value_expr: str) -> str:
     """The two halves of a per-product price, per family track, over the SAME rows.
 
-    A price is one division, and its two halves must add the same rows (the fourth rule of
-    the reading layer, ``tests/test_ratio_same_rows_guard.py``). The series' ``total_value``
-    adds every row of the year and ``q_<track>`` only the rows of that family with a
-    quantity, so ``total_value ÷ q_<track>`` overstated the price by the value of the rows
-    without a quantity in the product's unit: UN Comtrade 200919 in 2002, Brazil as reporter,
-    read US$ 69,906/t where the rows that have both measures give US$ 5,649/t (8.08% of the
-    year's value; measured on prod 2026-11-23). Each half here keeps a row only when it has
-    BOTH a quantity in the track's family and a value under the chosen convention, so the
-    division of the two is a price, and ``priced_value ÷ total_value`` is how much of the
-    year's value stands behind it.
+    The series' ``total_value`` adds every row of the year and ``q_<track>`` only the rows of
+    that family with a quantity, so ``total_value ÷ q_<track>`` overstated the price by the
+    value of the rows without a quantity in the product's unit: UN Comtrade 200919 in 2002,
+    Brazil as reporter, read US$ 69,906/t where the rows that have both measures give
+    US$ 5,649/t (8.08% of the year's value; measured on prod 2026-11-23). Each track's pair
+    (:func:`_priced_pair`) keeps a row only when it has BOTH a quantity in the track's family
+    and a value under the chosen convention, so the division of the two is a price, and
+    ``priced_value ÷ total_value`` is how much of the year's value stands behind it.
     """
-    both = f"qty_base is not null and ({value_expr}) is not null"
-    lines = []
-    for family, suffix in _QTY_TRACKS:
-        when = f"family = '{family}' and {both}"
-        lines.append(
-            f"sum(case when {when} then {value_expr} end) as priced_value_{suffix},\n"
-            f"            sum(case when {when} then qty_base end) as priced_qty_{suffix},"
-        )
-    return "\n            ".join(lines)
+    return "\n            ".join(
+        _priced_pair(value_expr, "qty_base", where=f"family = '{family}'", suffix=f"_{suffix}")
+        + ","
+        for family, suffix in _QTY_TRACKS
+    )
 
 
 def _count_split(has_measure_kind: bool) -> str:
@@ -2195,8 +2212,8 @@ def cross_annual(
     a commodity (per-source code) for market share. ``reporter_*`` pins a geo column
     (reporter_iso_a3 OR partner_iso_a3) to one country (Brazil) for the per-country
     COMTRADE metrics — exp/imp_value filter the reporter, partner_exp the partner;
-    ``world_exp`` omits it to sum over every reporter. (``exp_price`` is derived
-    UI-side as value ÷ weight, so it has no builder.)
+    ``world_exp`` omits it to sum over every reporter. (A price is not a single measure:
+    ``exp_price`` and the FOB price read :func:`cross_price_annual`, which pairs its halves.)
 
     ``uf_codes`` optionally narrows to the origin UFs (``state_acronym``) — ONLY the
     COMEX mart carries it, so callers pass it solely for ``mdic_comex`` metrics
@@ -2215,6 +2232,56 @@ def cross_annual(
         select
             reference_year,
             sum({measure_column}) as value
+        from `{table}`
+        {_where(conditions)}
+        group by reference_year
+        order by reference_year
+    """
+    return sql, params
+
+
+def cross_price_annual(
+    table: str,
+    *,
+    value_column: str,
+    qty_column: str,
+    flow: str | None = None,
+    code_column: str | None = None,
+    codes: Sequence[str] = (),
+    year_start: int | None = None,
+    year_end: int | None = None,
+    uf_codes: Sequence[str] = (),
+) -> tuple[str, list]:
+    """Annual price halves for the cross-source prices: ``total_value`` and the pair
+    ``priced_value`` / ``priced_qty`` (:func:`_priced_pair`), per year.
+
+    Backs the COMEX export price (``exp_price`` in Cruzamento entre fontes, US$/kg) and
+    the FOB side of Preço: porteira vs. FOB. Both used to divide two separate series,
+    ``exp_value`` ÷ ``exp_weight``, each summing its own rows: a shipment with a value and
+    no net weight entered the numerator only, and the price rose by its value. The
+    division of this pair is a price by construction, and ``priced_value ÷ total_value``
+    is the share of the year's value that stands behind it — the coverage the screen
+    names when it falls short (``pricedShare``).
+
+    Same filters as :func:`cross_annual` (codes, origin UFs, year window, one flow), so a
+    price is scoped exactly like the value and weight series beside it. ``qty_column`` is
+    validated against the same allowlist as ``value_column`` — an identifier cannot be a
+    bind parameter.
+    """
+    value_column = _validate_column(value_column, ALLOWED_VALUE_COLUMNS, "value_column")
+    qty_column = _validate_column(qty_column, ALLOWED_VALUE_COLUMNS, "qty_column")
+    conditions: list[str] = []
+    params: list = []
+    _year_bounds(conditions, params, year_start, year_end)
+    if code_column is not None:
+        _in_array(conditions, params, code_column, "codes", codes)
+    _flow(conditions, params, flow)
+    _in_array(conditions, params, "state_acronym", "uf_codes", uf_codes)
+    sql = f"""
+        select
+            reference_year,
+            sum({value_column}) as total_value,
+            {_priced_pair(value_column, qty_column)}
         from `{table}`
         {_where(conditions)}
         group by reference_year

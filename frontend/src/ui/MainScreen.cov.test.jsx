@@ -359,6 +359,95 @@ describe('MainScreen — "Linhas" conta as linhas do recorte', () => {
   });
 });
 
+// "Anos cobertos" counts the years WITH ROWS (v1.108.15): the years of the screen's series that
+// carry the rows "Linhas" counts (applyFilters' `yearsWithRows`). It read `ts.length`, a point
+// for every year of the banco inside the period, rows or not: in production PAM's açaí over
+// 1990–2000 read "Linhas 0" beside "Anos cobertos 11 / 52", and a COMEX code with one row
+// in 2010 read "30 / 30".
+describe('MainScreen — "Anos cobertos" conta os anos com linhas', () => {
+  // The 11 points the series has for 1990–2000, none with a row: what the old counter counted.
+  const PERIODO = Array.from({ length: 11 }, (_, i) => ({ y: 1990 + i, v: null, rows: 0 }));
+  const comAnos = (extra) => {
+    window.dataStore = { meta: () => ({ prov: { yearsTotal: 52 } }) };
+    window.applyFilters = () => ({
+      ts: PERIODO,
+      ufData: [],
+      ufDataFull: [{ uf: 'PA', value: 5, real: true }],
+      qualityFlags: [{ id: 'OK', count: 100000 }],
+      productsTotal: 14,
+      _shares: { productShare: 1, yearShare: 0.5 },
+      ...extra,
+    });
+  };
+  const linha = (container, rotulo) => [...container.querySelectorAll('.meta-row')]
+    .find((e) => e.querySelector('.meta-label')?.textContent === rotulo)
+    .querySelector('.meta-val');
+  const anos = (container) => linha(container, 'Anos cobertos');
+
+  it('o açaí em 1990–2000: nenhum ano, ao lado de nenhuma linha, e não os 11 do período', () => {
+    comAnos({ rowsInView: 0, yearsWithRows: [] });
+    const { container } = render(<MainScreen />);
+    expect(anos(container).textContent).toBe('0 / 52');
+    expect(anos(container).getAttribute('title'))
+      .toBe('Nenhum ano com linhas da base analítica neste recorte.');
+    expect(linha(container, 'Linhas').querySelector('strong').textContent).toBe('0');
+  });
+
+  it('os anos contados, e o título diz o primeiro e o último', () => {
+    // Açaí over 2010–2020: rows from 2015 on, so 6 of the period's 11 years.
+    comAnos({ rowsInView: 33024, yearsWithRows: [2015, 2016, 2017, 2018, 2019, 2020] });
+    const v = anos(render(<MainScreen />).container);
+    expect(v.textContent).toBe('6 / 52');
+    expect(v.getAttribute('title'))
+      .toBe('6 anos com linhas da base analítica neste recorte, entre 2015 e 2020.');
+  });
+
+  it('um ano só, no singular, com o ano', () => {
+    comAnos({ rowsInView: 1, yearsWithRows: [2010] });
+    const v = anos(render(<MainScreen />).container);
+    expect(v.textContent).toBe('1 / 52');
+    expect(v.getAttribute('title')).toBe('1 ano com linhas da base analítica neste recorte: 2010.');
+  });
+
+  it('sem contagem: "—", nunca os anos do período, enquanto "Linhas" estima', () => {
+    comAnos({ rowsInView: null, yearsWithRows: null });
+    const { container } = render(<MainScreen />);
+    expect(anos(container).textContent).toBe('— / 52');
+    expect(anos(container).getAttribute('title'))
+      .toBe('A contagem dos anos deste recorte não está disponível.');
+    expect(linha(container, 'Linhas').querySelector('strong').textContent).toBe('≈ 50000');
+  });
+
+  it('cesta × UF aguardando o cubo: "…", com o título de "Linhas"', () => {
+    comAnos({ rowsInView: null, yearsWithRows: null, geoComboPending: true });
+    const v = anos(render(<MainScreen />).container);
+    expect(v.textContent).toBe('… / 52');
+    expect(v.getAttribute('title')).toBe('O recorte geográfico escolhido ainda está carregando.');
+  });
+
+  it('cesta × UF com o cubo em falha: "—", com o título de "Linhas"', () => {
+    comAnos({ rowsInView: null, yearsWithRows: null, geoComboLoadError: 'HTTP 503' });
+    const v = anos(render(<MainScreen />).container);
+    expect(v.textContent).toBe('— / 52');
+    expect(v.getAttribute('title')).toBe('Não foi possível carregar o recorte geográfico escolhido.');
+  });
+
+  it('recorte abaixo da UF carregando: "…" mesmo com anos de outro recorte na mão', () => {
+    // As with "Linhas": whatever came, the selection is not resolved yet.
+    comAnos({ subUfLoading: true, rowsInView: 10, yearsWithRows: [2015] });
+    const v = anos(render(<MainScreen />).container);
+    expect(v.textContent).toBe('… / 52');
+    expect(v.getAttribute('title')).toBe('O recorte geográfico escolhido ainda está carregando.');
+  });
+
+  it('recorte abaixo da UF em falha: "—"', () => {
+    comAnos({ subUfLoadError: 'HTTP 503', rowsInView: null, yearsWithRows: null });
+    const v = anos(render(<MainScreen />).container);
+    expect(v.textContent).toBe('— / 52');
+    expect(v.getAttribute('title')).toBe('Não foi possível carregar o recorte geográfico escolhido.');
+  });
+});
+
 // A sub-UF narrowing still on its way, or one that failed, owns an EMPTY grid, and counting it
 // gave "UFs cobertas 0 / 27": a claim that the selection covers no state, made by a read that
 // never answered (v1.108.1).

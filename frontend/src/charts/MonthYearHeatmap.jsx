@@ -3,7 +3,9 @@
 // <window.MonthYearHeatmap/> unchanged — now with zoom/pan/hover.
 //   matrix: { [year]: number[12] }
 
-import { Plot, baseLayout, colorbarAnchors, cssVar, resolveColor } from './_base';
+import {
+  Plot, VERTICAL_COLORBAR, baseLayout, colorbarAnchors, cssVar, resolveColor, verticalColorbarUnit,
+} from './_base';
 
 // Default month labels if the global isn't set (matches the prototype's pt-BR).
 const FALLBACK_MONTHS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
@@ -41,6 +43,8 @@ function MonthYearHeatmap({ matrix = {}, years = [], unit = '', height, formatVa
   // one was reported for: the unit rotated 90° into the middle of the gradient
   // (side:'right'), and no anchors, so the ends of the scale were never labelled and the
   // ticks fell back to Plotly's English SI letters ("14B" beside the app's "14 bi").
+  // And the same unit: an annotation above the bar (verticalColorbarUnit, _base.jsx), not
+  // the bar's title, whose box ran into the top label's ("US$" on "10 bi").
   const zFlat = z.flat().filter((v) => v != null && Number.isFinite(v));
   const zMin = zFlat.length ? Math.min(...zFlat) : 0;
   const zMax = zFlat.length ? Math.max(...zFlat) : 0;
@@ -62,7 +66,10 @@ function MonthYearHeatmap({ matrix = {}, years = [], unit = '', height, formatVa
         lenmode: 'fraction',
         thickness: 12,
         thicknessmode: 'pixels',
-        title: { text: unit, side: 'top', font: { size: 11 } },
+        x: VERTICAL_COLORBAR.x,
+        xpad: VERTICAL_COLORBAR.xpad,
+        ypad: VERTICAL_COLORBAR.ypad,
+        title: { text: '', side: 'top', font: { size: 11 } },
         outlinewidth: 0,
         ticks: 'outside',
         ticklen: 4,
@@ -76,9 +83,12 @@ function MonthYearHeatmap({ matrix = {}, years = [], unit = '', height, formatVa
   ];
 
   const layout = baseLayout({
-    // Right margin holds the bar, its tick labels and the unit above them.
-    margin: { l: 56, r: 92, t: 30, b: 28 },
+    // Right margin holds the bar, its tick labels and the unit above them. The top one
+    // holds the month labels and the modebar's band, and places the unit: it was 30 px,
+    // which the month labels' automargin already pushed to 32.
+    margin: { l: 56, r: 92, t: VERTICAL_COLORBAR.topMargin, b: 28 },
     hovermode: 'closest',
+    annotations: verticalColorbarUnit(unit),
     xaxis: { side: 'top', type: 'category', fixedrange: true },
     yaxis: {
       title: { text: 'Ano', font: { size: 11 }, standoff: 8 },
