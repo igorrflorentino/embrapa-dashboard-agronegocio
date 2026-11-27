@@ -131,6 +131,111 @@ que processa menos que as duas somadas: no Brasil, 4,08 MB contra 6,12 MB; soja 
   das métricas do COMEX como `[1997, 2024]` (`webapi/registries.py`), embora 2025 esteja completo, e
   "Preço: porteira vs. FOB" vá até 2025. Vale conferir se a janela fixa é intencional.
 
+## [1.108.12] - 2026-11-27
+
+Reúne num PR só os nove PRs que o Dependabot abriu em 23/11 (#582 a #590), e entram todos. No lock
+do Python, 6 pacotes sobem e nenhum desce, entra ou sai. No do painel, a única mudança que chega ao
+navegador é o maplibre 6.18 → 6.19, que traz uma dependência nova (`zustand`); o resto é ferramenta
+de teste. Cinco das atualizações são de versão principal, e as que rodam em produção foram conferidas
+pelo que fazem, não pelo CI: o gunicorn 27 nas duas imagens de produção, lado a lado; o pyarrow 26 na
+sonda de execução dos dois locks; o maplibre 6.19 no painel, contra o build do `main`. Fica de fora o
+#528 (`source-map-js` 1.2.2): o `main` já tem essa versão desde o #565.
+
+### Alterado
+- **Python** (`uv.lock`):
+  - `gunicorn` 26.2.0 → 27.0.1 (#590), o servidor HTTP da imagem do painel;
+  - `pyarrow` 25.0.1 → 26.0.1 (#588), que grava o Parquet do Bronze bruto (`land_raw`);
+  - `pydantic` 2.14.3 → 2.14.4, com o `pydantic-core` 2.50.4 → 2.50.5 (#587);
+  - ferramentas: `ruff` 0.17.5 → 0.17.6 (#587, nenhum ajuste de código) e `diff-cover` 10.5.1 →
+    11.0.4 (#589), a cobertura das linhas alteradas que o CI exige de cada PR.
+- **Painel** (`frontend/`):
+  - `maplibre-gl` 6.18.0 → 6.19.0 (#584), os dois mapas da Geografia. A câmera do mapa passou a
+    guardar o próprio estado com o `zustand` 5.1.0, dependência nova (licença MIT, sem nenhuma
+    dependência obrigatória). Os arquivos do mapa, baixados só quando a Geografia abre, somam 28 KB a
+    mais (1,62 → 1,65 MB sem compressão). O arquivo principal do painel muda só no `package.json`
+    que ele embute e nos nomes dos arquivos do mapa.
+  - testes: `jsdom` 30.1.0 → 31.0.1 (#585), `@babel/parser` 7.29.9 → 8.1.3 (#586) e `vitest` com
+    `@vitest/coverage-v8` 5.1.0 → 5.1.1 (#582, no mesmo grupo, porque um exige a versão exata do
+    outro).
+    - O jsdom 31 deixa de depender da pilha de CSS de terceiros: saem do lock `css-tree`,
+      `mdn-data`, `@csstools/*`, `@asamuzakjp/*` e `@bramus/specificity` (12 entradas), e entram
+      seis pacotes pequenos (`bcp-47`, `bcp-47-match`, `is-alphabetical`, `is-alphanumerical`,
+      `is-decimal` e `parse5-parser-stream`). O resto da árvore dele sobe junto (`whatwg-url` 17,
+      `parse5` 8.1 e outros).
+    - O Babel 8 entra só na varredura editorial (`editorialGuard.test.js`), o único arquivo que
+      importa o `@babel/parser` diretamente. O build (`@babel/core`), o ESLint e os demais seguem na
+      7.29.15, cada um com a sua cópia (seis cópias aninhadas novas no lock).
+- **CI** (`.github/workflows/`): `astral-sh/setup-uv` 10.3.3 → 10.4.0 (#583), nos quatro arquivos
+  que instalam o uv (`ci.yml`, `dbt-build-prod.yml`, `dbt-source-freshness.yml` e `release.yml`),
+  fixado pelo SHA do commit da tag (`1db35dd8`, conferido na API do GitHub). A versão traz correções
+  e um parâmetro opcional novo (`require-checksums`) que nenhum workflow usa; o uv instalado continua
+  sendo a última versão.
+
+### Validação (antes do merge)
+- **Os locks.** O deste PR é exatamente a união dos nove, pacote a pacote, nos dois sentidos.
+  - Python: 6 sobem; nenhum desce, entra ou sai.
+  - Painel: 17 sobem, 16 entram e 12 saem; nenhum desce. Das 45 mudanças, só duas chegam ao
+    navegador (`maplibre-gl` e `zustand`).
+  - `uv lock --check` sem divergência e `npm ci` limpo.
+- **gunicorn 27.** As duas imagens de produção construídas do mesmo `Dockerfile` (uma com os locks
+  do `main`, outra com os deste PR), lado a lado, contra os dados de produção:
+  - as 67 rotas da sonda de execução: mesmo status (200), mesmo corpo byte a byte (igual também ao do
+    cliente de teste do Flask) e os mesmos cabeçalhos;
+  - o HTML do painel, os arquivos estáticos, a rota inexistente (404), a conexão reaproveitada
+    (*keep-alive*, 5 pedidos) e 48 pedidos de 32 clientes simultâneos (6,78 s contra 6,79 s):
+    iguais;
+  - desligamento: com um pedido em andamento, o `podman stop` espera a resposta, e o processo sai
+    com código 0 nas duas.
+  - **O que muda é a leitura de pedido malformado, mais estrita no 27.** Uma linha de pedido acima
+    de ~4 KB recebe 414 (era 400); um caractere não ASCII cru no caminho ou na consulta recebe 400
+    (era 200); um `Transfer-Encoding` que não termina em `chunked` recebe 400 (era 200). Nenhum
+    navegador manda isso: ele codifica o endereço (`a%C3%A7a%C3%AD` continua 200), a lista longa de
+    municípios já vai no corpo de um POST, e o painel não distingue 400 de 414.
+- **pyarrow 26 e pydantic 2.14.4.** A sonda de execução nos dois locks (receita em
+  `docs/testing.md`), com saídas idênticas:
+  - as 67 rotas da API, pelo próprio app, contra os dados de produção;
+  - a trilha do Bronze bruto do BCB no GCS (câmbio e inflação): lista, metadados e bytes;
+  - o Parquet que o `land_raw` grava, ida e volta, em quatro casos (câmbio, inflação, um CSV do
+    COMEX e uma tabela sintética): o mesmo conteúdo; só muda a versão do pyarrow que o próprio
+    arquivo registra (`created_by`);
+  - a carga de um Bronze de teste pelo `load_dataframe` num dataset de dev (442 linhas, mesmo
+    esquema e mesma partição), lida de volta pelo gateway.
+- **diff-cover 11.** Os mesmos relatórios do 10.5.1 sobre quatro trechos reais do histórico do
+  `main`, e a mesma falha, com o mesmo código de saída, quando a cobertura fica abaixo do piso.
+- **Babel 8.** A varredura editorial extrai o mesmo texto com as duas versões: 3.308 linhas de 84
+  arquivos, idênticas.
+- **jsdom 31 e vitest 5.1.1.** A suíte do painel passa inteira nas duas árvores, com os mesmos
+  testes: 1.998 testes em 106 arquivos.
+- **maplibre 6.19.** No painel servido pelo Flask com dados de produção (só leitura), a Geografia do
+  IBGE PAM com o build do `main` (6.18) e com o deste PR (6.19), na mesma janela (1366 × 900):
+  - o enquadramento inicial (zoom 2,264671), a posição em pixels de seis pontos de teste e o estado
+    que cada um acerta, as cores dos estados, e o texto e a posição da caixa que aparece ao passar o
+    mouse;
+  - o clique em Pernambuco, que seleciona o Nordeste e reenquadra o mapa (zoom 3,561683), e o clique
+    no oceano, que volta ao Brasil;
+  - tudo idêntico até a sexta casa decimal. Com o 6.19, o mapa por município de Pernambuco também
+    abre: 185 municípios, o valor de Petrolina na caixa e o console sem erro.
+  - **Limite:** a janela da prévia estava oculta, e assim o navegador não chama
+    `requestAnimationFrame`; nas duas versões ele foi trocado por um temporizador de 16 ms. Ficou
+    medido o estado em que cada animação termina, não a animação quadro a quadro.
+- **Verificações completas neste PR:** `ruff` 0.17.6 limpo; 2.640 testes Python passando, com os
+  mesmos 15 pulados de antes, e cobertura de 99,32% (o piso é 98%); `diff-cover` sem linha de Python
+  a cobrir; ESLint limpo; 1.998 testes do painel passando; `npm run build` sem erro.
+
+### Notas
+- O merge publica o painel e o Job de ingestão (os gatilhos de publicação olham `frontend/**` e
+  `uv.lock`) e **dispara um build de produção do dbt**: o `dbt-build-prod.yml` está entre os
+  arquivos alterados, e a impressão digital do build (v1.97.0) conta o próprio workflow, então este
+  push não é pulado. É o mesmo build de todo merge em `dbt/**`; o dbt e o adaptador não mudam de
+  versão.
+- `npm audit` acusa um aviso de gravidade alta, anterior a este PR e só de desenvolvimento: o `zod`
+  4.4.3 (GHSA-mrhx-c7xc-m3w5, corrigido no 4.6.6), que chega pelo `eslint-plugin-react-hooks`. O
+  alerta do GitHub (#34) foi descartado automaticamente por ser de desenvolvimento, e por isso o
+  Dependabot não abre PR para ele. Nas dependências de produção, `npm audit --omit=dev` não acusa
+  nada.
+
+---
+
 ## [1.108.11] - 2026-11-23
 
 **Os testes dos dois mapas carregam o componente uma vez, antes do primeiro teste, e a espera pelo
