@@ -348,7 +348,7 @@ describe('ViewPriceSpread', () => {
     expect(calls.some((s) => Array.isArray(s) && s[0] === 'PA')).toBe(true);
   });
 
-  // v1.108.12: each price divides the value and the quantity of the same rows, and the share
+  // v1.108.13: each price divides the value and the quantity of the same rows, and the share
   // of the value behind it travels with the point. Below window.PRICED_SHARE_MIN the screen
   // names it, by year and by side, as the Perfil do produto does.
   it('names the years whose price stands on part of the value, by side', () => {
@@ -371,7 +371,7 @@ describe('ViewPriceSpread', () => {
   });
 
   it('says nothing when every price stands on 90% or more of the value, or the share is unknown', () => {
-    // goodSpread() has no share at all (a payload from before v1.108.12): `null < 0.9` is
+    // goodSpread() has no share at all (a payload from before v1.108.13): `null < 0.9` is
     // true in JS, and pricedShareLow must not read an unknown share as a low one.
     for (const series of [
       goodSpread().series,

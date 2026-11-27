@@ -18,7 +18,7 @@ Há ainda um segundo ponto onde a ausência morria antes: ``sum()`` do pandas de
 ``0.0`` para um grupo inteiramente NaN, e um 0.0 é indistinguível de um zero medido.
 Daí o ``min_count=1``.
 
-Desde a v1.108.12 o pareamento desce até a LINHA: o leitor devolve, por produto e ano, as
+Desde a v1.108.13 o pareamento desce até a LINHA: o leitor devolve, por produto e ano, as
 metades da trilha de massa (``priced_value_mass`` / ``priced_qty_mass``, as linhas com valor
 E massa) e o valor de todas as linhas (``total_value``). As simulações abaixo imitam o SQL:
 as metades existem juntas ou faltam juntas. A prova sobre o SQL de verdade, com uma linha de
@@ -118,7 +118,7 @@ def test_a_soma_do_grupo_todo_ausente_nao_vira_zero(monkeypatch):
 
 
 def test_o_preco_le_as_metades_pareadas_e_a_cobertura_le_o_total(monkeypatch):
-    """O contrato do leitor desde a v1.108.12: o preço divide as METADES (as linhas com valor
+    """O contrato do leitor desde a v1.108.13: o preço divide as METADES (as linhas com valor
     e massa), e o valor de todas as linhas só entra na cobertura.
 
     O produto-ano abaixo somou, no SQL, 500 de valor com 100 t (as linhas com as duas medidas)

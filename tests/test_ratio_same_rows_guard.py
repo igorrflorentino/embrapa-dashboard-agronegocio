@@ -22,7 +22,7 @@ uma regra estrutural guarda o que ainda não foi escrito:
   (``sum(if(peso is null, null, valor)) / sum(peso)``). É a correção da v1.70.0.
 
 Uma terceira forma divide FORA do SQL: o leitor devolve as duas metades e o Python as divide
-(o preço por produto da v1.108.10; os preços da Análise cruzada da v1.108.12). Não há
+(o preço por produto da v1.108.10; os preços da Análise cruzada da v1.108.13). Não há
 ``safe_divide`` para ler, e a regra vira outra: as metades ``priced_value<S>`` e
 ``priced_qty<S>`` vêm sob UMA condição que exige as duas medidas, e nenhuma metade de
 quantidade existe sem a de valor. A segunda metade deste arquivo confere isso no SQL que os
@@ -221,7 +221,7 @@ def test_a_divisao_POR_LINHA_fica_de_fora():
     assert razoes_de("safe_divide(safe.ln(value), qty)") == []
 
 
-# ── Os pares de metades: a razão que o Python divide (v1.108.10, v1.108.12) ────────────
+# ── Os pares de metades: a razão que o Python divide (v1.108.10, v1.108.13) ────────────
 
 _ALIAS_DO_PAR = re.compile(r"\s+as\s+(priced_(?:value|qty)\w*)", re.I)
 

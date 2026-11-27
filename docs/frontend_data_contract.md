@@ -689,7 +689,7 @@ GROUP BY reference_year
 ```
 This is the denominator for `cross_market_share` (Brazil ÷ world).
 
-**The cross-source prices divide the value and the quantity of the SAME rows** (v1.108.12).
+**The cross-source prices divide the value and the quantity of the SAME rows** (v1.108.13).
 `exp_price` and the two prices of Preço: porteira vs. FOB (`priceSpread`) are value ÷
 quantity per year, and until v1.108.11 each half was a sum over its own rows: `exp_price`
 and the FOB price divided the `exp_value` series by the `exp_weight` series, and the

@@ -111,7 +111,7 @@ def gateway_que_recusa_escopo_vazio(monkeypatch):
     for mod in _MODULOS:
         monkeypatch.setattr(mod.seam_base, "_xyear", xyear, raising=False)
 
-    # As metades do preço de exportação (v1.108.12) também: uma consulta própria, fora dos
+    # As metades do preço de exportação (v1.108.13) também: uma consulta própria, fora dos
     # fetch_ do gateway. Vazio aqui é legítimo só para `exp_price` (o banco inteiro), que
     # não recebe agrupamento e por isso não está em ENTRADAS.
     def metades(codes, uf_codes, year_start, year_end):

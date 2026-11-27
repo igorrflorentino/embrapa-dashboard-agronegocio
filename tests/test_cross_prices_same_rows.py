@@ -7,7 +7,7 @@ linhas — o FOB e o preço de exportação dividiam a série ``exp_value`` pela
 porteira dividia ``total_value`` por ``total_qty_native`` —, e uma linha com valor e sem
 quantidade entrava só no numerador. Hoje nenhuma linha do COMEX tem valor sem peso, e nenhuma
 do IBGE tem valor sem quantidade (medido na produção em 2026-11-23): os números estavam certos
-por DADO. Desde a v1.108.12 as duas metades vêm sob uma só condição (``sql._priced_pair``), e
+por DADO. Desde a v1.108.13 as duas metades vêm sob uma só condição (``sql._priced_pair``), e
 ficam certos por construção.
 
 Aqui só o armazém é trocado: ``gateway.run_query`` executa num sqlite o SQL que os próprios

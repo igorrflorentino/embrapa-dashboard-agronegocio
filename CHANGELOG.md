@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
-## [1.108.12] - 2026-11-27
+## [1.108.13] - 2026-11-27
 
 **Os preços da Análise cruzada passam a dividir o valor e a quantidade das mesmas linhas, por
 construção, e a tela diz quanto do valor sustenta cada preço quando é pouco.** Fecha a pendência

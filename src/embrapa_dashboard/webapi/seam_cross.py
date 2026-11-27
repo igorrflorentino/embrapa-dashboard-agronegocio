@@ -657,7 +657,7 @@ def _gate_value_qty_by_year(banco: str, codes: tuple, uf_codes: tuple = ()) -> d
     The halves are the mass track's ``priced_value_mass`` / ``priced_qty_mass``
     (``sql._priced_sums``): per product and year, the value and the quantity of the rows that
     carry both, so they are absent together, and the two sums below cover the same products.
-    Until v1.108.12 this read ``total_value`` and ``total_qty_native``, each over its own
+    Until v1.108.13 this read ``total_value`` and ``total_qty_native``, each over its own
     rows. The price spread only runs for an all-mass agrupamento (``_is_mass_basis``), so the
     mass track is the whole production side, and its ``qty_base`` is in tonnes.
 
@@ -699,7 +699,7 @@ def _gate_price_by_year(
     out = {}
     for y in set(extractive) | set(crop):
         surveys = [s for s in (extractive.get(y), crop.get(y)) if s is not None]
-        # Each survey enters with BOTH halves or with NEITHER. Since v1.108.12 the halves are
+        # Each survey enters with BOTH halves or with NEITHER. Since v1.108.13 the halves are
         # absent together by construction (one condition in the SQL); the pairing stays as
         # the defense of the sum ACROSS surveys, which `(ve or 0) + (vc or 0)` over
         # `(qe or 0) + (qc or 0)` once broke: a survey with a quantity and no value entered
@@ -768,7 +768,7 @@ def price_spread(agrupamento_id: str | None, uf_codes: tuple = ()) -> dict:
                 else fob[y].price - gate[y].price
             ),
             "markup": measures.ratio_present(fob[y].price, gate[y].price),
-            # The share of each side's value that stands behind its price (v1.108.12). Each
+            # The share of each side's value that stands behind its price (v1.108.13). Each
             # price divides the halves of the same rows; this is how much of the value those
             # rows hold, and the screen names the years below window.PRICED_SHARE_MIN.
             "fobPricedShare": measures.ratio_present(fob[y].priced_value, fob[y].total_value),

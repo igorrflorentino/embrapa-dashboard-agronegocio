@@ -315,7 +315,7 @@ function ViewPriceSpread() {
     { name: 'Preço de exportação (FOB)', color: 'var(--viz-3)', data: data.series.map(d => ({ y: d.y, v: d.fob })) },
     { name: 'Preço na porteira (produção)', color: 'var(--viz-2)', data: data.series.map(d => ({ y: d.y, v: d.gate })) },
   ];
-  // Each price divides the value and the quantity of the SAME rows (v1.108.12), so a year
+  // Each price divides the value and the quantity of the SAME rows (v1.108.13), so a year
   // whose rows with both measures hold too little of the value says so, by side, as the
   // Perfil do produto does (window.PRICED_SHARE_MIN). No year falls below it today: no COMEX
   // row has a value without a weight, and no IBGE row a value without a quantity.

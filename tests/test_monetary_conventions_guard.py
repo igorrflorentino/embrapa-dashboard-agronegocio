@@ -18,7 +18,7 @@ Esta varredura deriva do CÓDIGO as três ligações e reprova a que faltar:
    leitor (``val_yearfx_usd``) é justamente o nominal silencioso. Uma coluna de QUANTIDADE
    literal (``qty_base``) é legítima: não há moeda nela para a faixa contradizer. Vale também
    para o seam que monta o SQL direto, ``sqlbuild.<construtor>(value_column=…)``, sem passar
-   pelo gateway (as metades do preço de exportação, v1.108.12): a coluna chega ao SQL do
+   pelo gateway (as metades do preço de exportação, v1.108.13): a coluna chega ao SQL do
    mesmo jeito.
 3. **rota → seam** — toda rota que chama um seam que resolve a convenção
    (``effective_value_column``) lê ``currency``/``correction`` e as repassa.
