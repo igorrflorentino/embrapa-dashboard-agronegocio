@@ -1,3 +1,4 @@
+import { availableParallelism } from 'node:os'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 
@@ -55,6 +56,15 @@ export default defineConfig({
     include: ['src/**/*.test.{js,jsx}'],
     globals: false,
     restoreMocks: true,
+    // At most 6 test files at once, and one fewer than the logical CPUs where that is less (CI's
+    // 4 vCPUs keep their 3). Vitest's default, every logical CPU but one, means 19 workers on a
+    // 20-thread workstation, and there it is memory, not CPU, that runs out: one suite alone left
+    // as little as 8 MB of RAM free while finishing no sooner than with 12 workers. With three
+    // suites at once (another session testing in parallel is routine on that machine), the
+    // machine paged until tests ran out of their 5 s, and all 24 measured runs failed; with 6
+    // workers, the same load passed all 24, its node processes holding 4.3-4.8 GB instead of
+    // 8.4-9.0 GB. Measured: CHANGELOG v1.108.21. `--maxWorkers` on the command line still wins.
+    maxWorkers: Math.max(1, Math.min(6, availableParallelism() - 1)),
     // Coverage gate (checked under `--coverage`, i.e. `npm test` / CI; `npm run
     // test:fast` stays uninstrumented for the inner loop). The data/contract layer,
     // the view render-smoke-tests, and the AppShell chrome test reach ~88% of src/ui;
