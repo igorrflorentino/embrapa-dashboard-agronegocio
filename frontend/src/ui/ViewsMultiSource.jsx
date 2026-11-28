@@ -241,7 +241,10 @@ function ViewMarketShare() {
   const data = window.marketShare(product);
   const last = data.series[data.series.length - 1];
   const first = data.series[0];
-  const peak = data.series.reduce((m, d) => d.share > m.share ? d : m, data.series[0]);
+  // The largest share among the years above zero, as in every "Pico histórico" (v1.108.23):
+  // the old reduce named the first year of a series of zeros. No agrupamento reached that on
+  // 2026-11-28, so here the rule guards by construction what the data happens to spare.
+  const { peak, why: peakWhy } = window.peakOf(data.series, (d) => d.share);
   const shareTs = data.series.map(d => ({ y: d.y, v: d.share }));
 
   return (
@@ -251,7 +254,7 @@ function ViewMarketShare() {
 
       <div className="kpi-row">
         <window.KpiCardSpark label="Participação atual" value={msPct(last?.share)} sub={`${last?.y ?? '—'} · do mercado mundial`} />
-        <window.KpiCardSpark label="Pico histórico" value={msPct(peak?.share)} sub={`em ${peak?.y ?? '—'}`} />
+        <window.KpiCardSpark label="Pico histórico" value={msPct(peak?.share)} sub={peak ? `em ${peak.y}` : peakWhy} />
         {/* `(a || 0) - (b || 0)` fabricava a diferença contra um zero inventado quando
             uma das pontas não tinha dado — o mesmo defeito da v1.49.0 numa forma que a
             varredura não cobre (subtração, não razão). diffPresent recusa e vira '—'. */}

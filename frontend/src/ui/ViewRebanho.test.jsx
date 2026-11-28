@@ -373,3 +373,41 @@ describe('ViewRebanho — the leader and the 3 maiores raise the species', () =>
     expect(lider(c)).toBeNull();
   });
 });
+
+// ── A maximum of zeros is no maximum (v1.108.23) ──────────────────────────────────────────
+// The "Pico histórico" took the window's largest headcount starting from its first point, so
+// a window of zeros named its first year: codornas × AP, 2015–2024, read "0 cabeças em 2015".
+describe('ViewRebanho — the Pico histórico is a year with a herd above zero', () => {
+  const pico = (qs) => {
+    stubGlobals({
+      ...FIXTURE,
+      products: [FIXTURE.products[0]],
+      selectedProducts: ['2670'],
+      allProductTS: { '2670': qs.map((q, i) => ({ y: 2015 + i, v: 0, q, family: 'count' })) },
+      yearStart: 2015,
+      yearEnd: 2015 + qs.length - 1,
+    });
+    const c = render(
+      <ViewRebanho summary={{}} database="ibge_ppm" conventions={window.DEFAULT_CONVENTIONS} />,
+    ).container;
+    const card = [...c.querySelectorAll('.kpi')]
+      .find((k) => k.querySelector('.kpi-label').textContent === 'Pico histórico');
+    return { value: card.querySelector('.kpi-value').textContent, sub: card.querySelector('.kpi-sub').textContent };
+  };
+
+  it('a herd of zero in every year: no peak is named, and the card says why', () => {
+    expect(pico([0, 0, 0, 0])).toEqual({ value: '—', sub: 'nenhum ano acima de zero' });
+  });
+
+  it('years with no figure at all are a different reason', () => {
+    expect(pico([null, null])).toEqual({ value: '—', sub: 'sem dados na janela' });
+  });
+
+  it('zeros and absences are skipped: the peak is the largest herd', () => {
+    expect(pico([0, null, 30, 10])).toEqual({ value: '30.000.000 cabeças', sub: 'em 2017' });
+  });
+
+  it('a tie names the earliest year, as before', () => {
+    expect(pico([0, 30, 30, 10])).toEqual({ value: '30.000.000 cabeças', sub: 'em 2016' });
+  });
+});

@@ -257,8 +257,11 @@ function ViewProductProfile({ families, summary, database, conventions }) {
   const lastPrice = preco(last);
   const lastParcela = lastPrice == null ? null : parcelaDoPreco(last);
   const lastShare = parte(last);
-  // Historical peak headcount (drives the stock KPI that replaces "Valor")
-  const peak = win.reduce((m, d) => (d.q > m.q ? d : m), win[0] || { y: last.y, q: 0 });
+  // Historical peak headcount (drives the stock KPI that replaces "Valor"): the largest herd
+  // among the years with one above zero (v1.108.23). The old reduce named the first year of a
+  // window of zeros (codornas × AP: "0 cabeças em 2015"), and an empty window fell back to a
+  // fabricated `q: 0`.
+  const { peak, why: peakWhy } = window.peakOf(win, (d) => d.q);
 
   // Top-10 producing/raising UFs from the REAL per-UF ranking. A value-less stock ranks
   // by headcount (q_count) instead of an all-zero value; the bar measure (_m) is value
@@ -345,8 +348,8 @@ function ViewProductProfile({ families, summary, database, conventions }) {
         {isStock ? (
           <window.KpiCardSpark
             label="Pico histórico"
-            value={fmtQty(peak.q)}
-            sub={`em ${peak.y}`}
+            value={peak ? fmtQty(peak.q) : '—'}
+            sub={peak ? `em ${peak.y}` : peakWhy}
             spark={presentes(win.slice(-12).map(d => ({ y: d.y, q: d.q })), 'q')}
             sparkKey="q"
             sparkColor="var(--viz-7)"

@@ -331,8 +331,10 @@ function ViewTerritoryProfile({ summary, database, conventions }) {
   const eraBreaks = window.valueEraBreaksFor ? window.valueEraBreaksFor(database) : [];
   const deltaV = last && prev ? window.deltaPctIn(prev, last, eraBreaks) : null;
   const deltaVMoeda = last && prev ? window.spanComparable(prev.y, last.y, eraBreaks) : null;
-  // The peak among the years that HAVE a value; with none, there is no peak to name.
-  const peak = series.reduce((m, d) => (Number.isFinite(d.v) && (!m || d.v > m.v) ? d : m), null);
+  // The peak among the years with a value above zero; with none, there is no peak to name
+  // (v1.108.23). The old rule took any finite value, so a window of zeros named its first
+  // year: açaí × RS read "R$ 0 em 2015".
+  const { peak, why: peakWhy } = window.peakOf(series, (d) => d.v);
 
   if (!uf || !activeUfs.length) {
     return (
@@ -487,7 +489,7 @@ function ViewTerritoryProfile({ summary, database, conventions }) {
             ? 'não foi possível carregar a série'
             : leitura.loading
               ? 'carregando a série…'
-              : (peak ? `em ${peak.y}` : 'sem dados na janela')}
+              : (peak ? `em ${peak.y}` : peakWhy)}
         />
       </div>
 
