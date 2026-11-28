@@ -68,6 +68,20 @@ window.topPositive = (rows, valueOf, n) => (rows || [])
   .sort((a, b) => valueOf(b) - valueOf(a))
   .slice(0, n);
 
+// The "Pico histórico" of a yearly series: its largest point above zero, and the earliest
+// of the years that tie for it (the sort above is stable and the series runs by year). With
+// no such point there is no peak, and `why` is what the card writes under its "—": every
+// year with a figure at zero, or no year with a figure at all (v1.108.23). Until then each
+// screen took its own maximum, which named the FIRST year of a window of zeros: codornas ×
+// AP read "0 cabeças em 2015" in Rebanho and in Perfil do produto, açaí × RS "R$ 0 em 2015"
+// in Perfil do território.
+window.peakOf = (rows, valueOf) => {
+  const [peak] = window.topPositive(rows, valueOf, 1);
+  if (peak) return { peak, why: null };
+  const anyFigure = (rows || []).some((r) => Number.isFinite(valueOf(r)));
+  return { peak: null, why: anyFigure ? 'nenhum ano acima de zero' : 'sem dados na janela' };
+};
+
 // Piso de materialidade sobre uma razão. Uma razão (rendimento = t/ha, preço =
 // valor/quantidade) mede INTENSIDADE, e intensidade medida sobre uma base minúscula
 // não é uma medida — é o arredondamento da fonte. Medido na PAM 2024: o DF aparecia

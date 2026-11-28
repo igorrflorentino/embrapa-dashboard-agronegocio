@@ -7,6 +7,97 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.108.23] - 2026-11-28
+
+**O indicador "Pico histórico" passa a nomear só um ano acima de zero, nas quatro perspectivas que o
+mostram.** Fecha a pendência das Notas da v1.108.22. Cada perspectiva fazia a própria conta, que
+partia do primeiro ano da janela e só trocava de ano diante de um valor maior. Numa janela só de
+zeros, nenhum ano é maior, e o "pico" era o primeiro ano, com valor zero.
+
+### Corrigido
+- **Rebanho e Perfil do produto: "Pico histórico: 0 cabeças em 2015".**
+  - Exemplo: PPM, codornas × AP, 2015–2024. O efetivo de codornas no AP é zero em todos os anos
+    da janela. Agora o indicador diz "—" e, embaixo, "nenhum ano acima de zero".
+  - No Perfil do produto, uma janela sem nenhum ano da série dizia "0 cabeças em undefined" (PPM,
+    bovino, 1950–1960; a PPM começa em 1974). Agora diz "—" e "sem dados na janela".
+- **Perfil do território: "Pico histórico: R$ 0 em 2015".**
+  - Exemplo: PAM, açaí × RS, 1974–2025. O RS não tem valor de açaí em ano nenhum. Agora o
+    indicador diz "—" e "nenhum ano acima de zero".
+- **Participação no mercado mundial: a mesma conta, sem caso na produção hoje.**
+  - Em 2026-11-28, os 17 agrupamentos tinham participação acima de zero no último ano, e nenhum
+    chegava ao defeito. O indicador segue agora a regra comum, que o protege mesmo assim.
+- **Uma regra só, em `frontend/src/ui/seriesUtils.js`: `window.peakOf(serie, medida)`.**
+  - Devolve o maior ponto acima de zero. No empate, o ano mais antigo, como antes.
+  - Sem ponto acima de zero, não há pico, e a função diz por quê:
+    - "nenhum ano acima de zero", quando a janela tem números e todos são zero;
+    - "sem dados na janela", quando não tem número nenhum.
+  - São ausências diferentes, e a tela as distingue. É a regra da `topPositive` da v1.108.22
+    (zero não é produção) aplicada ao pico.
+- A Sazonalidade não muda: o "Mês de pico" só aparece quando algum mês tem média acima de zero.
+- Conferido numa prévia local contra a produção (só leitura), em 2026-11-28, com o código do `main`
+  e o desta versão:
+
+  | onde | antes | agora |
+  |---|---|---|
+  | Rebanho, PPM · codornas × AP, 2015–2024 | "0 cabeças", "em 2015" | "—", "nenhum ano acima de zero" |
+  | Perfil do produto, PPM · codornas × AP, 2015–2024 | "0 cabeças", "em 2015" | "—", "nenhum ano acima de zero" |
+  | Perfil do produto, PPM · bovino, 1950–1960 | "0 cabeças", "em undefined" | "—", "sem dados na janela" |
+  | Perfil do território, PAM · açaí × RS, 1974–2025 | "R$ 0", "em 2015" | "—", "nenhum ano acima de zero" |
+
+  - Controle: codornas no Brasil, 2015–2024, lê "18.971.342 cabeças em 2015", o maior ponto da
+    série desenhada no gráfico ao lado.
+- Nada muda na API, no BFF nem no dbt. O merge não dispara a reconstrução da base analítica.
+
+### Testes
+- vitest, 17 testes novos:
+  - 5 em `seriesUtils.test.js`, sobre `peakOf`:
+    - o maior ponto acima de zero, pulando zeros e ausências;
+    - no empate, o ano mais antigo;
+    - todos os números em zero: sem pico, e "nenhum ano acima de zero";
+    - nenhum número (só ausências, lista vazia ou indefinida): sem pico, e "sem dados na janela";
+    - negativo e `NaN` nunca viram pico.
+  - 4 em `ViewRebanho.test.jsx`: efetivo zero em todos os anos; anos sem número; zeros e
+    ausências entre anos com efetivo; empate.
+  - 3 em `ViewProductProfile.test.jsx`: efetivo zero em todos os anos; janela sem nenhum ano da
+    série; zeros, ausências e empate.
+  - 3 em `ViewTerritoryProfile.cov.test.jsx`: valor zero em todos os anos; zeros, ausências e
+    empate; um território que produziu.
+  - 2 em `ViewsMultiSource.cov.test.jsx` (Participação no mercado mundial): participação zero em
+    todos os anos; empate.
+- Contraprova com o código do `main` (o `seriesUtils.js` e as quatro telas de lá, com os testes
+  novos):
+  - 11 dos 17 testes falham;
+  - os 5 de `peakOf` falham porque a função não existe no `main`;
+  - os outros 6 leem, no `main`:
+    - Rebanho, efetivo zero: "0 cabeças", "em 2015";
+    - Rebanho, anos sem número: "—", "em 2015";
+    - Perfil do produto, efetivo zero: "0 cabeças", "em 2015";
+    - Perfil do produto, janela sem nenhum ano da série: "0 cabeças", "em undefined";
+    - Perfil do território, valor zero: o zero formatado, "em 2019";
+    - Participação no mercado mundial, participação zero: "0.0%", "em 2019" (o formatador do
+      teste é simplificado).
+  - Os 6 que passam no `main` são os controles: pico acima de zero, ausências e empate. A regra
+    nova não muda nenhum pico que já estava certo.
+- vitest: 2.277 passando em 110 arquivos (17 a mais que na v1.108.22), com a cobertura acima dos
+  mínimos, numa rodada só e sem tempo limite estourado. pytest: 2.656 passando (15 pulados no
+  Windows, que só rodam no Linux), cobertura de 99,33%. `npm run lint`, `npm run build`,
+  `uv lock --check`, `ruff check` e `ruff format --check` passam.
+
+### Notas
+- Achados vizinhos, fora desta versão, medidos na mesma prévia:
+  - **Zero contado como produção**, a regra das v1.108.21 e v1.108.22, em mais dois lugares:
+    - Perfil do território, açaí × RS: "Posição no ranking: 24º de 27 UFs", para uma UF sem
+      valor em ano nenhum; e a "Composição" desenha o açaí como uma barra de R$ 0.
+    - Rebanho, AP, 2015–2024: "Espécies no efetivo: 8" conta as codornas, cujo efetivo é zero em
+      todos os anos, e a composição do efetivo as lista com 0%.
+  - **Eixo com prefixo de milésimo numa série só de zeros.** O eixo vai de 0 a 1, e o Plotly
+    escreve as frações com o prefixo de milésimo: "200m … 800m cabeças" (Perfil do produto,
+    codornas × AP) e "R$ 500m" (Perfil do território, açaí × RS). "200m" quer dizer 0,2, e se lê
+    como 200 mil ou 200 milhões.
+  - **Perfil do produto numa janela sem nenhum ano da série** (PPM, bovino, 1950–1960): o "Pico
+    histórico" é corrigido aqui, mas o indicador "Efetivo" ainda escreve "undefined vs.
+    undefined", e a ficha técnica, "Efetivo ()".
+
 ## [1.108.22] - 2026-11-28
 
 **O "3 maiores" dos mapas da Visão geral e do Rebanho e o indicador "UF líder" do Rebanho passam a

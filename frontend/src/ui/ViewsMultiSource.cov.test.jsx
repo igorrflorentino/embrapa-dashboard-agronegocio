@@ -304,6 +304,26 @@ describe('ViewMarketShare', () => {
     fireEvent.click(madeira);
     expect(calls).toContain('madeira');
   });
+
+  // A maximum of zeros is no maximum (v1.108.23). No agrupamento had a series of zeros on
+  // 2026-11-28; the card follows the rule of every other "Pico histórico" anyway.
+  const pico = (series) => {
+    window.marketShare = () => ({ series, byProduct: [] });
+    const card = render(<ViewMarketShare />).container.querySelector('.kpi[data-label="Pico histórico"]');
+    return { value: card.querySelector('.kpi-value').textContent, sub: card.querySelector('.kpi-sub').textContent };
+  };
+
+  it('a share of zero in every year names no peak, and the card says why', () => {
+    expect(pico([{ y: 2019, share: 0, br: 0, world: 20 }, { y: 2020, share: 0, br: 0, world: 22 }]))
+      .toEqual({ value: '—', sub: 'nenhum ano acima de zero' });
+  });
+
+  it('the peak is the largest share, and a tie names the earliest year', () => {
+    expect(pico([
+      { y: 2018, share: 0, br: 0, world: 20 }, { y: 2019, share: 6, br: 1, world: 20 },
+      { y: 2020, share: 6, br: 1, world: 20 }, { y: 2021, share: 2, br: 1, world: 20 },
+    ])).toEqual({ value: '6.0%', sub: 'em 2019' });
+  });
 });
 
 // ── ViewPriceSpread ──────────────────────────────────────────────────────────

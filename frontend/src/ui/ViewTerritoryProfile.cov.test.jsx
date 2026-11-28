@@ -793,3 +793,33 @@ describe('ViewTerritoryProfile — o título da composição concorda com o luga
     expect(tituloComposicao(container)).toBe('O que Pará produz');
   });
 });
+
+// ── A maximum of zeros is no maximum (v1.108.23) ──────────────────────────────────────────
+// The "Pico histórico" took the first year with a figure when no later one beat it, so a
+// territory with a value of zero in every year named that year: açaí × RS read "R$ 0 em 2015".
+describe('ViewTerritoryProfile — the Pico histórico is a year with a value above zero (v1.108.23)', () => {
+  const comRS = (valores) => ({
+    ...BASE,
+    ufDataFull: [...BASE.ufDataFull, { uf: 'RS', name: 'Rio Grande do Sul' }],
+    ufYearlySeries: [...BASE.ufYearlySeries,
+      ...valores.map((value, i) => ({ year: 2019 + i, uf: 'RS', value }))],
+  });
+  const pico = (fixture, uf) => {
+    stubGlobals(fixture);
+    const card = kpi(render(<View summary={{ states: [uf] }} database="ibge_pam" conventions={CONV} />).container, 'Pico');
+    return { value: card.querySelector('.kpi-value').textContent, sub: card.querySelector('.kpi-sub').textContent };
+  };
+
+  it('a value of zero in every year: no peak is named, and the card says why', () => {
+    expect(pico(comRS([0, 0, 0]), 'RS')).toEqual({ value: '—', sub: 'nenhum ano acima de zero' });
+  });
+
+  it('zeros and absences are skipped, and a tie names the earliest year', () => {
+    expect(pico(comRS([0, 50, 50]), 'RS')).toEqual({ value: 'val:50000000', sub: 'em 2020' });
+    expect(pico(comRS([null, 0, 40]), 'RS')).toEqual({ value: 'val:40000000', sub: 'em 2021' });
+  });
+
+  it('counter-proof: a territory that produced keeps its peak', () => {
+    expect(pico(comRS([0, 0, 0]), 'PA')).toEqual({ value: 'val:300000000', sub: 'em 2021' });
+  });
+});

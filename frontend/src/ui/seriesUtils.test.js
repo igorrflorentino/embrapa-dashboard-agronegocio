@@ -379,3 +379,37 @@ describe('topPositive — only rows with a positive measure are ranked', () => {
     expect(rows.map(v)).toEqual([1, 3]);
   });
 });
+
+// ── A maximum of zeros is no maximum (v1.108.23) ─────────────────────────────────────────
+// Each "Pico histórico" took its own maximum, which named the FIRST year of a window of
+// zeros: codornas × AP read "0 cabeças em 2015", açaí × RS "R$ 0 em 2015".
+describe('peakOf — the largest year above zero, or why there is none', () => {
+  const q = (d) => d.q;
+
+  it('names the largest point above zero, skipping zeros and absences', () => {
+    const rows = [{ y: 2015, q: 0 }, { y: 2016, q: 30 }, { y: 2017, q: null }, { y: 2018, q: 10 }];
+    expect(window.peakOf(rows, q)).toEqual({ peak: { y: 2016, q: 30 }, why: null });
+  });
+
+  it('a tie names the earliest year, as the old maximum did', () => {
+    const rows = [{ y: 2015, q: 5 }, { y: 2016, q: 9 }, { y: 2017, q: 9 }];
+    expect(window.peakOf(rows, q).peak.y).toBe(2016);
+  });
+
+  it('every figure at zero: no peak, and the card says so', () => {
+    const rows = [{ y: 2015, q: 0 }, { y: 2016, q: 0 }, { y: 2017, q: null }];
+    expect(window.peakOf(rows, q)).toEqual({ peak: null, why: 'nenhum ano acima de zero' });
+  });
+
+  it('no figure at all is a different reason, kept apart from the zeros', () => {
+    expect(window.peakOf([{ y: 2015, q: null }, { y: 2016, q: undefined }], q))
+      .toEqual({ peak: null, why: 'sem dados na janela' });
+    expect(window.peakOf([], q)).toEqual({ peak: null, why: 'sem dados na janela' });
+    expect(window.peakOf(undefined, q)).toEqual({ peak: null, why: 'sem dados na janela' });
+  });
+
+  it('a negative or NaN figure never becomes the peak', () => {
+    const rows = [{ y: 2015, q: -4 }, { y: 2016, q: NaN }, { y: 2017, q: 0 }];
+    expect(window.peakOf(rows, q)).toEqual({ peak: null, why: 'nenhum ano acima de zero' });
+  });
+});

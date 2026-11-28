@@ -175,7 +175,10 @@ function ViewRebanho({ summary, conventions, database }) {
   const fLast = focusWin[focusWin.length - 1] || { y: yearEnd, q: null };
   const fPrev = focusWin[focusWin.length - 2] || fLast;
   const fDelta = window.deltaPct(fPrev.q, fLast.q);
-  const fPeak = focusWin.reduce((m, d) => (d.q > m.q ? d : m), focusWin[0] || fLast);
+  // The peak among the years with a herd above zero (v1.108.23). The old reduce started from
+  // the window's first point, so a window of zeros named its first year: codornas × AP,
+  // 2015–2024, read "0 cabeças em 2015".
+  const { peak: fPeak, why: fPeakWhy } = window.peakOf(focusWin, (d) => d.q);
 
   // Per-UF map of the focused species — decorate product-uf rows with tile col/row
   // from the UF registry (the BrazilTileMap positions tiles by col/row).
@@ -241,8 +244,8 @@ function ViewRebanho({ summary, conventions, database }) {
         />
         <window.KpiCardSpark
           label="Pico histórico"
-          value={window.formatCountQty(fPeak.q, conv, focusUnit)}
-          sub={`em ${fPeak.y}`}
+          value={fPeak ? window.formatCountQty(fPeak.q, conv, focusUnit) : '—'}
+          sub={fPeak ? `em ${fPeak.y}` : fPeakWhy}
           spark={focusWin.slice(-12).map(d => ({ y: d.y, q: d.q }))}
           sparkKey="q"
           sparkColor="var(--viz-7)"

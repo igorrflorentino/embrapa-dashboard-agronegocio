@@ -432,3 +432,27 @@ describe('ViewProductProfile — a product with no value in the window is still 
       'Sem valor nesta convenção: AC. Não têm valor nesta convenção em 1980–1981, por isso não entram no ranking por valor.');
   });
 });
+
+// ── A maximum of zeros is no maximum (v1.108.23) ──────────────────────────────────────────
+// The herd's "Pico histórico" took the window's largest headcount starting from its first
+// year, so a window of zeros named that year: codornas × AP, 2015–2024, read "0 cabeças em
+// 2015". An empty window started from a fabricated `q: 0` with no year at all.
+describe('ViewProductProfile — the Pico histórico is a year with a herd above zero (v1.108.23)', () => {
+  const pico = (c) => ({ value: kpi(c, 'Pico histórico'), sub: kpiSub(c, 'Pico histórico') });
+  const serie = (qs) => qs.map((q, i) => ({ y: 2015 + i, v: 0, q }));
+
+  it('a herd of zero in every year: no peak is named, and the card says why', () => {
+    expect(pico(renderProfile(BOVINO, serie([0, 0, 0])))).toEqual({ value: '—', sub: 'nenhum ano acima de zero' });
+  });
+
+  it('a window with no year of the series: no peak, and a different reason', () => {
+    stubWidgets({ ...profileOf(BOVINO, BOVINO_TS), yearStart: 1950, yearEnd: 1960 });
+    const c = render(<window.ViewProductProfile summary={{}} database="ibge_ppm" conventions={conv()} />).container;
+    expect(pico(c)).toEqual({ value: '—', sub: 'sem dados na janela' });
+  });
+
+  it('zeros and absences are skipped, and a tie names the earliest year', () => {
+    expect(pico(renderProfile(BOVINO, serie([0, null, 30, 30, 10]))))
+      .toEqual({ value: '30.000.000 cabeças', sub: 'em 2017' });
+  });
+});
