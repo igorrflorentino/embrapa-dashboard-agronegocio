@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
-## [1.108.21] - 2026-11-27
+## [1.108.20] - 2026-11-28
 
 **A suíte do vitest passa a rodar no máximo 6 arquivos de teste ao mesmo tempo, e a matriz da
 citação ABNT vira um teste por caso.** Fecha a pendência das Notas da v1.108.11: sob a carga daquela

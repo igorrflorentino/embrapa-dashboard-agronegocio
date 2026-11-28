@@ -63,7 +63,7 @@ export default defineConfig({
     // suites at once (another session testing in parallel is routine on that machine), the
     // machine paged until tests ran out of their 5 s, and all 24 measured runs failed; with 6
     // workers, the same load passed all 24, its node processes holding 4.3-4.8 GB instead of
-    // 8.4-9.0 GB. Measured: CHANGELOG v1.108.21. `--maxWorkers` on the command line still wins.
+    // 8.4-9.0 GB. Measured: CHANGELOG v1.108.20. `--maxWorkers` on the command line still wins.
     maxWorkers: Math.max(1, Math.min(6, availableParallelism() - 1)),
     // Coverage gate (checked under `--coverage`, i.e. `npm test` / CI; `npm run
     // test:fast` stays uninstrumented for the inner loop). The data/contract layer,
