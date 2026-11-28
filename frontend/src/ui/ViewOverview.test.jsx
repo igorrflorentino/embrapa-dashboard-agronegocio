@@ -98,6 +98,11 @@ const FIXTURE = {
   ufYearPartial: false,
   notFilteredByBasket: false,
   geoComboPending: false,
+  // The coverage count applyFilters makes once for the hero and this card (v1.108.21).
+  ufsCovered: 1,
+  ufsCoveredLoading: false,
+  ufsCoveredLoadError: null,
+  ufsTotal: 1,
 };
 
 // Count products as the PPM serves them (unit_native as SIDRA publishes it). The count
@@ -317,7 +322,9 @@ describe('ViewOverview — a sub-UF narrowing on its way or failed holds the num
   afterEach(() => { delete window.LoadErrorNote; });
 
   it('pending: every number is "…", and the series card says it is crossing the filters', () => {
-    const c = renderWith({ geoComboPending: true, subUfLoading: true });
+    // applyFilters holds the coverage count too, exactly then (v1.108.21).
+    const c = renderWith({ geoComboPending: true, subUfLoading: true,
+      ufsCovered: null, ufsCoveredLoading: true });
     const cards = quantityCards(c);
     expect(cards).toHaveLength(3);
     for (const k of cards) {
@@ -330,7 +337,8 @@ describe('ViewOverview — a sub-UF narrowing on its way or failed holds the num
   });
 
   it('failed: every number is "—", the series card alerts, and nothing says it is still coming', () => {
-    const c = renderWith({ geoComboPending: false, subUfLoadError: 'HTTP 503' });
+    const c = renderWith({ geoComboPending: false, subUfLoadError: 'HTTP 503',
+      ufsCovered: null, ufsCoveredLoadError: 'HTTP 503' });
     for (const k of quantityCards(c)) {
       expect(k.querySelector('.kpi-value').textContent).toBe('—');
       expect(k.querySelector('.kpi-sub').textContent).toBe('recorte sub-UF não carregado');

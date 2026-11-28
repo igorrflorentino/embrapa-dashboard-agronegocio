@@ -503,20 +503,36 @@ import './productOrigin.js';
       .map(r => r.year)
       .filter(y => typeof y === 'number' && y >= yearStart && y <= yearEnd);
     const ufLatestYear = ufYearsInWindow.length ? Math.max(...ufYearsInWindow) : yearEnd;
+    // One grid's rows at the map year, shaped like the snapshot's per-UF rows.
+    const _gridAtMapYear = (grid, keep) => _decorateUf(
+      grid
+        .filter(r => r.year === ufLatestYear)
+        .filter(u => keep(u.uf))
+        .map(r => ({ uf: r.uf, name: r.name, region: r.region,
+                     value: r.value, q_mass: r.q_mass, q_vol: r.q_vol,
+                     q_count_stock: r.q_count_stock, q_count_flow: r.q_count_flow })),
+    );
+    // The snapshot's per-UF rows (`ufData`) are the banco's LATEST year, whatever the period:
+    // the snapshot request carries no period. Until v1.108.21 they stood for every map year,
+    // so with no basket PAM over 1990–2000 drew Mato Grosso at R$ 133 bi under "· 2000" (its
+    // 2025 value; it made R$ 3,07 bi in 2000, and Brazil R$ 34,6 bi), and the Visão geral,
+    // Geografia and Concentração maps, their CSVs and "UFs cobertas" read 2025 under the label
+    // of 2000. An earlier map year now reads the all-products grid (`ufYearly`), which comes in
+    // the same snapshot. At the latest year the two are the same rows, field by field (measured
+    // on PAM, PEVS, PPM and COMEX, 2026-11-27), so the snapshot's own rows, decorated and
+    // flagged `real` by the server, keep standing there; they also stand alone when the grid is
+    // missing (a payload without it).
+    const _ufYearlyLatest = ufYearlyAll.reduce((m, r) => (r.year > m ? r.year : m), -Infinity);
+    const _snapshotRowsStand = !ufYearlyAll.length || ufLatestYear === _ufYearlyLatest;
     // A sub-UF narrowing reads the cube even while pending/empty (geoCube=null → []),
     // so the map shows loading/empty rather than the all-UF snapshot it excludes.
     const _ufRowsWhere = (keep) => (subUfOwnsGrid || useCube)
-      ? _decorateUf(
-          (geoCube || [])
-            .filter(r => r.year === ufLatestYear)
+      ? _gridAtMapYear(geoCube || [], keep)
+      : _snapshotRowsStand
+        ? UF_DATA_T
             .filter(u => keep(u.uf))
-            .map(r => ({ uf: r.uf, name: r.name, region: r.region,
-                         value: r.value, q_mass: r.q_mass, q_vol: r.q_vol,
-                         q_count_stock: r.q_count_stock, q_count_flow: r.q_count_flow })),
-        )
-      : UF_DATA_T
-          .filter(u => keep(u.uf))
-          .map(u => ({ ...u }));
+            .map(u => ({ ...u }))
+        : _gridAtMapYear(ufYearlyAll, keep);
     const ufData = _ufRowsWhere(uf => !stateSet || stateSet.has(uf));
     // The same rows with the STATE filter lifted — the honest denominator for the
     // "parcial" mark on region totals below. Deliberately the IDENTICAL path (same year,
@@ -725,17 +741,68 @@ import './productOrigin.js';
     const rowsInView = !selectedProducts.length ? 0
       : rowsCountable ? ts.reduce((acc, d) => addCount(acc, d.rows), 0)
       : null;
-    // ── Years with rows (for hero "SELEÇÃO ATIVA · Anos cobertos") ────
+    // ── Years with rows (the base of "Anos cobertos", below) ───────────
     // The years of `ts` whose point carries at least one Gold row, read off the very counts
-    // rowsInView adds (v1.108.15), so the two counters cannot disagree: no row is no year, and
-    // where the rows are unknown the years are too (null). `ts` has a point for EVERY year of
-    // the banco inside the period, rows or not, and its length was the counter until then:
-    // PAM's açaí over 1990–2000 read "Linhas 0" beside "Anos cobertos 11 / 52", and a COMEX
-    // code with one row in 2010 read "30 / 30". Ascending, as `ts` is; [] with no product
-    // selected, whatever the geography (as rowsInView, `ts` sums every product there).
+    // rowsInView adds (v1.108.15), so the two cannot disagree: no row is no year, and where the
+    // rows are unknown the years are too (null). `ts` has a point for EVERY year of the banco
+    // inside the period, rows or not, and its length was the counter until then: PAM's açaí
+    // over 1990–2000 read "Linhas 0" beside "Anos cobertos 11 / 52", and a COMEX code with one
+    // row in 2010 read "30 / 30". Ascending, as `ts` is; [] with no product selected, whatever
+    // the geography (as rowsInView, `ts` sums every product there).
     const yearsWithRows = rowsInView == null ? null
       : !selectedProducts.length ? []
       : ts.filter((d) => d.rows > 0).map((d) => d.y);
+
+    // ── Coverage (hero "UFs cobertas" · "Anos cobertos", and Visão geral's quality card) ──
+    // What the recorte COVERS is where and when it had PRODUCTION: a value or a quantity above
+    // zero, in some year of the period (v1.108.21).
+    // - Never a row: the municipal surveys (PAM, PPM) publish a zero row for every município, so
+    //   every product of theirs has rows in all 27 UFs (measured on prod, 2026-11-27: 28 of 28).
+    // - Never one year alone. Until v1.108.21 "UFs cobertas" counted the UFs with a value in the
+    //   MAP year, and "Anos cobertos" the years with rows, so the two answered different questions
+    //   side by side. PAM's açaí × RS read "UFs 0 / 27 · Anos 11 / 52": RS has a zero row for each
+    //   of its municípios every year since 2015. PPM's lã read "6 / 27" over a history in which
+    //   14 UFs produced it.
+    // - A quantity keeps the count still under any currency or deflator, whose gaps leave the
+    //   value absent, never the quantity.
+    //
+    // ONE count of the UFs, read by both surfaces that show it; until v1.108.21 the hero and the
+    // card counted apart, each its own way. It waits for the grid that honours the selection, as
+    // "Linhas" does: "…" while a sub-UF recorte or the basket's cube is on its way, "—" after
+    // either failed. Until then it did not wait for the basket's cube and counted the
+    // all-products grid meanwhile: PAM's açaí over 1990–2000 read "27 / 27" before settling on
+    // "0 / 27", and kept "27 / 27" for good when the cube failed. (`notFilteredByBasket` is that
+    // wait, and its failure, without a UF subset; `geoComboPending`/`geoComboLoadError` are it
+    // beside one.)
+    const ufsCoveredLoadError = subUfLoadError || geoComboLoadError
+      || (notFilteredByBasket ? basketGeoLoadError : null) || null;
+    const ufsCoveredLoading = !ufsCoveredLoadError && (geoComboPending || notFilteredByBasket);
+    // Grid cells carry the value as `value`, the series' points as `v`.
+    const _produced = (c) => c.value > 0 || c.v > 0 || c.q_mass > 0 || c.q_vol > 0
+      || c.q_count_stock > 0 || c.q_count_flow > 0;
+    const _isRealUfRow = (u) => (u.real != null ? u.real
+      : (window.isCanonicalUf ? window.isCanonicalUf(u.uf) : true));
+    // Every year of the period, in the grid that honours the selection. A payload without the
+    // UF × year grid has only the map's rows to offer.
+    const _hasYearGrid = subUfOwnsGrid || useCube || ufYearlyAll.length > 0;
+    const _coverageCells = _hasYearGrid
+      ? geoSource.filter((r) => r.year >= yearStart && r.year <= yearEnd)
+      : ufData;
+    // No product selected covers no UF, whatever the grid sums then (every product).
+    const ufsCovered = (ufsCoveredLoading || ufsCoveredLoadError) ? null
+      : !selectedProducts.length ? 0
+      : new Set(_coverageCells
+          .filter((c) => (!stateSet || stateSet.has(c.uf)) && _isRealUfRow(c) && _produced(c))
+          .map((c) => c.uf)).size;
+    // The denominator: the banco's real UFs across its whole history, capped at the canonical 27.
+    const ufsTotal = Math.min(27, ufUniverse.filter(_isRealUfRow).length || 27);
+    // The years with production, read off the screen's series (it sums exactly the selection),
+    // among the years with rows: production needs a row, so they hold where "Linhas" holds (null)
+    // and are none with no product selected. With no geographic filter the two are the same
+    // years for every product (156 in four bancos, measured on prod 2026-11-27); a UF filter
+    // brings in the zero rows, and there they part.
+    const _yearsProduced = new Set(ts.filter(_produced).map((d) => d.y));
+    const yearsCovered = yearsWithRows && yearsWithRows.filter((y) => _yearsProduced.has(y));
     // The shares below survive only as the FALLBACK estimate of that count.
     const flagShare  = flagSet
       ? filteredFlags.reduce((s, f) => s + f.share, 0)
@@ -892,6 +959,13 @@ import './productOrigin.js';
       // The years of the series that carry those rows, ascending — null exactly when
       // rowsInView is (see Years with rows above).
       yearsWithRows,
+      // Coverage (see Coverage above), the one count the hero and the Visão geral card show.
+      // `ufsCovered` is null exactly while held: `ufsCoveredLoading` (a sub-UF recorte or the
+      // basket's cube on its way) or `ufsCoveredLoadError` (either failed). `ufsTotal` is its
+      // denominator. `yearsCovered`: the years with production, ascending; null exactly when
+      // `yearsWithRows` is.
+      ufsCovered, ufsCoveredLoading, ufsCoveredLoadError, ufsTotal,
+      yearsCovered,
       _shares: { productShare, flagShare, yearShare, stateShare, muniShare },
     };
   };

@@ -7,6 +7,151 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.108.21] - 2026-11-28
+
+**"UFs cobertas" e "Anos cobertos", em "Seleção ativa", passam a contar onde e quando houve produção
+no recorte. Sem cesta de produtos, os mapas e os CSV deixam de mostrar o último ano do banco sob o
+rótulo de outro ano.** Fecha as pendências das Notas da v1.108.15. Havia três problemas:
+- sem cesta, o contador e os mapas liam o último ano do banco, qualquer que fosse o período;
+- com cesta, o contador não esperava a distribuição por UF da cesta;
+- cada contador contava uma coisa:
+  - "UFs cobertas", as UFs com valor no ano do mapa;
+  - "Anos cobertos" e "Linhas", as linhas do período, inclusive as células vazias da pesquisa
+    municipal.
+
+Os dois primeiros eram defeitos. O critério do terceiro foi uma decisão de produto, tomada em
+2026-11-27 entre duas opções medidas.
+
+### Corrigido
+- **Sem cesta de produtos, os mapas mostravam o último ano do banco sob o rótulo do ano do mapa.**
+  - Exemplo: PAM, 1990–2000, sem cesta. O mapa da Visão geral dizia "Distribuição geográfica ·
+    2000" e mostrava Mato Grosso com R$ 133 bi, o valor de 2025. Em 2000, Mato Grosso teve
+    R$ 3,07 bi, e o Brasil inteiro, R$ 34,6 bi.
+  - A causa:
+    - o resumo do banco não depende do período, e a grade por UF dele é sempre a do último ano;
+    - a grade UF × ano, que segue o período, já vinha no mesmo resumo;
+    - `applyFilters` (`frontend/src/ui/dataFilters.js`) passa a usá-la quando o ano do mapa é
+      anterior ao último.
+  - No último ano do banco, as linhas são as mesmas de antes, campo a campo (comparadas no PAM, no
+    PEVS, no PPM e no COMEX), e o período padrão não muda.
+  - Conferido numa prévia local contra a produção (só leitura), em 2026-11-27, com o PAM de 1990 a
+    2000, sem cesta:
+
+    | onde | antes | agora |
+    |---|---|---|
+    | Visão geral, mapa "· 2000" | Mato Grosso com R$ 133 bi | Mato Grosso com R$ 3,07 bi; as UFs somam R$ 34,55 bi, o "Valor total" de 2000 |
+    | Geografia, mapa por região | de R$ 60 bi a 245 bi | de R$ 1,8 bi a 12 bi |
+    | Concentração, classificação das UFs | Mato Grosso em 1º, com 17,9% (a participação de 2025) | SP 16,8%, PR 13,8%, MG 12,8%, RS 11,1%, MT 8,9% |
+    | CSV da Concentração (`ibge_pam_concentracao_2000.csv`) | ano 2000 com os valores de 2025 | Mato Grosso com 3.069.996.000 |
+
+  - As curvas de Lorenz, o índice Herfindahl-Hirschman (HHI) e o CSV da Geografia leem as mesmas
+    linhas, e foram corrigidos junto.
+- **"UFs cobertas" não esperava a distribuição por UF da cesta.**
+  - Com o açaí do PAM e o período 1990–2000, a faixa lia "27 / 27", do banco inteiro, até a
+    distribuição chegar; aí assentava em "0 / 27".
+  - Se a distribuição falhasse, a faixa ficava em "27 / 27".
+  - Agora mostra "…" enquanto carrega e "—" se falhar (regra da v1.108.1). A dica diz qual dos
+    dois: "A distribuição por UF da cesta selecionada ainda está carregando." ou "Não foi possível
+    carregar a distribuição por UF da cesta selecionada.".
+- **A faixa e o cartão "Cobertura geográfica da seleção", da Visão geral, contavam cada um a seu
+  modo.** Agora `applyFilters` faz uma conta só (`ufsCovered`). Os dois leem o mesmo número, com as
+  mesmas marcas de espera e de falha.
+
+### Alterado
+- **"UFs cobertas" e "Anos cobertos" contam a produção: valor ou quantidade acima de zero, em algum
+  ano do período.**
+  - "UFs cobertas" contava antes as UFs com valor acima de zero no ano do mapa.
+  - "Anos cobertos" contava antes os anos com linhas da base analítica (v1.108.15).
+    - Sem filtro geográfico, o número não muda em nenhum dos 156 produtos medidos nos quatro
+      bancos.
+    - Com filtro, as linhas zeradas deixam de contar.
+  - "Linhas" continua contando todas as linhas do recorte.
+  - A quantidade conta mesmo sem valor. No PEVS, o pinheiro brasileiro tem, em 2025, quantidade em
+    3 UFs e valor em nenhuma.
+  - Contar as UFs com linhas não serviria. O PAM e o PPM publicam uma linha zerada para cada
+    município, e todo produto deles teria linhas nas 27 UFs (28 de 28, medido na produção).
+  - Medido em 2026-11-27, com consultas na base analítica:
+    - cada produto no período inteiro, sem filtro de UF;
+    - sem os produtos ocultos pelo ciclo de vida, como toda leitura do painel.
+
+    | banco | produtos | "UFs cobertas" muda em |
+    |---|---|---|
+    | PAM | 14 | 7 |
+    | PEVS | 10 | 10 |
+    | PPM | 14 | 3 |
+    | COMEX | 118 | 108 |
+    | total | 156 | 128 |
+
+    | recorte, período inteiro | antes | agora |
+    |---|---|---|
+    | PAM · açaí | 15 / 27 | 16 / 27 |
+    | PAM · castanha de caju | 11 / 27 | 16 / 27 |
+    | PEVS · açaí (fruto) | 9 / 27 | 14 / 27 |
+    | PEVS · pinheiro brasileiro (madeira em tora) | 0 / 27 | 7 / 27 |
+    | PPM · lã | 6 / 27 | 14 / 27 |
+    | COMEX · bambus para cestaria | 6 / 27 | 23 / 27 |
+    | PAM · açaí × RS, "UFs" e "Anos" | 0 / 27 · 11 / 52 | 0 / 27 · 0 / 52 |
+
+  - No COMEX, o ano do mapa costuma ser o ano em curso, ainda parcial. Os bambus para cestaria
+    tiveram comércio em 6 UFs em 2026 e em 23 no período.
+  - As dicas dizem o critério:
+    - "16 UFs com valor ou quantidade acima de zero em algum ano do período.";
+    - "11 anos com valor ou quantidade acima de zero neste recorte, entre 2015 e 2025.".
+- `applyFilters` devolve `ufsCovered`, `ufsCoveredLoading`, `ufsCoveredLoadError`, `ufsTotal` e
+  `yearsCovered`. `yearsWithRows` continua, e `yearsCovered` são os anos dele com produção: os dois
+  esperam e falham juntos.
+- `docs/frontend_data_contract.md`:
+  - o §3.4 diz que `ufData` é o último ano do banco;
+  - o §3.5 passa a descrever "Anos cobertos" e "UFs cobertas", o que fecha a outra pendência das
+    Notas da v1.108.15.
+- Nada muda na API, no BFF nem no dbt. O merge não dispara a reconstrução da base analítica.
+
+### Testes
+- vitest, `frontend/src/ui/ufCoverage.test.jsx`, novo, com 22 testes. Eles rodam sobre uma base
+  analítica em miniatura: linhas por produto, UF e ano, com as leituras derivadas dela como o
+  servidor as deriva.
+  - 5 sobre as linhas por UF do ano do mapa:
+    - os valores de 2000;
+    - as regiões;
+    - a posição no mosaico;
+    - as linhas do resumo no último ano;
+    - nenhuma UF num período sem grade.
+  - 7 sobre a espera e a conta:
+    - a distribuição da cesta carregando ou em falha, com e sem filtro de UF;
+    - a cesta pronta;
+    - sem cesta;
+    - sem produto;
+    - o denominador.
+  - 4 sobre o critério:
+    - açaí × RS, com linhas em todo ano e nenhuma produção;
+    - uma UF que produziu no período e não no ano do mapa;
+    - uma quantidade sem valor;
+    - os anos esperam onde "Linhas" espera.
+  - 6 na tela, com o `MainScreen` e a `ViewOverview` de verdade, lidos de uma mesma renderização:
+    - a faixa e o cartão com o mesmo número;
+    - "…" e "—", com as dicas;
+    - açaí × RS;
+    - o café de 1999–2000.
+- Contraprova com o `dataFilters.js`, o `MainScreen.jsx` e a `ViewOverview.jsx` do `main`:
+  - 19 dos 22 testes falham;
+  - os 3 que passam são guardas: a posição no mosaico, o último ano e a cesta pronta;
+  - açaí × RS lê "Anos cobertos 3 / 3";
+  - o café lê "UFs cobertas 0 / 4".
+- `MainScreen.cov.test.jsx` e `ViewOverview.test.jsx`:
+  - os substitutos de `applyFilters` passam a trazer os campos novos;
+  - as dicas de "Anos cobertos" passam a dizer "com valor ou quantidade acima de zero".
+- vitest: 2.248 passando em 110 arquivos (22 a mais que na v1.108.20), com a cobertura acima dos
+  mínimos, numa rodada só e sem tempo limite estourado. pytest: 2.656 passando (15 pulados no
+  Windows, que só rodam no Linux), cobertura de 99,33%. `npm run lint`, `npm run build`,
+  `uv lock --check`, `ruff check` e `ruff format --check` passam.
+
+### Notas
+- **O "3 maiores" do mapa da Visão geral lista UFs com valor zero.**
+  - O açaí × RS lê "3 maiores: RS", com o RS em R$ 0.
+  - Na perspectiva Rebanho, o mesmo cálculo alimenta o "3 maiores" e o indicador "UF líder"
+    (`ViewRebanho.jsx`).
+  - Fica para outra versão.
+
 ## [1.108.20] - 2026-11-28
 
 **A suíte do vitest passa a rodar no máximo 6 arquivos de teste ao mesmo tempo, e a matriz da
