@@ -186,7 +186,9 @@ function ViewRebanho({ summary, conventions, database }) {
       return pos ? { uf: u.uf, col: pos.col, row: pos.row, region: pos.region, value: (u.q_count || 0) * qtyMul } : null;
     })
     .filter(Boolean);
-  const ufTop = ufMapRows.slice().sort((a, b) => b.value - a.value).slice(0, 3);
+  // Only UFs where the species is raised: a herd of zero (or no figure) neither enters the
+  // "3 maiores" nor becomes the "UF líder" (v1.108.22). The map still draws every UF.
+  const ufTop = window.topPositive(ufMapRows, (u) => u.value, 3);
 
   return (
     <>
@@ -291,7 +293,16 @@ function ViewRebanho({ summary, conventions, database }) {
           <window.SectionHeader
             overline={`Distribuição por UF · ${focusProd.name} · ${yearStart}–${yearEnd}`}
             title={`Onde ${focusProd.name} é criado`}
-            action={<span className="caption">{ufTop.length ? '3 maiores: ' + ufTop.map(u => u.uf).join(' · ') : '—'}</span>}
+            action={
+              // "…" while the per-UF read is on its way, as the card's body says; "—" when it
+              // failed or no UF raises the species. Until v1.108.22 the caption read "—" beside
+              // "Carregando distribuição por UF…".
+              <span className="caption">
+                {ufRank.loading ? '…'
+                  : ufTop.length ? '3 maiores: ' + ufTop.map(u => u.uf).join(' · ')
+                  : '—'}
+              </span>
+            }
           />
           {ufRank.loading ? (
             <p className="caption" style={{ padding: '40px 4px', textAlign: 'center' }}>

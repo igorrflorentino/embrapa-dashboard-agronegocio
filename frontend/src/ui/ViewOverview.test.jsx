@@ -595,3 +595,63 @@ describe('ViewOverview — under a UF subset the composition is the UFs’ own',
     expect(c.textContent).not.toContain('agregado');
   });
 });
+
+// ── "3 maiores" names only UFs that produced (v1.108.22) ──────────────────────────────────
+// PAM publishes a zeroed row for every município, so a UF that never grew the basket still has
+// a row at zero. The caption sorted every row and named it: açaí × RS over 1974–2025 read
+// "3 maiores: RS" with RS at R$ 0 in every year. A UF at zero, or with no figure, is no producer.
+describe('ViewOverview — "3 maiores" names only UFs that produced', () => {
+  const legenda = (c, titulo) => {
+    const sh = [...c.querySelectorAll('.sh')]
+      .find((k) => k.querySelector('.sh-title').textContent === titulo);
+    return sh && sh.querySelector('.sh-action').textContent;
+  };
+  // `ufData` last: `withCounts` spreads the whole FIXTURE, whose single PA row would win.
+  const renderWith = (ufData, extra = {}, families = ['mass']) => {
+    stubGlobals({ ...FIXTURE, ...extra, ufData, ufDataFull: ufData });
+    return render(
+      <ViewOverview families={families} summary={{}} database="ibge_pam" conventions={{}} />,
+    ).container;
+  };
+  afterEach(() => { delete window.countQtyMul; });
+
+  it('the only UF in the selection is at R$ 0: no UF is named, the caption says "—"', () => {
+    const c = renderWith([{ uf: 'RS', value: 0, real: true }]);
+    expect(legenda(c, 'Valor por UF · R$')).toBe('—');
+  });
+
+  it('UFs at zero or with no figure are skipped, and the producers keep their order', () => {
+    const c = renderWith([
+      { uf: 'RS', value: 0, real: true },
+      { uf: 'MT', value: 10, real: true },
+      { uf: 'GO', value: null, real: true },
+      { uf: 'SP', value: 5, real: true },
+      { uf: 'PR', value: undefined, real: true },
+    ]);
+    expect(legenda(c, 'Valor por UF · R$')).toBe('3 maiores: MT · SP');
+  });
+
+  it('counter-proof: with four producers, the three largest are named', () => {
+    const c = renderWith([
+      { uf: 'PA', value: 7, real: true }, { uf: 'AM', value: 3, real: true },
+      { uf: 'AP', value: 9, real: true }, { uf: 'MA', value: 1, real: true },
+    ]);
+    expect(legenda(c, 'Valor por UF · R$')).toBe('3 maiores: AP · PA · AM');
+  });
+
+  it('on a count, a UF whose herd is zero is not named either', () => {
+    window.countQtyMul = () => 1e6; // mi un → un, the convention's 'un'
+    const c = renderWith(
+      [
+        { uf: 'MT', value: 0, real: true, q_count_stock: 0 },
+        { uf: 'GO', value: 0, real: true, q_count_stock: 12 },
+      ],
+      {
+        ...withCounts([BOVINO]),
+        ts: [{ y: 2019, v: 0, q_count_stock: 12 }, { y: 2020, v: 0, q_count_stock: 12 }],
+      },
+      ['count'],
+    );
+    expect(legenda(c, 'Efetivo por UF · cabeças')).toBe('3 maiores: GO');
+  });
+});
