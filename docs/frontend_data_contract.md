@@ -277,6 +277,18 @@ added.
 | `q_mass` | `SUM(net_weight_kg)` (COMEX) / `SUM(qty_base WHERE family='massa')` (PEVS) |
 | `q_vol` | `SUM(qty_base WHERE family='volume')` |
 
+**`ufData` is the banco's LATEST year, whatever the screen's period.** The snapshot request
+carries no period. `applyFilters` uses these rows only when the map year is that latest year;
+at that year they equal the all-products `ufYearly` grid field by field (measured on PAM, PEVS,
+PPM and COMEX, prod 2026-11-27). Any other map year reads one of two grids at that year:
+- with no basket, the snapshot's `ufYearly`;
+- under a basket, its cube (`GET /api/geo-yearly`, §3.6).
+
+Until v1.108.21, the latest year's rows stood for every map year when no basket was chosen.
+PAM over 1990–2000 drew Mato Grosso at R$ 133 bi under "· 2000": that is its 2025 value, against
+R$ 3,07 bi in 2000. The same 2025 rows reached the Visão geral, Geografia and Concentração maps
+and their CSVs. `frontend/src/ui/ufCoverage.test.jsx` holds the case.
+
 > **COMTRADE → do not produce `ufData`** (no Brazilian UF; `geo` absent in `bancos.js`).
 
 ### 3.5 `quality` — `[{ id, label, color, count, share }]`
@@ -350,6 +362,30 @@ number carries the exact figure in its tooltip ("60.557 linhas da base analític
 recorte."). While the territory is loading (`subUfLoading`, `geoComboPending`) it reads "…",
 and after a failure (`subUfLoadError`, `geoComboLoadError`) "—": never the estimate, which
 would count whole states (Portel and Breves would read as all of Pará).
+
+**"Anos cobertos" and "UFs cobertas" count PRODUCTION (v1.108.21).** Production means a value
+or a quantity above zero. Both counts come from `applyFilters`. The hero and the Visão geral
+quality card ("Cobertura geográfica da seleção") show the same `ufsCovered`.
+
+- **`yearsCovered`** — the years of `yearsWithRows` whose point has production.
+  - `yearsWithRows` (v1.108.15) is the points of `ts` with `rows > 0`.
+  - `yearsCovered` is `null` exactly when `rowsInView` is, and `[]` with no produto selected.
+- **`ufsCovered`** — the real UFs with production in some year of the period, read from the grid
+  that honours the selection: the basket's cube, the sub-UF cube, or the snapshot's `ufYearly`.
+  - Real UFs are the canonical 27; COMEX's `ND` is not one.
+  - It is `null` while that grid is on its way (`ufsCoveredLoading`, "…") or after it failed
+    (`ufsCoveredLoadError`, "—").
+  - `ufsTotal` is its denominator: the banco's real UFs over its whole history, capped at 27.
+
+Rows are not production. PAM and PPM publish a zero row for every município, so every product
+of theirs has rows in all 27 UFs (28 of 28 products, prod 2026-11-27). Before v1.108.21 the two
+counters used different criteria:
+- "UFs cobertas" counted the UFs with a value in the map year;
+- "Anos cobertos" counted the years with rows.
+
+So PAM's açaí × RS read "UFs cobertas 0 / 27" beside "Anos cobertos 11 / 52". With no
+geographic filter, the years with rows and the years with production coincide for all 156
+products of PAM, PEVS, PPM and COMEX (prod 2026-11-27).
 
 ### 3.6 Sub-UF geography cascade — `geo-mesh` + município cube (IBGE PEVS/PAM/PPM)
 The geography filter descends BELOW UF via three dedicated endpoints (the snapshot stays

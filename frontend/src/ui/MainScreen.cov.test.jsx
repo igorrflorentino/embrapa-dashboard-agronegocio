@@ -359,12 +359,13 @@ describe('MainScreen — "Linhas" conta as linhas do recorte', () => {
   });
 });
 
-// "Anos cobertos" counts the years WITH ROWS (v1.108.15): the years of the screen's series that
-// carry the rows "Linhas" counts (applyFilters' `yearsWithRows`). It read `ts.length`, a point
-// for every year of the banco inside the period, rows or not: in production PAM's açaí over
-// 1990–2000 read "Linhas 0" beside "Anos cobertos 11 / 52", and a COMEX code with one row
-// in 2010 read "30 / 30".
-describe('MainScreen — "Anos cobertos" conta os anos com linhas', () => {
+// "Anos cobertos" counts applyFilters' `yearsCovered`: the years with production (v1.108.21),
+// among the years of the screen's series that carry the rows "Linhas" counts (v1.108.15). It
+// read `ts.length`, a point for every year of the banco inside the period, rows or not: in
+// production PAM's açaí over 1990–2000 read "Linhas 0" beside "Anos cobertos 11 / 52", and a
+// COMEX code with one row in 2010 read "30 / 30". Which years have production is dataFilters'
+// to say (its tests); here, how the hero shows them.
+describe('MainScreen — "Anos cobertos" conta os anos com produção', () => {
   // The 11 points the series has for 1990–2000, none with a row: what the old counter counted.
   const PERIODO = Array.from({ length: 11 }, (_, i) => ({ y: 1990 + i, v: null, rows: 0 }));
   const comAnos = (extra) => {
@@ -385,32 +386,32 @@ describe('MainScreen — "Anos cobertos" conta os anos com linhas', () => {
   const anos = (container) => linha(container, 'Anos cobertos');
 
   it('o açaí em 1990–2000: nenhum ano, ao lado de nenhuma linha, e não os 11 do período', () => {
-    comAnos({ rowsInView: 0, yearsWithRows: [] });
+    comAnos({ rowsInView: 0, yearsCovered: [] });
     const { container } = render(<MainScreen />);
     expect(anos(container).textContent).toBe('0 / 52');
     expect(anos(container).getAttribute('title'))
-      .toBe('Nenhum ano com linhas da base analítica neste recorte.');
+      .toBe('Nenhum ano com valor ou quantidade acima de zero neste recorte.');
     expect(linha(container, 'Linhas').querySelector('strong').textContent).toBe('0');
   });
 
   it('os anos contados, e o título diz o primeiro e o último', () => {
-    // Açaí over 2010–2020: rows from 2015 on, so 6 of the period's 11 years.
-    comAnos({ rowsInView: 33024, yearsWithRows: [2015, 2016, 2017, 2018, 2019, 2020] });
+    // Açaí over 2010–2020: production from 2015 on, so 6 of the period's 11 years.
+    comAnos({ rowsInView: 33024, yearsCovered: [2015, 2016, 2017, 2018, 2019, 2020] });
     const v = anos(render(<MainScreen />).container);
     expect(v.textContent).toBe('6 / 52');
     expect(v.getAttribute('title'))
-      .toBe('6 anos com linhas da base analítica neste recorte, entre 2015 e 2020.');
+      .toBe('6 anos com valor ou quantidade acima de zero neste recorte, entre 2015 e 2020.');
   });
 
   it('um ano só, no singular, com o ano', () => {
-    comAnos({ rowsInView: 1, yearsWithRows: [2010] });
+    comAnos({ rowsInView: 1, yearsCovered: [2010] });
     const v = anos(render(<MainScreen />).container);
     expect(v.textContent).toBe('1 / 52');
-    expect(v.getAttribute('title')).toBe('1 ano com linhas da base analítica neste recorte: 2010.');
+    expect(v.getAttribute('title')).toBe('1 ano com valor ou quantidade acima de zero neste recorte: 2010.');
   });
 
   it('sem contagem: "—", nunca os anos do período, enquanto "Linhas" estima', () => {
-    comAnos({ rowsInView: null, yearsWithRows: null });
+    comAnos({ rowsInView: null, yearsCovered: null });
     const { container } = render(<MainScreen />);
     expect(anos(container).textContent).toBe('— / 52');
     expect(anos(container).getAttribute('title'))
@@ -419,14 +420,14 @@ describe('MainScreen — "Anos cobertos" conta os anos com linhas', () => {
   });
 
   it('cesta × UF aguardando o cubo: "…", com o título de "Linhas"', () => {
-    comAnos({ rowsInView: null, yearsWithRows: null, geoComboPending: true });
+    comAnos({ rowsInView: null, yearsCovered: null, geoComboPending: true });
     const v = anos(render(<MainScreen />).container);
     expect(v.textContent).toBe('… / 52');
     expect(v.getAttribute('title')).toBe('O recorte geográfico escolhido ainda está carregando.');
   });
 
   it('cesta × UF com o cubo em falha: "—", com o título de "Linhas"', () => {
-    comAnos({ rowsInView: null, yearsWithRows: null, geoComboLoadError: 'HTTP 503' });
+    comAnos({ rowsInView: null, yearsCovered: null, geoComboLoadError: 'HTTP 503' });
     const v = anos(render(<MainScreen />).container);
     expect(v.textContent).toBe('— / 52');
     expect(v.getAttribute('title')).toBe('Não foi possível carregar o recorte geográfico escolhido.');
@@ -434,14 +435,14 @@ describe('MainScreen — "Anos cobertos" conta os anos com linhas', () => {
 
   it('recorte abaixo da UF carregando: "…" mesmo com anos de outro recorte na mão', () => {
     // As with "Linhas": whatever came, the selection is not resolved yet.
-    comAnos({ subUfLoading: true, rowsInView: 10, yearsWithRows: [2015] });
+    comAnos({ subUfLoading: true, rowsInView: 10, yearsCovered: [2015] });
     const v = anos(render(<MainScreen />).container);
     expect(v.textContent).toBe('… / 52');
     expect(v.getAttribute('title')).toBe('O recorte geográfico escolhido ainda está carregando.');
   });
 
   it('recorte abaixo da UF em falha: "—"', () => {
-    comAnos({ subUfLoadError: 'HTTP 503', rowsInView: null, yearsWithRows: null });
+    comAnos({ subUfLoadError: 'HTTP 503', rowsInView: null, yearsCovered: null });
     const v = anos(render(<MainScreen />).container);
     expect(v.textContent).toBe('— / 52');
     expect(v.getAttribute('title')).toBe('Não foi possível carregar o recorte geográfico escolhido.');
@@ -450,7 +451,8 @@ describe('MainScreen — "Anos cobertos" conta os anos com linhas', () => {
 
 // A sub-UF narrowing still on its way, or one that failed, owns an EMPTY grid, and counting it
 // gave "UFs cobertas 0 / 27": a claim that the selection covers no state, made by a read that
-// never answered (v1.108.1).
+// never answered (v1.108.1). Since v1.108.21 applyFilters holds the count itself
+// (`ufsCoveredLoading`/`ufsCoveredLoadError`, dataFilters' tests); here, how the hero shows it.
 describe('MainScreen — "UFs cobertas" de um recorte sub-UF que não resolveu', () => {
   const comRecorte = (extra) => {
     window.applyFilters = () => ({
@@ -460,6 +462,7 @@ describe('MainScreen — "UFs cobertas" de um recorte sub-UF que não resolveu',
       qualityFlags: [{ id: 'OK', count: 1000 }],
       productsTotal: 3,
       _shares: {},
+      ufsTotal: 2,
       ...extra,
     });
   };
@@ -467,24 +470,24 @@ describe('MainScreen — "UFs cobertas" de um recorte sub-UF que não resolveu',
     .find((e) => e.textContent.includes('UFs cobertas')).querySelector('.meta-val');
 
   it('carregando: "…", e o título diz que ainda carrega', () => {
-    comRecorte({ subUfLoading: true, subUfLoadError: null });
+    comRecorte({ subUfLoading: true, ufsCovered: null, ufsCoveredLoading: true });
     const v = ufsCobertas(render(<MainScreen />).container);
     expect(v.textContent).toBe('… / 2');
     expect(v.getAttribute('title')).toBe('O recorte geográfico escolhido ainda está carregando.');
   });
 
   it('com falha: "—", e o título diz que não carregou', () => {
-    comRecorte({ subUfLoading: false, subUfLoadError: 'HTTP 503' });
+    comRecorte({ subUfLoadError: 'HTTP 503', ufsCovered: null, ufsCoveredLoadError: 'HTTP 503' });
     const v = ufsCobertas(render(<MainScreen />).container);
     expect(v.textContent).toBe('— / 2');
     expect(v.getAttribute('title')).toBe('Não foi possível carregar o recorte geográfico escolhido.');
   });
 
   it('contraprova: resolvido e vazio, o zero é uma medida e aparece', () => {
-    comRecorte({ subUfLoading: false, subUfLoadError: null });
+    comRecorte({ ufsCovered: 0 });
     const v = ufsCobertas(render(<MainScreen />).container);
     expect(v.textContent).toBe('0 / 2');
-    expect(v.getAttribute('title')).toBeNull();
+    expect(v.getAttribute('title')).toBe('Nenhuma UF com valor ou quantidade acima de zero no período.');
   });
 });
 

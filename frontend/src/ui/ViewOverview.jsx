@@ -150,12 +150,17 @@ function ViewOverview({ families, summary, database, conventions }) {
     ? window.countGroupWithData(countGroups, realUfs) : null;
   const onCount   = !!countGeo;
   const geoVal    = u => (onCount ? (u[countGeo.key] || 0) : u.value);
-  const ufCovered = realUfs.filter(u => geoVal(u) > 0).length;
+  // "Cobertura geográfica da seleção" is the hero's "UFs cobertas": applyFilters' one count
+  // (v1.108.21), held with the same marks — "…" while the grid that honours the selection is on
+  // its way, "—" when it failed. Until then this card counted the map's rows on its own: with no
+  // basket those were the banco's latest year whatever the period, and it never waited for the
+  // basket's cube, so PAM's açaí over 1990–2000 read "27 / 27" until the cube landed.
+  const ufCoveredLabel = filtered.ufsCoveredLoadError ? '—'
+    : filtered.ufsCoveredLoading ? '…'
+    : Number.isFinite(filtered.ufsCovered) ? filtered.ufsCovered
+    : '—';
   // Denominator = real UFs in the banco's full set, capped at the canonical 27.
-  const ufTotalReal = Math.min(
-    27,
-    filtered.ufDataFull.filter(isRealUf).length || 27,
-  );
+  const ufTotalReal = Number.isFinite(filtered.ufsTotal) ? filtered.ufsTotal : 27;
   const top3      = realUfs.slice().sort((a, b) => geoVal(b) - geoVal(a)).slice(0, 3);
   const hasGeo    = filtered.ufDataFull.length > 0;
   // The tile map is scoped to the latest UF year IN the window, which can fall short
@@ -487,9 +492,9 @@ function ViewOverview({ families, summary, database, conventions }) {
           <window.SectionHeader
             overline="Qualidade dos dados · acervo do banco"
             title={hasGeo
-              // kpiVal: an unresolved recorte has no grid to count, and its 0 would read
-              // "covers no UF" (v1.108.1).
-              ? ('Cobertura geográfica da seleção: ' + kpiVal(ufCovered) + ' / ' + ufTotalReal + ' UFs')
+              // Held while unresolved: an unresolved grid's 0 would read "covers no UF"
+              // (v1.108.1).
+              ? ('Cobertura geográfica da seleção: ' + ufCoveredLabel + ' / ' + ufTotalReal + ' UFs')
               : 'Distribuição das marcas de qualidade'}
             action={<span className="caption">{filtered.qualityFlags.length} de {window.QUALITY_FLAGS.length} marcas</span>}
           />

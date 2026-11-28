@@ -381,34 +381,39 @@ function MainScreen({ filters, view = 'overview', database = 'ibge_pevs', infoPa
   const _anosNaTela = ((_f && _f.ts) || []).map((d) => d.y).filter(Number.isFinite);
   const inicioNaTela = _anosNaTela.length ? Math.min(..._anosNaTela) : (filters && filters.startDate);
   const _shares = (_f && _f._shares) || {};
-  // UFs that survive the state filter AND still carry production — REAL Brazilian
-  // states only. A trade banco's ufData includes non-state pseudo-origins
-  // (ND/EX/ZN…) that must not inflate the "UFs cobertas" tally past 27 (the live
-  // audit caught COMEX showing 32/27). Prefer the backend's per-row `real` flag,
-  // else canonical-registry membership (FINDING #4).
-  const _isRealUf = (u) => (u.real != null ? u.real : (window.isCanonicalUf ? window.isCanonicalUf(u.uf) : true));
-  // A value-less basket (PPM herd — a stock with R$ 0 everywhere) must be counted by what
-  // it COUNTS, else "UFs cobertas" reads 0/N while ViewOverview shows the real coverage.
-  // Mirror ViewOverview's onCount path (RVC-3); a value-bearing banco is unaffected
-  // (anyValue stays true → counts by value as before). A presence test: the herd and the
-  // eggs are two totals, and nothing adds them into one figure (countUnits.js).
-  const _anyValue = _f ? (_f.ufData.some(u => u.value > 0) || (_f.ts || []).some(d => d.v > 0)) : true;
-  const _covered = (u) => (_anyValue ? u.value > 0 : window.hasCount(u));
-  const ufsCovered = _f
-    ? _f.ufData.filter(u => _isRealUf(u) && _covered(u)).length
-    : (window.UF_DATA || []).filter(u => u.value > 0).length;
-  // A sub-UF narrowing still on its way, or one that failed, has no grid to count: the 0 its
-  // empty grid gives would read "covers no UF", a claim about the data (v1.108.1). Same
-  // marks as the Visão geral KPIs: "…" while it loads, "—" when it failed.
-  const ufsCoveredLabel = (_f && _f.subUfLoadError) ? '—'
-    : (_f && _f.subUfLoading) ? '…' : ufsCovered;
-  const ufsCoveredTitle = (_f && _f.subUfLoadError)
-    ? 'Não foi possível carregar o recorte geográfico escolhido.'
-    : (_f && _f.subUfLoading) ? 'O recorte geográfico escolhido ainda está carregando.' : undefined;
-  // Denominator: real UFs in the banco's universe, capped at the canonical 27.
-  const ufsTotalReal = _f
-    ? Math.min(27, _f.ufDataFull.filter(_isRealUf).length || 27)
-    : 27;
+  // "UFs cobertas" is applyFilters' count (`ufsCovered`, v1.108.21), the same number the Visão
+  // geral quality card shows: the real UFs of the selection with production — a value or a
+  // quantity above zero — in some year of the period (Coverage, in dataFilters.js). Until then
+  // each surface counted on its own, and this one counted the UFs with a value in the map's
+  // year, which with no basket was the banco's latest year whatever the period.
+  //
+  // Held while the grid that honours the selection is on its way ("…") or failed ("—"): a
+  // sub-UF recorte, or the basket's distribution by UF. The count of anything else in the
+  // meantime is a claim about data nobody selected (v1.108.1): PAM's açaí over 1990–2000 read
+  // "27 / 27", the whole banco's, until its cube landed — for good, when it failed.
+  const ufsCovered = (_f && Number.isFinite(_f.ufsCovered)) ? _f.ufsCovered : null;
+  const ufsCoveredFailed = !!(_f && _f.ufsCoveredLoadError);
+  const ufsCoveredLoading = !ufsCoveredFailed && !!(_f && _f.ufsCoveredLoading);
+  // The basket's cube is what waits when no sub-UF recorte owns the grid.
+  const _ufsWaitBasket = !!(_f && _f.notFilteredByBasket);
+  const ufsCoveredLabel = ufsCoveredFailed ? '—'
+    : ufsCoveredLoading ? '…'
+    : ufsCovered != null ? ufsCovered
+    : '—';
+  const _ufsWord = (n) => (n === 1 ? 'UF' : 'UFs');
+  const ufsCoveredTitle = ufsCoveredFailed
+    ? (_ufsWaitBasket
+      ? 'Não foi possível carregar a distribuição por UF da cesta selecionada.'
+      : 'Não foi possível carregar o recorte geográfico escolhido.')
+    : ufsCoveredLoading
+      ? (_ufsWaitBasket
+        ? 'A distribuição por UF da cesta selecionada ainda está carregando.'
+        : 'O recorte geográfico escolhido ainda está carregando.')
+    : ufsCovered == null ? undefined
+    : ufsCovered === 0 ? 'Nenhuma UF com valor ou quantidade acima de zero no período.'
+    : `${ufsCovered} ${_ufsWord(ufsCovered)} com valor ou quantidade acima de zero em algum ano do período.`;
+  // Denominator: the banco's real UFs over its whole history, capped at the canonical 27.
+  const ufsTotalReal = (_f && Number.isFinite(_f.ufsTotal)) ? _f.ufsTotal : 27;
   // Approximate selection counts from current filters. basket == null means
   // "no filter" (all); an explicit (possibly empty) basket counts literally —
   // zero selected products must read 0, never fall back to the total.
@@ -482,25 +487,26 @@ function MainScreen({ filters, view = 'overview', database = 'ibge_pevs', infoPa
     : rowsEstimate != null
       ? 'Estimativa: a contagem exata deste recorte não está disponível, e o número vem da proporção de produtos, anos e território selecionados.'
     : undefined;
-  // "Anos cobertos" counts the years WITH ROWS (v1.108.15): the years of the screen's series
-  // that carry at least one of the rows "Linhas" counts (applyFilters' `yearsWithRows`), so
-  // the two never disagree. Until then it counted the period's years, rows or not: PAM's açaí
-  // over 1990–2000 read "Linhas 0" beside "Anos cobertos 11 / 52". It holds where "Linhas"
-  // holds, with the same marks and tooltip. Where "Linhas" can only estimate, it says it
-  // does not know ("—"): no share gives a year, and the period's years were the overstatement.
-  const yearsWithRows = (_f && Array.isArray(_f.yearsWithRows)) ? _f.yearsWithRows : null;
-  const nYears = yearsWithRows ? yearsWithRows.length : null;
+  // "Anos cobertos" counts the years with production applyFilters finds (`yearsCovered`), by
+  // the criterion "UFs cobertas" follows (v1.108.21). Until v1.108.15 it counted the period's
+  // years, rows or not: PAM's açaí over 1990–2000 read "Linhas 0" beside "Anos cobertos
+  // 11 / 52". Then it counted the years with rows, which a UF filter fills with zero rows: açaí ×
+  // RS read "Anos cobertos 11 / 52" beside "UFs cobertas 0 / 27". It holds where "Linhas" holds,
+  // with the same marks and tooltip. Where the years cannot be told it says so ("—"): no share
+  // gives a year, and the period's years were the overstatement.
+  const yearsCovered = (_f && Array.isArray(_f.yearsCovered)) ? _f.yearsCovered : null;
+  const nYears = yearsCovered ? yearsCovered.length : null;
   const yearsLabel = rowsFailed ? '—'
     : rowsLoading ? '…'
     : nYears != null ? nYears
     : '—';
-  // The first and last of them, which the period alone does not tell: açaí over 2010–2020
-  // has rows from 2015 on.
+  // The first and last of them, which the period alone does not tell: açaí over 2010–2020 has
+  // production from 2015 on.
   const yearsTitle = (rowsFailed || rowsLoading) ? rowsTitle
     : nYears == null ? 'A contagem dos anos deste recorte não está disponível.'
-    : nYears === 0 ? 'Nenhum ano com linhas da base analítica neste recorte.'
-    : nYears === 1 ? `1 ano com linhas da base analítica neste recorte: ${yearsWithRows[0]}.`
-    : `${nYears} anos com linhas da base analítica neste recorte, entre ${yearsWithRows[0]} e ${yearsWithRows[nYears - 1]}.`;
+    : nYears === 0 ? 'Nenhum ano com valor ou quantidade acima de zero neste recorte.'
+    : nYears === 1 ? `1 ano com valor ou quantidade acima de zero neste recorte: ${yearsCovered[0]}.`
+    : `${nYears} anos com valor ou quantidade acima de zero neste recorte, entre ${yearsCovered[0]} e ${yearsCovered[nYears - 1]}.`;
 
   // ---- Data views ----
   const ViewComponent = window.viewComponent(view) || window.ViewOverview;
