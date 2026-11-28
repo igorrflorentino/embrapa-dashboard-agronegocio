@@ -7,6 +7,173 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.108.20] - 2026-11-28
+
+**A suíte do vitest passa a rodar no máximo 6 arquivos de teste ao mesmo tempo, e a matriz da
+citação ABNT vira um teste por caso.** Fecha a pendência das Notas da v1.108.11: sob a carga daquela
+medição, três suítes completas ao mesmo tempo, 35 das 48 rodadas tiveram alguma falha por tempo
+limite, em nove arquivos que aquela versão não tocava. A análise achou duas causas, uma na
+configuração do vitest e outra no formato de um teste, e esta versão corrige as duas. Sob a mesma
+carga, em 24 rodadas de cada lado, falharam todas as de antes e nenhuma das de depois. Muda só teste
+e configuração de teste; nada chega ao painel (sem tag, pela política de release).
+
+### Corrigido
+- **O vitest abria um processo de teste por processador lógico, menos um, e na estação de trabalho
+  o que acaba primeiro é a memória.** São 19 processos numa máquina de 20 processadores lógicos e
+  16 GB, dividida com outras sessões de trabalho que também rodam testes. Medido com a rodada
+  completa do CI (`vitest run --coverage`):
+  - Sozinha, com 19 processos, a suíte levou de 50 a 65 s, e a memória livre desceu a 8 MB numa
+    das duas rodadas e a 134 MB na outra; com 12, levou de 49 a 50 s; com 8, de 53 a 57 s; com 6,
+    de 58 a 61 s; com 4, de 78 a 79 s.
+  - Com três suítes ao mesmo tempo, num piloto com os testes antigos e dois grupos para cada número
+    de processos: com 19, a máquina chegou a 74 processos do node e a 0–1 MB de memória livre,
+    passou a ler do disco mais de 100 mil páginas por segundo, e as 6 rodadas falharam, com 7 a 23
+    testes estourando o tempo limite em 2 a 6 arquivos por rodada. Com 8, as 6 rodadas passaram,
+    mas a memória livre desceu a 65 MB num dos grupos; com 6, passaram, com ao menos 683 MB livres
+    e no mesmo tempo (de 138 a 143 s, contra 136 a 146 s com 8).
+  - `maxWorkers` agora é 6, ou um a menos que os processadores lógicos, quando isso for menos: o
+    CI, com 4, mantém os 3 de hoje. `--maxWorkers` na linha de comando continua valendo por cima
+    da configuração.
+- **A matriz da citação ABNT fazia num teste só o trabalho de 27.** N1 a N5 desenhavam o
+  `AppShell`, abriam a citação e escolhiam o nível 27 vezes cada (9 estados × 3 níveis), dentro dos
+  5 s de tempo limite de um teste. Na medição da v1.108.11, foram eles 64 das 65 falhas do
+  `AppShell.cov`.
+  - Cada um leva de 0,4 a 0,8 s com o arquivo sozinho; de 1,3 a 3,2 s na suíte completa sem outra
+    carga; e, sob três suítes com 19 processos, de 4,4 a 7,4 s na mediana, com até 26,1 s. Com 6
+    processos e os testes antigos, continuavam os mais lentos da suíte: até 3,8 s, 76% do tempo
+    limite.
+  - Agora cada caso é um teste (`it.each`), com o próprio tempo limite, e o estado e o nível no
+    nome. N1, N2, N3 e N5 viram 27 testes cada; N4 e N6 ficam um por estado, 9 cada, porque N4
+    compara os três níveis entre si e N6 não depende do nível. Os 6 testes viram 126, com os mesmos
+    casos, as mesmas asserções e o mesmo trabalho, um desenho por caso.
+
+### Testes
+- **Diagnóstico por arquivo, antes de mudar.** Um executor de testes temporário, fora do
+  repositório, marcou o tempo de cada etapa de cada teste: a carga do arquivo, a preparação
+  (`beforeEach`), o corpo, cada desenho (`render`) e cada espera (`waitFor`). Nas 24 rodadas do lado
+  de antes da medição abaixo, sob a carga da v1.108.11 e com os 19 processos:
+
+  | arquivo | falhas na v1.108.11 / aqui | onde está o tempo |
+  |---|---|---|
+  | `AppShell.cov` | 65 / 66 | a matriz ABNT, com 27 desenhos por teste (61 das 66 falhas) |
+  | `ViewCadastroProdutos` | 20 / 23 | fluxos de edição do catálogo: nos testes de 2 s ou mais, 4 esperas por teste na mediana, que somam 33% do corpo, e o desenho, 19% |
+  | `FilterMenu.cov` | 6 / 3 | o desenho do menu, 85% do corpo nos testes de 2 s ou mais |
+  | `absenceGuard` | 4 / 1 | as varreduras, que releem os 106 arquivos-fonte a cada teste: até 5,8 s, contra 0,33 s com a suíte sozinha |
+  | `ViewCrossSource.cov` | 3 / 0 | o desenho, 83% do corpo nos testes de 2 s ou mais; uma preparação de 2,6 s |
+  | `Heatmap` | 2 / 4 | o primeiro desenho do Plotly no processo, no primeiro teste do arquivo, que teve as 4 falhas: 3,0 s na mediana, até 6,2 s |
+  | `ViewCuration.cov` | 1 / 0 | a primeira preparação (até 1,4 s) e o primeiro desenho (0,9 s na mediana) |
+  | `ViewGeography.cov` | 1 / 0 | o primeiro desenho (1,0 s na mediana); uma preparação de 3,6 s |
+  | `ViewTerritoryCompare` | 1 / 0 | o primeiro desenho (1,5 s na mediana), com corpo de até 3,3 s |
+
+  - Falharam também, aqui e não na v1.108.11, três arquivos de gráficos do Plotly: `BarChart` (2),
+    `SankeyChart` (2) e `LineChart` (1). No `AppShell.cov`, as 5 falhas fora da matriz foram do
+    redimensionamento da barra lateral (4) e da confirmação da exportação em CSV (1).
+  - Todas as 102 falhas foram do corpo do teste, "Test timed out in 5000ms"; nenhuma preparação
+    estourou os 10 s que tem. A carga do arquivo, que não corre contra tempo limite nenhum, levou
+    3,7 s na mediana e até 14,8 s.
+  - Fora a matriz ABNT, nenhum desses testes tem defeito de formato: é o mesmo trabalho, alongado
+    pela paginação. Com 6 processos, o teste mais lento de cada arquivo ficou abaixo de 1,25 s, e
+    esses arquivos não mudam nesta versão.
+- **Medição, antes e depois, com a mesma carga e o método da v1.108.11**: rodadas completas da
+  suíte (`vitest run --coverage`) em grupos de três ao mesmo tempo, cada grupo todo de um lado só, e
+  a ordem dos lados alternada (antes e depois, depois e antes), para que a carga da máquina, que
+  muda ao longo da hora, pese igual nos dois. Foram 8 grupos de cada lado, em dois lotes, o segundo
+  começando pelo lado em que o primeiro terminou: 24 rodadas de cada lado. O lado de antes é o
+  `main`, com os 19 processos e a matriz ABNT; o de depois, esta versão.
+
+  | | antes | depois |
+  |---|---|---|
+  | rodadas com alguma falha | 24 de 24 | 0 de 24 |
+  | testes que falharam, todos por tempo limite | 102 | 0 |
+  | arquivos com falha numa mesma rodada, no máximo | 4 | 0 |
+  | tempo da rodada, mediana (mínimo–máximo) | 175 s (138–186) | 134 s (117–147) |
+  | memória livre, mínimo de cada grupo | 0–1 MB | 24–1.911 MB |
+  | páginas lidas do disco por segundo, pico de cada grupo | 62–124 mil | 19–65 mil |
+  | processos do node, pico | 72–74 | 31–32 |
+  | memória dos processos do node, pico | 8,4–9,0 GB | 4,3–4,8 GB |
+  | carga de um arquivo, mediana / máximo | 3,7 s / 14,8 s | 1,0 s / 4,9 s |
+  | corpo de um teste, mediana / percentil 99 / máximo | 18 ms / 2,3 s / 26,1 s | 14 ms / 0,55 s / 1,25 s |
+  | preparação de um teste, percentil 99 / máximo | 253 ms / 4,7 s | 30 ms / 0,56 s |
+
+  Falhas por arquivo, somadas nas 24 rodadas: `AppShell.cov` 66 → 0, `ViewCadastroProdutos` 23 → 0,
+  `Heatmap` 4 → 0, `FilterMenu.cov` 3 → 0, `BarChart` 2 → 0, `SankeyChart` 2 → 0, `LineChart` 1 → 0
+  e `absenceGuard` 1 → 0. Os arquivos da lista da v1.108.11, com todos os testes de cada um:
+
+  | arquivo | preparação, máximo | corpo, mediana | corpo, máximo |
+  |---|---|---|---|
+  | `AppShell.cov` | 2.541 → 272 ms | 254 → 110 ms | 26.143 → 747 ms |
+  | `ViewCadastroProdutos` | 1.278 → 165 ms | 519 → 246 ms | 8.603 → 1.246 ms |
+  | `FilterMenu.cov` | 164 → 10 ms | 461 → 284 ms | 6.151 → 839 ms |
+  | `absenceGuard` | 37 → 7 ms | 1 → 1 ms | 5.828 → 397 ms |
+  | `ViewCrossSource.cov` | 2.645 → 146 ms | 199 → 79 ms | 3.076 → 568 ms |
+  | `Heatmap` | 83 → 10 ms | 129 → 39 ms | 6.245 → 1.042 ms |
+  | `ViewCuration.cov` | 1.445 → 468 ms | 152 → 66 ms | 2.943 → 571 ms |
+  | `ViewGeography.cov` | 3.621 → 322 ms | 76 → 30 ms | 2.640 → 425 ms |
+  | `ViewTerritoryCompare` | 556 → 161 ms | 277 → 72 ms | 3.303 → 690 ms |
+
+  E a matriz ABNT, cada teste de antes (27 casos; N6, 9) contra cada teste de depois (um caso; N4,
+  os três níveis de um estado):
+
+  | teste | antes, mediana / máximo | depois, mediana / máximo |
+  |---|---|---|
+  | N1 | 7,4 s / 26,1 s | 114 / 230 ms |
+  | N2 | 6,3 s / 18,1 s | 114 / 262 ms |
+  | N3 | 5,0 s / 10,0 s | 107 / 296 ms |
+  | N4 | 4,7 s / 12,1 s | 348 / 482 ms |
+  | N5 | 4,4 s / 15,2 s | 110 / 252 ms |
+  | N6 | 1,4 s / 2,6 s | 81 / 217 ms |
+
+  - Os dois lotes concordam: as 12 rodadas de antes falharam em cada um (64 falhas no primeiro, 38
+    no segundo), e nenhuma de depois.
+  - No segundo lote, os dois lados ficaram mais rápidos juntos (antes, de 175–186 s para 138–147 s;
+    depois, de 134–147 s para 117–122 s): a máquina começou o lote com 4,5 GB livres, contra 2,7 GB
+    no primeiro.
+- **Contraprova.**
+  - **O limite de processos.** O lado de antes é o próprio `main`, e falhou nas 24 rodadas. No
+    piloto, com os testes antigos, 19 processos falharam nas 6 rodadas e 6 processos passaram nas
+    6: o que tira as falhas é o limite. A divisão da matriz, sozinha, não as tiraria: 41 das 102
+    falhas de antes foram fora da matriz ABNT, em 8 arquivos.
+  - **A divisão da matriz, com o tempo limite encurtado.** O `AppShell.cov` sozinho, com
+    `--testTimeout=300`: com os testes antigos, N1 a N5 reprovam, 5 de 5, com "Test timed out in
+    300ms"; com os novos, os 199 testes passam. Sozinho, cada teste antigo de matriz leva de 0,4 a
+    0,8 s, e cada caso novo, até 0,12 s.
+  - **As asserções são as mesmas.** Seis mutantes do montador da citação em `AppShell.jsx`, um por
+    invariante, rodaram contra os testes antigos (numa cópia temporária do arquivo do `main`) e
+    contra os novos:
+
+    | mutante | testes antigos que reprovam | casos novos que reprovam |
+    |---|---|---|
+    | nenhum | nenhum dos 6 | nenhum dos 126 |
+    | `undefined` no nível "Por banco de dados" | N1 | N1: 8 de 27 |
+    | espaço duplo no nível detalhado das perspectivas de um banco só | N2 | N2: 6 de 27 |
+    | a entidade sem caixa alta | N3 | N3: 27 de 27 |
+    | o nível detalhado com um título próprio | N4 | N4: 9 de 9 |
+    | a referência sem o ponto final | N5 | N5: 27 de 27 |
+    | a citação no texto em caixa alta, a regressão da v1.31.0 | N6 | N6: 9 de 9 |
+
+    Cada mutante reprova o mesmo invariante nos dois lados, e só ele. Os testes novos dizem também
+    em que casos: o N1 reprova nos 8 estados que têm uma fonte a nomear no nível "Por banco de
+    dados" (o cruzamento sem séries não tem), e o N2, nos 6 estados de um banco só.
+- vitest: 2.226 passando em 109 arquivos (2.106 no `main`: os 6 testes da matriz viram 126), com
+  a cobertura acima dos mínimos (instruções 88,36%, ramos 78,92%, funções 86,44%, linhas 90,94%).
+  pytest: 2.656 passando (15 pulados no Windows, que só rodam no Linux). `npm run lint` e `ruff`
+  limpos. `npm run build` gera o mesmo `dist` com a configuração do `main` e com a desta versão:
+  os 69 arquivos, byte a byte.
+
+### Notas
+- **O tempo limite de 5 s não muda.** Com o limite de processos, o teste mais lento da suíte, sob
+  três suítes ao mesmo tempo, levou 1,25 s, um quarto dele. Subir o tempo limite não tiraria a
+  paginação, só a esconderia, e um teste que ficasse lento de verdade deixaria de aparecer.
+- **O `pool` continua o padrão, `forks`.** Trocar para `threads` não foi medido: o limite de
+  processos já tira as falhas, e a troca mudaria como os arquivos de teste se isolam uns dos
+  outros, o que pediria uma medição própria.
+- **No modo de observação** (`npm run test:watch`), o padrão do vitest era metade dos processadores
+  lógicos, 10 nesta máquina, e passa também a 6. No CI, a suíte continua com 3 processos.
+- **Outras sessões durante a medição.** No começo de cada grupo ficou registrado o que mais rodava
+  testes na máquina: um pytest de outra sessão (`pytest tests/ -q --tb=short --maxfail=1`, na
+  cópia principal do repositório) rodava no começo de 5 dos 8 grupos de antes e de 6 dos 8 de
+  depois, e nenhum outro vitest. O grupo de depois com menos memória livre, 24 MB, foi um desses.
+
 ## [1.108.19] - 2026-11-27
 
 **A ficha técnica do Perfil do produto diz a unidade em que a fonte publica o produto, e o produto
