@@ -348,3 +348,34 @@ describe('pricedShareLow / fmtPctSig — the share of the value behind a price (
     expect(window.fmtPctSig(null)).toBe('—');
   });
 });
+
+// ── A ranking holds only rows that produced (v1.108.22) ──────────────────────────────────
+// Visão geral and Rebanho sorted every UF row, and PAM publishes a zeroed row for every
+// município: açaí × RS read "3 maiores: RS" with RS at R$ 0 in every year.
+describe('topPositive — only rows with a positive measure are ranked', () => {
+  const v = (r) => r.v;
+
+  it('drops zero, negative, null, undefined and NaN, and sorts the rest largest first', () => {
+    const rows = [
+      { k: 'a', v: 0 }, { k: 'b', v: 5 }, { k: 'c', v: null }, { k: 'd', v: -2 },
+      { k: 'e', v: undefined }, { k: 'f', v: NaN }, { k: 'g', v: 9 },
+    ];
+    expect(window.topPositive(rows, v, 3).map((r) => r.k)).toEqual(['g', 'b']);
+  });
+
+  it('keeps at most n rows', () => {
+    const rows = [1, 4, 2, 8, 3].map((x) => ({ v: x }));
+    expect(window.topPositive(rows, v, 3).map(v)).toEqual([8, 4, 3]);
+  });
+
+  it('nothing produced, or no rows at all: an empty list, which the screen writes as "—"', () => {
+    expect(window.topPositive([{ v: 0 }, { v: null }], v, 3)).toEqual([]);
+    expect(window.topPositive(undefined, v, 3)).toEqual([]);
+  });
+
+  it('does not reorder the array it was given', () => {
+    const rows = [{ v: 1 }, { v: 3 }];
+    window.topPositive(rows, v, 3);
+    expect(rows.map(v)).toEqual([1, 3]);
+  });
+});

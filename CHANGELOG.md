@@ -7,6 +7,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/lang/pt-BR/
 
 ---
 
+## [1.108.22] - 2026-11-28
+
+**O "3 maiores" dos mapas da Visão geral e do Rebanho e o indicador "UF líder" do Rebanho passam a
+nomear só UFs que produziram.** Fecha a pendência das Notas da v1.108.21. O PAM e o PPM publicam uma
+linha zerada para cada município, e por isso toda UF da seleção chega ao mapa com uma linha, mesmo a
+que nunca produziu. As duas perspectivas ordenavam todas as linhas e nomeavam as primeiras, com
+produção ou sem.
+
+### Corrigido
+- **Visão geral: o "3 maiores" do mapa nomeava UFs com valor zero.**
+  - Exemplo: PAM, açaí × RS, 1974–2025. A tela dizia "Os produtos selecionados não têm valor
+    registrado nas UFs escolhidas no período." e, logo abaixo, no mapa, "3 maiores: RS". Agora o
+    mapa diz "—".
+  - Vale também para o efetivo de rebanho ("Efetivo por UF · cabeças"): uma UF sem cabeças não
+    entra na lista.
+- **Rebanho: o indicador "UF líder" e o "3 maiores" nomeavam UFs onde a espécie não é criada.**
+  - Exemplo: PPM, codornas × AP, 2015–2024. O indicador dizia "UF líder · Codornas: AP, 0
+    cabeças", e o mapa, "3 maiores: AP". Agora o indicador não aparece, e o mapa diz "—".
+  - Enquanto a distribuição por UF carrega, o "3 maiores" diz "…", como o corpo do cartão
+    ("Carregando distribuição por UF…"). Antes dizia "—", a marca de falha (regra da v1.108.1).
+- **Uma regra só, em `frontend/src/ui/seriesUtils.js`: `window.topPositive(linhas, medida, n)`.**
+  - Devolve as n maiores linhas entre as que têm a medida acima de zero.
+  - Zero, negativo, ausente (`null`, `undefined`) e o que não é número (`NaN`) ficam de fora:
+    ausência não é zero, e zero não é produção.
+  - A Concentração já descartava as UFs com medida `<= 0` antes de classificar. É a mesma regra,
+    agora num lugar só.
+  - O mapa continua desenhando todas as UFs da seleção. Só a lista e o indicador mudam.
+- Conferido numa prévia local contra a produção (só leitura), em 2026-11-28, com o código do `main`
+  e o desta versão:
+
+  | onde | antes | agora |
+  |---|---|---|
+  | Visão geral, PAM · açaí × RS, 1974–2025 | "3 maiores: RS", abaixo do aviso de que não há valor nas UFs escolhidas | "—" |
+  | Rebanho, PPM · codornas × AP, 2015–2024 | "UF líder · Codornas: AP, 0 cabeças" e "3 maiores: AP" | sem "UF líder", e "—" |
+
+  - Sem filtro de UF, a Visão geral do açaí lê "3 maiores: PA · AM · AP".
+- Nada muda na API, no BFF nem no dbt. O merge não dispara a reconstrução da base analítica.
+
+### Testes
+- vitest, 12 testes novos:
+  - 4 em `seriesUtils.test.js`, sobre `topPositive`:
+    - zero, negativo, `null`, `undefined` e `NaN` ficam de fora, e o resto vem do maior para o
+      menor;
+    - no máximo n linhas;
+    - nada produzido, ou nenhuma linha: lista vazia, que a tela escreve "—";
+    - a lista recebida não é reordenada.
+  - 4 em `ViewOverview.test.jsx`, lidos na lista do mapa:
+    - a única UF da seleção em R$ 0;
+    - UFs em zero ou sem número entre as produtoras;
+    - quatro produtoras, com as três maiores nomeadas;
+    - o efetivo de rebanho, com uma UF sem cabeças.
+  - 4 em `ViewRebanho.test.jsx`, lidos no indicador e na lista do mapa:
+    - nenhuma UF cria a espécie;
+    - UFs em zero ou sem número entre as criadoras;
+    - a distribuição por UF carregando;
+    - a distribuição por UF em falha.
+- Contraprova com o `seriesUtils.js`, a `ViewOverview.jsx` e a `ViewRebanho.jsx` do `main`:
+  - 10 dos 12 testes falham;
+  - os 2 que passam são guardas: as quatro produtoras e a falha da leitura;
+  - os 4 de `topPositive` falham porque a função não existe no `main`;
+  - os outros 6 leem, no `main`:
+    - "3 maiores: RS", com o RS em R$ 0;
+    - "3 maiores: MT · SP · RS", com o RS em R$ 0;
+    - "3 maiores: GO · MT", com o MT sem cabeças;
+    - "UF líder" RS, com todas as UFs em zero;
+    - "3 maiores: MT · GO · RS", com o RS em zero;
+    - "—" enquanto a distribuição por UF carrega.
+- vitest: 2.260 passando em 110 arquivos (12 a mais que na v1.108.21), com a cobertura acima dos
+  mínimos, numa rodada só e sem tempo limite estourado. pytest: 2.656 passando (15 pulados no
+  Windows, que só rodam no Linux), cobertura de 99,33%. `npm run lint`, `npm run build`,
+  `uv lock --check`, `ruff check` e `ruff format --check` passam.
+
+### Notas
+- **No Rebanho, o indicador "Pico histórico" mostra um pico de zero.**
+  - Codornas × AP, 2015–2024: "Pico histórico: 0 cabeças em 2015". Todos os anos da janela são
+    zero, e a conta (`fPeak`, em `ViewRebanho.jsx`) fica com o primeiro ponto.
+  - A janela sem ponto nenhum já diz "—". A janela só de zeros, não.
+  - Fica para outra versão.
+
 ## [1.108.21] - 2026-11-28
 
 **"UFs cobertas" e "Anos cobertos", em "Seleção ativa", passam a contar onde e quando houve produção

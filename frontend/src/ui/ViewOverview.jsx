@@ -161,7 +161,9 @@ function ViewOverview({ families, summary, database, conventions }) {
     : '—';
   // Denominator = real UFs in the banco's full set, capped at the canonical 27.
   const ufTotalReal = Number.isFinite(filtered.ufsTotal) ? filtered.ufsTotal : 27;
-  const top3      = realUfs.slice().sort((a, b) => geoVal(b) - geoVal(a)).slice(0, 3);
+  // Only UFs that produced: a UF at zero (PAM publishes a zeroed row for every município) or
+  // with no figure is not one of the "3 maiores" (v1.108.22).
+  const top3      = window.topPositive(realUfs, geoVal, 3);
   const hasGeo    = filtered.ufDataFull.length > 0;
   // The tile map is scoped to the latest UF year IN the window, which can fall short
   // of yearEnd (future/partial endDate). Label it with the data's OWN year so the

@@ -309,3 +309,67 @@ describe('ViewRebanho — a count is named by what it counts', () => {
       .toBe('41.666.667 dz (unidade não identificada)'); // 500e6 / 12
   });
 });
+
+// ── "UF líder" and "3 maiores" are UFs that raise the species (v1.108.22) ─────────────────
+// The per-UF reader returns every UF in the selection, a herd of zero included. The ranking
+// sorted them all, so a selection where no UF raises the species still named a leader with
+// "0 cabeças" and listed zeros among the "3 maiores".
+describe('ViewRebanho — the leader and the 3 maiores raise the species', () => {
+  const lido = (uf) => () => Promise.resolve({ ok: true, json: () => Promise.resolve({ uf }) });
+  const renderRb = (fetchImpl) => {
+    stubGlobals(FIXTURE);
+    // This block reads the map card's caption, which the shared stub drops.
+    window.SectionHeader = ({ overline, title, action }) => (
+      <div className="sh">
+        <span className="sh-ov">{overline}</span>
+        <span className="sh-title">{title}</span>
+        <span className="sh-action">{action}</span>
+      </div>
+    );
+    global.fetch = vi.fn(fetchImpl);
+    return render(
+      <ViewRebanho summary={{}} database="ibge_ppm" conventions={window.DEFAULT_CONVENTIONS} />,
+    ).container;
+  };
+  const legenda = (c) => {
+    const sh = [...c.querySelectorAll('.sh')]
+      .find((k) => k.querySelector('.sh-title').textContent === 'Onde Bovino é criado');
+    return sh && sh.querySelector('.sh-action').textContent;
+  };
+  const lider = (c) => {
+    const card = [...c.querySelectorAll('.kpi')]
+      .find((k) => k.querySelector('.kpi-label').textContent.startsWith('UF líder'));
+    return card ? card.querySelector('.kpi-value').textContent : null;
+  };
+
+  it('no UF raises the species: no leader is named, and the caption says "—"', async () => {
+    const c = renderRb(lido([{ uf: 'RS', q_count: 0 }, { uf: 'SC', q_count: 0 }]));
+    await waitFor(() => expect(tileMapProps).toBeTruthy());
+    expect(lider(c)).toBeNull();
+    expect(legenda(c)).toBe('—');
+  });
+
+  it('a UF at zero or with no figure is skipped: the leader is the largest herd', async () => {
+    const c = renderRb(lido([
+      { uf: 'RS', q_count: 0 }, { uf: 'GO', q_count: 20 },
+      { uf: 'PA', q_count: null }, { uf: 'MT', q_count: 30 },
+    ]));
+    await waitFor(() => expect(tileMapProps).toBeTruthy());
+    expect(lider(c)).toBe('MT');
+    expect(legenda(c)).toBe('3 maiores: MT · GO');
+  });
+
+  it('while the per-UF read is on its way the caption says "…", as the card body does', () => {
+    const c = renderRb(() => new Promise(() => {}));
+    expect(c.textContent).toContain('Carregando distribuição por UF…');
+    expect(legenda(c)).toBe('…');
+    expect(lider(c)).toBeNull();
+  });
+
+  it('the read failed: the caption says "—" and no leader is named', async () => {
+    const c = renderRb(() => Promise.reject(new Error('HTTP 503')));
+    await waitFor(() => expect(c.textContent).toContain('Não foi possível carregar a distribuição por UF'));
+    expect(legenda(c)).toBe('—');
+    expect(lider(c)).toBeNull();
+  });
+});

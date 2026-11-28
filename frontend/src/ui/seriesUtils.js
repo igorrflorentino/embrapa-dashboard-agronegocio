@@ -54,6 +54,20 @@ window.ratioPresent = (num, den) => {
   return num / den;
 };
 
+// The n largest rows by `valueOf`, among the rows that PRODUCED: a measure that is zero,
+// negative, absent or not a number never enters a ranking, so it never names a "3 maiores"
+// entry or a leader (v1.108.22). Visão geral and Rebanho used to sort every row: PAM
+// publishes a zeroed row for every município, and açaí × RS read "3 maiores: RS" with RS at
+// R$ 0 in every year. Concentração already dropped `<= 0` before ranking; this is that rule,
+// in one place. An empty result is the caller's "—".
+window.topPositive = (rows, valueOf, n) => (rows || [])
+  .filter((r) => {
+    const v = valueOf(r);
+    return Number.isFinite(v) && v > 0;
+  })
+  .sort((a, b) => valueOf(b) - valueOf(a))
+  .slice(0, n);
+
 // Piso de materialidade sobre uma razão. Uma razão (rendimento = t/ha, preço =
 // valor/quantidade) mede INTENSIDADE, e intensidade medida sobre uma base minúscula
 // não é uma medida — é o arredondamento da fonte. Medido na PAM 2024: o DF aparecia
